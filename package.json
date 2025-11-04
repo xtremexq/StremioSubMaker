@@ -7,14 +7,22 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js"
   },
-  "keywords": ["stremio", "addon", "subtitles", "translation", "opensubtitles", "gemini"],
+  "keywords": [
+    "stremio",
+    "addon",
+    "subtitles",
+    "translation",
+    "opensubtitles",
+    "gemini"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "stremio-addon-sdk": "^1.6.10",
     "axios": "^1.6.2",
+    "express": "^5.1.0",
+    "node-fetch": "^2.7.0",
     "srt-parser-2": "^1.2.3",
-    "node-fetch": "^2.7.0"
+    "stremio-addon-sdk": "^1.6.10"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

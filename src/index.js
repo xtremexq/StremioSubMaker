@@ -1,4 +1,5 @@
-const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
+const { addonBuilder, serveHTTP, getRouter } = require('stremio-addon-sdk');
+const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const SubtitleHandler = require('./subtitleHandler');
@@ -22,7 +23,7 @@ function parseConfig(configString) {
 }
 
 // Create addon manifest
-function createManifest(config) {
+function createManifest(config = {}) {
   return {
     id: 'org.stremio.subtitletranslator',
     version: '1.0.0',
@@ -39,160 +40,146 @@ function createManifest(config) {
   };
 }
 
-// Main server setup
-const server = require('http').createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const pathname = url.pathname;
+// Create addon builder with config
+function createAddonBuilder(config) {
+  const manifest = createManifest(config);
+  const builder = new addonBuilder(manifest);
 
-  // CORS headers
+  // Add addon URL to config
+  if (config && config.addonUrl) {
+    // Config already has addon URL
+  }
+
+  // Create subtitle handler
+  const subtitleHandler = new SubtitleHandler(config || {});
+
+  // Define subtitles handler
+  builder.defineSubtitlesHandler(async (args) => {
+    try {
+      const { type, id } = args;
+      console.log(`Subtitle request: type=${type}, id=${id}`);
+
+      const result = await subtitleHandler.getSubtitles(type, id);
+      console.log(`Returning ${result.subtitles?.length || 0} subtitles`);
+
+      return Promise.resolve(result);
+    } catch (error) {
+      console.error('Error in subtitles handler:', error);
+      return Promise.resolve({ subtitles: [] });
+    }
+  });
+
+  return builder;
+}
+
+// Main Express app setup for custom routes
+const app = express();
+app.use(express.json());
+
+// Enable CORS
+app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-
   if (req.method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
+    res.sendStatus(200);
     return;
   }
+  next();
+});
 
-  // Root - serve configuration page
-  if (pathname === '/' || pathname === '/configure') {
-    res.setHeader('Content-Type', 'text/html');
-    res.writeHead(200);
-    res.end(configPage);
-    return;
+// Root - serve configuration page
+app.get('/', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send(configPage);
+});
+
+app.get('/configure', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send(configPage);
+});
+
+// API: Get languages
+app.get('/api/languages', (req, res) => {
+  res.json(getAllLanguages());
+});
+
+// API: Get Gemini models
+app.post('/api/gemini-models', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    const geminiAPI = new GeminiAPI(apiKey);
+    const models = await geminiAPI.listModels();
+    res.json(models);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
+});
 
-  // API: Get languages
-  if (pathname === '/api/languages') {
-    res.setHeader('Content-Type', 'application/json');
-    res.writeHead(200);
-    res.end(JSON.stringify(getAllLanguages()));
-    return;
-  }
+// Custom routes for subtitle downloads and translations
+app.get('/:config/subtitle/:fileId', async (req, res) => {
+  const { config: configString, fileId } = req.params;
+  const filename = `${fileId}.srt`;
 
-  // API: Get Gemini models
-  if (pathname === '/api/gemini-models' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', async () => {
-      try {
-        const { apiKey } = JSON.parse(body);
-        const geminiAPI = new GeminiAPI(apiKey);
-        const models = await geminiAPI.listModels();
-        res.setHeader('Content-Type', 'application/json');
-        res.writeHead(200);
-        res.end(JSON.stringify(models));
-      } catch (error) {
-        res.setHeader('Content-Type', 'application/json');
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: error.message }));
-      }
-    });
-    return;
-  }
-
-  // Parse config from URL
-  const pathParts = pathname.split('/').filter(p => p);
-  if (pathParts.length < 2) {
-    res.writeHead(404);
-    res.end('Not found - Please configure the addon first');
-    return;
-  }
-
-  const configString = pathParts[0];
   const config = parseConfig(configString);
-
   if (!config) {
-    res.writeHead(400);
-    res.end('Invalid configuration');
+    res.status(400).send('Invalid configuration');
+    return;
+  }
+
+  const subtitleHandler = new SubtitleHandler(config);
+
+  try {
+    const content = await subtitleHandler.getSubtitleContent(fileId);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(content);
+  } catch (error) {
+    console.error('Error downloading subtitle:', error);
+    res.status(500).send('Error downloading subtitle');
+  }
+});
+
+// Translation selection page
+app.get('/:config/translate/:videoId/:targetLang/select.srt', async (req, res) => {
+  const { config: configString, videoId, targetLang } = req.params;
+
+  const config = parseConfig(configString);
+  if (!config) {
+    res.status(400).send('Invalid configuration');
     return;
   }
 
   // Add addon URL to config
-  config.addonUrl = `http://${req.headers.host}/${configString}`;
+  config.addonUrl = `${req.protocol}://${req.get('host')}/${configString}`;
 
-  // Create subtitle handler
   const subtitleHandler = new SubtitleHandler(config);
 
-  // Manifest
-  if (pathParts[1] === 'manifest.json') {
-    const manifest = createManifest(config);
-    res.setHeader('Content-Type', 'application/json');
-    res.writeHead(200);
-    res.end(JSON.stringify(manifest));
-    return;
-  }
+  // Parse video ID to get search parameters
+  const videoParts = videoId.split(':');
+  const imdbId = videoParts[0];
+  const season = videoParts[1];
+  const episode = videoParts[2];
 
-  // Subtitles endpoint
-  if (pathParts[1] === 'subtitles') {
-    const type = pathParts[2]; // movie or series
-    const id = pathParts[3].replace('.json', ''); // e.g., tt1234567 or tt1234567:1:1
+  const videoType = season && episode ? 'episode' : 'movie';
 
-    try {
-      const subtitles = await subtitleHandler.getSubtitles(type, id);
-      res.setHeader('Content-Type', 'application/json');
-      res.writeHead(200);
-      res.end(JSON.stringify(subtitles));
-    } catch (error) {
-      console.error('Error getting subtitles:', error);
-      res.setHeader('Content-Type', 'application/json');
-      res.writeHead(500);
-      res.end(JSON.stringify({ subtitles: [] }));
+  try {
+    // Fetch available subtitles
+    const searchParams = {
+      imdb_id: imdbId,
+      type: videoType,
+      languages: config.sourceLanguages
+    };
+
+    if (videoType === 'episode') {
+      searchParams.season_number = parseInt(season);
+      searchParams.episode_number = parseInt(episode);
     }
-    return;
-  }
 
-  // Download subtitle from OpenSubtitles
-  if (pathParts[1] === 'subtitle') {
-    const filename = pathParts[2];
-    const fileId = filename.replace('.srt', '');
+    const subtitles = await subtitleHandler.fetchSubtitles(searchParams);
 
-    try {
-      const content = await subtitleHandler.getSubtitleContent(fileId);
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.writeHead(200);
-      res.end(content);
-    } catch (error) {
-      console.error('Error downloading subtitle:', error);
-      res.writeHead(500);
-      res.end('Error downloading subtitle');
-    }
-    return;
-  }
-
-  // Translation selection page
-  if (pathParts[1] === 'translate') {
-    const videoId = pathParts[2]; // e.g., tt1234567:1:1
-    const targetLang = pathParts[3];
-    const filename = pathParts[4]; // select.srt
-
-    // Parse video ID to get search parameters
-    const videoParts = videoId.split(':');
-    const imdbId = videoParts[0];
-    const season = videoParts[1];
-    const episode = videoParts[2];
-
-    const videoType = season && episode ? 'episode' : 'movie';
-
-    try {
-      // Fetch available subtitles
-      const searchParams = {
-        imdb_id: imdbId,
-        type: videoType,
-        languages: config.sourceLanguages
-      };
-
-      if (videoType === 'episode') {
-        searchParams.season_number = parseInt(season);
-        searchParams.episode_number = parseInt(episode);
-      }
-
-      const subtitles = await subtitleHandler.fetchSubtitles(searchParams);
-
-      // Generate selection HTML
-      const html = `
+    // Generate selection HTML
+    const html = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -334,57 +321,81 @@ const server = require('http').createServer(async (req, res) => {
 </body>
 </html>`;
 
-      res.setHeader('Content-Type', 'text/html');
-      res.writeHead(200);
-      res.end(html);
-    } catch (error) {
-      console.error('Error generating selection page:', error);
-      res.writeHead(500);
-      res.end('Error loading subtitles');
-    }
-    return;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (error) {
+    console.error('Error generating selection page:', error);
+    res.status(500).send('Error loading subtitles');
   }
-
-  // Translate and serve subtitle
-  if (pathParts[1] === 'translate' && pathParts.length >= 5) {
-    const videoId = pathParts[2];
-    const targetLang = pathParts[3];
-    const filename = pathParts[4];
-    const sourceFileId = filename.replace('.srt', '');
-
-    try {
-      // Download source subtitle
-      const sourceContent = await subtitleHandler.getSubtitleContent(sourceFileId);
-
-      // Determine source language from the subtitle metadata
-      // For now, we'll use 'auto' or the first source language
-      const sourceLang = config.sourceLanguages[0] || 'eng';
-
-      // Translate
-      const translatedContent = await subtitleHandler.translateSubtitle(
-        sourceContent,
-        sourceLang,
-        targetLang
-      );
-
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="translated_${filename}"`);
-      res.writeHead(200);
-      res.end(translatedContent);
-    } catch (error) {
-      console.error('Error translating subtitle:', error);
-      res.writeHead(500);
-      res.end('Error translating subtitle: ' + error.message);
-    }
-    return;
-  }
-
-  // Not found
-  res.writeHead(404);
-  res.end('Not found');
 });
 
-server.listen(PORT, () => {
+// Translate and serve subtitle
+app.get('/:config/translate/:videoId/:targetLang/:fileId', async (req, res) => {
+  const { config: configString, videoId, targetLang, fileId } = req.params;
+  const sourceFileId = fileId.replace('.srt', '');
+
+  const config = parseConfig(configString);
+  if (!config) {
+    res.status(400).send('Invalid configuration');
+    return;
+  }
+
+  const subtitleHandler = new SubtitleHandler(config);
+
+  try {
+    // Download source subtitle
+    const sourceContent = await subtitleHandler.getSubtitleContent(sourceFileId);
+
+    // Determine source language from the subtitle metadata
+    // For now, we'll use 'auto' or the first source language
+    const sourceLang = config.sourceLanguages[0] || 'eng';
+
+    // Translate
+    const translatedContent = await subtitleHandler.translateSubtitle(
+      sourceContent,
+      sourceLang,
+      targetLang
+    );
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="translated_${fileId}"`);
+    res.send(translatedContent);
+  } catch (error) {
+    console.error('Error translating subtitle:', error);
+    res.status(500).send('Error translating subtitle: ' + error.message);
+  }
+});
+
+// Mount Stremio addon routes with configuration
+app.use('/:config', (req, res, next) => {
+  const configString = req.params.config;
+
+  // Skip if this is one of our custom routes
+  if (req.path.startsWith('/subtitle/') ||
+      req.path.startsWith('/translate/')) {
+    next('route');
+    return;
+  }
+
+  const config = parseConfig(configString);
+  if (!config) {
+    res.status(400).send('Invalid configuration');
+    return;
+  }
+
+  // Add addon URL to config
+  config.addonUrl = `${req.protocol}://${req.get('host')}/${configString}`;
+
+  // Create addon builder with this config
+  const builder = createAddonBuilder(config);
+  const addonRouter = getRouter(builder.getInterface());
+
+  // Use the addon router for this request
+  addonRouter(req, res, next);
+});
+
+// Start server
+app.listen(PORT, () => {
   console.log(`🚀 Stremio Subtitle Translator Addon running on http://localhost:${PORT}`);
   console.log(`📝 Configure your addon at http://localhost:${PORT}/configure`);
 });
