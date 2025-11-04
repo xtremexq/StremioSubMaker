@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stremio Subtitle Translator - Configuration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            animation: fadeIn 0.5s ease-out forwards;
+            opacity: 0;
+        }
+
+        .section:nth-child(1) { animation-delay: 0.1s; }
+        .section:nth-child(2) { animation-delay: 0.2s; }
+        .section:nth-child(3) { animation-delay: 0.3s; }
+        .section:nth-child(4) { animation-delay: 0.4s; }
+        .section:nth-child(5) { animation-delay: 0.5s; }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+
+        .section-title {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 2px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="text"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        input[type="text"]:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .language-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 2px solid #e0e0e0;
+        }
+
+        .language-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+
+        .language-option:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .language-option input[type="checkbox"] {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
+
+        .language-option.selected {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            flex: 1;
+            min-width: 150px;
+            padding: 14px 28px;
+            font-size: 1.1em;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(56, 239, 125, 0.4);
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(56, 239, 125, 0.6);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .status-message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            display: none;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 2px solid #bee5eb;
+        }
+
+        .model-select-container {
+            position: relative;
+        }
+
+        .model-loading {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .info-text {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .quick-select {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .quick-select button {
+            padding: 8px 16px;
+            font-size: 0.9em;
+            min-width: auto;
+        }
+
+        .addon-url {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #e0e0e0;
+            margin-top: 20px;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Subtitle Translator</h1>
+            <p>Configure your AI-powered subtitle translation addon for Stremio</p>
+        </div>
+
+        <div class="content">
+            <form id="configForm">
+                <!-- OpenSubtitles API -->
+                <div class="section">
+                    <div class="section-title">OpenSubtitles API</div>
+                    <div class="form-group">
+                        <label for="opensubtitlesApiKey">API Key</label>
+                        <input type="text" id="opensubtitlesApiKey" placeholder="Enter your OpenSubtitles API key" required>
+                        <div class="info-text">Get your API key from <a href="https://www.opensubtitles.com/en/consumers" target="_blank">OpenSubtitles</a></div>
+                    </div>
+                </div>
+
+                <!-- Gemini AI -->
+                <div class="section">
+                    <div class="section-title">Google Gemini AI</div>
+                    <div class="form-group">
+                        <label for="geminiApiKey">API Key</label>
+                        <input type="text" id="geminiApiKey" placeholder="Enter your Gemini API key" required>
+                        <div class="info-text">Get your API key from <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="geminiModel">Model</label>
+                        <div class="model-select-container">
+                            <select id="geminiModel" required disabled>
+                                <option value="">First enter API key and click "Load Models"</option>
+                            </select>
+                            <div class="model-loading">
+                                <div class="spinner"></div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-secondary" id="loadModelsBtn" style="margin-top: 10px; width: auto;" disabled>
+                            Load Available Models
+                        </button>
+                    </div>
+                    <div class="form-group">
+                        <label for="translationPrompt">Translation Prompt</label>
+                        <textarea id="translationPrompt" placeholder="Custom instructions for the AI translator"></textarea>
+                        <div class="info-text">Leave empty to use the default optimized prompt</div>
+                    </div>
+                </div>
+
+                <!-- Source Languages -->
+                <div class="section">
+                    <div class="section-title">Source Languages</div>
+                    <div class="info-text" style="margin-bottom: 10px;">Select languages to fetch subtitles from</div>
+                    <div class="quick-select">
+                        <button type="button" class="btn-secondary" onclick="selectCommonLanguages('source')">Select Common</button>
+                        <button type="button" class="btn-secondary" onclick="selectAllLanguages('source')">Select All</button>
+                        <button type="button" class="btn-secondary" onclick="clearLanguages('source')">Clear All</button>
+                    </div>
+                    <div class="language-selector" id="sourceLanguages"></div>
+                </div>
+
+                <!-- Target Languages -->
+                <div class="section">
+                    <div class="section-title">Target Languages</div>
+                    <div class="info-text" style="margin-bottom: 10px;">Select languages you want to translate to</div>
+                    <div class="quick-select">
+                        <button type="button" class="btn-secondary" onclick="selectCommonLanguages('target')">Select Common</button>
+                        <button type="button" class="btn-secondary" onclick="selectAllLanguages('target')">Select All</button>
+                        <button type="button" class="btn-secondary" onclick="clearLanguages('target')">Clear All</button>
+                    </div>
+                    <div class="language-selector" id="targetLanguages"></div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">
+                        💾 Save Configuration
+                    </button>
+                    <button type="button" class="btn-secondary" id="copyUrlBtn" disabled>
+                        📋 Copy Addon URL
+                    </button>
+                    <button type="button" class="btn-success" id="installBtn" disabled>
+                        ⚡ Install to Stremio
+                    </button>
+                </div>
+
+                <div id="statusMessage" class="status-message"></div>
+
+                <div id="addonUrlContainer" style="display: none;">
+                    <div class="addon-url" id="addonUrl"></div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Language data (will be populated from server)
+        let languagesData = [];
+        const commonLanguages = ['eng', 'spa', 'fra', 'deu', 'ita', 'por', 'pob', 'rus', 'jpn', 'kor', 'chi', 'ara'];
+
+        // Load languages
+        async function loadLanguages() {
+            try {
+                const response = await fetch('/api/languages');
+                languagesData = await response.json();
+                populateLanguageSelectors();
+            } catch (error) {
+                console.error('Error loading languages:', error);
+            }
+        }
+
+        // Populate language selectors
+        function populateLanguageSelectors() {
+            const sourceContainer = document.getElementById('sourceLanguages');
+            const targetContainer = document.getElementById('targetLanguages');
+
+            languagesData.forEach(lang => {
+                sourceContainer.appendChild(createLanguageOption(lang, 'source'));
+                targetContainer.appendChild(createLanguageOption(lang, 'target'));
+            });
+        }
+
+        // Create language option element
+        function createLanguageOption(lang, type) {
+            const div = document.createElement('div');
+            div.className = 'language-option';
+            div.innerHTML = `
+                <input type="checkbox" id="${type}-${lang.code}" value="${lang.code}">
+                <label for="${type}-${lang.code}" style="cursor: pointer; margin: 0; flex: 1;">
+                    ${lang.flag} ${lang.name}
+                </label>
+            `;
+
+            div.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'INPUT') {
+                    const checkbox = div.querySelector('input');
+                    checkbox.checked = !checkbox.checked;
+                }
+                div.classList.toggle('selected', div.querySelector('input').checked);
+            });
+
+            return div;
+        }
+
+        // Quick select functions
+        function selectCommonLanguages(type) {
+            clearLanguages(type);
+            commonLanguages.forEach(code => {
+                const checkbox = document.getElementById(`${type}-${code}`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                    checkbox.parentElement.classList.add('selected');
+                }
+            });
+        }
+
+        function selectAllLanguages(type) {
+            languagesData.forEach(lang => {
+                const checkbox = document.getElementById(`${type}-${lang.code}`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                    checkbox.parentElement.classList.add('selected');
+                }
+            });
+        }
+
+        function clearLanguages(type) {
+            languagesData.forEach(lang => {
+                const checkbox = document.getElementById(`${type}-${lang.code}`);
+                if (checkbox) {
+                    checkbox.checked = false;
+                    checkbox.parentElement.classList.remove('selected');
+                }
+            });
+        }
+
+        // Load Gemini models
+        document.getElementById('loadModelsBtn').addEventListener('click', async () => {
+            const apiKey = document.getElementById('geminiApiKey').value;
+            if (!apiKey) {
+                showStatus('Please enter a Gemini API key first', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('loadModelsBtn');
+            const select = document.getElementById('geminiModel');
+            const loading = document.querySelector('.model-loading');
+
+            btn.disabled = true;
+            loading.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/gemini-models', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiKey })
+                });
+
+                const models = await response.json();
+
+                select.innerHTML = '<option value="">Select a model</option>';
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.name;
+                    option.textContent = `${model.displayName} (${model.name})`;
+                    select.appendChild(option);
+                });
+
+                select.disabled = false;
+                showStatus('Models loaded successfully!', 'success');
+            } catch (error) {
+                showStatus('Failed to load models. Check your API key.', 'error');
+            } finally {
+                btn.disabled = false;
+                loading.style.display = 'none';
+            }
+        });
+
+        // Enable load models button when API key is entered
+        document.getElementById('geminiApiKey').addEventListener('input', (e) => {
+            document.getElementById('loadModelsBtn').disabled = !e.target.value;
+        });
+
+        // Form submission
+        document.getElementById('configForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const config = {
+                opensubtitlesApiKey: document.getElementById('opensubtitlesApiKey').value,
+                geminiApiKey: document.getElementById('geminiApiKey').value,
+                geminiModel: document.getElementById('geminiModel').value,
+                translationPrompt: document.getElementById('translationPrompt').value,
+                sourceLanguages: getSelectedLanguages('source'),
+                targetLanguages: getSelectedLanguages('target')
+            };
+
+            if (config.sourceLanguages.length === 0) {
+                showStatus('Please select at least one source language', 'error');
+                return;
+            }
+
+            if (config.targetLanguages.length === 0) {
+                showStatus('Please select at least one target language', 'error');
+                return;
+            }
+
+            try {
+                // Create base64 encoded config
+                const configString = btoa(JSON.stringify(config));
+                const addonUrl = `${window.location.origin}/${configString}/manifest.json`;
+
+                document.getElementById('addonUrl').textContent = addonUrl;
+                document.getElementById('addonUrlContainer').style.display = 'block';
+                document.getElementById('copyUrlBtn').disabled = false;
+                document.getElementById('installBtn').disabled = false;
+
+                showStatus('Configuration saved! You can now copy the URL or install directly to Stremio.', 'success');
+            } catch (error) {
+                showStatus('Error saving configuration', 'error');
+            }
+        });
+
+        // Get selected languages
+        function getSelectedLanguages(type) {
+            const selected = [];
+            languagesData.forEach(lang => {
+                const checkbox = document.getElementById(`${type}-${lang.code}`);
+                if (checkbox && checkbox.checked) {
+                    selected.push(lang.code);
+                }
+            });
+            return selected;
+        }
+
+        // Copy URL to clipboard
+        document.getElementById('copyUrlBtn').addEventListener('click', () => {
+            const url = document.getElementById('addonUrl').textContent;
+            navigator.clipboard.writeText(url).then(() => {
+                showStatus('URL copied to clipboard!', 'success');
+            }).catch(() => {
+                showStatus('Failed to copy URL', 'error');
+            });
+        });
+
+        // Install to Stremio
+        document.getElementById('installBtn').addEventListener('click', () => {
+            const url = document.getElementById('addonUrl').textContent;
+            window.open(url.replace('/manifest.json', '/'), '_blank');
+        });
+
+        // Show status message
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = `status-message ${type}`;
+            statusEl.style.display = 'block';
+
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 5000);
+        }
+
+        // Initialize
+        loadLanguages();
+    </script>
+</body>
+</html>

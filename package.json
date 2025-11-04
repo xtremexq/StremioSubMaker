@@ -1,0 +1,22 @@
+{
+  "name": "stremio-subtitle-translator",
+  "version": "1.0.0",
+  "description": "Stremio addon that fetches and translates subtitles using AI",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "keywords": ["stremio", "addon", "subtitles", "translation", "opensubtitles", "gemini"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.10",
+    "axios": "^1.6.2",
+    "srt-parser-2": "^1.2.3",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
