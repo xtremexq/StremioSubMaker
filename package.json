@@ -1,11 +1,11 @@
 {
-  "name": "stremio-subtitle-translator",
+  "name": "submaker-subtitle-translator",
   "version": "1.0.0",
-  "description": "Stremio addon that fetches and translates subtitles using AI",
-  "main": "src/index.js",
+  "description": "Take control of your subtitles! Fetch and translate subtitles from OpenSubtitles, SubScene and SubDL with a free Gemini AI key, without ever leaving Stremio.",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "keywords": [
     "stremio",
@@ -19,10 +19,19 @@
   "license": "MIT",
   "dependencies": {
     "axios": "^1.6.2",
-    "express": "^5.1.0",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.2.1",
+    "express-session": "^1.18.2",
+    "helmet": "^8.1.0",
+    "joi": "^18.0.1",
+    "jszip": "^3.10.1",
+    "lru-cache": "^11.2.2",
     "node-fetch": "^2.7.0",
     "srt-parser-2": "^1.2.3",
-    "stremio-addon-sdk": "^1.6.10"
+    "stremio-addon-sdk": "^1.6.10",
+    "subsrt-ts": "^2.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
