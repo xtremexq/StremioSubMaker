@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SubMaker - Configure</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        :root {
+            --primary: #08A4D5;
+            --primary-light: #33B9E1;
+            --primary-dark: #068DB7;
+            --secondary: #33B9E1;
+            --accent: #0ea5e9;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg-primary: #f7fafc;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #eef2f7;
+            --surface: #ffffff;
+            --surface-light: #f3f7fb;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --border: #dbe3ea;
+            --shadow: rgba(0, 0, 0, 0.08);
+            --glow: rgba(8, 164, 213, 0.25);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #ffffff 60%, var(--bg-primary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(8, 164, 213, 0.12) 0%, transparent 50%),
+                radial-gradient(circle at 80% 50%, rgba(51, 185, 225, 0.12) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem 20%;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            animation: fadeInDown 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .logo {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 20px 60px var(--glow);
+            animation: float 3s ease-in-out infinite;
+            position: relative;
+        }
+
+        .logo::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 24px;
+            z-index: -1;
+            opacity: 0.5;
+            filter: blur(20px);
+        }
+
+        .logo img {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.125rem;
+            font-weight: 500;
+        }
+
+        /* Card System */
+        .card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 24px var(--shadow);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+        }
+
+        .card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 12px 48px var(--glow);
+            transform: translateY(-2px);
+        }
+
+        .card.collapsed .card-content {
+            display: none;
+        }
+
+        .card.collapsed {
+            padding: 1.5rem 2rem;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .card-title-group {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .card-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            box-shadow: 0 4px 12px var(--glow);
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .card-badge {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            min-width: 28px;
+            height: 28px;
+            padding: 0 0.5rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            border-radius: 14px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-left: 0.5rem;
+            animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .collapse-btn {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 1.25rem;
+            margin-left: 0.5rem;
+        }
+
+        .collapse-btn:hover {
+            background: rgba(8, 164, 213, 0.1);
+            border-color: var(--primary);
+        }
+
+        .collapse-btn.collapsed::before {
+            content: '▼';
+        }
+
+        .collapse-btn:not(.collapsed)::before {
+            content: '▲';
+        }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            width: 56px;
+            height: 32px;
+            cursor: pointer;
+        }
+
+        .toggle-switch input {
+            display: none;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--surface-light);
+            border-radius: 32px;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            border: 2px solid var(--border);
+        }
+
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            left: 2px;
+            top: 2px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border-color: var(--primary);
+        }
+
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(24px);
+            background: white;
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        .label-description {
+            display: block;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+            margin-top: 0.25rem;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            font-family: inherit;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--glow);
+            transform: translateY(-1px);
+        }
+
+        input.invalid,
+        select.invalid {
+            border-color: var(--danger);
+            animation: shake 0.3s ease;
+        }
+
+        input.valid,
+        select.valid {
+            border-color: var(--success);
+        }
+
+        .field-error {
+            color: var(--danger);
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+            display: none;
+            animation: fadeInUp 0.3s ease;
+        }
+
+        .field-error.show {
+            display: block;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        /* Language Selector - Modern Chips */
+        .language-search {
+            position: relative;
+            margin-bottom: 1rem;
+        }
+
+        .language-search input {
+            padding-left: 2.5rem;
+        }
+
+        .language-search-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            pointer-events: none;
+        }
+
+        .selected-languages {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            min-height: 42px;
+            padding: 0.5rem;
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .selected-languages:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--glow);
+        }
+
+        .selected-languages.empty::before {
+            content: 'Click languages below to add...';
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            height: 26px;
+        }
+
+        .language-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.375rem 0.75rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            animation: chipIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .language-chip:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px var(--glow);
+        }
+
+        .language-chip .remove {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            font-size: 0.75rem;
+            transition: all 0.2s ease;
+        }
+
+        .language-chip .remove:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .language-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 0.75rem;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 1rem;
+            background: var(--surface);
+            border-radius: 12px;
+            border: 2px solid var(--border);
+        }
+
+        .language-grid::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .language-grid::-webkit-scrollbar-track {
+            background: var(--surface);
+            border-radius: 4px;
+        }
+
+        .language-grid::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 4px;
+        }
+
+        .language-item {
+            padding: 0.75rem 1rem;
+            background: var(--surface-light);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-align: center;
+            user-select: none;
+        }
+
+        .language-item:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px var(--glow);
+        }
+
+        .language-item.selected {
+            background: linear-gradient(135deg, rgba(8, 164, 213, 0.18) 0%, rgba(51, 185, 225, 0.18) 100%);
+            border-color: var(--primary);
+            color: var(--primary-dark);
+        }
+
+        .language-item.hidden {
+            display: none;
+        }
+
+        /* Quick Actions */
+        .quick-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .quick-btn {
+            padding: 0.5rem 1rem;
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .quick-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary-dark);
+            background: rgba(8, 164, 213, 0.1);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.875rem 1.75rem;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            white-space: nowrap;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 100%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .btn:hover::before {
+            opacity: 1;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            box-shadow: 0 8px 24px var(--glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 32px var(--glow);
+        }
+
+        .btn-secondary {
+            background: var(--surface-light);
+            color: var(--text-primary);
+            border: 2px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary);
+            background: rgba(8, 164, 213, 0.1);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 2rem;
+        }
+
+        /* Alert System */
+        .alert {
+            position: fixed;
+            top: 2rem;
+            right: 2rem;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            min-width: 300px;
+            max-width: 500px;
+            z-index: 9999;
+            animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 12px 48px var(--shadow);
+            backdrop-filter: blur(20px);
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.2);
+            border: 2px solid var(--success);
+            color: var(--success);
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 2px solid var(--danger);
+            color: var(--danger);
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.2);
+            border: 2px solid var(--warning);
+            color: var(--warning);
+        }
+
+        .alert-info {
+            background: rgba(8, 164, 213, 0.12);
+            border: 2px solid var(--primary);
+            color: var(--primary-dark);
+        }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(6px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9998;
+        }
+
+        .loading-overlay.show {
+            display: flex;
+        }
+
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid var(--surface-light);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        /* Info Banner */
+        .info-banner {
+            background: linear-gradient(135deg, rgba(8, 164, 213, 0.10) 0%, rgba(51, 185, 225, 0.10) 100%);
+            border: 2px solid var(--primary);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1rem;
+            align-items: start;
+        }
+
+        .info-banner-icon {
+            font-size: 2rem;
+            flex-shrink: 0;
+        }
+
+        .info-banner-content h3 {
+            color: var(--primary-light);
+            margin-bottom: 0.5rem;
+            font-size: 1.125rem;
+        }
+
+        .info-banner-content p {
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin: 0.25rem 0;
+        }
+
+        /* Model Fetching Status */
+        .model-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .model-status.fetching {
+            color: var(--primary-light);
+        }
+
+        .model-status.success {
+            color: var(--success);
+        }
+
+        .model-status.error {
+            color: var(--danger);
+        }
+
+        .model-status .spinner-small {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--surface-light);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        /* Animations */
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes chipIn {
+            from {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        @keyframes scaleIn {
+            from {
+                opacity: 0;
+                transform: scale(0.5);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        /* Keyboard shortcuts hint */
+        .keyboard-hint {
+            position: fixed;
+            bottom: 2rem;
+            left: 2rem;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .keyboard-hint.show {
+            opacity: 1;
+        }
+
+        .kbd {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.875rem;
+            color: var(--primary-light);
+            margin: 0 0.25rem;
+        }
+
+        /* Install URL Display */
+        .install-url-box {
+            margin-top: 1.5rem;
+            display: none;
+        }
+
+        .install-url-box.show {
+            display: block;
+        }
+
+        .install-url-box label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        .install-url-box input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background: var(--surface);
+            border: 2px solid var(--primary);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-family: monospace;
+            cursor: text;
+        }
+
+        .install-url-box input:focus {
+            outline: none;
+            box-shadow: 0 0 0 4px var(--glow);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 3rem 2rem;
+            margin-top: 4rem;
+            border-top: 1px solid var(--border);
+            color: var(--text-secondary);
+            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .footer-content {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .footer-heart {
+            color: var(--danger);
+            animation: heartbeat 1.5s ease-in-out infinite;
+        }
+
+        .footer p {
+            margin-bottom: 0.75rem;
+            line-height: 1.6;
+        }
+
+        .footer a {
+            color: var(--primary-light);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .footer a:hover {
+            color: var(--primary);
+        }
+
+        @keyframes heartbeat {
+            0%, 100% { transform: scale(1); }
+            10%, 30% { transform: scale(1.1); }
+            20%, 40% { transform: scale(1); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            .card {
+                padding: 1.5rem;
+            }
+
+            .card.collapsed {
+                padding: 1rem 1.5rem;
+            }
+
+            .language-grid {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                max-height: 300px;
+            }
+
+            .btn-group {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+            }
+
+            .alert {
+                right: 1rem;
+                left: 1rem;
+                min-width: auto;
+            }
+
+            .keyboard-hint {
+                display: none;
+            }
+
+            .selected-languages {
+                max-height: 150px;
+                overflow-y: auto;
+            }
+        }
+
+        /* Disabled file translation option */
+        #fileTranslationEnabled:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        #fileTranslationEnabled:disabled + span {
+            color: var(--text-secondary);
+        }
+
+        label:has(#fileTranslationEnabled:disabled) {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Stagger animations */
+        .card:nth-child(1) { animation-delay: 0.1s; }
+        .card:nth-child(2) { animation-delay: 0.2s; }
+        .card:nth-child(3) { animation-delay: 0.3s; }
+        .card:nth-child(4) { animation-delay: 0.4s; }
+        .card:nth-child(5) { animation-delay: 0.5s; }
+
+        /* Modal System */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border-radius: 24px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 85vh;
+            overflow-y: auto;
+            border: 2px solid var(--primary);
+            box-shadow: 0 20px 60px var(--glow), 0 0 0 1px rgba(8, 164, 213, 0.2);
+            animation: modalSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+        }
+
+        .modal-header {
+            padding: 2rem;
+            border-bottom: 2px solid var(--border);
+            background: linear-gradient(135deg, rgba(8, 164, 213, 0.10) 0%, rgba(51, 185, 225, 0.10) 100%);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            backdrop-filter: blur(10px);
+        }
+
+        .modal-header h2 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 1.5rem;
+            right: 1.5rem;
+            width: 36px;
+            height: 36px;
+            background: var(--surface-light);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+        }
+
+        .modal-close:hover {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: var(--danger);
+            color: var(--danger);
+            transform: rotate(90deg);
+        }
+
+        .modal-content {
+            padding: 2rem;
+        }
+
+        .modal-content h3 {
+            color: var(--primary-light);
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin: 1.5rem 0 0.75rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .modal-content h3:first-child {
+            margin-top: 0;
+        }
+
+        .modal-content ol {
+            margin: 0.75rem 0;
+            padding-left: 1.5rem;
+            color: var(--text-primary);
+            line-height: 1.8;
+        }
+
+        .modal-content li {
+            margin: 0.5rem 0;
+            color: var(--text-primary);
+        }
+
+        .modal-content p {
+            color: var(--text-secondary);
+            line-height: 1.7;
+            margin: 0.75rem 0;
+        }
+
+        .modal-content strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .modal-content em {
+            color: var(--warning);
+            font-style: normal;
+            font-weight: 600;
+        }
+
+        .modal-footer {
+            padding: 1.5rem 2rem;
+            border-top: 2px solid var(--border);
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            position: sticky;
+            bottom: 0;
+            background: var(--bg-secondary);
+            backdrop-filter: blur(10px);
+        }
+
+        .modal-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-right: auto;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .modal-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .highlight-box {
+            background: rgba(245, 158, 11, 0.1);
+            border: 2px solid var(--warning);
+            border-radius: 12px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+
+        .highlight-box p {
+            color: var(--warning);
+            font-weight: 600;
+            margin: 0;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* Scrollbar for modal */
+        .modal::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .modal::-webkit-scrollbar-track {
+            background: var(--surface);
+            border-radius: 0 24px 24px 0;
+        }
+
+        .modal::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 5px;
+        }
+
+        .modal::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-light);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <img src="logo.png" alt="SubMaker Logo" style="width: 80px; height: 80px; border-radius: 20px;">
+            </div>
+            <h1>SubMaker</h1>
+            <p class="subtitle">AI-Powered Subtitle Translation</p>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <div class="info-banner">
+            <div class="info-banner-icon">🚀</div>
+            <div class="info-banner-content">
+                <h3>Quick Start Guide</h3>
+                <p><strong>1.</strong> Get a free <a href="https://makersuite.google.com/app/apikey" target="_blank" style="color: var(--primary-light); text-decoration: underline;">Gemini API key</a> and enter it in the AI Translation section</p>
+                <p><strong>2.</strong> Select <strong>up to 3</strong> source languages (languages you'll translate from)</p>
+                <p><strong>3.</strong> Select target languages (languages you want subtitles in)</p>
+                <p><strong>4.</strong> (Optional) Add your OpenSubtitles account for higher download limits</p>
+                <p><strong>5.</strong> Click "Save Configuration" and install the addon in Stremio!</p>
+            </div>
+        </div>
+
+        <form id="configForm">
+            <!-- No Translation Mode Toggle -->
+            <div style="margin: 2rem 0; padding: 1.5rem; background: var(--surface-light); border: 2px solid var(--border); border-radius: 12px; display: flex; align-items: center; gap: 1rem;">
+                <span style="font-size: 1.75rem;">⏸️</span>
+                <div style="flex: 1;">
+                    <span style="display: block; font-weight: 600; color: var(--text-primary);">Just Fetch Subtitles (No Translation)</span>
+                    <span style="display: block; font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">Skip AI translation and just fetch subtitles in your chosen languages</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="noTranslationMode">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <!-- Subtitle API Providers -->
+            <div class="card collapsed" data-card="subtitle-api">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon">📚</div>
+                        <h2 class="card-title">Subtitles API Keys</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="subtitle-api"></button>
+                </div>
+                <div class="card-content">
+                                        <!-- OpenSubtitles -->
+                    <div class="form-group" style="padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                            <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-size: 1.5rem;">📄</span>
+                                <div>
+                                    <strong style="display: block;">OpenSubtitles</strong>
+                                    <span class="label-description" style="margin: 0;">Account login for higher download limits (it'll work without one, but limited to 5 downloads a day).</span>
+                                </div>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableOpenSubtitles" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="opensubtitlesConfig">
+                            <label style="display: block; margin-bottom: 0.5rem;">Username</label>
+                            <input type="text" id="opensubtitlesUsername" placeholder="Enter your OpenSubtitles username" style="margin-bottom: 0.75rem;">
+
+                            <label style="display: block; margin-bottom: 0.5rem;">Password</label>
+                            <input type="password" id="opensubtitlesPassword" placeholder="Enter your OpenSubtitles password" style="margin-bottom: 0.75rem;">
+
+                            <span class="label-description">Login with your OpenSubtitles account for higher download limits.<br><a href="https://www.opensubtitles.com/en/newuser" target="_blank" style="color: var(--primary-light);">Create a free account</a> if you don't have one. If not provided, uses basic API access with standard limits.</span>
+                        </div>
+                    </div>
+
+                    <!-- SubDL -->
+                    <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                            <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-size: 1.5rem;">📋</span>
+                                <div>
+                                    <strong style="display: block;">SubDL</strong>
+                                    <span class="label-description" style="margin: 0;">Get your free API key from <a href="https://subdl.com" target="_blank" style="color: var(--primary-light);">SubDL.com</a></span>
+                                </div>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableSubDL" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="subdlConfig">
+                            <input type="text" id="subdlApiKey" placeholder="Enter SubDL API key">
+                        </div>
+                    </div>
+
+                    <!-- SubSource -->
+                    <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                            <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-size: 1.5rem;">🎬</span>
+                                <div>
+                                    <strong style="display: block;">SubSource</strong>
+                                    <span class="label-description" style="margin: 0;">Get your free API key from <a href="https://subsource.net/" target="_blank" style="color: var(--primary-light);">SubSource.net</a></span>
+                                </div>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableSubSource" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="subsourceConfig">
+                            <input type="text" id="subsourceApiKey" placeholder="Enter SubSource API key">
+                        </div>
+                    </div>
+
+                    <!-- Podnapisi removed from UI - provider still available in code but not accessible -->
+                </div>
+            </div>
+
+            <!-- No-Translation Languages -->
+            <div class="card collapsed" id="noTranslationCard" style="display: none;" data-card="notranslation">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon">📺</div>
+                        <h2 class="card-title">Languages</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="notranslation"></button>
+                </div>
+
+                <div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            Subtitle Languages
+                            <span class="label-description">Select which languages you want to fetch subtitles in.</span>
+                        </label>
+
+                        <div class="language-search">
+                            <span class="language-search-icon">🔍</span>
+                            <input type="text" id="noTranslationSearch" placeholder="Search languages...">
+                        </div>
+
+                        <div id="selectedNoTranslationLanguages" class="selected-languages empty"></div>
+
+                        <div class="quick-actions">
+                            <button type="button" class="quick-btn" data-action="select-popular-notranslation">⭐ Popular</button>
+                            <button type="button" class="quick-btn" data-action="select-all-notranslation">✓ All</button>
+                            <button type="button" class="quick-btn" data-action="clear-notranslation">✗ Clear</button>
+                        </div>
+
+                        <div id="noTranslationLanguages" class="language-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gemini API -->
+            <div class="card collapsed" id="geminiCard" data-card="gemini">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon">✨</div>
+                        <h2 class="card-title">AI Translation API Keys</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="gemini"></button>
+                </div>
+
+                <div class="card-content">
+                    <div class="form-group">
+                        <label for="geminiApiKey">
+                            API Key *
+                            <span class="label-description">Get your free API key from <a href="https://makersuite.google.com/app/apikey" target="_blank" style="color: var(--primary-light);">Google AI Studio</a></span>
+                        </label>
+                        <input type="password" id="geminiApiKey" required placeholder="Enter your Gemini API key">
+                        <div class="field-error" id="geminiApiKeyError">API key is required</div>
+                        <div id="modelStatus" class="model-status"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="geminiModel">
+                            Translation Model *
+                            <span class="label-description">AI model for translations<br>ONLY Gemini Flash and Flash-<b>Lite</b> are recommended.<br>Pro and other models take too long and might fail.</span>
+                        </label>
+                        <select id="geminiModel" required>
+                            <option value="">Select a model...</option>
+                        </select>
+                        <div class="field-error" id="geminiModelError">Please select a model</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="promptStyle">
+                            Prompt Style
+                            <span class="label-description">Choose between strict structure preservation or natural flow adaptation</span>
+                        </label>
+                        <select id="promptStyle">
+                            <option value="natural" disabled title="Temporarily unavailable">Natural - Adapts structure for natural target language flow</option>
+                            <option value="strict">Strict - Preserves exact timing and structure</option>
+                        </select>
+                    </div>
+
+                    <!-- Advanced Settings removed by request -->
+                </div>
+            </div>
+
+            <!-- Source Languages -->
+            <div class="card collapsed" id="sourceCard" data-card="source">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon">🌍</div>
+                        <h2 class="card-title">Source Language (Translation)</h2>
+                        <span class="card-badge" id="sourceBadge">0</span>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="source"></button>
+                </div>
+
+                <div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            Source languages for translations *
+                            <span class="label-description">Select up to 3 source languages. All subtitles from these languages will be available for translation in the translation selector AND will be fetched.</span>
+                        </label>
+
+                        <div class="language-search">
+                            <span class="language-search-icon">🔍</span>
+                            <input type="text" id="sourceSearch" placeholder="Search languages..." accesskey="s">
+                        </div>
+
+                        <div id="selectedSourceLanguages" class="selected-languages empty"></div>
+                        <div class="field-error" id="sourceLanguagesError">Please select 1-3 source languages</div>
+
+                        <div id="sourceLanguages" class="language-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Target Languages -->
+            <div class="card collapsed" id="targetCard" data-card="target">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon">🎯</div>
+                        <h2 class="card-title">Target Languages</h2>
+                        <span class="card-badge" id="targetBadge">0</span>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="target"></button>
+                </div>
+
+                <div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            Target languages for subtitles and translations *
+                            <span class="label-description">Subtitles in target languages will be fetched AND translation buttons will appear for translating FROM the source language TO these languages.</span>
+                        </label>
+
+                        <div class="language-search">
+                            <span class="language-search-icon">🔍</span>
+                            <input type="text" id="targetSearch" placeholder="Search languages..." accesskey="t">
+                        </div>
+
+                        <div id="selectedTargetLanguages" class="selected-languages empty"></div>
+                        <div class="field-error" id="targetLanguagesError">Please select at least one target language</div>
+
+                        <div class="quick-actions">
+                            <button type="button" class="quick-btn" data-action="select-popular-target">⭐ Popular</button>
+                            <button type="button" class="quick-btn" data-action="select-all-target">✓ All</button>
+                            <button type="button" class="quick-btn" data-action="clear-target">✗ Clear</button>
+                        </div>
+
+                        <div id="targetLanguages" class="language-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other Settings -->
+            <div class="card collapsed" data-card="cache">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon">⚙️</div>
+                        <h2 class="card-title">Other Settings</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="cache"></button>
+                </div>
+
+                <div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="fileTranslationEnabled">
+                            Enable File Translation
+                            <span class="label-description">Show "📁 File Translation" option in subtitle list to upload and translate your own subtitle files.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="cacheEnabled" checked>
+                            Enable SubMaker Database
+                            <span class="label-description">Reads and caches translated subtitles from/to our database. Avoids re-translating already-translated subtitles. Reduces API usage and improves performance.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group" id="bypassCacheGroup">
+                        <label>
+                            <input type="checkbox" id="bypassCache">
+                            Bypass SubMaker Database Cache (Force Retranslation)
+                            <span class="label-description">Skips reading our database cache and do not save translated subtitles to it. Translations will be stored in a temporary cache (for 12 hours).</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary" accesskey="enter">
+                    💾 Save Configuration
+                </button>
+                <button type="button" class="btn btn-secondary" id="installBtn" disabled>
+                    🚀 Install in Stremio
+                </button>
+                <button type="button" class="btn btn-secondary" id="copyBtn" disabled>
+                    📋 Copy Install URL
+                </button>
+            </div>
+
+            <!-- Install URL Display -->
+            <div class="install-url-box" id="installUrlBox">
+                <label for="installUrlDisplay">Install URL</label>
+                <input type="text" id="installUrlDisplay" readonly>
+            </div>
+        </form>
+    </div>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <p>
+                Made with <span class="footer-heart">❤️</span> for Stremio users everywhere
+            </p>
+            <p style="font-size: 0.875rem;">
+                Thank you for using SubMaker! Your support helps make content accessible to everyone.
+            </p>
+        </div>
+    </footer>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="keyboard-hint" id="keyboardHint">
+        Press <span class="kbd">?</span> for keyboard shortcuts
+    </div>
+
+    <!-- Main Instructions Modal -->
+    <div class="modal-overlay" id="instructionsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>📖 How to Use SubMaker</h2>
+                <div class="modal-close" id="closeInstructionsBtn">×</div>
+            </div>
+            <div class="modal-content">
+                <h3>🚀 Instructions:</h3>
+                <ol>
+                    <li>Add desired API keys to <strong>"Subtitles Sources"</strong> section.</li>
+                    <li>Add a Gemini API Key to <strong>AI section</strong>.</li>
+                    <li>Select up to <strong>3 source languages</strong>.</li>
+                    <li>Select <strong>target languages</strong>.</li>
+                    <li><strong>Install on Stremio</strong>.</li>
+                </ol>
+
+                <h3>🎬 Stremio will:</h3>
+                <p>Fetch all source and target languages subtitles from sources.<br>
+                Create <strong>"Make [Target Language]"</strong> buttons within the subtitles list.</p>
+
+                <h3>⚡ When you click a subtitle:</h3>
+                <p>Within the translation list, it'll start translating.<br>
+                This may take from <strong>1-10 minutes</strong> depending on selected AI model and movie/episode length (<em>flash-lite recommended for 1-3 min</em>).</p>
+
+                <p>After a few minutes, click again at the same subtitle entry.<br>
+                It'll load, <strong>translated</strong>.</p>
+
+                <div class="highlight-box">
+                    <p><em>*Only 1 source language recommended, BECAUSE:*</em></p>
+                    <p style="color: var(--text-secondary); font-weight: normal; margin-top: 0.5rem;">
+                        It'll then load the subtitles list in the same order within the source language and the "Make [Language]" button,
+                        so you can test source subtitles for correct sync and select the same one on the translation list instead of
+                        translating unsync'd subtitles.
+                    </p>
+                </div>
+
+                <p style="margin-top: 1.5rem;"><strong>PS:</strong> This addon <em>DOESN'T work without API Keys</em>.</p>
+            </div>
+            <div class="modal-footer">
+                <label class="modal-checkbox">
+                    <input type="checkbox" id="dontShowInstructions">
+                    Don't show this again
+                </label>
+                <button type="button" class="btn btn-primary" id="gotItInstructionsBtn">
+                    Got it!
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Translation Instructions Modal -->
+    <div class="modal-overlay" id="fileTranslationModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>📁 File Translation Instructions</h2>
+                <div class="modal-close" id="closeFileTranslationBtn">×</div>
+            </div>
+            <div class="modal-content">
+                <h3>📤 How to Use "Upload Subtitles" for Translation:</h3>
+                <ol>
+                    <li>Enable it on the config page before installing.</li>
+                    <li>Click <strong>"Upload Sub"</strong> on the subtitles list when streaming.</li>
+                    <li>Right-click the stream or select the three-dots menu and click <strong>"Download Subtitles"</strong></li>
+                    <li>A webpage will open on your browser.</li>
+                    <li>Upload the subtitle file you'd like to translate. It'll use your Gemini API key.</li>
+                    <li>When it's done, download the translated subtitles and drag it to Stremio.</li>
+                </ol>
+            </div>
+            <div class="modal-footer">
+                <label class="modal-checkbox">
+                    <input type="checkbox" id="dontShowFileTranslation">
+                    Don't show this again
+                </label>
+                <button type="button" class="btn btn-primary" id="gotItFileTranslationBtn">
+                    Got it!
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+</body>
+</html>
