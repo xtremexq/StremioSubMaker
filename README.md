@@ -19,7 +19,7 @@ Auto-sync subtitles in development!
 ## ✨ Why SubMaker?
 
 - 🌍 **190+ Languages** - Full ISO-639-2 support including regional variants (PT-BR, etc.)
-- 📥 **4 Subtitle Sources** - OpenSubtitles, SubDL, SubSource, with automatic fallback
+- 📥 **3 Subtitle Sources** - OpenSubtitles, SubDL, SubSource, with automatic fallback
 - 🎯 **One-Click Translation** - Translate on-the-fly without ever leaving Stremio
 - 🤖 **Context-Aware AI** - Google Gemini preserves timing, formatting, and natural dialogue flow
 - ⚡ **Translation Caching** - Permanent subtitles database with dual-layer cache (memory + disk) and deduplication
@@ -60,7 +60,7 @@ open http://localhost:7001
 3. **Select target languages** (what to translate to)
 4. **Click "Install in Stremio"** or copy the URL
 
-That's it! Translation buttons (Make [Language]) will now appear in your Stremio subtitle menu.
+That's it! Fetched languages and translation buttons (Make [Language]) will now appear in your Stremio subtitle menu.
 
 ---
 
