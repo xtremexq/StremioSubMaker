@@ -10,6 +10,9 @@ node_modules/
 data/
 .cache/
 
+# Claude Code
+.claude/
+
 # IDEs
 .idea/
 .vscode/

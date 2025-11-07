@@ -11,20 +11,20 @@ No-Translation mode: simply fetch selected languages from OpenSubtitles, SubSour
 Auto-sync subtitles in development!
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node Version](https://img.shields.io/badge/node-%3E%3D14.0.0-brightgreen)](https://nodejs.org)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Stremio Addon](https://img.shields.io/badge/Stremio-Addon-purple)](https://www.stremio.com)
 
 ---
 
 ## ✨ Why SubMaker?
 
-🌍 **190+ Languages** · Full ISO-639-2 support including regional variants (PT-BR, etc.)
-📥 **4 Subtitle Sources** · OpenSubtitles, SubDL, SubSource, with automatic fallback
-🎯 **One-Click Translation** · Translate on-the-fly without ever leaving Stremio
-🤖 **Context-Aware AI** · Google Gemini preserves timing, formatting, and natural dialogue flow
-⚡ **Translation Caching** · Permanent subtitles database with dual-layer cache (memory + disk) and deduplication
-🔒 **Production-Ready** · Rate limiting, CORS protection, session tokens, HTTPS enforcement
-🎨 **Beautiful UI** · Modern configuration interface with live model fetching
+- 🌍 **190+ Languages** - Full ISO-639-2 support including regional variants (PT-BR, etc.)
+- 📥 **4 Subtitle Sources** - OpenSubtitles, SubDL, SubSource, with automatic fallback
+- 🎯 **One-Click Translation** - Translate on-the-fly without ever leaving Stremio
+- 🤖 **Context-Aware AI** - Google Gemini preserves timing, formatting, and natural dialogue flow
+- ⚡ **Translation Caching** - Permanent subtitles database with dual-layer cache (memory + disk) and deduplication
+- 🔒 **Production-Ready** - Rate limiting, CORS protection, session tokens, HTTPS enforcement
+- 🎨 **Beautiful UI** - Modern configuration interface with live model fetching
 
 ---
 
