@@ -131,13 +131,6 @@ Languages to **translate to** (unlimited)
 
 ## 🐛 Troubleshooting
 
-### No Subtitles Appearing?
-
-1. **Check source languages** - Did you select the right languages in config?
-2. **Verify content has subs** - Search on OpenSubtitles.com to confirm
-3. **Check rate limits** - Add OpenSubtitles account credentials if hitting limits
-4. **Review server logs** - Look for 401/403 errors indicating quota issues
-
 ### Translation problem?
 
 1. **Force cache overwrite** - Within stremio, click 5 times (within 10 secs) on the problematic translation subtitle
@@ -147,7 +140,7 @@ Languages to **translate to** (unlimited)
 
 1. **Validate API key** - Test at [Google AI Studio](https://makersuite.google.com)
 2. **Check model selection** - Ensure model used is Flash or Flash-Lite Latest
-3. **Check Gemini quota** - Review your free API usage
+3. **Check Gemini quota** - Review your API usage
 
 ### Configuration Not Saving?
 
