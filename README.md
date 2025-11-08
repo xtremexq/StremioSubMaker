@@ -43,7 +43,7 @@ Auto-sync subtitles in development!
 ```bash
 # Clone and install
 git clone https://github.com/xtremexq/StremioSubMaker.git
-cd SubMaker
+cd StremioSubMaker
 npm install
 
 # Start the server
@@ -148,34 +148,6 @@ Languages to **translate to** (unlimited)
 2. **Check JavaScript console** - Look for errors (F12)
 3. **Disable browser extensions** - Some block localStorage
 4. **Try incognito mode** - Eliminate cache/extension issues
-
----
-
-## 📖 API Reference
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Configuration UI |
-| `/api/languages` | GET | List all supported languages |
-| `/api/gemini-models` | POST | Fetch available Gemini models |
-| `/api/create-session` | POST | Create session token from config |
-| `/addon/:config/manifest.json` | GET | Stremio addon manifest |
-| `/addon/:config/subtitles/:type/:id.json` | GET | Subtitle list (Stremio SDK) |
-| `/addon/:config/translate-selector/:id/:lang` | GET | Translation source selection UI |
-| `/addon/:config/translate/:fileId/:lang` | GET | Translate subtitle file |
-
----
-
-## 💡 Roadmap
-
-**In Progress**
-- [ ] Timing sync adjustment for any subtitle
-- [ ] Translation quality rating system
-
-**Planned**
-- [ ] Support for more Subtitles sources
-- [ ] Batch translation for entire series
-- [ ] User preference cloud sync
 
 ---
 
