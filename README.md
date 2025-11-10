@@ -46,7 +46,7 @@ git clone https://github.com/xtremexq/StremioSubMaker.git
 cd StremioSubMaker
 npm install
 
-# Create .env file with your OpenSubtitles API key
+# Create .env file with your OpenSubtitles API key (NECESSARY FOR OPENSUBTITLES)
 # Option 1: Create a new file called `.env` in the project root and add:
 #   OPENSUBTITLES_API_KEY=your_api_key_here
 # Option 2: Use command line (PowerShell, bash, or terminal)
@@ -87,7 +87,9 @@ cd StremioSubMaker
 
 # Create .env file with your configuration
 cp .env.example .env
+
 # Edit .env and add your API keys
+nano .env
 
 # Start with Redis
 docker-compose up -d
