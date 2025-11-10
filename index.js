@@ -18,8 +18,10 @@ const crypto = require('crypto');
 const { parseConfig, getDefaultConfig, buildManifest } = require('./src/utils/config');
 const { version } = require('./src/utils/version');
 const { getAllLanguages, getLanguageName } = require('./src/utils/languages');
-const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, readFromPartialCache, readFromTemp, hasCachedTranslation, purgeTranslationCache, translationStatus } = require('./src/handlers/subtitles');
+const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, readFromPartialCache, readFromBypassCache, hasCachedTranslation, purgeTranslationCache, translationStatus } = require('./src/handlers/subtitles');
 const GeminiService = require('./src/services/gemini');
+const syncCache = require('./src/utils/syncCache');
+const { generateSubtitleSyncPage } = require('./src/utils/syncPageGenerator');
 const {
     validateRequest,
     subtitleParamsSchema,
@@ -110,7 +112,7 @@ async function deduplicate(key, fn) {
 const app = express();
 app.set('trust proxy', 1)
 
-// Helper: compute a short hash for a config string (used to scope temp cache per user/config)
+// Helper: compute a short hash for a config string (used to scope bypass cache per user/config)
 function computeConfigHash(configStr) {
     try {
         return crypto.createHash('sha256').update(String(configStr)).digest('hex').slice(0, 16);
@@ -688,19 +690,20 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
                 return res.send(partialCached.content);
             }
 
-            // Then check temp cache for bypass cache behavior (user-controlled config)
+            // Then check bypass cache for user-controlled bypass cache behavior
             const bypass = config.bypassCache === true;
-            const tempEnabled = !config.tempCache || config.tempCache.enabled !== false;
+            const bypassCfg = config.bypassCacheConfig || config.tempCache || {}; // Support both old and new names
+            const bypassEnabled = bypass && (bypassCfg.enabled !== false);
             const userHash = (config && typeof config.__configHash === 'string' && config.__configHash.length > 0) ? config.__configHash : '';
-            const tempCacheKey = (bypass && tempEnabled && userHash) ? `${baseKey}__u_${userHash}` : baseKey;
+            const bypassCacheKey = (bypass && bypassEnabled && userHash) ? `${baseKey}__u_${userHash}` : baseKey;
 
-            const tempCached = readFromTemp(tempCacheKey);
-            if (tempCached && typeof tempCached.content === 'string' && tempCached.content.length > 0) {
-                console.log(`[Translation] Found bypass cache result for ${sourceFileId} (${tempCached.content.length} chars)`);
+            const bypassCached = readFromBypassCache(bypassCacheKey);
+            if (bypassCached && typeof bypassCached.content === 'string' && bypassCached.content.length > 0) {
+                console.log(`[Translation] Found bypass cache result for ${sourceFileId} (${bypassCached.content.length} chars)`);
                 res.setHeader('Content-Type', 'text/plain; charset=utf-8');
                 res.setHeader('Cache-Control', 'no-cache, must-revalidate');
                 res.setHeader('Pragma', 'no-cache');
-                return res.send(tempCached.content);
+                return res.send(bypassCached.content);
             }
 
             // No partial yet, serve loading message
@@ -795,6 +798,127 @@ app.get('/file-upload', async (req, res) => {
     } catch (error) {
         console.error('[File Upload Page] Error:', error);
         res.status(500).send('Failed to load file translation page');
+    }
+});
+
+// Custom route: Addon configuration page (BEFORE SDK router to take precedence)
+// This handles both /addon/:config/configure and /addon/:config (base path)
+app.get('/addon/:config/configure', (req, res) => {
+    try {
+        const { config: configStr } = req.params;
+        console.log(`[Configure] Redirecting to configure page with config`);
+        // Redirect to main configure page with config parameter
+        res.redirect(302, `/configure?config=${encodeURIComponent(configStr)}`);
+    } catch (error) {
+        console.error('[Configure] Error:', error);
+        res.status(500).send('Failed to load configuration page');
+    }
+});
+
+// Custom route: Sync subtitles page (BEFORE SDK router to take precedence)
+app.get('/addon/:config/sync-subtitles/:videoId', async (req, res) => {
+    try {
+        const { config: configStr, videoId } = req.params;
+        const { filename } = req.query;
+        const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
+
+        console.log(`[Sync Subtitles] Request for video ${videoId}, filename: ${filename}`);
+
+        // Redirect to the actual sync page
+        res.redirect(302, `/subtitle-sync?config=${encodeURIComponent(configStr)}&videoId=${encodeURIComponent(videoId)}&filename=${encodeURIComponent(filename || '')}`);
+
+    } catch (error) {
+        console.error('[Sync Subtitles] Error:', error);
+        res.status(500).send('Failed to load subtitle sync page');
+    }
+});
+
+// Actual subtitle sync page (standalone, not under /addon route)
+app.get('/subtitle-sync', async (req, res) => {
+    try {
+        const { config: configStr, videoId, filename } = req.query;
+
+        if (!configStr || !videoId) {
+            return res.status(400).send('Missing config or videoId');
+        }
+
+        const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
+        config.__configHash = computeConfigHash(configStr);
+
+        console.log(`[Subtitle Sync Page] Loading page for video ${videoId}`);
+
+        // Get available subtitles for this video
+        const subtitleHandler = createSubtitleHandler(config);
+        const subtitlesData = await subtitleHandler({ type: 'movie', id: videoId, extra: { filename
+} });
+
+        // Generate HTML page for subtitle syncing
+        const html = generateSubtitleSyncPage(subtitlesData.subtitles ||
+[], videoId, filename, configStr, config);
+
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+
+    } catch (error) {
+        console.error('[Subtitle Sync Page] Error:', error);
+        res.status(500).send('Failed to load subtitle sync page');
+    }
+});
+
+// API endpoint: Download xSync subtitle
+app.get('/addon/:config/xsync/:videoHash/:lang/:sourceSubId', async (req, res) => {
+    try {
+        const { config: configStr, videoHash, lang, sourceSubId } = req.params;
+        const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
+
+        console.log(`[xSync Download] Request for ${videoHash}_${lang}_${sourceSubId}`);
+
+        // Get synced subtitle from cache
+        const syncedSub = await syncCache.getSyncedSubtitle(videoHash, lang, sourceSubId);
+
+        if (!syncedSub || !syncedSub.content) {
+            console.log('[xSync Download] Not found in cache');
+            return res.status(404).send('Synced subtitle not found');
+        }
+
+        console.log('[xSync Download] Serving synced subtitle from cache');
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${videoHash}_${lang}_synced.srt"`);
+        res.send(syncedSub.content);
+
+    } catch (error) {
+        console.error('[xSync Download] Error:', error);
+        res.status(500).send('Failed to download synced subtitle');
+    }
+});
+
+// API endpoint: Save synced subtitle to cache
+app.post('/api/save-synced-subtitle', async (req, res) => {
+    try {
+        const { configStr, videoHash, languageCode, sourceSubId, content, originalSubId, metadata } = req.body;
+
+        if (!configStr || !videoHash || !languageCode || !sourceSubId || !content) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        // Validate config
+        const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
+
+        console.log(`[Save Synced] Saving synced subtitle: ${videoHash}_${languageCode}_${sourceSubId}`);
+
+        // Save to sync cache
+        await syncCache.saveSyncedSubtitle(videoHash, languageCode, sourceSubId, {
+            content,
+            originalSubId: originalSubId || sourceSubId,
+            metadata: metadata || {}
+        });
+
+        res.json({ success: true, message: 'Synced subtitle saved successfully' });
+
+    } catch (error) {
+        console.error('[Save Synced] Error:', error);
+        res.status(500).json({ error: 'Failed to save synced subtitle' });
     }
 });
 
@@ -968,7 +1092,7 @@ function generateFileTranslationPage(videoId, configStr, config) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Translate SRT</title>
+    <title>File Translation - SubMaker</title>
     <style>
         * {
             margin: 0;
@@ -976,137 +1100,290 @@ function generateFileTranslationPage(videoId, configStr, config) {
             box-sizing: border-box;
         }
 
+        html {
+            scroll-behavior: smooth;
+        }
+
+        :root {
+            --primary: #08A4D5;
+            --primary-light: #33B9E1;
+            --primary-dark: #068DB7;
+            --secondary: #33B9E1;
+            --success: #10b981;
+            --danger: #ef4444;
+            --bg-primary: #f7fafc;
+            --surface: #ffffff;
+            --surface-light: #f3f7fb;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --border: #dbe3ea;
+            --shadow: rgba(0, 0, 0, 0.08);
+            --glow: rgba(8, 164, 213, 0.25);
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-            background: linear-gradient(135deg, #0A0E27 0%, #1a1f3a 100%);
-            color: #E8EAED;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #ffffff 60%, var(--bg-primary) 100%);
+            color: var(--text-primary);
             min-height: 100vh;
-            padding: 2rem 1rem;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                radial-gradient(circle at 20% 50%, rgba(8, 164, 213, 0.12) 0%, transparent 50%),
+                radial-gradient(circle at 80% 50%, rgba(51, 185, 225, 0.12) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
         }
 
         .container {
-            max-width: 600px;
+            max-width: 800px;
             margin: 0 auto;
+            padding: 3rem 1.5rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            animation: fadeInDown 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .logo-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border-radius: 20px;
+            font-size: 2.5rem;
+            box-shadow: 0 20px 60px var(--glow);
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         h1 {
-            text-align: center;
-            margin-bottom: 0.5rem;
-            font-size: 2rem;
-            background: linear-gradient(135deg, #9B88FF 0%, #7B68EE 100%);
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
         }
 
-        .subtitle-header {
-            text-align: center;
-            margin-bottom: 2rem;
-            color: #9AA0A6;
-            font-size: 0.95rem;
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.125rem;
+            font-weight: 500;
         }
 
-        .form-section {
-            background: #141931;
-            border: 2px solid #2A3247;
-            border-radius: 12px;
+        .card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border-radius: 20px;
             padding: 2rem;
             margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 24px var(--shadow);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+        }
+
+        .card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 12px 48px var(--glow);
+            transform: translateY(-2px);
+        }
+
+        .info-box {
+            background: rgba(8, 164, 213, 0.08);
+            border: 1px solid rgba(8, 164, 213, 0.2);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+            color: var(--text-secondary);
+        }
+
+        .info-box strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .info-box ul, .info-box ol {
+            margin-left: 1.5rem;
+            margin-top: 0.5rem;
+            line-height: 1.8;
         }
 
         .form-group {
             margin-bottom: 1.5rem;
         }
 
-        .form-group:last-child {
-            margin-bottom: 0;
-        }
-
         label {
             display: block;
             margin-bottom: 0.5rem;
             font-weight: 600;
-            color: #E8EAED;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        .label-description {
+            display: block;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+            margin-top: 0.25rem;
         }
 
         .file-input-wrapper {
             position: relative;
-            overflow: hidden;
-            display: inline-block;
-            width: 100%;
+            display: block;
         }
 
         .file-input-wrapper input[type=file] {
-            position: absolute;
-            left: -9999px;
+            display: none;
         }
 
         .file-input-label {
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 1rem;
-            background: #2A3247;
-            color: #9B88FF;
-            border: 2px dashed #7B68EE;
-            border-radius: 8px;
+            padding: 2.5rem 2rem;
+            background: var(--surface);
+            color: var(--primary);
+            border: 2px dashed var(--border);
+            border-radius: 12px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
             text-align: center;
+            gap: 0.5rem;
         }
 
         .file-input-label:hover {
-            background: #323A52;
-            border-color: #9B88FF;
+            background: var(--surface-light);
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        .file-input-label .icon {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .file-input-label .main-text {
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+
+        .file-input-label .sub-text {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
         }
 
         .file-name {
-            margin-top: 0.5rem;
-            font-size: 0.9rem;
-            color: #9AA0A6;
+            margin-top: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: rgba(8, 164, 213, 0.08);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+            font-weight: 500;
+            display: none;
+        }
+
+        .file-name.active {
+            display: block;
         }
 
         select {
             width: 100%;
-            padding: 0.75rem;
-            background: #2A3247;
-            color: #E8EAED;
-            border: 2px solid #2A3247;
-            border-radius: 8px;
+            padding: 0.875rem 1rem;
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            color: var(--text-primary);
             font-size: 1rem;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            font-family: inherit;
         }
 
         select:hover {
-            border-color: #7B68EE;
+            border-color: var(--primary);
         }
 
         select:focus {
             outline: none;
-            border-color: #9B88FF;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--glow);
+            transform: translateY(-1px);
         }
 
         .btn {
             width: 100%;
-            padding: 1rem;
-            background: linear-gradient(135deg, #9B88FF 0%, #7B68EE 100%);
+            padding: 1rem 1.5rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             color: white;
             border: none;
-            border-radius: 8px;
-            font-size: 1.1rem;
+            border-radius: 12px;
+            font-size: 1.05rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 4px 12px var(--glow);
         }
 
-        .btn:hover {
+        .btn:hover:not(:disabled) {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(123, 104, 238, 0.4);
+            box-shadow: 0 8px 24px var(--glow);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(0);
         }
 
         .btn:disabled {
-            opacity: 0.5;
+            opacity: 0.6;
             cursor: not-allowed;
             transform: none;
         }
@@ -1114,8 +1391,7 @@ function generateFileTranslationPage(videoId, configStr, config) {
         .progress {
             display: none;
             text-align: center;
-            padding: 1.5rem;
-            color: #9AA0A6;
+            padding: 2rem;
         }
 
         .progress.active {
@@ -1123,13 +1399,13 @@ function generateFileTranslationPage(videoId, configStr, config) {
         }
 
         .spinner {
-            border: 3px solid #2A3247;
-            border-top: 3px solid #7B68EE;
+            border: 4px solid var(--surface-light);
+            border-top: 4px solid var(--primary);
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 1rem;
+            width: 50px;
+            height: 50px;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 1.5rem;
         }
 
         @keyframes spin {
@@ -1137,12 +1413,20 @@ function generateFileTranslationPage(videoId, configStr, config) {
             100% { transform: rotate(360deg); }
         }
 
+        .progress-text {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 1.05rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-subtext {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
         .result {
             display: none;
-            background: #141931;
-            border: 2px solid #2A3247;
-            border-radius: 12px;
-            padding: 2rem;
             text-align: center;
         }
 
@@ -1150,108 +1434,150 @@ function generateFileTranslationPage(videoId, configStr, config) {
             display: block;
         }
 
-        .result h2 {
-            color: #9B88FF;
-            margin-bottom: 1rem;
+        .result-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+            border-radius: 20px;
+            font-size: 2.5rem;
+            animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .result .download-btn {
-            display: inline-block;
-            margin-top: 1rem;
-            padding: 0.75rem 2rem;
-            background: linear-gradient(135deg, #9B88FF 0%, #7B68EE 100%);
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .result h2 {
+            color: var(--text-primary);
+            font-size: 1.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .result p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+        }
+
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             color: white;
             text-decoration: none;
-            border-radius: 8px;
+            border-radius: 12px;
             font-weight: 600;
-            transition: all 0.3s ease;
+            font-size: 1.05rem;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 4px 12px var(--glow);
         }
 
-        .result .download-btn:hover {
+        .download-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(123, 104, 238, 0.4);
+            box-shadow: 0 8px 24px var(--glow);
         }
 
         .error {
             display: none;
-            background: #2A1F1F;
-            border: 2px solid #D32F2F;
+            background: rgba(239, 68, 68, 0.1);
+            border: 2px solid var(--danger);
             border-radius: 12px;
-            padding: 1.5rem;
+            padding: 1.25rem;
             margin-top: 1rem;
-            color: #FF6B6B;
+            color: var(--danger);
+            font-weight: 500;
         }
 
         .error.active {
             display: block;
-        }
-
-        .info-box {
-            background: #1a2332;
-            border-left: 4px solid #7B68EE;
-            padding: 1rem;
-            margin-bottom: 1.5rem;
-            border-radius: 4px;
-            font-size: 0.9rem;
-            color: #9AA0A6;
+            animation: fadeInUp 0.3s ease;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📁 Translate SRT</h1>
-        <div class="subtitle-header">Upload your .srt subtitle and translate it</div>
-
-        <div class="info-box">
-            <strong>How to use:</strong>
-            <ol style="margin-left: 1.5rem; margin-top: 0.5rem;">
-                <li>Upload your .srt subtitle file</li>
-                <li>Select the target language</li>
-                <li>Click "Translate"</li>
-                <li>Download the translated subtitle</li>
-                <li>Load the downloaded file into Stremio manually</li>
-            </ol>
+        <div class="header">
+            <div class="logo-icon">📄</div>
+            <h1>File Translation</h1>
+            <div class="subtitle">Upload and translate your subtitle files</div>
         </div>
 
-        <form id="translationForm" class="form-section">
-            <div class="form-group">
-                <label for="fileInput">Select Subtitle File (.srt)</label>
-                <div class="file-input-wrapper">
-                    <input type="file" id="fileInput" accept=".srt" required>
-                    <label for="fileInput" class="file-input-label">
-                        📄 Click to select .srt file
+        <div class="card">
+            <div class="info-box">
+                <strong>✨ Supported formats:</strong> SRT, VTT, ASS, SSA
+                <br><br>
+                <strong>📝 How it works:</strong>
+                <ol>
+                    <li>Upload your subtitle file (any supported format)</li>
+                    <li>Select your target language</li>
+                    <li>Click "Translate" and wait for the magic</li>
+                    <li>Download your translated subtitle</li>
+                    <li>Load it into Stremio manually</li>
+                </ol>
+            </div>
+
+            <form id="translationForm">
+                <div class="form-group">
+                    <label for="fileInput">
+                        Subtitle File
+                        <span class="label-description">Choose a subtitle file to translate</span>
                     </label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="fileInput" accept=".srt,.vtt,.ass,.ssa" required>
+                        <label for="fileInput" class="file-input-label">
+                            <div class="icon">📁</div>
+                            <div class="main-text">Click to browse files</div>
+                            <div class="sub-text">or drag and drop here</div>
+                        </label>
+                    </div>
+                    <div class="file-name" id="fileName"></div>
                 </div>
-                <div class="file-name" id="fileName"></div>
+
+                <div class="form-group">
+                    <label for="targetLang">
+                        Target Language
+                        <span class="label-description">Select the language to translate to</span>
+                    </label>
+                    <select id="targetLang" required>
+                        <option value="">Choose a language...</option>
+                        ${languageOptions}
+                    </select>
+                </div>
+
+                <button type="submit" class="btn" id="translateBtn">
+                    🚀 Start Translation
+                </button>
+            </form>
+
+            <div class="progress" id="progress">
+                <div class="spinner"></div>
+                <div class="progress-text">Translating your subtitle...</div>
+                <div class="progress-subtext">This may take 1-4 minutes depending on file size</div>
             </div>
 
-            <div class="form-group">
-                <label for="targetLang">Target Language</label>
-                <select id="targetLang" required>
-                    <option value="">Select a language...</option>
-                    ${languageOptions}
-                </select>
+            <div class="result" id="result">
+                <div class="result-icon">✓</div>
+                <h2>Translation Complete!</h2>
+                <p>Your subtitle has been successfully translated.</p>
+                <a href="#" id="downloadLink" class="download-btn" download="translated.srt">
+                    ⬇️ Download Translated Subtitle
+                </a>
             </div>
 
-            <button type="submit" class="btn" id="translateBtn">Translate</button>
-        </form>
-
-        <div class="progress" id="progress">
-            <div class="spinner"></div>
-            <p>Translating your subtitle file...</p>
-            <p style="font-size: 0.9rem; margin-top: 0.5rem;">This may take a minute depending on the file size.</p>
+            <div class="error" id="error"></div>
         </div>
-
-        <div class="result" id="result">
-            <h2>✓ Translation Complete!</h2>
-            <p>Your subtitle has been translated successfully.</p>
-            <a href="#" id="downloadLink" class="download-btn" download="translated.srt">Download Translated Subtitle</a>
-            <p style="margin-top: 1rem; font-size: 0.9rem; color: #9AA0A6;">
-                After downloading, go to Stremio and manually load this subtitle file.
-            </p>
-        </div>
-
-        <div class="error" id="error"></div>
     </div>
 
     <script>
@@ -1265,14 +1591,46 @@ function generateFileTranslationPage(videoId, configStr, config) {
         const error = document.getElementById('error');
         const downloadLink = document.getElementById('downloadLink');
 
+        // Handle file selection
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
-                fileName.textContent = '📄 ' + e.target.files[0].name;
+                const file = e.target.files[0];
+                fileName.textContent = '📄 ' + file.name;
+                fileName.classList.add('active');
             } else {
                 fileName.textContent = '';
+                fileName.classList.remove('active');
             }
         });
 
+        // Handle drag and drop
+        const fileLabel = document.querySelector('.file-input-label');
+
+        fileLabel.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileLabel.style.borderColor = 'var(--primary)';
+            fileLabel.style.background = 'var(--surface-light)';
+        });
+
+        fileLabel.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            fileLabel.style.borderColor = 'var(--border)';
+            fileLabel.style.background = 'var(--surface)';
+        });
+
+        fileLabel.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileLabel.style.borderColor = 'var(--border)';
+            fileLabel.style.background = 'var(--surface)';
+
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                const event = new Event('change');
+                fileInput.dispatchEvent(event);
+            }
+        });
+
+        // Handle form submission
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -1316,11 +1674,15 @@ function generateFileTranslationPage(videoId, configStr, config) {
 
                 const translatedContent = await response.text();
 
+                // Get file extension
+                const originalExt = file.name.split('.').pop().toLowerCase();
+                const downloadExt = originalExt || 'srt';
+
                 // Create download link
                 const blob = new Blob([translatedContent], { type: 'text/plain;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
                 downloadLink.href = url;
-                downloadLink.download = 'translated_' + targetLang.value + '.srt';
+                downloadLink.download = 'translated_' + targetLang.value + '.' + downloadExt;
 
                 // Show result
                 progress.classList.remove('active');
@@ -1335,7 +1697,7 @@ function generateFileTranslationPage(videoId, configStr, config) {
         });
 
         function showError(message) {
-            error.textContent = '⚠ ' + message;
+            error.textContent = '⚠️ ' + message;
             error.classList.add('active');
         }
     </script>
@@ -1429,6 +1791,21 @@ app.get('/addon/:config/manifest.json', (req, res) => {
     }
 });
 
+// Custom route: Handle base addon path (when user clicks config in Stremio)
+// This route handles /addon/:config (with no trailing path) and redirects to configure
+// It must be placed AFTER all specific routes but BEFORE the SDK router
+app.get('/addon/:config', (req, res, next) => {
+    try {
+        const { config: configStr } = req.params;
+        console.log(`[Addon Base] Request to base addon path, redirecting to configure page`);
+        // Redirect to main configure page with config parameter
+        res.redirect(302, `/configure?config=${encodeURIComponent(configStr)}`);
+    } catch (error) {
+        console.error('[Addon Base] Error:', error);
+        res.status(500).send('Failed to load configuration page');
+    }
+});
+
 // Mount Stremio SDK router for each configuration
 app.use('/addon/:config', (req, res, next) => {
     try {
@@ -1497,6 +1874,16 @@ app.use((error, req, res, next) => {
     console.error('[Server] General Error:', error.message);
     res.status(500).json({ error: 'Internal server error' });
 });
+
+// Initialize sync cache
+(async () => {
+    try {
+        await syncCache.initSyncCache();
+        console.log('[Startup] Sync cache initialized successfully');
+    } catch (error) {
+        console.error('[Startup] Failed to initialize sync cache:', error.message);
+    }
+})();
 
 // Start server and setup graceful shutdown
 const server = app.listen(PORT, () => {

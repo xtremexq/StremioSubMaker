@@ -76,7 +76,7 @@ class GeminiAPI {
 
 Target Language: ${normalizedTarget}
 
-Please translate the following SRT subtitle file to ${normalizedTarget}. Maintain the exact SRT format with timing codes and sequence numbers. Only translate the text content, keep all timestamps and formatting intact.
+Please translate the following SRT subtitle file to ${normalizedTarget}. Maintain the exact SRT format with timing codes and sequence numbers. Only translate the text content, keep all timestamps and formatting intact. NEVER output markdown.
 
 Subtitle content:
 ${subtitleContent}`;
@@ -140,16 +140,17 @@ ${subtitleContent}`;
    * @returns {string} - Default prompt
    */
   getDefaultPrompt() {
-    return `You are a professional subtitle translator. Your task is to translate subtitles while:
+    return `You are a professional subtitles translator. Translate the following subtitles while:
 1. Maintaining perfect SRT format (sequence numbers, timestamps, and text)
-2. Preserving timing codes exactly as they appear
-3. Translating text naturally and contextually
-4. Keeping the same line breaks and subtitle segmentation
-5. Maintaining any special formatting (italics markers like <i></i>, colors, etc.)
-6. Ensuring cultural adaptation where necessary while staying faithful to the original meaning
-7. Not adding any explanations or comments - only output the translated SRT content
+2. Preserving the timing and structure exactly as given
+3. Keeping the same number of lines and line breaks
+4. Translating text naturally and contextually
+5. Ensuring cultural adaptation where necessary while staying faithful to the original meaning
+6. Preserving any existing formatting tags
 
-Return ONLY the translated SRT content, nothing else.`;
+This is an automatic system, DO NOT make any explanations or comments - simply output the translated SRT content
+
+Return ONLY the translated SRT content, nothing else. NEVER output markdown.`;
   }
 
   /**

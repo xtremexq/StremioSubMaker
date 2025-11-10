@@ -24,29 +24,28 @@
     const POPULAR_LANGUAGES = ['eng', 'spa', 'fre', 'ger', 'por', 'pob', 'ita', 'rus', 'jpn', 'kor', 'chi', 'ara'];
 
     // Translation prompt presets
-    const STRICT_TRANSLATION_PROMPT = `You are a professional subtitle translator. Translate the following subtitles while:
-1. Preserving the timing and structure exactly as given
-2. Maintaining natural dialogue flow and colloquialisms appropriate to the target language
+    const STRICT_TRANSLATION_PROMPT = `You are a professional subtitles translator. Translate the following subtitles while:
+1. Maintaining perfect SRT format (sequence numbers, timestamps, and text)
+2. Preserving the timing and structure exactly as given
 3. Keeping the same number of lines and line breaks
-4. Preserving any formatting tags or special characters
-5. Ensuring translations are contextually accurate for film/TV dialogue
+4. Translating text naturally and contextually
+5. Ensuring cultural adaptation where necessary while staying faithful to the original meaning
+6. Preserving any existing formatting tags
+
+This is an automatic system, DO NOT make any explanations or comments - simply output the translated SRT content
+
+Return ONLY the translated SRT content, nothing else. NEVER output markdown.
 
 Translate to {target_language}.`;
 
     const NATURAL_TRANSLATION_PROMPT = `You are a professional subtitle translator. Translate the following subtitles while:
 
 1. Trying to preserve the timing and structure exactly as given, correctly adapting for natural target language subtitles flow if deemed necessary.
-
 2. The same is true for number of lines and line breaks
-
 3. Maintaining natural dialogue flow and colloquialisms appropriate to the target language
-
 4. Preserving any formatting tags or special characters
-
 5. Ensuring translations are contextually accurate for film/TV dialogue
-
 This is an automatic system, you must return ONLY the subtitles output/file.
-
 Translate to {target_language}.`;
 
     // State management
@@ -274,7 +273,11 @@ Translate to {target_language}.`;
                 persistent: true // save to disk
             },
             bypassCache: false,
-            tempCache: {
+            bypassCacheConfig: {
+                enabled: true,
+                duration: 12
+            },
+            tempCache: { // Deprecated: kept for backward compatibility, use bypassCacheConfig instead
                 enabled: true,
                 duration: 12
             },
@@ -584,6 +587,23 @@ Translate to {target_language}.`;
             toggleProviderConfig('opensubtitlesConfig', e.target.checked);
         });
 
+        // Password visibility toggle
+        const togglePasswordBtn = document.getElementById('toggleOpenSubsPassword');
+        if (togglePasswordBtn) {
+            togglePasswordBtn.addEventListener('click', () => {
+                const passwordInput = document.getElementById('opensubtitlesPassword');
+                if (passwordInput.type === 'password') {
+                    passwordInput.type = 'text';
+                    togglePasswordBtn.textContent = '🙈';
+                    togglePasswordBtn.title = 'Hide password';
+                } else {
+                    passwordInput.type = 'password';
+                    togglePasswordBtn.textContent = '👁️';
+                    togglePasswordBtn.title = 'Show password';
+                }
+            });
+        }
+
         // Cache UI toggle - handles mutual exclusivity
         document.getElementById('cacheEnabled').addEventListener('change', handleCacheEnabledToggle);
 
@@ -642,26 +662,8 @@ Translate to {target_language}.`;
             }
         });
 
-        // Modal close buttons
-        const closeInstructionsBtn = document.getElementById('closeInstructionsBtn');
-        if (closeInstructionsBtn) {
-            closeInstructionsBtn.addEventListener('click', window.closeInstructionsModal);
-        }
-
-        const gotItInstructionsBtn = document.getElementById('gotItInstructionsBtn');
-        if (gotItInstructionsBtn) {
-            gotItInstructionsBtn.addEventListener('click', window.closeInstructionsModal);
-        }
-
-        const closeFileTranslationBtn = document.getElementById('closeFileTranslationBtn');
-        if (closeFileTranslationBtn) {
-            closeFileTranslationBtn.addEventListener('click', window.closeFileTranslationModal);
-        }
-
-        const gotItFileTranslationBtn = document.getElementById('gotItFileTranslationBtn');
-        if (gotItFileTranslationBtn) {
-            gotItFileTranslationBtn.addEventListener('click', window.closeFileTranslationModal);
-        }
+        // Note: Modal close buttons are handled by delegated event listeners (lines 188-206)
+        // No need to attach individual listeners here
     }
 
     function handlePromptStyleChange(e) {
@@ -669,81 +671,47 @@ Translate to {target_language}.`;
         // Keeping this function for potential future extensions
     }
 
-    function updateCacheUI() {
-        const cacheEnabledInput = document.getElementById('cacheEnabled');
-        const cacheEnabled = cacheEnabledInput ? cacheEnabledInput.checked : true;
-        const bypassGroup = document.getElementById('bypassCacheGroup');
+    /**
+     * Update cache/bypass toggle UI - enforces mutual exclusivity
+     * Cache and bypass are mutually exclusive:
+     * - When cache is ON, bypass must be OFF and disabled
+     * - When cache is OFF, bypass must be ON and enabled
+     */
+    function updateCacheToggles() {
+        const cacheInput = document.getElementById('cacheEnabled');
         const bypassInput = document.getElementById('bypassCache');
-        const bypassChecked = bypassInput ? bypassInput.checked : false;
+        const bypassGroup = document.getElementById('bypassCacheGroup');
 
-        // Always show bypass toggle below main caching
-        if (bypassGroup) {
-            bypassGroup.style.display = 'block';
-            bypassGroup.style.opacity = cacheEnabled ? '0.6' : '1';
-        }
+        if (!cacheInput || !bypassInput) return;
 
-        // If caching is enabled, bypass is disabled & unchecked
+        const cacheEnabled = cacheInput.checked;
+
+        // Enforce mutual exclusivity
         if (cacheEnabled) {
-            if (bypassInput) {
-                bypassInput.disabled = true;
-                bypassInput.checked = false;
-            }
-            if (cacheEnabledInput) cacheEnabledInput.disabled = false;
-            return;
+            bypassInput.checked = false;
+            bypassInput.disabled = true;
+            if (bypassGroup) bypassGroup.style.opacity = '0.6';
+        } else {
+            bypassInput.checked = true;
+            bypassInput.disabled = false;
+            if (bypassGroup) bypassGroup.style.opacity = '1';
         }
 
-        // Caching is disabled: bypass is enabled
-        if (bypassInput) {
-            bypassInput.disabled = false;
-        }
-        if (bypassChecked) {
-            if (cacheEnabledInput) {
-                cacheEnabledInput.checked = false;
-                cacheEnabledInput.disabled = true;
-            }
-        } else {
-            if (cacheEnabledInput) cacheEnabledInput.disabled = false;
-        }
+        // Always show bypass group
+        if (bypassGroup) bypassGroup.style.display = 'block';
     }
 
     function handleCacheEnabledToggle(e) {
-        const cacheEnabled = e.target.checked;
-        const bypassInput = document.getElementById('bypassCache');
-
-        if (cacheEnabled) {
-            // When enabling cache, auto-uncheck and disable bypass
-            if (bypassInput) {
-                bypassInput.checked = false;
-                bypassInput.disabled = true;
-            }
-        } else {
-            // When disabling cache, auto-enable bypass (enforce mutual exclusivity)
-            if (bypassInput) {
-                bypassInput.checked = true;
-                bypassInput.disabled = false;
-            }
-        }
-        updateCacheUI();
+        updateCacheToggles();
     }
 
     function handleBypassToggle(e) {
-        const bypass = e.target.checked;
-        const cacheEnabledInput = document.getElementById('cacheEnabled');
-
-        if (bypass) {
-            // When enabling bypass, auto-uncheck and disable cache
-            if (cacheEnabledInput) {
-                cacheEnabledInput.checked = false;
-                cacheEnabledInput.disabled = true;
-            }
-        } else {
-            // When disabling bypass, auto-enable cache (enforce mutual exclusivity)
-            if (cacheEnabledInput) {
-                cacheEnabledInput.checked = true;
-                cacheEnabledInput.disabled = false;
-            }
+        // Bypass toggle clicks should flip the cache toggle instead
+        const cacheInput = document.getElementById('cacheEnabled');
+        if (cacheInput) {
+            cacheInput.checked = !e.target.checked;
         }
-        updateCacheUI();
+        updateCacheToggles();
     }
 
     function handleAdvancedSettingsToggle(e) {
@@ -1272,7 +1240,7 @@ Translate to {target_language}.`;
         document.getElementById('cacheEnabled').checked = currentConfig.translationCache?.enabled !== false;
         const bypassEl = document.getElementById('bypassCache');
         if (bypassEl) bypassEl.checked = currentConfig.bypassCache === true;
-        updateCacheUI();
+        updateCacheToggles();
 
         // Load advanced settings (inputs may not exist in current UI)
         if (!currentConfig.advancedSettings) {
@@ -1336,7 +1304,11 @@ Translate to {target_language}.`;
                 persistent: true
             },
             bypassCache: (!document.getElementById('cacheEnabled').checked) || (document.getElementById('bypassCache') && document.getElementById('bypassCache').checked) || false,
-            tempCache: {
+            bypassCacheConfig: {
+                enabled: (!document.getElementById('cacheEnabled').checked) || (document.getElementById('bypassCache') && document.getElementById('bypassCache').checked) || false,
+                duration: 12
+            },
+            tempCache: { // Deprecated: kept for backward compatibility
                 enabled: (!document.getElementById('cacheEnabled').checked) || (document.getElementById('bypassCache') && document.getElementById('bypassCache').checked) || false,
                 duration: 12
             },
@@ -1349,47 +1321,59 @@ Translate to {target_language}.`;
             }
         };
 
-        // Validation with visual feedback
-        let isValid = true;
+        // Validation with visual feedback - collect all errors
+        const errors = [];
 
         const anyProviderEnabled = Object.values(config.subtitleProviders).some(p => p.enabled);
         if (!anyProviderEnabled) {
-            showAlert('Please enable at least one subtitle provider', 'error');
-            isValid = false;
+            errors.push('⚠️ Please enable at least one subtitle provider');
+        }
+
+        // Validate enabled subtitle sources have API keys (where required)
+        if (config.subtitleProviders.subdl?.enabled && !config.subtitleProviders.subdl.apiKey?.trim()) {
+            errors.push('⚠️ SubDL is enabled but API key is missing');
+        }
+        if (config.subtitleProviders.subsource?.enabled && !config.subtitleProviders.subsource.apiKey?.trim()) {
+            errors.push('⚠️ SubSource is enabled but API key is missing');
         }
 
         // If not in no-translation mode, validate Gemini API and model
         if (!config.noTranslationMode) {
             if (!validateGeminiApiKey()) {
-                showAlert('Gemini API key is required', 'error');
-                document.getElementById('geminiApiKey').focus();
-                isValid = false;
+                errors.push('⚠️ Gemini API key is required');
             }
 
             if (!validateGeminiModel()) {
-                showAlert('Please select a Gemini model', 'error');
-                if (isValid) document.getElementById('geminiModel').focus();
-                isValid = false;
+                errors.push('⚠️ Please select a Gemini model');
             }
 
             if (!validateLanguageSelection('source')) {
-                showAlert('Please select 1-3 source languages', 'error');
-                isValid = false;
+                errors.push('⚠️ Please select 1-3 source languages');
             }
 
             if (!validateLanguageSelection('target')) {
-                showAlert('Please select at least one target language', 'error');
-                isValid = false;
+                errors.push('⚠️ Please select at least one target language');
             }
         } else {
             // In no-translation mode, validate that at least one language is selected
             if (!config.noTranslationLanguages || config.noTranslationLanguages.length === 0) {
-                showAlert('Please select at least one language in no-translation mode', 'error');
-                isValid = false;
+                errors.push('⚠️ Please select at least one language in no-translation mode');
             }
         }
 
-        if (!isValid) {
+        if (errors.length > 0) {
+            // Show all errors as a single alert
+            const errorMessage = errors.join('<br>');
+            showAlert(errorMessage, 'error');
+
+            // Focus on first invalid field
+            if (!config.noTranslationMode) {
+                if (!validateGeminiApiKey()) {
+                    document.getElementById('geminiApiKey')?.focus();
+                } else if (!validateGeminiModel()) {
+                    document.getElementById('geminiModel')?.focus();
+                }
+            }
             return;
         }
 
@@ -1531,13 +1515,13 @@ Translate to {target_language}.`;
 
     function showAlert(message, type = 'success') {
         const container = document.getElementById('alertContainer');
-        
+
         // Remove existing alerts
         container.innerHTML = '';
 
         const alert = document.createElement('div');
         alert.className = `alert alert-${type}`;
-        
+
         const icon = {
             success: '✓',
             error: '✗',
@@ -1545,14 +1529,17 @@ Translate to {target_language}.`;
             info: 'ℹ'
         }[type] || 'ℹ';
 
-        alert.innerHTML = `<span style="font-size: 1.25rem;">${icon}</span><span>${message}</span>`;
+        alert.innerHTML = `<span style="font-size: 1.25rem;">${icon}</span><div style="flex: 1;">${message}</div>`;
 
         container.appendChild(alert);
+
+        // Show errors longer (8s) than success messages (5s)
+        const displayTime = type === 'error' ? 5000 : 5000;
 
         setTimeout(() => {
             alert.style.animation = 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) reverse';
             setTimeout(() => alert.remove(), 300);
-        }, 5000);
+        }, displayTime);
     }
 
     function showLoading(show) {

@@ -13,6 +13,9 @@ data/
 # Claude Code
 .claude/
 
+# Extensions
+SubMaker xSync/
+
 # IDEs
 .idea/
 .vscode/
@@ -37,3 +40,4 @@ build/
 
 #-
 nul
+.sidedocs/

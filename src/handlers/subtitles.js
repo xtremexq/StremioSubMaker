@@ -6,6 +6,7 @@ const GeminiService = require('../services/gemini');
 const { parseSRT, toSRT, parseStremioId } = require('../utils/subtitle');
 const { getLanguageName, getDisplayName } = require('../utils/languages');
 const { LRUCache } = require('lru-cache');
+const syncCache = require('../utils/syncCache');
 
 const fs = require('fs');
 const path = require('path');
@@ -54,8 +55,8 @@ const inFlightTranslations = new LRUCache({
 
 // Directory for persistent translation cache (disk-only)
 const CACHE_DIR = path.join(__dirname, '..', '..', '.cache', 'translations');
-// Directory for temporary translation cache (disk-only, TTL-based) - for user bypass cache config
-const TEMP_CACHE_DIR = path.join(__dirname, '..', '..', '.cache', 'translations_temp');
+// Directory for bypass translation cache (disk-only, TTL-based) - for user bypass cache config
+const BYPASS_CACHE_DIR = path.join(__dirname, '..', '..', '.cache', 'translations_bypass');
 // Directory for partial translation cache during chunking/streaming - separate from user config
 const PARTIAL_CACHE_DIR = path.join(__dirname, '..', '..', '.cache', 'translations_partial');
 
@@ -194,9 +195,9 @@ function initializeCacheDirectory() {
       fs.mkdirSync(CACHE_DIR, { recursive: true });
       console.log('[Cache] Created translation cache directory');
     }
-    if (!fs.existsSync(TEMP_CACHE_DIR)) {
-      fs.mkdirSync(TEMP_CACHE_DIR, { recursive: true });
-      console.log('[Cache] Created temporary translation cache directory');
+    if (!fs.existsSync(BYPASS_CACHE_DIR)) {
+      fs.mkdirSync(BYPASS_CACHE_DIR, { recursive: true });
+      console.log('[Cache] Created bypass translation cache directory');
     }
   } catch (error) {
     console.error('[Cache] Failed to create cache directory:', error.message);
@@ -249,21 +250,21 @@ function verifyCacheIntegrity() {
   }
 }
 
-// Verify and cleanup expired entries in temporary cache
-function verifyTempCacheIntegrity() {
+// Verify and cleanup expired entries in bypass cache
+function verifyBypassCacheIntegrity() {
   try {
-    if (!fs.existsSync(TEMP_CACHE_DIR)) {
+    if (!fs.existsSync(BYPASS_CACHE_DIR)) {
       return;
     }
 
-    const files = fs.readdirSync(TEMP_CACHE_DIR);
+    const files = fs.readdirSync(BYPASS_CACHE_DIR);
     let removedCount = 0;
 
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
 
       try {
-        const filePath = path.join(TEMP_CACHE_DIR, file);
+        const filePath = path.join(BYPASS_CACHE_DIR, file);
         const content = fs.readFileSync(filePath, 'utf8');
         const cached = JSON.parse(content);
         if (!cached.expiresAt || Date.now() > cached.expiresAt) {
@@ -271,15 +272,15 @@ function verifyTempCacheIntegrity() {
           removedCount++;
         }
       } catch (error) {
-        try { fs.unlinkSync(path.join(TEMP_CACHE_DIR, file)); } catch (e) {}
+        try { fs.unlinkSync(path.join(BYPASS_CACHE_DIR, file)); } catch (e) {}
       }
     }
 
     if (removedCount > 0) {
-      console.log(`[Temp Cache] Cleaned ${removedCount} expired entries`);
+      console.log(`[Bypass Cache] Cleaned ${removedCount} expired entries`);
     }
   } catch (error) {
-    console.error('[Temp Cache] Failed to verify/clean temp cache:', error.message);
+    console.error('[Bypass Cache] Failed to verify/clean bypass cache:', error.message);
   }
 }
 
@@ -342,16 +343,16 @@ function readFromDisk(cacheKey) {
   }
 }
 
-// Read translation from temporary disk cache
-function readFromTemp(cacheKey) {
+// Read translation from bypass disk cache
+function readFromBypassCache(cacheKey) {
   try {
     const safeKey = sanitizeCacheKey(cacheKey);
-    const filePath = path.join(TEMP_CACHE_DIR, `${safeKey}.json`);
+    const filePath = path.join(BYPASS_CACHE_DIR, `${safeKey}.json`);
 
     const resolvedPath = path.resolve(filePath);
-    const resolvedCacheDir = path.resolve(TEMP_CACHE_DIR);
+    const resolvedCacheDir = path.resolve(BYPASS_CACHE_DIR);
     if (!resolvedPath.startsWith(resolvedCacheDir)) {
-      console.error(`[Temp Cache] Security: Path traversal attempt detected for key ${cacheKey}`);
+      console.error(`[Bypass Cache] Security: Path traversal attempt detected for key ${cacheKey}`);
       return null;
     }
 
@@ -370,7 +371,7 @@ function readFromTemp(cacheKey) {
     cacheMetrics.diskReads++;
     return cached;
   } catch (error) {
-    console.error(`[Temp Cache] Failed to read from temp for key ${cacheKey}:`, error.message);
+    console.error(`[Bypass Cache] Failed to read from bypass cache for key ${cacheKey}:`, error.message);
     return null;
   }
 }
@@ -421,23 +422,23 @@ function saveToDisk(cacheKey, cachedData) {
   }
 }
 
-// Save translation to temporary disk cache (for user-controlled bypass cache config)
-function saveToTemp(cacheKey, cachedData) {
+// Save translation to bypass disk cache (for user-controlled bypass cache config)
+function saveToBypassCache(cacheKey, cachedData) {
   try {
     const safeKey = sanitizeCacheKey(cacheKey);
-    const filePath = path.join(TEMP_CACHE_DIR, `${safeKey}.json`);
+    const filePath = path.join(BYPASS_CACHE_DIR, `${safeKey}.json`);
 
     const resolvedPath = path.resolve(filePath);
-    const resolvedCacheDir = path.resolve(TEMP_CACHE_DIR);
+    const resolvedCacheDir = path.resolve(BYPASS_CACHE_DIR);
     if (!resolvedPath.startsWith(resolvedCacheDir)) {
-      console.error(`[Temp Cache] Security: Path traversal attempt detected for key ${cacheKey}`);
+      console.error(`[Bypass Cache] Security: Path traversal attempt detected for key ${cacheKey}`);
       return;
     }
 
     fs.writeFileSync(filePath, JSON.stringify(cachedData, null, 2), 'utf8');
     cacheMetrics.diskWrites++;
   } catch (error) {
-    console.error('[Temp Cache] Failed to save translation to temp:', error.message);
+    console.error('[Bypass Cache] Failed to save translation to bypass cache:', error.message);
   }
 }
 
@@ -661,7 +662,7 @@ function logCacheMetrics() {
 // Initialize cache on module load
 initializeCacheDirectory();
 verifyCacheIntegrity();
-verifyTempCacheIntegrity();
+verifyBypassCacheIntegrity();
 
 // Calculate initial cache size
 cacheMetrics.totalCacheSize = calculateCacheSize();
@@ -672,8 +673,8 @@ setInterval(logCacheMetrics, 1000 * 60 * 30);
 
 // Enforce cache size limit every 10 minutes
 setInterval(enforceCacheSizeLimit, 1000 * 60 * 10);
-// Cleanup temp cache periodically
-setInterval(verifyTempCacheIntegrity, 1000 * 60 * 30);
+// Cleanup bypass cache periodically
+setInterval(verifyBypassCacheIntegrity, 1000 * 60 * 30);
 
 /**
  * Deduplicates subtitle search requests
@@ -1037,6 +1038,25 @@ function createSubtitleHandler(config) {
         console.log('[Subtitles] Ranked subtitles by filename match');
       }
 
+      // Limit to top 12 subtitles per language (applied AFTER ranking all sources)
+      // This prevents UI slowdown while ensuring best-quality subtitles are shown
+      const MAX_SUBS_PER_LANGUAGE = 12;
+      const limitedByLanguage = new Map(); // language -> subtitle array
+
+      for (const sub of filteredFoundSubtitles) {
+        if (!limitedByLanguage.has(sub.languageCode)) {
+          limitedByLanguage.set(sub.languageCode, []);
+        }
+        const langSubs = limitedByLanguage.get(sub.languageCode);
+        if (langSubs.length < MAX_SUBS_PER_LANGUAGE) {
+          langSubs.push(sub);
+        }
+      }
+
+      // Flatten back to array, preserving ranked order within each language
+      filteredFoundSubtitles = Array.from(limitedByLanguage.values()).flat();
+      console.log(`[Subtitles] Limited to ${MAX_SUBS_PER_LANGUAGE} subtitles per language (${filteredFoundSubtitles.length} total)`);
+
       // Convert to Stremio subtitle format
       // Validate required fields before creating response objects
       const stremioSubtitles = filteredFoundSubtitles
@@ -1072,8 +1092,8 @@ function createSubtitleHandler(config) {
         return normalized;
       }))];
 
-      // Create translation entries: for each target language, create entries for top source language subtitles only
-      // First, filter out target language subtitles to get only source language subtitles
+      // Create translation entries: for each target language, create entries for top source language subtitles
+      // Note: filteredFoundSubtitles is already limited to 12 per language (including source languages)
       const sourceSubtitles = filteredFoundSubtitles.filter(sub =>
         config.sourceLanguages.some(sourceLang => {
           const normalized = normalizeLanguageCode(sourceLang);
@@ -1081,22 +1101,17 @@ function createSubtitleHandler(config) {
         })
       );
 
-      console.log(`[Subtitles] Found ${sourceSubtitles.length} source language subtitles for translation`);
+      console.log(`[Subtitles] Found ${sourceSubtitles.length} source language subtitles for translation (already limited to ${MAX_SUBS_PER_LANGUAGE} per language)`);
 
-      // Limit to top 15 source subtitles for translation to reduce response size
-      // This prevents massive multiplication: 15 sources × 5 target languages = 75 translation entries
-      // Without limit: 60+ sources × 5 languages = 300+ entries causing UI slowdown
-      const MAX_SOURCE_SUBS_FOR_TRANSLATION = 15;
-      const topSourceSubtitles = sourceSubtitles.slice(0, MAX_SOURCE_SUBS_FOR_TRANSLATION);
-
-      // For each target language, create a translation entry for each top source subtitle
+      // For each target language, create a translation entry for each source subtitle
+      // Translation entries are created from the already-limited source subtitles (12 per source language)
       const translationEntries = [];
       for (const targetLang of normalizedTargetLangs) {
         const baseName = getLanguageName(targetLang);
         const displayName = `Make ${baseName}`;
         console.log(`[Subtitles] Creating translation entries for ${displayName} (${targetLang})`);
 
-        for (const sourceSub of topSourceSubtitles) {
+        for (const sourceSub of sourceSubtitles) {
           const translationEntry = {
             id: `translate_${sourceSub.fileId}_to_${targetLang}`,
             lang: displayName, // Display as "Make Language" in Stremio UI
@@ -1106,25 +1121,76 @@ function createSubtitleHandler(config) {
         }
       }
 
-      console.log(`[Subtitles] Created ${translationEntries.length} translation options (top ${MAX_SOURCE_SUBS_FOR_TRANSLATION})`);
+      console.log(`[Subtitles] Created ${translationEntries.length} translation options from ${sourceSubtitles.length} source subtitles`);
 
-      // Add fake "Translate SRT" entry if enabled in config
-      let allSubtitles = [...stremioSubtitles, ...translationEntries];
+      // Add xSync entries (synced subtitles from cache)
+      const xSyncEntries = [];
+      if (streamFilename && config.syncSubtitlesEnabled !== false) {
+        // Generate video hash from stream filename (similar approach for cache key)
+        const videoHash = crypto.createHash('md5').update(streamFilename).digest('hex').substring(0, 16);
 
+        // Get synced subtitles for each language
+        const allLangsForSync = [...new Set([...config.sourceLanguages, ...config.targetLanguages])];
+
+        for (const lang of allLangsForSync) {
+          try {
+            const syncedSubs = await syncCache.getSyncedSubtitles(videoHash, lang);
+
+            if (syncedSubs && syncedSubs.length > 0) {
+              const langName = getLanguageName(lang);
+              console.log(`[Subtitles] Found ${syncedSubs.length} synced subtitle(s) for ${langName}`);
+
+              // Add an entry for each synced subtitle
+              for (let i = 0; i < syncedSubs.length; i++) {
+                const syncedSub = syncedSubs[i];
+                xSyncEntries.push({
+                  id: `xsync_${syncedSub.cacheKey}_${i}`,
+                  lang: `xSync ${langName}${syncedSubs.length > 1 ? ` #${i + 1}` : ''}`,
+                  url: `{{ADDON_URL}}/xsync/${videoHash}/${lang}/${syncedSub.sourceSubId}`
+                });
+              }
+            }
+          } catch (error) {
+            console.error(`[Subtitles] Failed to get xSync entries for ${lang}:`, error.message);
+          }
+        }
+
+        if (xSyncEntries.length > 0) {
+          console.log(`[Subtitles] Added ${xSyncEntries.length} xSync entries`);
+        }
+      }
+
+      // Add special action buttons
+      let allSubtitles = [...stremioSubtitles, ...translationEntries, ...xSyncEntries];
+
+      // Add "Sync Subtitles" button if enabled
+      let actionButtons = [];
+      if (config.syncSubtitlesEnabled === true) { // Temporarily disabled - change to !== false to re-enable
+        const syncButtonEntry = {
+          id: 'sync_subtitles',
+          lang: 'Sync Subtitles',
+          url: `{{ADDON_URL}}/sync-subtitles/${id}?filename=${encodeURIComponent(streamFilename || '')}`
+        };
+        actionButtons.push(syncButtonEntry);
+        console.log('[Subtitles] Sync Subtitles is enabled, added entry');
+      }
+
+      // Add "Translate SRT" button if enabled
       if (config.fileTranslationEnabled === true) {
         const fileUploadEntry = {
           id: 'file_upload',
           lang: 'Translate SRT',
           url: `{{ADDON_URL}}/file-translate/${id}`
         };
-        allSubtitles = [fileUploadEntry, ...allSubtitles];
+        actionButtons.push(fileUploadEntry);
         console.log('[Subtitles] Translate SRT is enabled, added entry');
-      } else {
-        console.log('[Subtitles] File translation is disabled');
       }
 
-      const totalResponseItems = stremioSubtitles.length + translationEntries.length + (config.fileTranslationEnabled === true ? 1 : 0);
-      console.log(`[Subtitles] Returning ${totalResponseItems} items (${stremioSubtitles.length} subs + ${translationEntries.length} opts)`);
+      // Put action buttons at the top
+      allSubtitles = [...actionButtons, ...allSubtitles];
+
+      const totalResponseItems = stremioSubtitles.length + translationEntries.length + xSyncEntries.length + actionButtons.length;
+      console.log(`[Subtitles] Returning ${totalResponseItems} items (${stremioSubtitles.length} subs + ${translationEntries.length} trans + ${xSyncEntries.length} xSync + ${actionButtons.length} actions)`);
 
       return {
         subtitles: allSubtitles
@@ -1282,23 +1348,24 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
     // Check disk cache first
     const baseKey = `${sourceFileId}_${targetLanguage}`;
     const bypass = config.bypassCache === true;
-    const tempEnabled = !config.tempCache || config.tempCache.enabled !== false;
+    const bypassCfg = config.bypassCacheConfig || config.tempCache || {}; // Support both old and new names
+    const bypassEnabled = bypass && (bypassCfg.enabled !== false);
     const userHash = (config && typeof config.__configHash === 'string' && config.__configHash.length > 0) ? config.__configHash : '';
 
-    // Scope temp cache by user/config hash only when bypassing permanent cache
-    const cacheKey = (bypass && tempEnabled && userHash)
+    // Scope bypass cache by user/config hash only when bypassing permanent cache
+    const cacheKey = (bypass && bypassEnabled && userHash)
       ? `${baseKey}__u_${userHash}`
       : baseKey;
 
     if (bypass) {
-      // Skip reading permanent cache; optionally read temp cache
-      if (tempEnabled) {
-        const tempCached = readFromTemp(cacheKey);
-        if (tempCached) {
-          console.log('[Translation] Cache hit (temp) key=', cacheKey, '— serving cached translation');
+      // Skip reading permanent cache; optionally read bypass cache
+      if (bypassEnabled) {
+        const bypassCached = readFromBypassCache(cacheKey);
+        if (bypassCached) {
+          console.log('[Translation] Cache hit (bypass) key=', cacheKey, '— serving cached translation');
           cacheMetrics.hits++;
           cacheMetrics.estimatedCostSaved += 0.004;
-          return tempCached.content;
+          return bypassCached.content;
         }
       }
     } else {
@@ -1332,7 +1399,7 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
         }
 
         // Check partial cache (most common case - translation in progress)
-        // Partials are saved to PARTIAL_CACHE_DIR, not TEMP_CACHE_DIR
+        // Partials are saved to PARTIAL_CACHE_DIR, not BYPASS_CACHE_DIR
         const partialResult = readFromPartialCache(cacheKey);
         if (partialResult && typeof partialResult.content === 'string' && partialResult.content.length > 0) {
           console.log(`[Translation] Returning partial result (${partialResult.content.length} chars) without waiting for completion`);
@@ -1462,8 +1529,8 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
       const minSize = Number(config.minSubtitleSizeBytes) || 200;
       if (!sourceContent || sourceContent.length < minSize) {
         const msg = createInvalidSubtitleMessage('Selected subtitle seems invalid (too small).');
-        // Save short-lived cache to TEMP so we never overwrite permanent translations
-        saveToTemp(cacheKey, {
+        // Save short-lived cache to bypass cache so we never overwrite permanent translations
+        saveToBypassCache(cacheKey, {
           content: msg,
           // expire after 10 minutes so user can try again later
           expiresAt: Date.now() + 10 * 60 * 1000
@@ -1640,12 +1707,13 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
     // Cache the translation (disk-only, permanent by default)
     const cacheConfig = config.translationCache || { enabled: true, duration: 0, persistent: true };
     const bypass = config.bypassCache === true;
-    const tempEnabled = !config.tempCache || config.tempCache.enabled !== false;
+    const bypassCfg = config.bypassCacheConfig || config.tempCache || {}; // Support both old and new names
+    const bypassEnabled = bypass && (bypassCfg.enabled !== false);
 
-    if (bypass && tempEnabled) {
-      // Save only to temporary cache with TTL
-      const tempDuration = (config.tempCache && typeof config.tempCache.duration === 'number') ? config.tempCache.duration : 12;
-      const expiresAt = Date.now() + (tempDuration * 60 * 60 * 1000);
+    if (bypass && bypassEnabled) {
+      // Save only to bypass cache with TTL
+      const bypassDuration = (typeof bypassCfg.duration === 'number') ? bypassCfg.duration : 12;
+      const expiresAt = Date.now() + (bypassDuration * 60 * 60 * 1000);
       const cachedData = {
         key: cacheKey,
         content: translatedContent,
@@ -1655,7 +1723,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
         targetLanguage,
         configHash: (config && typeof config.__configHash === 'string') ? config.__configHash : undefined
       };
-      saveToTemp(cacheKey, cachedData);
+      saveToBypassCache(cacheKey, cachedData);
     } else if (cacheConfig.enabled && cacheConfig.persistent !== false) {
       // Save to permanent cache (no expiry)
       const cacheDuration = cacheConfig.duration; // 0 = permanent
@@ -1801,10 +1869,10 @@ setInterval(() => {
     console.error('[Cache] Failed to clean up disk cache:', error.message);
   }
 }, 1000 * 60 * 60); // Every hour (less frequent for disk operations)
-// Also clean up temporary cache (more frequent not needed here)
+// Also clean up bypass cache (more frequent not needed here)
 setInterval(() => {
   try {
-    verifyTempCacheIntegrity();
+    verifyBypassCacheIntegrity();
   } catch (error) {
     // ignore
   }
@@ -1819,7 +1887,7 @@ module.exports = {
   getAvailableSubtitlesForTranslation,
   createLoadingSubtitle, // Export for loading message in translation endpoint
   readFromPartialCache, // Export for checking in-flight partial results during duplicate requests
-  readFromTemp, // Export for checking bypass cache during duplicate requests
+  readFromBypassCache, // Export for checking bypass cache during duplicate requests
   translationStatus, // Export for safety block to check if translation is in progress
   /**
    * Check if a translated subtitle exists in permanent cache
@@ -1852,23 +1920,23 @@ module.exports = {
         console.warn(`[Purge] Failed removing permanent cache for ${safeKey}:`, e.message);
       }
 
-      // Delete temp cache file (both scoped and unscoped variants just in case)
+      // Delete bypass cache file (both scoped and unscoped variants just in case)
       try {
         // Scoped by user/config hash (if present)
         const userHash = (config && typeof config.__configHash === 'string' && config.__configHash.length > 0)
           ? config.__configHash
           : '';
         const scopedKey = `${baseKey}__u_${userHash}`;
-        const tempFiles = [sanitizeCacheKey(baseKey), sanitizeCacheKey(scopedKey)];
-        for (const key of tempFiles) {
-          const tempPath = path.join(TEMP_CACHE_DIR, `${key}.json`);
-          if (fs.existsSync(tempPath)) {
-            fs.unlinkSync(tempPath);
-            console.log(`[Purge] Removed temp cache for ${key}`);
+        const bypassFiles = [sanitizeCacheKey(baseKey), sanitizeCacheKey(scopedKey)];
+        for (const key of bypassFiles) {
+          const bypassPath = path.join(BYPASS_CACHE_DIR, `${key}.json`);
+          if (fs.existsSync(bypassPath)) {
+            fs.unlinkSync(bypassPath);
+            console.log(`[Purge] Removed bypass cache for ${key}`);
           }
         }
       } catch (e) {
-        console.warn(`[Purge] Failed removing temp cache for ${baseKey}:`, e.message);
+        console.warn(`[Purge] Failed removing bypass cache for ${baseKey}:`, e.message);
       }
 
       // Delete partial cache file (in-flight translations)

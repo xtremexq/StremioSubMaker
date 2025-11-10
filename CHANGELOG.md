@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker 1.0.3
+
+**UI Redesign:**
+
+**Code Refactoring:**
+- Renamed bypass cache directory from `translations_temp` to `translations_bypass` for clarity
+- Renamed `tempCache` configuration object to `bypassCacheConfig` (backward compatible with old `tempCache` name)
+- Updated all cache-related function names: `readFromTemp` → `readFromBypassCache`, `saveToTemp` → `saveToBypassCache`, `verifyTempCacheIntegrity` → `verifyBypassCacheIntegrity`
+
+**UI & Configuration:**
+- Added password visibility toggle (eye icon) to OpenSubtitles password field
+- Completely redesigned file translation page with UI matching the configuration page style
+- Added support for multiple subtitle formats: SRT, VTT, ASS, SSA (previously only SRT was supported)
+- Enhanced file upload interface with drag-and-drop support and animations
+
+**Performance:**
+- Subtitle now applies rate limiting per-language after ranking all sources: fetches from all 3 subtitle sources, ranks by quality/filename match, then limits to 12 subtitles per language (ensures best matches appear first)
+
+**Bug Fixes:**
+- Fixed validation error notifications: errors now display when saving without required fields (Gemini API key, enabled subtitle sources missing API keys)
+- Fixed "Cannot GET /addon/..." error when clicking the config/settings button in Stremio after addon installation
+- Configuration page code cleanup: removed unused files and duplicate code, simplified cache/bypass toggle logic
+- Various small bug fixes.
+
 ## SubMaker 1.0.2
 
 **UI & Configuration:**

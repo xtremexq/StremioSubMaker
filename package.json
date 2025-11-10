@@ -1,6 +1,6 @@
 {
   "name": "submaker-subtitle-translator",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Take control of your subtitles! Fetch and translate subtitles from OpenSubtitles, SubScene and SubDL with a free Gemini AI key, without ever leaving Stremio.",
   "main": "index.js",
   "scripts": {

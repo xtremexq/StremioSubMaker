@@ -114,10 +114,10 @@ function normalizeConfig(config) {
       ...defaults.translationCache,
       ...(config.translationCache || {})
     },
-    // Deep merge temporary cache settings
-    tempCache: {
-      ...defaults.tempCache,
-      ...(config.tempCache || {})
+    // Deep merge bypass cache settings (support old tempCache name for backward compatibility)
+    bypassCacheConfig: {
+      ...defaults.bypassCacheConfig,
+      ...(config.bypassCacheConfig || config.tempCache || {})
     }
   };
 
@@ -134,11 +134,14 @@ function normalizeConfig(config) {
   // Normalize bypass flag
   mergedConfig.bypassCache = mergedConfig.bypassCache === true;
 
-  // Ensure temp cache mirrors bypass and clamp duration to max 12h
-  mergedConfig.tempCache = mergedConfig.tempCache || {};
-  mergedConfig.tempCache.enabled = mergedConfig.bypassCache === true;
-  const tmpDur = Number(mergedConfig.tempCache.duration);
-  mergedConfig.tempCache.duration = (Number.isFinite(tmpDur) && tmpDur > 0) ? Math.min(12, tmpDur) : 12;
+  // Ensure bypass cache config mirrors bypass flag and clamp duration to max 12h
+  mergedConfig.bypassCacheConfig = mergedConfig.bypassCacheConfig || {};
+  mergedConfig.bypassCacheConfig.enabled = mergedConfig.bypassCache === true;
+  const bypassDur = Number(mergedConfig.bypassCacheConfig.duration);
+  mergedConfig.bypassCacheConfig.duration = (Number.isFinite(bypassDur) && bypassDur > 0) ? Math.min(12, bypassDur) : 12;
+
+  // Keep old tempCache for backward compatibility
+  mergedConfig.tempCache = mergedConfig.bypassCacheConfig;
 
   return mergedConfig;
 }
@@ -226,7 +229,11 @@ function getDefaultConfig() {
       persistent: true // save to disk
     },
     bypassCache: false,
-    tempCache: {
+    bypassCacheConfig: {
+      enabled: true,
+      duration: 12
+    },
+    tempCache: { // Deprecated: kept for backward compatibility, use bypassCacheConfig instead
       enabled: true,
       duration: 12
     },
