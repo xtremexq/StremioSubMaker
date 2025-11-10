@@ -34,7 +34,7 @@ Auto-sync subtitles in development!
 
 - **Node.js** 18+ ([Download](https://nodejs.org))
 - **Gemini API Key** ([Get one free](https://makersuite.google.com/app/apikey))
-- **OpenSubtitles** account for higher limits ([Sign up](https://www.opensubtitles.com/en/newuser)) and add your key to a `.env` file via `OPENSUBTITLES_API_KEY=...` (this may be the only `.env` entry you need).
+- **OpenSubtitles** API Key and account for higher limits ([Sign up](https://www.opensubtitles.com/en/newuser))
 - **SubSource API Key** ([Get one free](https://subsource.net/api-docs))
 - **SubDL API Key** ([Get one free](https://subdl.com/panel/api)) 
 
@@ -74,20 +74,11 @@ Fetched languages and translation buttons (Make [Language]) will now appear in y
 
 ---
 
-## 🐳 Docker Deployment (Production)
-
-For production deployments with high availability and horizontal scaling, use Docker with Redis storage.
-
-### Why Redis?
-
-- **Stateless Pods**: No dependency on local filesystem
-- **High Availability**: Survive node reboots and scaling events
-- **Horizontal Scaling**: Run multiple instances sharing the same cache
-- **Performance**: Fast in-memory cache with persistence
+## 🐳 Docker Deployment
 
 ### Quick Start with Docker Compose
 
-#### Option 1: With Redis (Recommended for Production/HA)
+#### Option 1: With Redis (Recommended)
 
 ```bash
 # Clone the repository
@@ -105,7 +96,7 @@ docker-compose up -d
 docker-compose logs -f stremio-submaker
 ```
 
-#### Option 2: Local Development (Filesystem Storage)
+#### Option 2: Filesystem Storage
 
 ```bash
 # Use the local development compose file
@@ -134,23 +125,12 @@ REDIS_PASSWORD=your_secure_password
 REDIS_DB=0
 REDIS_KEY_PREFIX=stremio:
 
-# API Keys (optional, for server-level config)
+# API Keys
 OPENSUBTITLES_API_KEY=your_opensubtitles_key
 
-# Note: Gemini API key is configured per-user in Stremio addon settings
 ```
 
-### Cache Size Limits
-
-The storage adapter enforces these limits with LRU eviction:
-
-- **Translation Cache**: 50GB (permanent translations)
-- **User Config Cache**: 50GB (session data)
-- **Bypass Cache**: 10GB (temporary user-scoped cache, 12h TTL)
-- **Partial Cache**: 10GB (in-flight partial translations, 1h TTL)
-- **Sync Cache**: 50GB (synced subtitles)
-
-### Manual Docker Build
+### Docker Build
 
 ```bash
 # Build the image
@@ -175,36 +155,16 @@ docker run -d \
   stremio-submaker
 ```
 
-### Health Checks
-
-The Docker image includes built-in health checks:
-- Endpoint: `http://localhost:7000/health`
-- Interval: 30 seconds
-- Timeout: 10 seconds
-
-### Scaling
-
-When using Redis, you can horizontally scale the application:
-
-```bash
-# Scale to 3 instances
-docker-compose up -d --scale stremio-submaker=3
-
-# Use a load balancer (nginx, traefik, etc.) to distribute traffic
-```
-
----
-
 ## 🎯 How It Works
 
 ```
 ┌─────────────────────────────────────────────┐
-│  1. Watch content in Stremio                		│
-│  2. Subtitles appear with "Make [Language]" 		│
-│  3. Click → Select source subtitle          		│
-│  4. AI translates in ~1 to 3 minutes        		│
-│  5. Reselect the translated subtitles       		│
-│  6. Next time? Instant! (cached on DB)      		│
+│  1. Watch content in Stremio                │
+│  2. Subtitles appear with "Make [Language]" │
+│  3. Click → Select source subtitle          │
+│  4. AI translates in ~1 to 3 minutes        │
+│  5. Reselect the translated subtitles      	│
+│  6. Next time? Instant! (cached on DB)      │
 └─────────────────────────────────────────────┘
 ```
 
@@ -279,13 +239,6 @@ Languages to **translate to** (unlimited)
 2. **Check JavaScript console** - Look for errors (F12)
 3. **Disable browser extensions** - Some block localStorage
 4. **Try incognito mode** - Eliminate cache/extension issues
-
-### No Subtitles Loading?
-
-Stremio sometimes randomly stops sending subtitle requests to addons after installation. If no other subtitle addons load either:
-1. Try streaming different titles or files
-2. Restart Stremio
-3. It should resume working normally
 
 ---
 
