@@ -4,8 +4,8 @@
  * and automatically prepends ISO timestamps without modifying existing code
  *
  * Log levels (set via LOG_LEVEL env var):
- * - 'debug' (default): Show all logs (console.log, warn, error)
- * - 'warn': Show only warnings and errors
+ * - 'debug': Show all logs (console.log, warn, error)
+ * - 'warn' (default): Show only warnings and errors
  * - 'error': Show only errors
  */
 
@@ -19,10 +19,10 @@ const originalWarn = console.warn;
  */
 const getTimestamp = () => new Date().toISOString();
 
-// Log level configuration
-const LOG_LEVEL = (process.env.LOG_LEVEL || 'debug').toLowerCase();
+// Log level configuration (default to 'warn' for production)
+const LOG_LEVEL = (process.env.LOG_LEVEL || 'warn').toLowerCase();
 const LEVELS = { debug: 0, warn: 1, error: 2 };
-const currentLevel = LEVELS[LOG_LEVEL] !== undefined ? LEVELS[LOG_LEVEL] : LEVELS.debug;
+const currentLevel = LEVELS[LOG_LEVEL] !== undefined ? LEVELS[LOG_LEVEL] : LEVELS.warn;
 
 // Optional file logging with rotation/purge (enabled by default in production)
 const fs = require('fs');
@@ -38,8 +38,8 @@ const LOG_MAX_SIZE_BYTES = (() => {
     if (Number.isFinite(byMb) && byMb > 0) return Math.floor(byMb * 1024 * 1024);
     return 10 * 1024 * 1024; // 10 MB default
 })();
-const LOG_MAX_FILES = Math.max(1, Number(process.env.LOG_MAX_FILES || 100));
-const LOG_MAX_AGE_DAYS = Math.max(1, Number(process.env.LOG_MAX_AGE_DAYS || 14));
+const LOG_MAX_FILES = Math.max(1, Number(process.env.LOG_MAX_FILES || 10));
+const LOG_MAX_AGE_DAYS = Math.max(1, Number(process.env.LOG_MAX_AGE_DAYS || 7));
 const LOG_MAX_TOTAL_BYTES = (() => {
     const v = Number(process.env.LOG_MAX_TOTAL_BYTES || '');
     if (Number.isFinite(v) && v > 0) return v;
@@ -117,7 +117,8 @@ function rotateLogs() {
 
 function purgeOldLogs() {
     try {
-        const files = fs.readdirSync(LOG_DIR)
+        // Single directory scan - optimized for efficiency
+        let files = fs.readdirSync(LOG_DIR)
             .filter(f => f === LOG_BASENAME || f.startsWith(`${LOG_BASENAME}.`))
             .map(f => {
                 const p = path.join(LOG_DIR, f);
@@ -130,33 +131,27 @@ function purgeOldLogs() {
             })
             .filter(Boolean);
 
-        // Remove by age
+        // Remove by age (filter out deleted files)
         const cutoff = Date.now() - LOG_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-        for (const file of files) {
+        files = files.filter(file => {
             if (file.mtimeMs < cutoff && file.name !== LOG_BASENAME) {
-                try { fs.unlinkSync(file.path); } catch (_) {}
-            }
-        }
-
-        // Enforce total size cap
-        const remaining = fs.readdirSync(LOG_DIR)
-            .filter(f => f === LOG_BASENAME || f.startsWith(`${LOG_BASENAME}.`))
-            .map(f => {
-                const p = path.join(LOG_DIR, f);
                 try {
-                    const s = fs.statSync(p);
-                    return { name: f, path: p, size: s.size, mtimeMs: s.mtimeMs };
+                    fs.unlinkSync(file.path);
+                    return false; // Remove from list
                 } catch (_) {
-                    return null;
+                    return true; // Keep if deletion fails
                 }
-            })
-            .filter(Boolean)
-            .sort((a, b) => b.mtimeMs - a.mtimeMs); // newest first
+            }
+            return true; // Keep non-expired files
+        });
 
-        let total = remaining.reduce((sum, f) => sum + f.size, 0);
-        for (let i = remaining.length - 1; i >= 0 && total > LOG_MAX_TOTAL_BYTES; i--) {
-            const file = remaining[i];
-            if (file.name === LOG_BASENAME) continue; // do not delete current log
+        // Enforce total size cap (sort newest first, delete oldest)
+        files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        let total = files.reduce((sum, f) => sum + f.size, 0);
+
+        for (let i = files.length - 1; i >= 0 && total > LOG_MAX_TOTAL_BYTES; i--) {
+            const file = files[i];
+            if (file.name === LOG_BASENAME) continue; // Never delete current log
             try {
                 fs.unlinkSync(file.path);
                 total -= file.size;
@@ -199,12 +194,12 @@ function writeFileLog(level, args) {
     }
 }
 
-// Periodic purge (every 6 hours)
+// Periodic purge (every 1 hour)
 if (LOG_TO_FILE) {
     ensureLogDir();
     openStream();
     try { purgeOldLogs(); } catch (_) {}
-    setInterval(() => { try { purgeOldLogs(); } catch (_) {} }, 1000 * 60 * 60 * 6);
+    setInterval(() => { try { purgeOldLogs(); } catch (_) {} }, 1000 * 60 * 60);
     // Close stream on exit
     const shutdown = () => { try { closeStream(); } catch (_) {} };
     process.on('exit', shutdown);
