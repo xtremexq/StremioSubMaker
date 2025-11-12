@@ -1250,7 +1250,7 @@ Translate to {target_language}.`;
         toggleProviderConfig('opensubtitlesConfig', opensubtitlesEnabled);
 
         // Trigger implementation change to show/hide auth fields and update visuals
-        handleOpenSubtitlesImplChange({ target: implementationType === 'v3' ? v3Radio : authRadio });
+        handleOpenSubtitlesImplChange({ target: { value: implementationType } });
 
         // SubDL
         const subdlEnabled = (isFirstRun ? false : (currentConfig.subtitleProviders?.subdl?.enabled !== false));
