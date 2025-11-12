@@ -681,10 +681,14 @@ Translate to {target_language}.`;
         const implementationType = e.target.value;
         const authConfig = document.getElementById('opensubtitlesAuthConfig');
 
+        if (!authConfig) {
+            return;
+        }
+
         if (implementationType === 'auth') {
             // Show auth fields
             authConfig.style.display = 'block';
-        } else if (implementationType === 'v3') {
+        } else {
             // Hide auth fields for V3
             authConfig.style.display = 'none';
         }
