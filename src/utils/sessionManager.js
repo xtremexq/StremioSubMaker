@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { StorageFactory, StorageAdapter } = require('../storage');
 const { shutdownLogger } = require('./logger');
+const { encryptUserConfig, decryptUserConfig } = require('./encryption');
 
 // Storage adapter (lazy loaded)
 let storageAdapter = null;
@@ -91,8 +92,12 @@ class SessionManager {
      */
     createSession(config) {
         const token = this.generateToken();
+
+        // Encrypt sensitive fields in config before storing
+        const encryptedConfig = encryptUserConfig(config);
+
         const sessionData = {
-            config,
+            config: encryptedConfig,
             createdAt: Date.now(),
             lastAccessedAt: Date.now()
         };
@@ -123,7 +128,10 @@ class SessionManager {
         this.cache.set(token, sessionData);
         this.dirty = true;
 
-        return sessionData.config;
+        // Decrypt sensitive fields in config before returning
+        const decryptedConfig = decryptUserConfig(sessionData.config);
+
+        return decryptedConfig;
     }
 
     /**
@@ -151,8 +159,11 @@ class SessionManager {
             return false;
         }
 
+        // Encrypt sensitive fields in config before storing
+        const encryptedConfig = encryptUserConfig(config);
+
         // Update config but keep creation time
-        sessionData.config = config;
+        sessionData.config = encryptedConfig;
         sessionData.lastAccessedAt = Date.now();
 
         this.cache.set(token, sessionData);
@@ -241,6 +252,7 @@ class SessionManager {
             const now = Date.now();
             let loadedCount = 0;
             let expiredCount = 0;
+            let migratedCount = 0;
 
             for (const [token, sessionData] of Object.entries(data.sessions)) {
                 // Check if session is expired
@@ -250,13 +262,32 @@ class SessionManager {
                     continue;
                 }
 
-                // Restore session to cache
+                // Check if config is already encrypted
+                if (!sessionData.config._encrypted) {
+                    // Migrate old unencrypted config to encrypted format
+                    try {
+                        sessionData.config = encryptUserConfig(sessionData.config);
+                        migratedCount++;
+                    } catch (error) {
+                        console.error(`[SessionManager] Failed to encrypt config for token ${token}:`, error.message);
+                        // Keep the unencrypted config to avoid data loss
+                    }
+                }
+
+                // Restore session to cache (with encrypted config)
                 this.cache.set(token, sessionData);
                 loadedCount++;
             }
 
-            console.log(`[SessionManager] Loaded ${loadedCount} sessions from disk (${expiredCount} expired)`);
-            this.dirty = false;
+            if (migratedCount > 0) {
+                console.log(`[SessionManager] Migrated ${migratedCount} sessions to encrypted format`);
+                this.dirty = true; // Mark as dirty to save encrypted versions
+            }
+
+            console.log(`[SessionManager] Loaded ${loadedCount} sessions from storage (${expiredCount} expired)`);
+            if (!this.dirty) {
+                this.dirty = false;
+            }
         } catch (err) {
             if (err.code === 'ENOENT') {
                 console.log('[SessionManager] No existing sessions file found, starting fresh');
