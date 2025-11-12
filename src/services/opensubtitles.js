@@ -3,7 +3,15 @@ const { toISO6391, toISO6392 } = require('../utils/languages');
 
 const OPENSUBTITLES_API_URL = 'https://api.opensubtitles.com/api/v1';
 const USER_AGENT = 'SubMaker v1.0.1';
-const OPENSUBTITLES_API_KEY = process.env.OPENSUBTITLES_API_KEY || '';
+
+/**
+ * Get OpenSubtitles API key at runtime (not at module load time)
+ * This ensures Docker ENV vars and runtime environment changes are picked up
+ * @returns {string} API key or empty string
+ */
+function getOpenSubtitlesApiKey() {
+  return process.env.OPENSUBTITLES_API_KEY || '';
+}
 
 class OpenSubtitlesService {
   constructor(config = {}) {
@@ -16,6 +24,9 @@ class OpenSubtitlesService {
     this.token = null;
     this.tokenExpiry = null;
 
+    // Read API key at runtime (not at module load time)
+    const apiKey = getOpenSubtitlesApiKey();
+
     // Create axios instance with default configuration
     const defaultHeaders = {
       'User-Agent': USER_AGENT,
@@ -24,9 +35,9 @@ class OpenSubtitlesService {
     };
 
     // Add API key if configured
-    if (OPENSUBTITLES_API_KEY) {
-      defaultHeaders['Api-Key'] = OPENSUBTITLES_API_KEY;
-      console.log('[OpenSubtitles] API key loaded successfully from environment');
+    if (apiKey) {
+      defaultHeaders['Api-Key'] = apiKey;
+      console.warn('[OpenSubtitles] API key loaded successfully from environment');
     }
 
     this.client = axios.create({
@@ -35,9 +46,9 @@ class OpenSubtitlesService {
     });
 
     // Validate API key is configured
-    if (!OPENSUBTITLES_API_KEY) {
+    if (!apiKey) {
       console.warn('[OpenSubtitles] WARNING: OPENSUBTITLES_API_KEY not found in environment variables');
-      console.warn('[OpenSubtitles] Please set OPENSUBTITLES_API_KEY in your .env file');
+      console.warn('[OpenSubtitles] Set it via: .env file, Docker ENV, or docker-compose environment');
       console.warn('[OpenSubtitles] API requests may fail or have very limited rate limits');
     }
 
@@ -45,7 +56,7 @@ class OpenSubtitlesService {
     if (!this.config.username || !this.config.password) {
       console.warn('[OpenSubtitles] Username and password are optional - searches will use basic API access (limited to 5 downloads/24h per IP)');
     } else {
-      console.log('[OpenSubtitles] Initialized with user account authentication for higher rate limits');
+      console.warn('[OpenSubtitles] Initialized with user account authentication for higher rate limits');
     }
 
     // Add request interceptor to handle token refresh for user authentication
