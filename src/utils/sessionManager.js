@@ -370,8 +370,6 @@ class SessionManager {
                 });
             }
         });
-
-        console.warn('[SessionManager] Graceful shutdown handlers registered (SIGTERM, SIGINT, uncaughtException)');
     }
 
     /**
