@@ -7,6 +7,8 @@
  * - Returns user-friendly error information
  */
 
+const log = require('./logger');
+
 /**
  * Parse and classify an API error
  * @param {Error} error - The error object from axios or other API call
@@ -98,11 +100,11 @@ function logApiError(error, serviceName, operation, options = {}) {
   const logPrefix = `[${serviceName}]`;
 
   // Log concise error message
-  console.error(`${logPrefix} ${operation} error: ${parsed.message}`);
+  log.error(() => `${logPrefix} ${operation} error: ${parsed.message}`);
 
   // Log status code if available
   if (parsed.statusCode) {
-    console.error(`${logPrefix} Response status: ${parsed.statusCode}`);
+    log.error(() => `${logPrefix} Response status: ${parsed.statusCode}`);
   }
 
   // Log response data only for specific error types (not for rate limits/503s)
@@ -111,7 +113,7 @@ function logApiError(error, serviceName, operation, options = {}) {
     if (!parsed.isRetryable || options.logResponseData) {
       const data = error.response.data;
       if (typeof data === 'string' && data.length > 500) {
-        console.error(`${logPrefix} Response data (truncated):`, data.substring(0, 500) + '...');
+        log.error(() => [`${logPrefix} Response data (truncated):`, data.substring(0, 500) + '...']);
       } else if (typeof data === 'object') {
         // Log only essential fields for objects
         const essentialData = {
@@ -119,16 +121,16 @@ function logApiError(error, serviceName, operation, options = {}) {
           error: data.error,
           code: data.code
         };
-        console.error(`${logPrefix} Response data:`, essentialData);
+        log.error(() => [`${logPrefix} Response data:`, essentialData]);
       } else {
-        console.error(`${logPrefix} Response data:`, data);
+        log.error(() => [`${logPrefix} Response data:`, data]);
       }
     }
   }
 
   // Log user-friendly message
   if (parsed.userMessage && !options.skipUserMessage) {
-    console.warn(`${logPrefix} ${parsed.userMessage}`);
+    log.warn(() => `${logPrefix} ${parsed.userMessage}`);
   }
 }
 

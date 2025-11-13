@@ -3,6 +3,7 @@ const { toISO6391, toISO6392 } = require('../utils/languages');
 const { handleSearchError, handleDownloadError } = require('../utils/apiErrorHandler');
 const { httpAgent, httpsAgent } = require('../utils/httpAgents');
 const { version } = require('../utils/version');
+const log = require('../utils/logger');
 
 const OPENSUBTITLES_V3_BASE_URL = 'https://opensubtitles-v3.strem.io/subtitles/';
 const USER_AGENT = `SubMaker v${version}`;
@@ -29,7 +30,7 @@ class OpenSubtitlesV3Service {
 
     // Only log initialization once at startup
     if (!OpenSubtitlesV3Service.initLogged) {
-      console.log('[OpenSubtitles V3] Initialized with Stremio V3 addon (no authentication required)');
+      log.debug(() => '[OpenSubtitles V3] Initialized with Stremio V3 addon (no authentication required)');
       OpenSubtitlesV3Service.initLogged = true;
     }
   }
@@ -64,12 +65,12 @@ class OpenSubtitlesV3Service {
         url = `${type}/${fullImdbId}.json`;
       }
 
-      console.log('[OpenSubtitles V3] Searching:', url);
+      log.debug(() => ['[OpenSubtitles V3] Searching:', url]);
 
       const response = await this.client.get(url);
 
       if (!response.data || !response.data.subtitles || response.data.subtitles.length === 0) {
-        console.log('[OpenSubtitles V3] No subtitles found');
+        log.debug(() => '[OpenSubtitles V3] No subtitles found');
         return [];
       }
 
@@ -81,7 +82,7 @@ class OpenSubtitlesV3Service {
         languages.map(lang => this.normalizeLanguageCode(lang)).filter(Boolean)
       );
 
-      console.log('[OpenSubtitles V3] Requested languages (normalized):', Array.from(normalizedRequestedLangs).join(', '));
+      log.debug(() => ['[OpenSubtitles V3] Requested languages (normalized):', Array.from(normalizedRequestedLangs).join(', ')]);
 
       // Filter and map subtitles
       const filteredSubtitles = allSubtitles
@@ -123,7 +124,7 @@ class OpenSubtitlesV3Service {
           };
         });
 
-      console.log(`[OpenSubtitles V3] Found ${filteredSubtitles.length} matching subtitles`);
+      log.debug(() => `[OpenSubtitles V3] Found ${filteredSubtitles.length} matching subtitles`);
       return filteredSubtitles;
 
     } catch (error) {
@@ -138,7 +139,7 @@ class OpenSubtitlesV3Service {
    */
   async downloadSubtitle(fileId) {
     try {
-      console.log('[OpenSubtitles V3] Downloading subtitle:', fileId);
+      log.debug(() => ['[OpenSubtitles V3] Downloading subtitle:', fileId]);
 
       // Extract encoded URL from fileId
       // Format: v3_{base64url_encoded_url}
@@ -149,7 +150,7 @@ class OpenSubtitlesV3Service {
       const encodedUrl = fileId.substring(3); // Remove 'v3_' prefix
       const downloadUrl = Buffer.from(encodedUrl, 'base64url').toString('utf-8');
 
-      console.log('[OpenSubtitles V3] Decoded download URL');
+      log.debug(() => '[OpenSubtitles V3] Decoded download URL');
 
       // Download the subtitle file directly
       const response = await axios.get(downloadUrl, {
@@ -163,7 +164,7 @@ class OpenSubtitlesV3Service {
       });
 
       const subtitleContent = response.data;
-      console.log('[OpenSubtitles V3] Subtitle downloaded successfully');
+      log.debug(() => '[OpenSubtitles V3] Subtitle downloaded successfully');
       return subtitleContent;
 
     } catch (error) {
@@ -217,7 +218,7 @@ class OpenSubtitlesV3Service {
     }
 
     // Unknown format
-    console.warn(`[OpenSubtitles V3] Unknown language format: "${language}"`);
+    log.warn(() => `[OpenSubtitles V3] Unknown language format: "${language}"`);
     return null;
   }
 }

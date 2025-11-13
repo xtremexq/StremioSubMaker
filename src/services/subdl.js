@@ -2,6 +2,7 @@ const axios = require('axios');
 const { toISO6391, toISO6392 } = require('../utils/languages');
 const { handleSearchError, handleDownloadError } = require('../utils/apiErrorHandler');
 const { httpAgent, httpsAgent } = require('../utils/httpAgents');
+const log = require('../utils/logger');
 
 const SUBDL_API_URL = 'https://api.subdl.com/api/v1';
 const USER_AGENT = 'StremioSubtitleTranslator v1.0';
@@ -23,9 +24,9 @@ class SubDLService {
     });
 
     if (this.apiKey && this.apiKey.trim() !== '') {
-      console.log('[SubDL] Using API key for requests');
+      log.debug(() => '[SubDL] Using API key for requests');
     } else {
-      console.log('[SubDL] No API key provided');
+      log.debug(() => '[SubDL] No API key provided');
     }
   }
 
@@ -43,8 +44,8 @@ class SubDLService {
     try {
       // Check if API key is provided
       if (!this.apiKey || this.apiKey.trim() === '') {
-        console.error('[SubDL] API key is required for SubDL API');
-        console.error('[SubDL] Please get a free API key from https://subdl.com');
+        log.error(() => '[SubDL] API key is required for SubDL API');
+        log.error(() => '[SubDL] Please get a free API key from https://subdl.com');
         return [];
       }
 
@@ -88,7 +89,7 @@ class SubDLService {
         return lang.substring(0, 2).toUpperCase();
       }))];
 
-      console.log(`[SubDL] Converted languages: ${languages.join(',')} -> ${convertedLanguages.join(',')}`);
+      log.debug(() => `[SubDL] Converted languages: ${languages.join(',')} -> ${convertedLanguages.join(',')}`);
 
       // Build query parameters for SubDL API
       const queryParams = {
@@ -105,14 +106,14 @@ class SubDLService {
         queryParams.episode_number = episode;
       }
 
-      console.log('[SubDL] Searching with params:', JSON.stringify(queryParams));
+      log.debug(() => ['[SubDL] Searching with params:', JSON.stringify(queryParams)]);
 
       const response = await this.client.get('/subtitles', {
         params: queryParams
       });
 
       if (!response.data || response.data.status !== true || !response.data.subtitles || response.data.subtitles.length === 0) {
-        console.log('[SubDL] No subtitles found in response');
+        log.debug(() => '[SubDL] No subtitles found in response');
         return [];
       }
 
@@ -174,7 +175,7 @@ class SubDLService {
       }
 
       const limitedSubtitles = Object.values(groupedByLanguage).flat();
-      console.log(`[SubDL] Found ${subtitles.length} subtitles total, limited to ${limitedSubtitles.length} (max ${MAX_RESULTS_PER_LANGUAGE} per language)`);
+      log.debug(() => `[SubDL] Found ${subtitles.length} subtitles total, limited to ${limitedSubtitles.length} (max ${MAX_RESULTS_PER_LANGUAGE} per language)`);
       return limitedSubtitles;
 
     } catch (error) {
@@ -191,7 +192,7 @@ class SubDLService {
    */
   async downloadSubtitle(fileId, subdl_id = null, subtitles_id = null) {
     try {
-      console.log('[SubDL] Downloading subtitle:', fileId);
+      log.debug(() => ['[SubDL] Downloading subtitle:', fileId]);
 
       // Parse the fileId to extract subdl_id and subtitles_id if not provided
       if (!subdl_id || !subtitles_id) {
@@ -208,7 +209,7 @@ class SubDLService {
       // Format: https://dl.subdl.com/subtitle/<sd_id>-<subtitles_id>.zip
       const downloadUrl = `https://dl.subdl.com/subtitle/${subdl_id}-${subtitles_id}.zip`;
 
-      console.log('[SubDL] Download URL:', downloadUrl);
+      log.debug(() => ['[SubDL] Download URL:', downloadUrl]);
 
       // Download the subtitle file (it's a ZIP file)
       const subtitleResponse = await axios.get(downloadUrl, {
@@ -221,9 +222,9 @@ class SubDLService {
         httpsAgent
       });
 
-      console.log('[SubDL] Response status:', subtitleResponse.status);
-      console.log('[SubDL] Response Content-Type:', subtitleResponse.headers['content-type']);
-      console.log('[SubDL] Response size:', subtitleResponse.data.length, 'bytes');
+      log.debug(() => ['[SubDL] Response status:', subtitleResponse.status]);
+      log.debug(() => ['[SubDL] Response Content-Type:', subtitleResponse.headers['content-type']]);
+      log.debug(() => ['[SubDL] Response size:', subtitleResponse.data.length, 'bytes']);
 
       // Validate that we received binary data (not HTML error page)
       if (!subtitleResponse.data || subtitleResponse.data.length === 0) {
@@ -233,15 +234,15 @@ class SubDLService {
       // Check if response looks like an error page (HTML) instead of ZIP
       const dataString = subtitleResponse.data.toString('utf8', 0, Math.min(100, subtitleResponse.data.length));
       if (dataString.includes('<!DOCTYPE') || dataString.includes('<html') || dataString.includes('404') || dataString.includes('error')) {
-        console.error('[SubDL] Response appears to be an error page, not a ZIP file');
-        console.error('[SubDL] Response preview:', dataString.substring(0, 200));
+        log.error(() => '[SubDL] Response appears to be an error page, not a ZIP file');
+        log.error(() => ['[SubDL] Response preview:', dataString.substring(0, 200)]);
         throw new Error('Server returned an error page instead of a subtitle file. The subtitle may have been removed from SubDL.');
       }
 
       // Check for ZIP file signature (PK bytes at start)
       if (subtitleResponse.data[0] !== 0x50 || subtitleResponse.data[1] !== 0x4B) {
-        console.error('[SubDL] Invalid ZIP file signature detected');
-        console.error('[SubDL] First 20 bytes:', Array.from(subtitleResponse.data.slice(0, 20)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+        log.error(() => '[SubDL] Invalid ZIP file signature detected');
+        log.error(() => ['[SubDL] First 20 bytes:', Array.from(subtitleResponse.data.slice(0, 20)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')]);
         throw new Error('Downloaded file is not a valid ZIP file. Server may have returned an error or the file may be corrupted.');
       }
 
@@ -253,12 +254,12 @@ class SubDLService {
       const srtFile = Object.keys(zip.files).find(filename => filename.toLowerCase().endsWith('.srt'));
 
       if (!srtFile) {
-        console.error('[SubDL] Available files in ZIP:', Object.keys(zip.files).join(', '));
+        log.error(() => ['[SubDL] Available files in ZIP:', Object.keys(zip.files).join(', ')]);
         throw new Error('No .srt file found in downloaded ZIP');
       }
 
       const subtitleContent = await zip.files[srtFile].async('string');
-      console.log('[SubDL] Subtitle downloaded and extracted successfully');
+      log.debug(() => '[SubDL] Subtitle downloaded and extracted successfully');
 
       return subtitleContent;
 
@@ -357,7 +358,7 @@ class SubDLService {
     }
 
     // Unknown language
-    console.warn(`[SubDL] Unknown language format: "${language}", filtering out`);
+    log.warn(() => `[SubDL] Unknown language format: "${language}", filtering out`);
     return null;
   }
 }

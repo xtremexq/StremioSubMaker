@@ -18,6 +18,7 @@
 const { parseSRT, toSRT } = require('../utils/subtitle');
 const GeminiService = require('./gemini');
 const crypto = require('crypto');
+const log = require('../utils/logger');
 
 // Entry-level cache for translated subtitle entries
 // Key: hash of (source_text + target_language)
@@ -40,11 +41,11 @@ class TranslationEngine {
    * @returns {Promise<string>} - Translated SRT content
    */
   async translateSubtitle(srtContent, targetLanguage, customPrompt = null, onProgress = null) {
-    console.log('[TranslationEngine] Starting structure-first translation');
+    log.debug(() => '[TranslationEngine] Starting structure-first translation');
 
     // Step 0: Check if input is malformed or needs Gemini-level chunking
     const estimatedTotalTokens = this.gemini.estimateTokenCount(srtContent);
-    console.log(`[TranslationEngine] Estimated total input tokens: ${estimatedTotalTokens}`);
+    log.debug(() => `[TranslationEngine] Estimated total input tokens: ${estimatedTotalTokens}`);
 
     // Parse to check entry count
     const entries = parseSRT(srtContent);
@@ -52,7 +53,7 @@ class TranslationEngine {
       throw new Error('Invalid SRT content: no valid entries found');
     }
 
-    console.log(`[TranslationEngine] Parsed ${entries.length} subtitle entries`);
+    log.debug(() => `[TranslationEngine] Parsed ${entries.length} subtitle entries`);
 
     // Detect malformed sources: very few entries but substantial content
     // Common issue: entire subtitle file parsed as 1 entry due to formatting issues
@@ -63,11 +64,11 @@ class TranslationEngine {
     // 1. File is too large (> 30k tokens), OR
     // 2. File appears malformed (few entries but high tokens per entry)
     if (estimatedTotalTokens > 30000 || isMalformed) {
-      console.log(`[TranslationEngine] Routing to Gemini chunking:`);
-      console.log(`  - Total tokens: ${estimatedTotalTokens}`);
-      console.log(`  - Parsed entries: ${entries.length}`);
-      console.log(`  - Avg tokens/entry: ${Math.floor(avgTokensPerEntry)}`);
-      console.log(`  - Malformed: ${isMalformed ? 'YES' : 'NO'}`);
+      log.debug(() => `[TranslationEngine] Routing to Gemini chunking:`);
+      log.debug(() => `  - Total tokens: ${estimatedTotalTokens}`);
+      log.debug(() => `  - Parsed entries: ${entries.length}`);
+      log.debug(() => `  - Avg tokens/entry: ${Math.floor(avgTokensPerEntry)}`);
+      log.debug(() => `  - Malformed: ${isMalformed ? 'YES' : 'NO'}`);
 
       // Use Gemini's chunking with streaming and progress callback
       let accumulatedChunks = [];
@@ -140,26 +141,26 @@ class TranslationEngine {
                 });
               }
             } catch (err) {
-              console.warn('[TranslationEngine] Progress callback error:', err.message);
+              log.warn(() => ['[TranslationEngine] Progress callback error:', err.message]);
             }
           }
         }
       );
 
-      console.log(`[TranslationEngine] Gemini chunking completed successfully`);
+      log.debug(() => `[TranslationEngine] Gemini chunking completed successfully`);
       return translatedSrt;
     }
 
     // Step 2: Split entries into batches
     const batches = this.createBatches(entries, this.batchSize);
-    console.log(`[TranslationEngine] Created ${batches.length} batches (${this.batchSize} entries each)`);
+    log.debug(() => `[TranslationEngine] Created ${batches.length} batches (${this.batchSize} entries each)`);
 
     // Step 3: Translate each batch
     const translatedEntries = [];
 
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
-      console.log(`[TranslationEngine] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} entries)`);
+      log.debug(() => `[TranslationEngine] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} entries)`);
 
       try {
         const translatedBatch = await this.translateBatch(
@@ -173,8 +174,8 @@ class TranslationEngine {
         // Note: translateBatch now handles entry count mismatches internally
         // and ensures the returned array always matches batch.length
         if (translatedBatch.length !== batch.length) {
-          console.error(`[TranslationEngine] UNEXPECTED: translateBatch returned ${translatedBatch.length} entries, expected ${batch.length}`);
-          console.error(`[TranslationEngine] This should have been fixed by translateBatch - continuing anyway`);
+          log.error(() => `[TranslationEngine] UNEXPECTED: translateBatch returned ${translatedBatch.length} entries, expected ${batch.length}`);
+          log.error(() => `[TranslationEngine] This should have been fixed by translateBatch - continuing anyway`);
         }
 
         // Merge translated text with original structure
@@ -214,12 +215,12 @@ class TranslationEngine {
                 entry: translatedEntry
               });
             } catch (err) {
-              console.warn('[TranslationEngine] Progress callback error:', err.message);
+              log.warn(() => ['[TranslationEngine] Progress callback error:', err.message]);
             }
           }
         }
 
-        console.log(`[TranslationEngine] Batch ${batchIndex + 1}/${batches.length} completed successfully`);
+        log.debug(() => `[TranslationEngine] Batch ${batchIndex + 1}/${batches.length} completed successfully`);
 
         // Small delay between batches to avoid rate limiting
         if (batchIndex < batches.length - 1) {
@@ -227,7 +228,7 @@ class TranslationEngine {
         }
 
       } catch (error) {
-        console.error(`[TranslationEngine] Error in batch ${batchIndex + 1}:`, error.message);
+        log.error(() => [`[TranslationEngine] Error in batch ${batchIndex + 1}:`, error.message]);
         throw new Error(`Translation failed at batch ${batchIndex + 1}: ${error.message}`);
       }
     }
@@ -235,11 +236,11 @@ class TranslationEngine {
     // Step 4: Final validation
     // Note: Entry count mismatches are now handled gracefully in translateBatch
     if (translatedEntries.length !== entries.length) {
-      console.warn(`[TranslationEngine] Final validation: expected ${entries.length} entries, got ${translatedEntries.length}`);
-      console.warn(`[TranslationEngine] This should have been fixed by translateBatch, but continuing with what we have`);
+      log.warn(() => `[TranslationEngine] Final validation: expected ${entries.length} entries, got ${translatedEntries.length}`);
+      log.warn(() => `[TranslationEngine] This should have been fixed by translateBatch, but continuing with what we have`);
     }
 
-    console.log(`[TranslationEngine] Translation completed: ${translatedEntries.length} entries translated`);
+    log.debug(() => `[TranslationEngine] Translation completed: ${translatedEntries.length} entries translated`);
 
     // Step 5: Convert back to SRT format
     const translatedSRT = toSRT(translatedEntries);
@@ -276,7 +277,7 @@ class TranslationEngine {
 
     // If all entries are cached, return immediately
     if (cacheResults.allCached) {
-      console.log(`[TranslationEngine] Batch ${batchIndex + 1} fully cached (${batch.length} entries)`);
+      log.debug(() => `[TranslationEngine] Batch ${batchIndex + 1} fully cached (${batch.length} entries)`);
       return cacheResults.entries;
     }
 
@@ -291,13 +292,13 @@ class TranslationEngine {
 
     if (estimatedInputTokens > 30000 && batch.length > 1) {
       // Split batch in half to avoid output token limit
-      console.log(`[TranslationEngine] Batch ${batchIndex + 1} has ${estimatedInputTokens} estimated input tokens (> 30k), splitting into 2 parts`);
+      log.debug(() => `[TranslationEngine] Batch ${batchIndex + 1} has ${estimatedInputTokens} estimated input tokens (> 30k), splitting into 2 parts`);
 
       const midpoint = Math.floor(batch.length / 2);
       const firstHalf = batch.slice(0, midpoint);
       const secondHalf = batch.slice(midpoint);
 
-      console.log(`[TranslationEngine] Split batch ${batchIndex + 1}: Part 1 has ${firstHalf.length} entries, Part 2 has ${secondHalf.length} entries`);
+      log.debug(() => `[TranslationEngine] Split batch ${batchIndex + 1}: Part 1 has ${firstHalf.length} entries, Part 2 has ${secondHalf.length} entries`);
 
       // Recursively translate each half
       const firstHalfTranslated = await this.translateBatch(firstHalf, targetLanguage, customPrompt, batchIndex, totalBatches);
@@ -308,7 +309,7 @@ class TranslationEngine {
     }
 
     // Translate with retry logic for 503 errors
-    console.log(`[TranslationEngine] Translating batch ${batchIndex + 1}/${totalBatches}`);
+    log.debug(() => `[TranslationEngine] Translating batch ${batchIndex + 1}/${totalBatches}`);
     let translatedText;
     let lastError;
     const maxRetries = 3;
@@ -335,7 +336,7 @@ class TranslationEngine {
         if (is503 && attempt < maxRetries) {
           // Exponential backoff: 2s, 4s, 8s
           const delayMs = Math.pow(2, attempt) * 1000;
-          console.log(`[TranslationEngine] Batch ${batchIndex + 1} got 503 error, retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})`);
+          log.debug(() => `[TranslationEngine] Batch ${batchIndex + 1} got 503 error, retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})`);
           await new Promise(resolve => setTimeout(resolve, delayMs));
         } else {
           // Not a 503 or out of retries
@@ -353,12 +354,12 @@ class TranslationEngine {
 
     // Handle entry count mismatches gracefully instead of throwing away translations
     if (translatedEntries.length !== batch.length) {
-      console.warn(`[TranslationEngine] Batch validation: expected ${batch.length} entries, got ${translatedEntries.length}`);
+      log.warn(() => `[TranslationEngine] Batch validation: expected ${batch.length} entries, got ${translatedEntries.length}`);
 
       if (translatedEntries.length < batch.length) {
         // Missing entries - fill in with original text (untranslated)
         const missingCount = batch.length - translatedEntries.length;
-        console.warn(`[TranslationEngine] ${missingCount} entries missing in translation, using original text for those entries`);
+        log.warn(() => `[TranslationEngine] ${missingCount} entries missing in translation, using original text for those entries`);
 
         // Create a map of translated entries by index
         const translatedMap = new Map();
@@ -389,7 +390,7 @@ class TranslationEngine {
 
       } else if (translatedEntries.length > batch.length) {
         // Too many entries - truncate to expected count
-        console.log(`[TranslationEngine] Removing ${translatedEntries.length - batch.length} extra entries`);
+        log.debug(() => `[TranslationEngine] Removing ${translatedEntries.length - batch.length} extra entries`);
 
         // Keep only the first batch.length entries
         translatedEntries.length = batch.length;
@@ -400,7 +401,7 @@ class TranslationEngine {
         }
       }
 
-      console.log(`[TranslationEngine] Entry count fixed: now have ${translatedEntries.length} entries`);
+      log.debug(() => `[TranslationEngine] Entry count fixed: now have ${translatedEntries.length} entries`);
     }
 
     // Cache individual entries
@@ -408,7 +409,7 @@ class TranslationEngine {
       this.cacheEntry(batch[i].text, targetLanguage, translatedEntries[i].text);
     }
 
-    console.log(`[TranslationEngine] Batch ${batchIndex + 1} translated and validated (${translatedEntries.length} entries)`);
+    log.debug(() => `[TranslationEngine] Batch ${batchIndex + 1} translated and validated (${translatedEntries.length} entries)`);
 
     return translatedEntries;
   }
@@ -523,7 +524,7 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
 
     // Validate: must have expected count
     if (entries.length !== expectedCount) {
-      console.warn(`[TranslationEngine] Entry count mismatch: expected ${expectedCount}, parsed ${entries.length}`);
+      log.warn(() => `[TranslationEngine] Entry count mismatch: expected ${expectedCount}, parsed ${entries.length}`);
 
       // Try alternative parsing: split by newlines and look for patterns
       const lines = cleaned.split('\n');
@@ -559,7 +560,7 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
       }
 
       if (altEntries.length > 0) {
-        console.log(`[TranslationEngine] Alternative parsing found ${altEntries.length} entries`);
+        log.debug(() => `[TranslationEngine] Alternative parsing found ${altEntries.length} entries`);
         altEntries.sort((a, b) => a.index - b.index);
 
         // Use alternative parsing if it's better than the first attempt
@@ -595,7 +596,7 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
     const allCached = cacheHits === batch.length;
 
     if (cacheHits > 0) {
-      console.log(`[TranslationEngine] Cache: ${cacheHits}/${batch.length} entries cached`);
+      log.debug(() => `[TranslationEngine] Cache: ${cacheHits}/${batch.length} entries cached`);
     }
 
     return {
@@ -654,7 +655,7 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
    */
   clearCache() {
     entryCache.clear();
-    console.log('[TranslationEngine] Entry cache cleared');
+    log.debug(() => '[TranslationEngine] Entry cache cleared');
   }
 
   /**

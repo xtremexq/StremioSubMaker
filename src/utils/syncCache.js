@@ -7,6 +7,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const { StorageFactory, StorageAdapter } = require('../storage');
+const log = require('./logger');
 
 // Cache directory for synced subtitles (legacy filesystem fallback)
 const SYNC_CACHE_DIR = path.join(process.cwd(), '.cache', 'sync_cache');
@@ -28,9 +29,9 @@ async function getStorageAdapter() {
 async function initSyncCache() {
   try {
     await fs.mkdir(SYNC_CACHE_DIR, { recursive: true });
-    console.log('[Sync Cache] Initialized at:', SYNC_CACHE_DIR);
+    log.debug(() => ['[Sync Cache] Initialized at:', SYNC_CACHE_DIR]);
   } catch (error) {
-    console.error('[Sync Cache] Failed to initialize:', error.message);
+    log.error(() => ['[Sync Cache] Failed to initialize:', error.message]);
     throw error;
   }
 }
@@ -90,10 +91,10 @@ async function saveSyncedSubtitle(videoHash, languageCode, sourceSubId, syncData
     // Save to storage
     await adapter.set(cacheKey, cacheEntry, StorageAdapter.CACHE_TYPES.SYNC);
 
-    console.log(`[Sync Cache] Saved: ${cacheKey}`);
+    log.debug(() => `[Sync Cache] Saved: ${cacheKey}`);
 
   } catch (error) {
-    console.error('[Sync Cache] Failed to save:', error.message);
+    log.error(() => ['[Sync Cache] Failed to save:', error.message]);
     throw error;
   }
 }
@@ -139,7 +140,7 @@ async function getSyncedSubtitles(videoHash, languageCode) {
               timestamp: entry.timestamp
             });
           } catch (error) {
-            console.warn(`[Sync Cache] Failed to read ${file}:`, error.message);
+            log.warn(() => [`[Sync Cache] Failed to read ${file}:`, error.message]);
           }
         }
       }
@@ -148,11 +149,11 @@ async function getSyncedSubtitles(videoHash, languageCode) {
     // Sort by timestamp (newest first)
     results.sort((a, b) => b.timestamp - a.timestamp);
 
-    console.log(`[Sync Cache] Found ${results.length} synced subtitles for ${videoHash}_${languageCode}`);
+    log.debug(() => `[Sync Cache] Found ${results.length} synced subtitles for ${videoHash}_${languageCode}`);
     return results;
 
   } catch (error) {
-    console.error('[Sync Cache] Failed to retrieve:', error.message);
+    log.error(() => ['[Sync Cache] Failed to retrieve:', error.message]);
     return [];
   }
 }
@@ -175,7 +176,7 @@ async function getSyncedSubtitle(videoHash, languageCode, sourceSubId) {
       return null;
     }
 
-    console.log(`[Sync Cache] Retrieved: ${cacheKey}`);
+    log.debug(() => `[Sync Cache] Retrieved: ${cacheKey}`);
     return {
       cacheKey,
       sourceSubId: entry.sourceSubId,
@@ -186,7 +187,7 @@ async function getSyncedSubtitle(videoHash, languageCode, sourceSubId) {
     };
 
   } catch (error) {
-    console.warn(`[Sync Cache] Failed to retrieve ${videoHash}_${languageCode}_${sourceSubId}:`, error.message);
+    log.warn(() => [`[Sync Cache] Failed to retrieve ${videoHash}_${languageCode}_${sourceSubId}:`, error.message]);
     return null;
   }
 }
@@ -205,12 +206,12 @@ async function deleteSyncedSubtitle(videoHash, languageCode, sourceSubId) {
 
     const deleted = await adapter.delete(cacheKey, StorageAdapter.CACHE_TYPES.SYNC);
     if (deleted) {
-      console.log(`[Sync Cache] Deleted: ${cacheKey}`);
+      log.debug(() => `[Sync Cache] Deleted: ${cacheKey}`);
     }
     return deleted;
 
   } catch (error) {
-    console.error('[Sync Cache] Failed to delete:', error.message);
+    log.error(() => ['[Sync Cache] Failed to delete:', error.message]);
     return false;
   }
 }
@@ -255,7 +256,7 @@ async function getCacheStats() {
     };
 
   } catch (error) {
-    console.error('[Sync Cache] Failed to get stats:', error.message);
+    log.error(() => ['[Sync Cache] Failed to get stats:', error.message]);
     return { totalSize: 0, totalSizeMB: '0.00', fileCount: 0, maxSizeGB: MAX_CACHE_SIZE_GB };
   }
 }
@@ -272,7 +273,7 @@ async function enforceCacheSizeLimit() {
       return; // Within limit
     }
 
-    console.log(`[Sync Cache] Cache size (${stats.totalSizeMB} MB) exceeds limit (${MAX_CACHE_SIZE_GB} GB), cleaning up...`);
+    log.debug(() => `[Sync Cache] Cache size (${stats.totalSizeMB} MB) exceeds limit (${MAX_CACHE_SIZE_GB} GB), cleaning up...`);
 
     // Collect all cache files with their metadata
     const allFiles = [];
@@ -319,14 +320,14 @@ async function enforceCacheSizeLimit() {
         currentSize -= file.size;
         deletedCount++;
       } catch (error) {
-        console.warn(`[Sync Cache] Failed to delete ${file.path}:`, error.message);
+        log.warn(() => [`[Sync Cache] Failed to delete ${file.path}:`, error.message]);
       }
     }
 
-    console.log(`[Sync Cache] Deleted ${deletedCount} old files, new size: ${(currentSize / (1024 * 1024)).toFixed(2)} MB`);
+    log.debug(() => `[Sync Cache] Deleted ${deletedCount} old files, new size: ${(currentSize / (1024 * 1024)).toFixed(2)} MB`);
 
   } catch (error) {
-    console.error('[Sync Cache] Failed to enforce size limit:', error.message);
+    log.error(() => ['[Sync Cache] Failed to enforce size limit:', error.message]);
   }
 }
 
@@ -338,9 +339,9 @@ async function clearSyncCache() {
   try {
     await fs.rm(SYNC_CACHE_DIR, { recursive: true, force: true });
     await initSyncCache();
-    console.log('[Sync Cache] Cleared all cached synced subtitles');
+    log.debug(() => '[Sync Cache] Cleared all cached synced subtitles');
   } catch (error) {
-    console.error('[Sync Cache] Failed to clear cache:', error.message);
+    log.error(() => ['[Sync Cache] Failed to clear cache:', error.message]);
     throw error;
   }
 }

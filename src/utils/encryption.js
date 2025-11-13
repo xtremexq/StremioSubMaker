@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const log = require('./logger');
 
 /**
  * Encryption Utility for Sensitive User Data
@@ -42,10 +43,10 @@ function getEncryptionKey() {
         throw new Error(`ENCRYPTION_KEY must be ${KEY_LENGTH * 2} hex characters (${KEY_LENGTH} bytes)`);
       }
       encryptionKey = Buffer.from(keyHex, 'hex');
-      console.log('[Encryption] Using encryption key from environment variable');
+      log.debug(() => '[Encryption] Using encryption key from environment variable');
       return encryptionKey;
     } catch (error) {
-      console.error('[Encryption] Invalid ENCRYPTION_KEY in environment:', error.message);
+      log.error(() => ['[Encryption] Invalid ENCRYPTION_KEY in environment:', error.message]);
       throw error;
     }
   }
@@ -58,10 +59,10 @@ function getEncryptionKey() {
         throw new Error(`Encryption key file corrupt: expected ${KEY_LENGTH * 2} hex characters`);
       }
       encryptionKey = Buffer.from(keyHex, 'hex');
-      console.log('[Encryption] Loaded encryption key from file:', ENCRYPTION_KEY_FILE);
+      log.debug(() => ['[Encryption] Loaded encryption key from file:', ENCRYPTION_KEY_FILE]);
       return encryptionKey;
     } catch (error) {
-      console.error('[Encryption] Failed to load encryption key from file:', error.message);
+      log.error(() => ['[Encryption] Failed to load encryption key from file:', error.message]);
       // Continue to generate new key
     }
   }
@@ -72,12 +73,12 @@ function getEncryptionKey() {
 
   try {
     fs.writeFileSync(ENCRYPTION_KEY_FILE, keyHex, { mode: 0o600 }); // Read/write for owner only
-    console.warn('[Encryption] ⚠️  Generated NEW encryption key and saved to:', ENCRYPTION_KEY_FILE);
-    console.warn('[Encryption] ⚠️  IMPORTANT: Back up this file! Loss of this key means loss of encrypted data.');
-    console.warn('[Encryption] ⚠️  For production, use ENCRYPTION_KEY environment variable instead.');
+    log.warn(() => ['[Encryption] ⚠️  Generated NEW encryption key and saved to:', ENCRYPTION_KEY_FILE]);
+    log.warn(() => '[Encryption] ⚠️  IMPORTANT: Back up this file! Loss of this key means loss of encrypted data.');
+    log.warn(() => '[Encryption] ⚠️  For production, use ENCRYPTION_KEY environment variable instead.');
   } catch (error) {
-    console.error('[Encryption] Failed to save encryption key to file:', error.message);
-    console.warn('[Encryption] Using in-memory key only (will be lost on restart!)');
+    log.error(() => ['[Encryption] Failed to save encryption key to file:', error.message]);
+    log.warn(() => '[Encryption] Using in-memory key only (will be lost on restart!)');
   }
 
   return encryptionKey;
@@ -110,7 +111,7 @@ function encrypt(data) {
 
     return encrypted;
   } catch (error) {
-    console.error('[Encryption] Encryption failed:', error.message);
+    log.error(() => ['[Encryption] Encryption failed:', error.message]);
     throw new Error('Failed to encrypt data: ' + error.message);
   }
 }
@@ -170,7 +171,7 @@ function decrypt(encryptedData, returnRawOnError = true) {
     }
   } catch (error) {
     if (returnRawOnError) {
-      console.warn('[Encryption] Decryption failed, returning raw data (backward compatibility):', error.message);
+      log.warn(() => ['[Encryption] Decryption failed, returning raw data (backward compatibility):', error.message]);
       // Try to parse as JSON if it looks like JSON
       if (encryptedData && typeof encryptedData === 'string') {
         if (encryptedData.trim().startsWith('{') || encryptedData.trim().startsWith('[')) {
@@ -183,7 +184,7 @@ function decrypt(encryptedData, returnRawOnError = true) {
       }
       return encryptedData;
     }
-    console.error('[Encryption] Decryption failed:', error.message);
+    log.error(() => ['[Encryption] Decryption failed:', error.message]);
     throw new Error('Failed to decrypt data: ' + error.message);
   }
 }
@@ -258,7 +259,7 @@ function encryptUserConfig(config) {
 
     return encrypted;
   } catch (error) {
-    console.error('[Encryption] Failed to encrypt user config:', error.message);
+    log.error(() => ['[Encryption] Failed to encrypt user config:', error.message]);
     throw error;
   }
 }
@@ -328,7 +329,7 @@ function decryptUserConfig(config) {
 
     return decrypted;
   } catch (error) {
-    console.error('[Encryption] Failed to decrypt user config:', error.message);
+    log.error(() => ['[Encryption] Failed to decrypt user config:', error.message]);
     // Return original config on error for backward compatibility
     return config;
   }

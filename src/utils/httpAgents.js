@@ -22,6 +22,7 @@
 
 const http = require('http');
 const https = require('https');
+const log = require('./logger');
 
 /**
  * HTTP Agent with connection pooling
@@ -47,7 +48,7 @@ const httpsAgent = new https.Agent({
   keepAliveMsecs: 30000  // Send keepalive probes every 30s
 });
 
-console.log('[HTTP Agents] Connection pooling initialized: maxSockets=50, maxFreeSockets=10, keepAlive=true');
+log.debug(() => '[HTTP Agents] Connection pooling initialized: maxSockets=50, maxFreeSockets=10, keepAlive=true');
 
 module.exports = {
   httpAgent,

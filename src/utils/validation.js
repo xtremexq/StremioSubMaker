@@ -1,4 +1,5 @@
 const Joi = require('joi');
+const log = require('./logger');
 
 /**
  * Validation schemas for API endpoints
@@ -74,7 +75,7 @@ function validateRequest(schema, source = 'body') {
 
     if (error) {
       const errors = error.details.map(detail => detail.message);
-      console.error(`[Validation] ${source} validation failed:`, errors);
+      log.error(() => [`[Validation] ${source} validation failed:`, errors]);
       return res.status(400).json({
         error: 'Validation failed',
         details: errors,

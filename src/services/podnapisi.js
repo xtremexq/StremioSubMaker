@@ -19,6 +19,7 @@ const axios = require('axios');
 const { toISO6391, toISO6392 } = require('../utils/languages');
 const { handleSearchError, handleDownloadError } = require('../utils/apiErrorHandler');
 const { httpAgent, httpsAgent } = require('../utils/httpAgents');
+const log = require('../utils/logger');
 
 const PODNAPISI_API_URL = 'https://www.podnapisi.net/en/ppodnapisi/search';
 const PODNAPISI_DOWNLOAD_URL = 'https://www.podnapisi.net/en/subtitles';  // Changed: Added /en/ prefix
@@ -39,7 +40,7 @@ class PodnapisService {
       httpsAgent
     });
 
-    console.log('[Podnapisi] Initialized (free API, no authentication required)');
+    log.debug(() => '[Podnapisi] Initialized (free API, no authentication required)');
   }
 
   /**
@@ -65,7 +66,7 @@ class PodnapisService {
         .filter(lang => lang !== null);
 
       if (podnapisLanguages.length === 0) {
-        console.log('[Podnapisi] No valid languages to search');
+        log.debug(() => '[Podnapisi] No valid languages to search');
         return [];
       }
 
@@ -82,21 +83,21 @@ class PodnapisService {
         queryParams.sTE = episode;  // Episode number
       }
 
-      console.log('[Podnapisi] Searching with params:', JSON.stringify(queryParams));
+      log.debug(() => ['[Podnapisi] Searching with params:', JSON.stringify(queryParams)]);
 
       const response = await this.client.get(PODNAPISI_API_URL, {
         params: queryParams
       });
 
       if (!response.data || response.status !== 200) {
-        console.log('[Podnapisi] No response from API');
+        log.debug(() => '[Podnapisi] No response from API');
         return [];
       }
 
       // Parse XML response
       const subtitles = this.parseXmlResponse(response.data, languages);
 
-      console.log(`[Podnapisi] Found ${subtitles.length} subtitles total`);
+      log.debug(() => `[Podnapisi] Found ${subtitles.length} subtitles total`);
       return subtitles;
 
     } catch (error) {
@@ -122,7 +123,7 @@ class PodnapisService {
     const subtitlePattern = /<subtitle[^>]*>[\s\S]*?<\/subtitle>/g;
     const matches = xmlData.match(subtitlePattern) || [];
 
-    console.log(`[Podnapisi] Found ${matches.length} subtitle entries in XML`);
+    log.debug(() => `[Podnapisi] Found ${matches.length} subtitle entries in XML`);
 
     for (const match of matches) {
       try {
@@ -142,7 +143,7 @@ class PodnapisService {
         const timeMatch = /<time[^>]*>([^<]*)<\/time>/i.exec(match);
 
         if (!titleMatch || (!languageNameMatch && !languageCodeMatch) || !idMatch) {
-          console.log('[Podnapisi] Skipping subtitle entry due to missing required fields');
+          log.debug(() => '[Podnapisi] Skipping subtitle entry due to missing required fields');
           continue;
         }
 
@@ -161,7 +162,7 @@ class PodnapisService {
         const extractedUrl = urlMatch ? urlMatch[1].trim() : null;
         const extractedReleases = releasesMatch ? releasesMatch[1].trim() : null;
 
-        console.log(`[Podnapisi] XML fields - id: ${extractedId}, pid: ${extractedPid}, url: ${extractedUrl}, releases: ${extractedReleases}`);
+        log.debug(() => `[Podnapisi] XML fields - id: ${extractedId}, pid: ${extractedPid}, url: ${extractedUrl}, releases: ${extractedReleases}`);
 
         // Construct proper download URL - ONLY slug-based format works!
         // Required format: /en/subtitles/{lang}-{movie-slug}/{short-id}/download
@@ -182,7 +183,7 @@ class PodnapisService {
           }
           podnapisi_id_for_download = urlPath;
           fileIdToUse = `podnapisi_${urlPath.replace(/\//g, '_')}`;  // e.g., podnapisi_en-28-years-later-2025_-llI
-          console.log(`[Podnapisi] Using direct URL from XML: ${downloadLink}`);
+          log.debug(() => `[Podnapisi] Using direct URL from XML: ${downloadLink}`);
         } else if (extractedPid) {
           // Build URL from pid (short ID like "tuhG", "-llI")
           // Format: /en/subtitles/{lang}-{slug}/{pid}/download
@@ -192,11 +193,11 @@ class PodnapisService {
           downloadLink = `${PODNAPISI_DOWNLOAD_URL}/${urlPath}/download`;
           podnapisi_id_for_download = urlPath;
           fileIdToUse = `podnapisi_${urlPath.replace(/\//g, '_')}`;  // e.g., podnapisi_pt-nobody-2021_tuhG
-          console.log(`[Podnapisi] Built URL from pid: ${downloadLink}`);
+          log.debug(() => `[Podnapisi] Built URL from pid: ${downloadLink}`);
         } else {
           // CRITICAL: No way to construct proper URL - SKIP this subtitle
-          console.warn(`[Podnapisi] Cannot construct download URL - missing pid/url for subtitle ${extractedId}. Skipping.`);
-          console.warn(`[Podnapisi] Title: ${titleMatch[1].trim()}, Lang: ${originalLang}`);
+          log.warn(() => `[Podnapisi] Cannot construct download URL - missing pid/url for subtitle ${extractedId}. Skipping.`);
+          log.warn(() => `[Podnapisi] Title: ${titleMatch[1].trim()}, Lang: ${originalLang}`);
           continue;  // Skip this subtitle - can't download it without proper URL
         }
 
@@ -222,7 +223,7 @@ class PodnapisService {
 
         subtitles.push(subtitle);
       } catch (error) {
-        console.error('[Podnapisi] Error parsing subtitle entry:', error.message);
+        log.error(() => ['[Podnapisi] Error parsing subtitle entry:', error.message]);
         continue;
       }
     }
@@ -242,7 +243,7 @@ class PodnapisService {
     }
 
     const limitedSubtitles = Object.values(groupedByLanguage).flat();
-    console.log(`[Podnapisi] Found ${subtitles.length} subtitles total, limited to ${limitedSubtitles.length} (max ${MAX_RESULTS_PER_LANGUAGE} per language)`);
+    log.debug(() => `[Podnapisi] Found ${subtitles.length} subtitles total, limited to ${limitedSubtitles.length} (max ${MAX_RESULTS_PER_LANGUAGE} per language)`);
     return limitedSubtitles;
   }
 
@@ -268,7 +269,7 @@ class PodnapisService {
    */
   async downloadSubtitle(fileId, podnapisi_id = null) {
     try {
-      console.log('[Podnapisi] Downloading subtitle:', fileId);
+      log.debug(() => ['[Podnapisi] Downloading subtitle:', fileId]);
 
       // Parse fileId if podnapisi_id not provided
       if (!podnapisi_id) {
@@ -306,11 +307,11 @@ class PodnapisService {
         downloadUrl = `${PODNAPISI_DOWNLOAD_URL}/${podnapisi_id}/download`;
       } else {
         // Invalid format - should never happen now as we skip these in search
-        console.error(`[Podnapisi] Invalid subtitle ID format: ${podnapisi_id} - cannot construct proper URL`);
+        log.error(() => `[Podnapisi] Invalid subtitle ID format: ${podnapisi_id} - cannot construct proper URL`);
         throw new Error(`Invalid Podnapisi subtitle ID format. The subtitle cannot be downloaded.`);
       }
 
-      console.log('[Podnapisi] Downloading from URL:', downloadUrl);
+      log.debug(() => ['[Podnapisi] Downloading from URL:', downloadUrl]);
 
       const response = await axios.get(downloadUrl, {
         headers: { 'User-Agent': USER_AGENT },
@@ -325,13 +326,13 @@ class PodnapisService {
 
       // Handle 404 specifically - subtitle exists in search but file not available
       if (response.status === 404) {
-        console.error(`[Podnapisi] Subtitle ${podnapisi_id} returned 404 - file not available on server`);
+        log.error(() => `[Podnapisi] Subtitle ${podnapisi_id} returned 404 - file not available on server`);
         throw new Error(`Subtitle not available: The subtitle exists in search results but the file has been removed or is not accessible on Podnapisi servers. (ID: ${podnapisi_id})`);
       }
 
       // Handle other error status codes
       if (response.status >= 400) {
-        console.error(`[Podnapisi] Download failed with status ${response.status}`);
+        log.error(() => `[Podnapisi] Download failed with status ${response.status}`);
         throw new Error(`HTTP ${response.status}: Failed to download subtitle from Podnapisi`);
       }
 
@@ -347,11 +348,11 @@ class PodnapisService {
 
       // Check if we got an HTML error page instead of subtitle content
       if (content.toLowerCase().includes('<!doctype html') || content.toLowerCase().includes('<html')) {
-        console.error('[Podnapisi] Received HTML page instead of subtitle file');
+        log.error(() => '[Podnapisi] Received HTML page instead of subtitle file');
         throw new Error('Subtitle not available: Podnapisi returned an error page instead of subtitle content');
       }
 
-      console.log('[Podnapisi] Subtitle downloaded successfully (' + content.length + ' bytes)');
+      log.debug(() => '[Podnapisi] Subtitle downloaded successfully (' + content.length + ' bytes)');
       return content;
 
     } catch (error) {

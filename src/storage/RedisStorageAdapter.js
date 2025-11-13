@@ -1,3 +1,4 @@
+const log = require('../utils/logger');
 const StorageAdapter = require('./StorageAdapter');
 const Redis = require('ioredis');
 
@@ -82,14 +83,14 @@ class RedisStorageAdapter extends StorageAdapter {
       });
 
       this.initialized = true;
-      console.log('Redis storage adapter initialized successfully');
+      log.debug(() => 'Redis storage adapter initialized successfully');
     } catch (error) {
       // Log a concise error message instead of the full stack trace
       const isConnectionError = error.code === 'ECONNREFUSED' || error.message === 'Redis connection timeout';
       if (isConnectionError) {
-        console.log(`Redis connection failed: Unable to connect to ${this.options.host}:${this.options.port}`);
+        log.debug(() => `Redis connection failed: Unable to connect to ${this.options.host}:${this.options.port}`);
       } else {
-        console.error('Failed to initialize Redis storage adapter:', error.message);
+        log.error(() => 'Failed to initialize Redis storage adapter:', error.message);
       }
       throw error;
     }
@@ -122,7 +123,7 @@ class RedisStorageAdapter extends StorageAdapter {
         return content;
       }
     } catch (error) {
-      console.error(`Redis get error for key ${key}:`, error);
+      log.error(() => `Redis get error for key ${key}:`, error);
       return null;
     }
   }
@@ -199,7 +200,7 @@ class RedisStorageAdapter extends StorageAdapter {
       await pipeline.exec();
       return true;
     } catch (error) {
-      console.error(`Redis set error for key ${key}:`, error);
+      log.error(() => `Redis set error for key ${key}:`, error);
       return false;
     }
   }
@@ -235,7 +236,7 @@ class RedisStorageAdapter extends StorageAdapter {
       await pipeline.exec();
       return true;
     } catch (error) {
-      console.error(`Redis delete error for key ${key}:`, error);
+      log.error(() => `Redis delete error for key ${key}:`, error);
       return false;
     }
   }
@@ -253,7 +254,7 @@ class RedisStorageAdapter extends StorageAdapter {
       const exists = await this.client.exists(redisKey);
       return exists === 1;
     } catch (error) {
-      console.error(`Redis exists error for key ${key}:`, error);
+      log.error(() => `Redis exists error for key ${key}:`, error);
       return false;
     }
   }
@@ -287,7 +288,7 @@ class RedisStorageAdapter extends StorageAdapter {
 
       return keys;
     } catch (error) {
-      console.error(`Redis list error for cache type ${cacheType}:`, error);
+      log.error(() => `Redis list error for cache type ${cacheType}:`, error);
       return [];
     }
   }
@@ -305,7 +306,7 @@ class RedisStorageAdapter extends StorageAdapter {
       const size = await this.client.get(sizeKey);
       return size ? parseInt(size, 10) : 0;
     } catch (error) {
-      console.error(`Redis size error for cache type ${cacheType}:`, error);
+      log.error(() => `Redis size error for cache type ${cacheType}:`, error);
       return 0;
     }
   }
@@ -332,7 +333,7 @@ class RedisStorageAdapter extends StorageAdapter {
         expiresAt: meta.expiresAt === 'null' ? null : parseInt(meta.expiresAt, 10)
       };
     } catch (error) {
-      console.error(`Redis metadata error for key ${key}:`, error);
+      log.error(() => `Redis metadata error for key ${key}:`, error);
       return null;
     }
   }
@@ -387,10 +388,10 @@ class RedisStorageAdapter extends StorageAdapter {
         offset += 100;
       }
 
-      console.log(`Enforced ${cacheType} cache limit: deleted ${deleted} entries, freed ${bytesFreed} bytes`);
+      log.debug(() => `Enforced ${cacheType} cache limit: deleted ${deleted} entries, freed ${bytesFreed} bytes`);
       return { deleted, bytesFreed };
     } catch (error) {
-      console.error(`Redis enforce limit error for cache type ${cacheType}:`, error);
+      log.error(() => `Redis enforce limit error for cache type ${cacheType}:`, error);
       return { deleted: 0, bytesFreed: 0 };
     }
   }
@@ -435,7 +436,7 @@ class RedisStorageAdapter extends StorageAdapter {
 
       return { deleted, bytesFreed };
     } catch (error) {
-      console.error(`Redis cleanup error for cache type ${cacheType}:`, error);
+      log.error(() => `Redis cleanup error for cache type ${cacheType}:`, error);
       return { deleted: 0, bytesFreed: 0 };
     }
   }
@@ -447,7 +448,7 @@ class RedisStorageAdapter extends StorageAdapter {
     if (this.client) {
       await this.client.quit();
       this.initialized = false;
-      console.log('Redis storage adapter closed');
+      log.debug(() => 'Redis storage adapter closed');
     }
   }
 
@@ -463,7 +464,7 @@ class RedisStorageAdapter extends StorageAdapter {
       const result = await this.client.ping();
       return result === 'PONG';
     } catch (error) {
-      console.error('Redis health check failed:', error);
+      log.error(() => 'Redis health check failed:', error);
       return false;
     }
   }

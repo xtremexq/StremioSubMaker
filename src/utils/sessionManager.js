@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const { StorageFactory, StorageAdapter } = require('../storage');
+const log = require('./logger');
 const { shutdownLogger } = require('./logger');
 const { encryptUserConfig, decryptUserConfig } = require('./encryption');
 
@@ -39,7 +40,7 @@ class SessionManager {
             updateAgeOnHas: false,
             // Dispose callback for cleanup
             dispose: (value, key) => {
-                console.log(`[SessionManager] Session expired: ${key}`);
+                log.debug(() => `[SessionManager] Session expired: ${key}`);
             }
         };
         if (this.maxSessions) {
@@ -55,7 +56,7 @@ class SessionManager {
 
         // Load sessions from disk on startup
         this.loadFromDisk().catch(err => {
-            console.error('[SessionManager] Failed to load sessions from disk:', err.message);
+            log.error(() => ['[SessionManager] Failed to load sessions from disk:', err.message]);
         });
 
         // Start auto-save interval
@@ -70,10 +71,10 @@ class SessionManager {
             const dir = path.dirname(this.persistencePath);
             if (!require('fs').existsSync(dir)) {
                 require('fs').mkdirSync(dir, { recursive: true });
-                console.log(`[SessionManager] Created data directory: ${dir}`);
+                log.debug(() => `[SessionManager] Created data directory: ${dir}`);
             }
         } catch (err) {
-            console.error('[SessionManager] Failed to create data directory:', err.message);
+            log.error(() => ['[SessionManager] Failed to create data directory:', err.message]);
         }
     }
 
@@ -105,7 +106,7 @@ class SessionManager {
         this.cache.set(token, sessionData);
         this.dirty = true;
 
-        console.log(`[SessionManager] Session created: ${token} (total: ${this.cache.size})`);
+        log.debug(() => `[SessionManager] Session created: ${token} (total: ${this.cache.size})`);
         return token;
     }
 
@@ -155,7 +156,7 @@ class SessionManager {
         const sessionData = this.cache.get(token);
 
         if (!sessionData) {
-            console.warn(`[SessionManager] Cannot update - session not found: ${token}`);
+            log.warn(() => `[SessionManager] Cannot update - session not found: ${token}`);
             return false;
         }
 
@@ -169,7 +170,7 @@ class SessionManager {
         this.cache.set(token, sessionData);
         this.dirty = true;
 
-        console.log(`[SessionManager] Session updated: ${token}`);
+        log.debug(() => `[SessionManager] Session updated: ${token}`);
         return true;
     }
 
@@ -182,7 +183,7 @@ class SessionManager {
         const existed = this.cache.delete(token);
         if (existed) {
             this.dirty = true;
-            console.log(`[SessionManager] Session deleted: ${token}`);
+            log.debug(() => `[SessionManager] Session deleted: ${token}`);
         }
         return existed;
     }
@@ -228,9 +229,9 @@ class SessionManager {
             await adapter.set('sessions', data, StorageAdapter.CACHE_TYPES.SESSION);
 
             this.dirty = false;
-            console.log(`[SessionManager] Saved ${Object.keys(sessions).length} sessions to storage`);
+            log.debug(() => `[SessionManager] Saved ${Object.keys(sessions).length} sessions to storage`);
         } catch (err) {
-            console.error('[SessionManager] Failed to save sessions:', err);
+            log.error(() => ['[SessionManager] Failed to save sessions:', err]);
             throw err;
         }
     }
@@ -245,7 +246,7 @@ class SessionManager {
             const data = await adapter.get('sessions', StorageAdapter.CACHE_TYPES.SESSION);
 
             if (!data || !data.sessions) {
-                console.log('[SessionManager] No sessions in storage');
+                log.debug(() => '[SessionManager] No sessions in storage');
                 return;
             }
 
@@ -269,7 +270,7 @@ class SessionManager {
                         sessionData.config = encryptUserConfig(sessionData.config);
                         migratedCount++;
                     } catch (error) {
-                        console.error(`[SessionManager] Failed to encrypt config for token ${token}:`, error.message);
+                        log.error(() => [`[SessionManager] Failed to encrypt config for token ${token}:`, error.message]);
                         // Keep the unencrypted config to avoid data loss
                     }
                 }
@@ -280,19 +281,19 @@ class SessionManager {
             }
 
             if (migratedCount > 0) {
-                console.log(`[SessionManager] Migrated ${migratedCount} sessions to encrypted format`);
+                log.debug(() => `[SessionManager] Migrated ${migratedCount} sessions to encrypted format`);
                 this.dirty = true; // Mark as dirty to save encrypted versions
             }
 
-            console.log(`[SessionManager] Loaded ${loadedCount} sessions from storage (${expiredCount} expired)`);
+            log.debug(() => `[SessionManager] Loaded ${loadedCount} sessions from storage (${expiredCount} expired)`);
             if (!this.dirty) {
                 this.dirty = false;
             }
         } catch (err) {
             if (err.code === 'ENOENT') {
-                console.log('[SessionManager] No existing sessions file found, starting fresh');
+                log.debug(() => '[SessionManager] No existing sessions file found, starting fresh');
             } else {
-                console.error('[SessionManager] Failed to load sessions:', err.message);
+                log.error(() => ['[SessionManager] Failed to load sessions:', err.message]);
             }
         }
     }
@@ -310,7 +311,7 @@ class SessionManager {
                 try {
                     await this.saveToDisk();
                 } catch (err) {
-                    console.error('[SessionManager] Auto-save failed:', err);
+                    log.error(() => ['[SessionManager] Auto-save failed:', err]);
                 }
             }
         }, this.autoSaveInterval);
@@ -329,17 +330,17 @@ class SessionManager {
         const shutdown = async (signal) => {
             // Prevent multiple shutdown attempts
             if (isShuttingDown) {
-                console.warn(`[SessionManager] Shutdown already in progress, ignoring ${signal}`);
+                log.warn(() => `[SessionManager] Shutdown already in progress, ignoring ${signal}`);
                 return;
             }
             isShuttingDown = true;
 
-            console.warn(`[SessionManager] Received ${signal}, saving sessions...`);
+            log.warn(() => `[SessionManager] Received ${signal}, saving sessions...`);
 
             // Clear the auto-save timer
             if (this.saveTimer) {
                 clearInterval(this.saveTimer);
-                console.warn('[SessionManager] Cleared auto-save timer');
+                log.warn(() => '[SessionManager] Cleared auto-save timer');
             }
 
             // Save with timeout to prevent hanging
@@ -352,17 +353,17 @@ class SessionManager {
                 });
 
                 await Promise.race([savePromise, timeoutPromise]);
-                console.warn('[SessionManager] Sessions saved successfully');
+                log.warn(() => '[SessionManager] Sessions saved successfully');
             } catch (err) {
                 saveFailed = true;
-                console.error('[SessionManager] Failed to save sessions on shutdown:', err.message);
+                log.error(() => ['[SessionManager] Failed to save sessions on shutdown:', err.message]);
                 // Continue with shutdown even if save fails
             }
 
             // Close the server if provided
             if (server) {
                 server.close(() => {
-                    console.warn('[SessionManager] Server closed gracefully');
+                    log.warn(() => '[SessionManager] Server closed gracefully');
                     // Close logger before exit
                     shutdownLogger();
                     process.exit(saveFailed ? 1 : 0);
@@ -370,7 +371,7 @@ class SessionManager {
 
                 // Force exit after 2 seconds if server close hangs
                 setTimeout(() => {
-                    console.warn('[SessionManager] Forcefully exiting after timeout');
+                    log.warn(() => '[SessionManager] Forcefully exiting after timeout');
                     // Close logger before exit
                     shutdownLogger();
                     process.exit(saveFailed ? 1 : 0);
@@ -390,7 +391,7 @@ class SessionManager {
 
         // Handle uncaught exceptions to save before crash
         process.on('uncaughtException', (err) => {
-            console.error('[SessionManager] Uncaught exception:', err);
+            log.error(() => ['[SessionManager] Uncaught exception:', err]);
             if (!isShuttingDown) {
                 shutdown('uncaughtException').then(() => {
                     shutdownLogger();
@@ -410,7 +411,7 @@ class SessionManager {
         this.cache.clear();
         this.dirty = true;
         await this.saveToDisk();
-        console.log('[SessionManager] All sessions cleared');
+        log.debug(() => '[SessionManager] All sessions cleared');
     }
 }
 

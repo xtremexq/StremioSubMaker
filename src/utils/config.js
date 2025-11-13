@@ -1,6 +1,7 @@
 const { DEFAULT_TRANSLATION_PROMPT } = require('../services/gemini');
 const DEFAULT_API_KEYS = require('../config/defaultApiKeys');
 const { getSessionManager } = require('./sessionManager');
+const log = require('./logger');
 
 /**
  * Parse configuration from config string or session token
@@ -23,10 +24,10 @@ function parseConfig(configStr, options = {}) {
       const config = sessionManager.getSession(configStr);
 
       if (config) {
-        console.log(`[Config] Retrieved config from session token`);
+        log.debug(() => '[Config] Retrieved config from session token');
         return normalizeConfig(config);
       } else {
-        console.warn(`[Config] Session token not found: ${configStr}`);
+        log.warn(() => `[Config] Session token not found: ${configStr}`);
         return getDefaultConfig();
       }
     }
@@ -37,11 +38,11 @@ function parseConfig(configStr, options = {}) {
     }
 
     // Production mode: reject base64 configs
-    console.warn('[Config] Base64 configs not allowed in production mode. Use session tokens.');
+    log.warn(() => '[Config] Base64 configs not allowed in production mode. Use session tokens.');
     return getDefaultConfig();
 
   } catch (error) {
-    console.error('[Config] Unexpected error during config parsing:', error.message);
+    log.error(() => ['[Config] Unexpected error during config parsing:', error.message]);
     return getDefaultConfig();
   }
 }
@@ -58,16 +59,16 @@ function parseBase64Config(configStr) {
     try {
       decoded = Buffer.from(configStr, 'base64').toString('utf-8');
     } catch (decodeError) {
-      console.error('[Config] Base64 decode error. Config string length:', configStr.length);
-      console.error('[Config] First 50 chars:', configStr.substring(0, 50));
+      log.error(() => ['[Config] Base64 decode error. Config string length:', configStr.length]);
+      log.error(() => ['[Config] First 50 chars:', configStr.substring(0, 50)]);
       return getDefaultConfig();
     }
 
     // Check if decoded string looks like JSON (should start with { or [)
     const trimmed = decoded.trim();
     if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
-      console.error('[Config] Decoded content does not look like JSON');
-      console.error('[Config] Decoded preview (first 100 chars):', decoded.substring(0, 100).replace(/[^\x20-\x7E]/g, '�'));
+      log.error(() => '[Config] Decoded content does not look like JSON');
+      log.error(() => ['[Config] Decoded preview (first 100 chars):', decoded.substring(0, 100).replace(/[^\x20-\x7E]/g, '�')]);
       return getDefaultConfig();
     }
 
@@ -75,14 +76,14 @@ function parseBase64Config(configStr) {
     try {
       config = JSON.parse(decoded);
     } catch (parseError) {
-      console.error('[Config] JSON parse error:', parseError.message);
-      console.error('[Config] Problematic JSON preview (first 200 chars):', decoded.substring(0, 200));
+      log.error(() => ['[Config] JSON parse error:', parseError.message]);
+      log.error(() => ['[Config] Problematic JSON preview (first 200 chars):', decoded.substring(0, 200)]);
       return getDefaultConfig();
     }
 
     return normalizeConfig(config);
   } catch (error) {
-    console.error('[Config] Unexpected error during base64 config parsing:', error.message);
+    log.error(() => ['[Config] Unexpected error during base64 config parsing:', error.message]);
     return getDefaultConfig();
   }
 }
@@ -95,7 +96,7 @@ function parseBase64Config(configStr) {
 function normalizeConfig(config) {
   // Migrate old config format to new format (backward compatibility)
   if (config.opensubtitlesApiKey && !config.subtitleProviders) {
-    console.log('[Config] Migrating old config format to new format');
+    log.debug(() => '[Config] Migrating old config format to new format');
     config = migrateOldConfig(config);
   }
 
@@ -186,7 +187,7 @@ function encodeConfig(config) {
     const json = JSON.stringify(config);
     return Buffer.from(json, 'utf-8').toString('base64');
   } catch (error) {
-    console.error('[Config] Encode error:', error.message);
+    log.error(() => ['[Config] Encode error:', error.message]);
     return '';
   }
 }

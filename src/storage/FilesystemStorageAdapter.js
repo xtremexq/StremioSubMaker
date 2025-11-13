@@ -1,3 +1,4 @@
+const log = require('../utils/logger');
 const StorageAdapter = require('./StorageAdapter');
 const fs = require('fs');
 const path = require('path');
@@ -120,9 +121,9 @@ class FilesystemStorageAdapter extends StorageAdapter {
       }
 
       this.initialized = true;
-      console.log('Filesystem storage adapter initialized successfully');
+      log.debug(() => 'Filesystem storage adapter initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize filesystem storage adapter:', error);
+      log.error(() => 'Failed to initialize filesystem storage adapter:', error);
       throw error;
     }
   }
@@ -139,7 +140,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
       const filePath = this._getFilePath(key, cacheType);
 
       if (!this._verifyPath(filePath, cacheType)) {
-        console.error(`[Filesystem] Security: Path traversal attempt detected for key ${key}`);
+        log.error(() => `[Filesystem] Security: Path traversal attempt detected for key ${key}`);
         return null;
       }
 
@@ -168,7 +169,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
       // Return the content field if it exists, otherwise return the whole object
       return data.content !== undefined ? data.content : data;
     } catch (error) {
-      console.error(`[Filesystem] Failed to read key ${key}:`, error.message);
+      log.error(() => `[Filesystem] Failed to read key ${key}:`, error.message);
       return null;
     }
   }
@@ -186,7 +187,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
       const tempPath = `${filePath}.tmp`;
 
       if (!this._verifyPath(filePath, cacheType)) {
-        console.error(`[Filesystem] Security: Path traversal attempt detected for key ${key}`);
+        log.error(() => `[Filesystem] Security: Path traversal attempt detected for key ${key}`);
         return false;
       }
 
@@ -236,13 +237,13 @@ class FilesystemStorageAdapter extends StorageAdapter {
       if (sizeLimit && this.cacheSizes[cacheType] > sizeLimit) {
         // Don't await - run cleanup in background
         this._enforceLimit(cacheType).catch(err => {
-          console.error(`[Filesystem] Background cleanup error:`, err);
+          log.error(() => `[Filesystem] Background cleanup error:`, err);
         });
       }
 
       return true;
     } catch (error) {
-      console.error(`[Filesystem] Failed to set key ${key}:`, error.message);
+      log.error(() => `[Filesystem] Failed to set key ${key}:`, error.message);
       return false;
     }
   }
@@ -259,7 +260,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
       const filePath = this._getFilePath(key, cacheType);
 
       if (!this._verifyPath(filePath, cacheType)) {
-        console.error(`[Filesystem] Security: Path traversal attempt detected for key ${key}`);
+        log.error(() => `[Filesystem] Security: Path traversal attempt detected for key ${key}`);
         return false;
       }
 
@@ -276,7 +277,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
 
       return true;
     } catch (error) {
-      console.error(`[Filesystem] Failed to delete key ${key}:`, error.message);
+      log.error(() => `[Filesystem] Failed to delete key ${key}:`, error.message);
       return false;
     }
   }
@@ -298,7 +299,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
 
       return fs.existsSync(filePath);
     } catch (error) {
-      console.error(`[Filesystem] Failed to check existence of key ${key}:`, error.message);
+      log.error(() => `[Filesystem] Failed to check existence of key ${key}:`, error.message);
       return false;
     }
   }
@@ -338,7 +339,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
 
       return keys;
     } catch (error) {
-      console.error(`[Filesystem] Failed to list keys for cache type ${cacheType}:`, error.message);
+      log.error(() => `[Filesystem] Failed to list keys for cache type ${cacheType}:`, error.message);
       return [];
     }
   }
@@ -372,7 +373,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
       this.cacheSizes[cacheType] = actualSize;
       return actualSize;
     } catch (error) {
-      console.error(`[Filesystem] Failed to calculate size for cache type ${cacheType}:`, error.message);
+      log.error(() => `[Filesystem] Failed to calculate size for cache type ${cacheType}:`, error.message);
       return 0;
     }
   }
@@ -402,7 +403,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
         expiresAt: data.expiresAt || null
       };
     } catch (error) {
-      console.error(`[Filesystem] Failed to get metadata for key ${key}:`, error.message);
+      log.error(() => `[Filesystem] Failed to get metadata for key ${key}:`, error.message);
       return null;
     }
   }
@@ -465,17 +466,17 @@ class FilesystemStorageAdapter extends StorageAdapter {
           bytesFreed += file.size;
           remainingSize -= file.size;
         } catch (error) {
-          console.error(`[Filesystem] Failed to delete file ${file.path}:`, error.message);
+          log.error(() => `[Filesystem] Failed to delete file ${file.path}:`, error.message);
         }
       }
 
       // Update cache size
       this.cacheSizes[cacheType] = remainingSize;
 
-      console.log(`[Filesystem] Enforced ${cacheType} cache limit: deleted ${deleted} entries, freed ${bytesFreed} bytes`);
+      log.debug(() => `[Filesystem] Enforced ${cacheType} cache limit: deleted ${deleted} entries, freed ${bytesFreed} bytes`);
       return { deleted, bytesFreed };
     } catch (error) {
-      console.error(`[Filesystem] Failed to enforce limit for cache type ${cacheType}:`, error.message);
+      log.error(() => `[Filesystem] Failed to enforce limit for cache type ${cacheType}:`, error.message);
       return { deleted: 0, bytesFreed: 0 };
     }
   }
@@ -528,12 +529,12 @@ class FilesystemStorageAdapter extends StorageAdapter {
       bytesFreed += limitResult.bytesFreed;
 
       if (deleted > 0) {
-        console.log(`[Filesystem] Cleaned up ${cacheType}: deleted ${deleted} entries, freed ${bytesFreed} bytes`);
+        log.debug(() => `[Filesystem] Cleaned up ${cacheType}: deleted ${deleted} entries, freed ${bytesFreed} bytes`);
       }
 
       return { deleted, bytesFreed };
     } catch (error) {
-      console.error(`[Filesystem] Failed to cleanup cache type ${cacheType}:`, error.message);
+      log.error(() => `[Filesystem] Failed to cleanup cache type ${cacheType}:`, error.message);
       return { deleted: 0, bytesFreed: 0 };
     }
   }
@@ -543,7 +544,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
    */
   async close() {
     this.initialized = false;
-    console.log('Filesystem storage adapter closed');
+    log.debug(() => 'Filesystem storage adapter closed');
   }
 
   /**
@@ -569,7 +570,7 @@ class FilesystemStorageAdapter extends StorageAdapter {
 
       return true;
     } catch (error) {
-      console.error('[Filesystem] Health check failed:', error);
+      log.error(() => '[Filesystem] Health check failed:', error);
       return false;
     }
   }

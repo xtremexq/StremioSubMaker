@@ -10,7 +10,7 @@ const { getLanguageName, getDisplayName } = require('../utils/languages');
 const { LRUCache } = require('lru-cache');
 const syncCache = require('../utils/syncCache');
 const { StorageFactory, StorageAdapter } = require('../storage');
-const { debug } = require('../utils/logger');
+const log = require('../utils/logger');
 
 const fs = require('fs');
 const path = require('path');
@@ -110,7 +110,7 @@ Please wait ~1-3 minutes and reselect this subtitle.
 Partial results will appear as they are ready.`;
 
   // Log the loading subtitle for debugging
-  console.log('[Subtitles] Created loading subtitle with', srt.split('\n\n').length, 'entries');
+  log.debug(() => ['[Subtitles] Created loading subtitle with', srt.split('\n\n').length, 'entries']);
   return srt;
 }
 
@@ -176,7 +176,7 @@ function buildPartialSrtWithTail(mergedSrt) {
     const full = [...reindexed, tail];
     return toSRT(full);
   } catch (e) {
-    console.warn('[Subtitles] Error building partial SRT with tail:', e.message);
+    log.warn(() => `[Subtitles] Error building partial SRT with tail: ${e.message}`);
     // As fallback, if we have content, append a simple loading tail
     if (mergedSrt && typeof mergedSrt === 'string' && mergedSrt.trim().length > 0) {
       const lineCount = mergedSrt.split('\n').length + 10;
@@ -255,14 +255,14 @@ function initializeCacheDirectory() {
   try {
     if (!fs.existsSync(CACHE_DIR)) {
       fs.mkdirSync(CACHE_DIR, { recursive: true });
-      console.log('[Cache] Created translation cache directory');
+      log.debug(() => '[Cache] Created translation cache directory');
     }
     if (!fs.existsSync(BYPASS_CACHE_DIR)) {
       fs.mkdirSync(BYPASS_CACHE_DIR, { recursive: true });
-      console.log('[Cache] Created bypass translation cache directory');
+      log.debug(() => '[Cache] Created bypass translation cache directory');
     }
   } catch (error) {
-    console.error('[Cache] Failed to create cache directory:', error.message);
+    log.error(() => ['[Cache] Failed to create cache directory:', error.message]);
   }
 }
 
@@ -295,7 +295,7 @@ function verifyCacheIntegrity() {
           validCount++;
         }
       } catch (error) {
-        console.error(`[Cache] Corrupt cache file ${file}:`, error.message);
+        log.error(() => [`[Cache] Corrupt cache file ${file}:`, error.message]);
         // Delete corrupt files
         try {
           fs.unlinkSync(path.join(CACHE_DIR, file));
@@ -306,9 +306,9 @@ function verifyCacheIntegrity() {
       }
     }
 
-    console.log(`[Cache] Integrity check: ${validCount} valid, ${expiredCount} expired (cleaned), ${corruptCount} corrupt (removed)`);
+    log.debug(() => `[Cache] Integrity check: ${validCount} valid, ${expiredCount} expired (cleaned), ${corruptCount} corrupt (removed)`);
   } catch (error) {
-    console.error('[Cache] Failed to verify cache integrity:', error.message);
+    log.error(() => ['[Cache] Failed to verify cache integrity:', error.message]);
   }
 }
 
@@ -339,10 +339,10 @@ function verifyBypassCacheIntegrity() {
     }
 
     if (removedCount > 0) {
-      console.log(`[Bypass Cache] Cleaned ${removedCount} expired entries`);
+      log.debug(() => `[Bypass Cache] Cleaned ${removedCount} expired entries`);
     }
   } catch (error) {
-    console.error('[Bypass Cache] Failed to verify/clean bypass cache:', error.message);
+    log.error(() => ['[Bypass Cache] Failed to verify/clean bypass cache:', error.message]);
   }
 }
 
@@ -377,7 +377,7 @@ async function readFromStorage(cacheKey) {
     cacheMetrics.diskReads++;
     return cached;
   } catch (error) {
-    console.error(`[Cache] Failed to read from storage for key ${cacheKey}:`, error.message);
+    log.error(() => [`[Cache] Failed to read from storage for key ${cacheKey}:`, error.message]);
     return null;
   }
 }
@@ -398,7 +398,7 @@ async function readFromBypassStorage(cacheKey) {
     cacheMetrics.diskReads++;
     return cached;
   } catch (error) {
-    console.error(`[Bypass Cache] Failed to read from bypass storage for key ${cacheKey}:`, error.message);
+    log.error(() => [`[Bypass Cache] Failed to read from bypass storage for key ${cacheKey}:`, error.message]);
     return null;
   }
 }
@@ -414,9 +414,9 @@ async function saveToStorage(cacheKey, cachedData) {
     await adapter.set(cacheKey, cachedData, StorageAdapter.CACHE_TYPES.TRANSLATION, ttl);
 
     cacheMetrics.diskWrites++;
-    console.log(`[Cache] Saved translation to storage: ${cacheKey} (expires: ${cachedData.expiresAt ? new Date(cachedData.expiresAt).toISOString() : 'never'})`);
+    log.debug(() => `[Cache] Saved translation to storage: ${cacheKey} (expires: ${cachedData.expiresAt ? new Date(cachedData.expiresAt).toISOString() : 'never'})`);
   } catch (error) {
-    console.error('[Cache] Failed to save translation to storage:', error.message);
+    log.error(() => ['[Cache] Failed to save translation to storage:', error.message]);
   }
 }
 
@@ -432,7 +432,7 @@ async function saveToBypassStorage(cacheKey, cachedData) {
 
     cacheMetrics.diskWrites++;
   } catch (error) {
-    console.error('[Bypass Cache] Failed to save translation to bypass storage:', error.message);
+    log.error(() => ['[Bypass Cache] Failed to save translation to bypass storage:', error.message]);
   }
 }
 
@@ -448,7 +448,7 @@ async function saveToPartialStorage(cacheKey, cachedData) {
 
     cacheMetrics.diskWrites++;
   } catch (error) {
-    console.error('[Partial Cache] Failed to save partial translation to storage:', error.message);
+    log.error(() => ['[Partial Cache] Failed to save partial translation to storage:', error.message]);
   }
 }
 
@@ -474,7 +474,7 @@ async function readFromPartialCache(cacheKey) {
     cacheMetrics.diskReads++;
     return cached;
   } catch (error) {
-    console.error(`[Partial Cache] Failed to read from partial for key ${cacheKey}:`, error.message);
+    log.error(() => [`[Partial Cache] Failed to read from partial for key ${cacheKey}:`, error.message]);
     return null;
   }
 }
@@ -503,7 +503,7 @@ function calculateCacheSize() {
 
     return totalSize;
   } catch (error) {
-    console.error('[Cache] Failed to calculate cache size:', error.message);
+    log.error(() => ['[Cache] Failed to calculate cache size:', error.message]);
     return 0;
   }
 }
@@ -522,7 +522,7 @@ function enforceCacheSizeLimit() {
       return; // Within limit
     }
 
-    console.log(`[Cache] Cache size (${(totalSize / 1024 / 1024 / 1024).toFixed(2)}GB) exceeds limit (${(MAX_CACHE_SIZE_BYTES / 1024 / 1024 / 1024).toFixed(2)}GB), performing LRU eviction`);
+    log.debug(() => `[Cache] Cache size (${(totalSize / 1024 / 1024 / 1024).toFixed(2)}GB) exceeds limit (${(MAX_CACHE_SIZE_BYTES / 1024 / 1024 / 1024).toFixed(2)}GB), performing LRU eviction`);
 
     // Get all cache files with their access times
     const files = fs.readdirSync(CACHE_DIR);
@@ -562,15 +562,15 @@ function enforceCacheSizeLimit() {
         evictedCount++;
         cacheMetrics.filesEvicted++;
       } catch (error) {
-        console.error(`[Cache] Failed to evict file ${file.path}:`, error.message);
+        log.error(() => [`[Cache] Failed to evict file ${file.path}:`, error.message]);
       }
     }
 
-    console.log(`[Cache] LRU eviction complete: removed ${evictedCount} files, new size: ${(currentSize / 1024 / 1024 / 1024).toFixed(2)}GB`);
+    log.debug(() => `[Cache] LRU eviction complete: removed ${evictedCount} files, new size: ${(currentSize / 1024 / 1024 / 1024).toFixed(2)}GB`);
     cacheMetrics.totalCacheSize = currentSize;
 
   } catch (error) {
-    console.error('[Cache] Failed to enforce cache size limit:', error.message);
+    log.error(() => ['[Cache] Failed to enforce cache size limit:', error.message]);
   }
 }
 
@@ -582,7 +582,7 @@ function logCacheMetrics() {
     : 0;
   const cacheSizeGB = (cacheMetrics.totalCacheSize / 1024 / 1024 / 1024).toFixed(2);
 
-  console.log(`[Cache Metrics] Uptime: ${uptime}m | Hits: ${cacheMetrics.hits} | Misses: ${cacheMetrics.misses} | Hit Rate: ${hitRate}% | Disk R/W: ${cacheMetrics.diskReads}/${cacheMetrics.diskWrites} | API Calls: ${cacheMetrics.apiCalls} | Est. Cost Saved: $${cacheMetrics.estimatedCostSaved.toFixed(3)} | Cache Size: ${cacheSizeGB}GB | Evicted: ${cacheMetrics.filesEvicted}`);
+  log.debug(() => `[Cache Metrics] Uptime: ${uptime}m | Hits: ${cacheMetrics.hits} | Misses: ${cacheMetrics.misses} | Hit Rate: ${hitRate}% | Disk R/W: ${cacheMetrics.diskReads}/${cacheMetrics.diskWrites} | API Calls: ${cacheMetrics.apiCalls} | Est. Cost Saved: $${cacheMetrics.estimatedCostSaved.toFixed(3)} | Cache Size: ${cacheSizeGB}GB | Evicted: ${cacheMetrics.filesEvicted}`);
 }
 
 // Initialize cache on module load
@@ -592,7 +592,7 @@ verifyBypassCacheIntegrity();
 
 // Calculate initial cache size
 cacheMetrics.totalCacheSize = calculateCacheSize();
-console.log(`[Cache] Initial cache size: ${(cacheMetrics.totalCacheSize / 1024 / 1024 / 1024).toFixed(2)}GB`);
+log.debug(() => `[Cache] Initial cache size: ${(cacheMetrics.totalCacheSize / 1024 / 1024 / 1024).toFixed(2)}GB`);
 
 // Log metrics every 30 minutes
 setInterval(logCacheMetrics, 1000 * 60 * 30);
@@ -612,18 +612,18 @@ async function deduplicateSearch(key, fn) {
     // Check completed results cache first (persistent cache)
     const cachedResult = subtitleSearchResultsCache.get(key);
     if (cachedResult) {
-        console.log(`[Subtitle Cache] Found cached search results for: ${shortKey(key)} (${cachedResult.length} subtitles)`);
+        log.debug(() => `[Subtitle Cache] Found cached search results for: ${shortKey(key)} (${cachedResult.length} subtitles)`);
         return cachedResult;
     }
 
     // Check in-flight requests (prevents duplicate API calls for concurrent requests)
     const cached = inFlightSearches.get(key);
     if (cached) {
-        console.log(`[Dedup] Subtitle search already in flight: ${shortKey(key)}`);
+        log.debug(() => `[Dedup] Subtitle search already in flight: ${shortKey(key)}`);
         return cached.promise;
     }
 
-    console.log(`[Dedup] Processing new subtitle search: ${shortKey(key)}`);
+    log.debug(() => `[Dedup] Processing new subtitle search: ${shortKey(key)}`);
     const promise = fn();
 
     inFlightSearches.set(key, { promise });
@@ -633,7 +633,7 @@ async function deduplicateSearch(key, fn) {
         // Cache the completed result for future requests
         if (result && Array.isArray(result)) {
             subtitleSearchResultsCache.set(key, result);
-            console.log(`[Subtitle Cache] Cached search results for: ${shortKey(key)} (${result.length} subtitles)`);
+            log.debug(() => `[Subtitle Cache] Cached search results for: ${shortKey(key)} (${result.length} subtitles)`);
         }
         return result;
     } finally {
@@ -846,22 +846,22 @@ function rankSubtitlesByFilename(subtitles, streamFilename) {
 function createSubtitleHandler(config) {
   return async (args) => {
     try {
-      debug(() => `[Subtitles] Handler called with args: ${JSON.stringify(args)}`);
+      log.debug(() => `[Subtitles] Handler called with args: ${JSON.stringify(args)}`);
 
       const { type, id, extra } = args;
       const videoInfo = parseStremioId(id);
 
       if (!videoInfo) {
-        console.error('[Subtitles] Invalid video ID:', id);
+        log.error(() => ['[Subtitles] Invalid video ID:', id]);
         return { subtitles: [] };
       }
 
-      debug(() => `[Subtitles] Video info: ${JSON.stringify(videoInfo)}`);
+      log.debug(() => `[Subtitles] Video info: ${JSON.stringify(videoInfo)}`);
 
       // Extract stream filename for matching
       const streamFilename = extra?.filename || '';
       if (streamFilename) {
-        debug(() => `[Subtitles] Stream filename for matching: ${streamFilename}`);
+        log.debug(() => `[Subtitles] Stream filename for matching: ${streamFilename}`);
       }
 
       // Get all languages (source + target) for searching
@@ -890,7 +890,7 @@ function createSubtitleHandler(config) {
         // Check if OpenSubtitles provider is enabled
         if (config.subtitleProviders?.opensubtitles?.enabled) {
           const implementationType = config.subtitleProviders.opensubtitles.implementationType || 'v3';
-          console.log(`[Subtitles] OpenSubtitles provider is enabled (implementation: ${implementationType})`);
+          log.debug(() => `[Subtitles] OpenSubtitles provider is enabled (implementation: ${implementationType})`);
 
           let opensubtitles;
           if (implementationType === 'v3') {
@@ -905,12 +905,12 @@ function createSubtitleHandler(config) {
               .catch(error => ({ provider: `OpenSubtitles (${implementationType})`, results: [], error }))
           );
         } else {
-          console.log('[Subtitles] OpenSubtitles provider is disabled');
+          log.debug(() => '[Subtitles] OpenSubtitles provider is disabled');
         }
 
         // Check if SubDL provider is enabled
         if (config.subtitleProviders?.subdl?.enabled) {
-          console.log('[Subtitles] SubDL provider is enabled');
+          log.debug(() => '[Subtitles] SubDL provider is enabled');
           const subdl = new SubDLService(config.subtitleProviders.subdl.apiKey);
           searchPromises.push(
             subdl.searchSubtitles(searchParams)
@@ -918,12 +918,12 @@ function createSubtitleHandler(config) {
               .catch(error => ({ provider: 'SubDL', results: [], error }))
           );
         } else {
-          console.log('[Subtitles] SubDL provider is disabled');
+          log.debug(() => '[Subtitles] SubDL provider is disabled');
         }
 
         // Check if SubSource provider is enabled
         if (config.subtitleProviders?.subsource?.enabled) {
-          console.log('[Subtitles] SubSource provider is enabled');
+          log.debug(() => '[Subtitles] SubSource provider is enabled');
           const subsource = new SubSourceService(config.subtitleProviders.subsource.apiKey);
           searchPromises.push(
             subsource.searchSubtitles(searchParams)
@@ -931,12 +931,12 @@ function createSubtitleHandler(config) {
               .catch(error => ({ provider: 'SubSource', results: [], error }))
           );
         } else {
-          console.log('[Subtitles] SubSource provider is disabled');
+          log.debug(() => '[Subtitles] SubSource provider is disabled');
         }
 
         // Check if Podnapisi provider is enabled
         if (config.subtitleProviders?.podnapisi?.enabled) {
-          console.log('[Subtitles] Podnapisi provider is enabled');
+          log.debug(() => '[Subtitles] Podnapisi provider is enabled');
           const podnapisi = new PodnapisService(config.subtitleProviders.podnapisi.apiKey);
           searchPromises.push(
             podnapisi.searchSubtitles(searchParams)
@@ -944,7 +944,7 @@ function createSubtitleHandler(config) {
               .catch(error => ({ provider: 'Podnapisi', results: [], error }))
           );
         } else {
-          console.log('[Subtitles] Podnapisi provider is disabled');
+          log.debug(() => '[Subtitles] Podnapisi provider is disabled');
         }
 
         // Execute all searches in parallel
@@ -954,9 +954,9 @@ function createSubtitleHandler(config) {
         let subtitles = [];
         for (const result of providerResults) {
           if (result.error) {
-            console.error(`[Subtitles] ${result.provider} search failed:`, result.error.message);
+            log.error(() => [`[Subtitles] ${result.provider} search failed:`, result.error.message]);
           } else {
-            console.log(`[Subtitles] Found ${result.results.length} subtitles from ${result.provider}`);
+            log.debug(() => `[Subtitles] Found ${result.results.length} subtitles from ${result.provider}`);
             subtitles = [...subtitles, ...result.results];
           }
         }
@@ -1007,7 +1007,7 @@ function createSubtitleHandler(config) {
       // This ensures the best matches appear first in Stremio UI
       if (streamFilename) {
         filteredFoundSubtitles = rankSubtitlesByFilename(filteredFoundSubtitles, streamFilename);
-        debug(() => '[Subtitles] Ranked subtitles by filename match');
+        log.debug(() => '[Subtitles] Ranked subtitles by filename match');
       }
 
       // Limit to top 12 subtitles per language (applied AFTER ranking all sources)
@@ -1027,7 +1027,7 @@ function createSubtitleHandler(config) {
 
       // Flatten back to array, preserving ranked order within each language
       filteredFoundSubtitles = Array.from(limitedByLanguage.values()).flat();
-      console.log(`[Subtitles] Limited to ${MAX_SUBS_PER_LANGUAGE} subtitles per language (${filteredFoundSubtitles.length} total)`);
+      log.debug(() => `[Subtitles] Limited to ${MAX_SUBS_PER_LANGUAGE} subtitles per language (${filteredFoundSubtitles.length} total)`);
 
       // Convert to Stremio subtitle format
       // Validate required fields before creating response objects
@@ -1035,11 +1035,11 @@ function createSubtitleHandler(config) {
         .filter(sub => {
           // Validate required fields exist and have valid values
           if (!sub.fileId || typeof sub.fileId !== 'string') {
-            console.warn('[Subtitles] Skipping subtitle: missing or invalid fileId', sub);
+            log.warn(() => ['[Subtitles] Skipping subtitle: missing or invalid fileId', sub]);
             return false;
           }
           if (!sub.languageCode || typeof sub.languageCode !== 'string') {
-            console.warn('[Subtitles] Skipping subtitle: missing or invalid languageCode', sub);
+            log.warn(() => ['[Subtitles] Skipping subtitle: missing or invalid languageCode', sub]);
             return false;
           }
           return true;
@@ -1059,7 +1059,7 @@ function createSubtitleHandler(config) {
       const normalizedTargetLangs = [...new Set(config.targetLanguages.map(lang => {
         const normalized = normalizeLanguageCode(lang);
         if (normalized !== lang) {
-          console.log(`[Subtitles] Normalized language code: "${lang}" -> "${normalized}"`);
+          log.debug(() => `[Subtitles] Normalized language code: "${lang}" -> "${normalized}"`);
         }
         return normalized;
       }))];
@@ -1073,7 +1073,7 @@ function createSubtitleHandler(config) {
         })
       );
 
-      console.log(`[Subtitles] Found ${sourceSubtitles.length} source language subtitles for translation (already limited to ${MAX_SUBS_PER_LANGUAGE} per language)`);
+      log.debug(() => `[Subtitles] Found ${sourceSubtitles.length} source language subtitles for translation (already limited to ${MAX_SUBS_PER_LANGUAGE} per language)`);
 
       // For each target language, create a translation entry for each source subtitle
       // Translation entries are created from the already-limited source subtitles (12 per source language)
@@ -1081,7 +1081,7 @@ function createSubtitleHandler(config) {
       for (const targetLang of normalizedTargetLangs) {
         const baseName = getLanguageName(targetLang);
         const displayName = `Make ${baseName}`;
-        console.log(`[Subtitles] Creating translation entries for ${displayName} (${targetLang})`);
+        log.debug(() => `[Subtitles] Creating translation entries for ${displayName} (${targetLang})`);
 
         for (const sourceSub of sourceSubtitles) {
           const translationEntry = {
@@ -1093,7 +1093,7 @@ function createSubtitleHandler(config) {
         }
       }
 
-      console.log(`[Subtitles] Created ${translationEntries.length} translation options from ${sourceSubtitles.length} source subtitles`);
+      log.debug(() => `[Subtitles] Created ${translationEntries.length} translation options from ${sourceSubtitles.length} source subtitles`);
 
       // Add xSync entries (synced subtitles from cache)
       const xSyncEntries = [];
@@ -1110,7 +1110,7 @@ function createSubtitleHandler(config) {
 
             if (syncedSubs && syncedSubs.length > 0) {
               const langName = getLanguageName(lang);
-              console.log(`[Subtitles] Found ${syncedSubs.length} synced subtitle(s) for ${langName}`);
+              log.debug(() => `[Subtitles] Found ${syncedSubs.length} synced subtitle(s) for ${langName}`);
 
               // Add an entry for each synced subtitle
               for (let i = 0; i < syncedSubs.length; i++) {
@@ -1123,12 +1123,12 @@ function createSubtitleHandler(config) {
               }
             }
           } catch (error) {
-            console.error(`[Subtitles] Failed to get xSync entries for ${lang}:`, error.message);
+            log.error(() => [`[Subtitles] Failed to get xSync entries for ${lang}:`, error.message]);
           }
         }
 
         if (xSyncEntries.length > 0) {
-          console.log(`[Subtitles] Added ${xSyncEntries.length} xSync entries`);
+          log.debug(() => `[Subtitles] Added ${xSyncEntries.length} xSync entries`);
         }
       }
 
@@ -1144,7 +1144,7 @@ function createSubtitleHandler(config) {
           url: `{{ADDON_URL}}/sync-subtitles/${id}?filename=${encodeURIComponent(streamFilename || '')}`
         };
         actionButtons.push(syncButtonEntry);
-        console.log('[Subtitles] Sync Subtitles is enabled, added entry');
+        log.debug(() => '[Subtitles] Sync Subtitles is enabled, added entry');
       }
 
       // Add "Translate SRT" button if enabled
@@ -1155,21 +1155,21 @@ function createSubtitleHandler(config) {
           url: `{{ADDON_URL}}/file-translate/${id}`
         };
         actionButtons.push(fileUploadEntry);
-        console.log('[Subtitles] Translate SRT is enabled, added entry');
+        log.debug(() => '[Subtitles] Translate SRT is enabled, added entry');
       }
 
       // Put action buttons at the top
       allSubtitles = [...actionButtons, ...allSubtitles];
 
       const totalResponseItems = stremioSubtitles.length + translationEntries.length + xSyncEntries.length + actionButtons.length;
-      debug(() => `[Subtitles] Returning ${totalResponseItems} items (${stremioSubtitles.length} subs + ${translationEntries.length} trans + ${xSyncEntries.length} xSync + ${actionButtons.length} actions)`);
+      log.debug(() => `[Subtitles] Returning ${totalResponseItems} items (${stremioSubtitles.length} subs + ${translationEntries.length} trans + ${xSyncEntries.length} xSync + ${actionButtons.length} actions)`);
 
       return {
         subtitles: allSubtitles
       };
 
     } catch (error) {
-      console.error('[Subtitles] Handler error:', error.message);
+      log.error(() => ['[Subtitles] Handler error:', error.message]);
       return { subtitles: [] };
     }
   };
@@ -1189,7 +1189,7 @@ function createSubtitleHandler(config) {
  */
 async function handleSubtitleDownload(fileId, language, config) {
   try {
-    console.log(`[Download] Fetching subtitle ${fileId} for language ${language}`);
+    log.debug(() => `[Download] Fetching subtitle ${fileId} for language ${language}`);
 
     // Download from the appropriate provider based on fileId format
     let content;
@@ -1203,7 +1203,7 @@ async function handleSubtitleDownload(fileId, language, config) {
         }
 
         const subdl = new SubDLService(config.subtitleProviders.subdl.apiKey);
-        console.log('[Download] Downloading subtitle via SubDL API');
+        log.debug(() => '[Download] Downloading subtitle via SubDL API');
         return await subdl.downloadSubtitle(fileId);
       } else if (fileId.startsWith('subsource_')) {
         // SubSource subtitle
@@ -1212,7 +1212,7 @@ async function handleSubtitleDownload(fileId, language, config) {
         }
 
         const subsource = new SubSourceService(config.subtitleProviders.subsource.apiKey);
-        console.log('[Download] Downloading subtitle via SubSource API');
+        log.debug(() => '[Download] Downloading subtitle via SubSource API');
         return await subsource.downloadSubtitle(fileId);
       } else if (fileId.startsWith('podnapisi_')) {
         // Podnapisi subtitle
@@ -1221,7 +1221,7 @@ async function handleSubtitleDownload(fileId, language, config) {
         }
 
         const podnapisi = new PodnapisService(config.subtitleProviders.podnapisi.apiKey);
-        console.log('[Download] Downloading subtitle via Podnapisi API');
+        log.debug(() => '[Download] Downloading subtitle via Podnapisi API');
         return await podnapisi.downloadSubtitle(fileId);
       } else if (fileId.startsWith('v3_')) {
         // OpenSubtitles V3 subtitle
@@ -1230,7 +1230,7 @@ async function handleSubtitleDownload(fileId, language, config) {
         }
 
         const opensubtitlesV3 = new OpenSubtitlesV3Service();
-        console.log('[Download] Downloading subtitle via OpenSubtitles V3 API');
+        log.debug(() => '[Download] Downloading subtitle via OpenSubtitles V3 API');
         return await opensubtitlesV3.downloadSubtitle(fileId);
       } else {
         // OpenSubtitles subtitle (Auth implementation - default)
@@ -1239,7 +1239,7 @@ async function handleSubtitleDownload(fileId, language, config) {
         }
 
         const opensubtitles = new OpenSubtitlesService(config.subtitleProviders.opensubtitles);
-        console.log('[Download] Downloading subtitle via OpenSubtitles Auth API');
+        log.debug(() => '[Download] Downloading subtitle via OpenSubtitles Auth API');
         return await opensubtitles.downloadSubtitle(fileId);
       }
     })();
@@ -1252,12 +1252,12 @@ async function handleSubtitleDownload(fileId, language, config) {
       throw new Error('Downloaded subtitle content is empty');
     }
 
-    console.log('[Download] Subtitle downloaded successfully (' + content.length + ' bytes)');
+    log.debug(() => '[Download] Subtitle downloaded successfully (' + content.length + ' bytes)');
     // Reject obviously broken/corrupted files by size
     try {
       const minSize = Number(config.minSubtitleSizeBytes) || 200;
       if (content.length < minSize) {
-        console.warn(`[Download] Subtitle content too small (${content.length} bytes < ${minSize}). Returning problem message.`);
+        log.warn(() => `[Download] Subtitle content too small (${content.length} bytes < ${minSize}). Returning problem message.`);
         return createInvalidSubtitleMessage('The subtitle file is too small and seems corrupted.');
       }
     } catch (_) {}
@@ -1265,7 +1265,7 @@ async function handleSubtitleDownload(fileId, language, config) {
     return content;
 
   } catch (error) {
-    console.error('[Download] Error:', error.message);
+    log.error(() => ['[Download] Error:', error.message]);
 
     // Return error message as subtitle so user knows what happened
     const errorStatus = error.response?.status;
@@ -1324,7 +1324,7 @@ Or try a different subtitle from the list`;
  */
 async function handleTranslation(sourceFileId, targetLanguage, config) {
   try {
-    console.log(`[Translation] Handling translation request for ${sourceFileId} to ${targetLanguage}`);
+    log.debug(() => `[Translation] Handling translation request for ${sourceFileId} to ${targetLanguage}`);
 
     // Check disk cache first
     const baseKey = `${sourceFileId}_${targetLanguage}`;
@@ -1345,22 +1345,22 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
         if (bypassCached) {
           // Check if this is a cached error
           if (bypassCached.isError === true) {
-            console.log('[Translation] Cached error found (bypass) key=', cacheKey, '— showing error and clearing cache');
+            log.debug(() => ['[Translation] Cached error found (bypass) key=', cacheKey, '— showing error and clearing cache']);
             const errorSrt = createTranslationErrorSubtitle(bypassCached.errorType, bypassCached.errorMessage);
 
             // Delete the error cache so next click retries translation
             const adapter = await getStorageAdapter();
             try {
               await adapter.delete(cacheKey, StorageAdapter.CACHE_TYPES.BYPASS);
-              console.log('[Translation] Cleared error cache for retry');
+              log.debug(() => '[Translation] Cleared error cache for retry');
             } catch (e) {
-              console.warn('[Translation] Failed to delete error cache:', e.message);
+              log.warn(() => ['[Translation] Failed to delete error cache:', e.message]);
             }
 
             return errorSrt;
           }
 
-          console.log('[Translation] Cache hit (bypass) key=', cacheKey, '— serving cached translation');
+          log.debug(() => ['[Translation] Cache hit (bypass) key=', cacheKey, '— serving cached translation']);
           cacheMetrics.hits++;
           cacheMetrics.estimatedCostSaved += 0.004;
           return bypassCached.content || bypassCached;
@@ -1371,22 +1371,22 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
       if (cached) {
         // Check if this is a cached error
         if (cached.isError === true) {
-          console.log('[Translation] Cached error found (permanent) key=', cacheKey, '— showing error and clearing cache');
+          log.debug(() => ['[Translation] Cached error found (permanent) key=', cacheKey, '— showing error and clearing cache']);
           const errorSrt = createTranslationErrorSubtitle(cached.errorType, cached.errorMessage);
 
           // Delete the error cache so next click retries translation
           const adapter = await getStorageAdapter();
           try {
             await adapter.delete(cacheKey, StorageAdapter.CACHE_TYPES.TRANSLATION);
-            console.log('[Translation] Cleared error cache for retry');
+            log.debug(() => '[Translation] Cleared error cache for retry');
           } catch (e) {
-            console.warn('[Translation] Failed to delete error cache:', e.message);
+            log.warn(() => ['[Translation] Failed to delete error cache:', e.message]);
           }
 
           return errorSrt;
         }
 
-        console.log('[Translation] Cache hit (permanent) key=', cacheKey, '— serving cached translation');
+        log.debug(() => ['[Translation] Cache hit (permanent) key=', cacheKey, '— serving cached translation']);
         cacheMetrics.hits++;
         cacheMetrics.estimatedCostSaved += 0.004; // Estimated $0.004 per translation
         return cached.content || cached;
@@ -1395,20 +1395,20 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
 
     // Cache miss
     cacheMetrics.misses++;
-    console.log('[Translation] Cache miss key=', cacheKey, '— not cached');
+    log.debug(() => ['[Translation] Cache miss key=', cacheKey, '— not cached']);
 
     // === RACE CONDITION PROTECTION ===
     // Check if there's already an in-flight request for this exact key
     // All simultaneous requests will share the same promise
     const inFlightPromise = inFlightTranslations.get(cacheKey);
     if (inFlightPromise) {
-      console.log(`[Translation] Detected in-flight translation for key=${cacheKey}; checking for partial results`);
+      log.debug(() => `[Translation] Detected in-flight translation for key=${cacheKey}; checking for partial results`);
       try {
         // DON'T WAIT for completion - immediately return available partials instead
         // Check storage first (in case it just completed)
         const cachedResult = await readFromStorage(cacheKey);
         if (cachedResult) {
-          console.log('[Translation] Final result already cached; returning it');
+          log.debug(() => '[Translation] Final result already cached; returning it');
           cacheMetrics.hits++;
           return cachedResult.content || cachedResult;
         }
@@ -1416,16 +1416,16 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
         // Check partial cache (most common case - translation in progress)
         const partialResult = await readFromPartialCache(cacheKey);
         if (partialResult && typeof partialResult.content === 'string' && partialResult.content.length > 0) {
-          debug(() => `[Translation] Returning partial result (${partialResult.content.length} chars) without waiting for completion`);
+          log.debug(() => `[Translation] Returning partial result (${partialResult.content.length} chars) without waiting for completion`);
           return partialResult.content;
         }
 
         // No cached/partial result yet - return loading message and let user retry
         const loadingMsg = createLoadingSubtitle();
-        console.log(`[Translation] No partial result yet for duplicate request; returning loading message`);
+        log.debug(() => `[Translation] No partial result yet for duplicate request; returning loading message`);
         return loadingMsg;
       } catch (err) {
-        console.warn(`[Translation] Error checking partials for duplicate request (${cacheKey}):`, err.message);
+        log.warn(() => [`[Translation] Error checking partials for duplicate request (${cacheKey}):`, err.message]);
         // Return loading message on any error
         const loadingMsg = createLoadingSubtitle();
         return loadingMsg;
@@ -1436,16 +1436,16 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
     const status = translationStatus.get(cacheKey);
     if (status && status.inProgress) {
       const elapsedTime = Math.floor((Date.now() - status.startedAt) / 1000);
-      console.log(`[Translation] In-progress existing translation key=${cacheKey} (elapsed ${elapsedTime}s); attempting partial SRT`);
+      log.debug(() => `[Translation] In-progress existing translation key=${cacheKey} (elapsed ${elapsedTime}s); attempting partial SRT`);
       try {
         const partial = await readFromPartialCache(cacheKey);
         if (partial && typeof partial.content === 'string' && partial.content.length > 0) {
-          debug(() => '[Translation] Serving partial SRT from partial cache');
+          log.debug(() => '[Translation] Serving partial SRT from partial cache');
           return partial.content;
         }
       } catch (_) {}
       const loadingMsg = createLoadingSubtitle();
-      console.log(`[Translation] No partial available, returning loading SRT (size=${loadingMsg.length})`);
+      log.debug(() => `[Translation] No partial available, returning loading SRT (size=${loadingMsg.length})`);
       return loadingMsg;
     }
 
@@ -1453,12 +1453,12 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
     const effectiveUserHash = (userHash && userHash.length > 0) ? userHash : 'anonymous';
     const currentCount = userTranslationCounts.get(effectiveUserHash) || 0;
     if (currentCount >= MAX_CONCURRENT_TRANSLATIONS_PER_USER) {
-      console.warn(`[Translation] Concurrency limit reached for user=${effectiveUserHash}: ${currentCount} in progress (limit ${MAX_CONCURRENT_TRANSLATIONS_PER_USER}).`);
+      log.warn(() => `[Translation] Concurrency limit reached for user=${effectiveUserHash}: ${currentCount} in progress (limit ${MAX_CONCURRENT_TRANSLATIONS_PER_USER}).`);
       return createConcurrencyLimitSubtitle(MAX_CONCURRENT_TRANSLATIONS_PER_USER);
     }
 
     // Mark translation as in progress and start it in background
-    console.log('[Translation] Not cached and not in-progress; starting translation key=', cacheKey);
+    log.debug(() => ['[Translation] Not cached and not in-progress; starting translation key=', cacheKey]);
     translationStatus.set(cacheKey, { inProgress: true, startedAt: Date.now(), userHash: effectiveUserHash });
     userTranslationCounts.set(effectiveUserHash, currentCount + 1);
 
@@ -1468,7 +1468,7 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
 
     // Start translation in background (don't await here)
     translationPromise.catch(error => {
-      console.error('[Translation] Background translation failed:', error.message);
+      log.error(() => ['[Translation] Background translation failed:', error.message]);
       // Mark as failed so it can be retried
       try {
         translationStatus.delete(cacheKey);
@@ -1480,10 +1480,10 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
 
     // Return loading message immediately
     const loadingMsg = createLoadingSubtitle();
-    console.log(`[Translation] Returning initial loading message (${loadingMsg.length} characters)`);
+    log.debug(() => `[Translation] Returning initial loading message (${loadingMsg.length} characters)`);
     return loadingMsg;
   } catch (error) {
-    console.error('[Translation] Error:', error.message);
+    log.error(() => ['[Translation] Error:', error.message]);
     throw error;
   }
 }
@@ -1497,12 +1497,12 @@ async function handleTranslation(sourceFileId, targetLanguage, config) {
  */
 async function performTranslation(sourceFileId, targetLanguage, config, cacheKey, userHash) {
   try {
-    console.log(`[Translation] Background translation started for ${sourceFileId} to ${targetLanguage}`);
+    log.debug(() => `[Translation] Background translation started for ${sourceFileId} to ${targetLanguage}`);
     cacheMetrics.apiCalls++;
 
     // Download subtitle from provider
     let sourceContent = null;
-    console.log(`[Translation] Downloading subtitle from provider`);
+    log.debug(() => `[Translation] Downloading subtitle from provider`);
 
     if (sourceFileId.startsWith('subdl_')) {
       // SubDL subtitle
@@ -1558,7 +1558,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
           expiresAt: Date.now() + 10 * 60 * 1000
         });
         translationStatus.delete(cacheKey);
-        console.log('[Translation] Aborted due to invalid/corrupted source subtitle (too small).');
+        log.debug(() => '[Translation] Aborted due to invalid/corrupted source subtitle (too small).');
         return;
       }
     } catch (_) {}
@@ -1576,7 +1576,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
     // Initialize new Translation Engine (structure-first approach)
     const translationEngine = new TranslationEngine(gemini);
 
-    console.log('[Translation] Using new structure-first translation engine');
+    log.debug(() => '[Translation] Using new structure-first translation engine');
 
     // Setup progressive partial saving
     const translatedEntries = [];
@@ -1593,7 +1593,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
           content: partialSrt,
           expiresAt: Date.now() + 60 * 60 * 1000
         });
-        debug(() => `[Translation] Saved partial: ${translatedEntries.length} entries (${partialSrt.length} chars)`);
+        log.debug(() => `[Translation] Saved partial: ${translatedEntries.length} entries (${partialSrt.length} chars)`);
       }
     };
 
@@ -1618,7 +1618,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
                 content: partialSrt,
                 expiresAt: Date.now() + 60 * 60 * 1000
               });
-              debug(() => `[Translation] Saved partial (chunked mode): ${progress.completedEntries} entries (${partialSrt.length} chars)`);
+              log.debug(() => `[Translation] Saved partial (chunked mode): ${progress.completedEntries} entries (${partialSrt.length} chars)`);
             }
           } else {
             // For batch mode: flush periodically
@@ -1631,7 +1631,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
 
           // Log progress
           if (progress.completedEntries % 50 === 0 || progress.completedEntries === progress.totalEntries) {
-            debug(() => `[Translation] Progress: ${progress.completedEntries}/${progress.totalEntries} entries (batch ${progress.currentBatch}/${progress.totalBatches})`);
+            log.debug(() => `[Translation] Progress: ${progress.completedEntries}/${progress.totalEntries} entries (batch ${progress.currentBatch}/${progress.totalBatches})`);
           }
         }
       );
@@ -1639,14 +1639,14 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
       // Final flush
       await savePartial();
 
-      console.log('[Translation] Structure-first translation completed successfully');
+      log.debug(() => '[Translation] Structure-first translation completed successfully');
 
     } catch (error) {
-      console.error('[Translation] Structure-first translation failed:', error.message);
+      log.error(() => ['[Translation] Structure-first translation failed:', error.message]);
       throw error;
     }
 
-    console.log('[Translation] Background translation completed successfully');
+    log.debug(() => '[Translation] Background translation completed successfully');
 
     // Cache the translation (disk-only, permanent by default)
     const cacheConfig = config.translationCache || { enabled: true, duration: 0, persistent: true };
@@ -1688,10 +1688,10 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
 
     // Note: No manual cleanup needed - LRU cache handles TTL automatically
 
-    console.log('[Translation] Translation cached and ready to serve');
+    log.debug(() => '[Translation] Translation cached and ready to serve');
 
   } catch (error) {
-    console.error('[Translation] Background translation error:', error.message);
+    log.error(() => ['[Translation] Background translation error:', error.message]);
 
     // Determine error type for user-friendly message
     let errorType = 'other';
@@ -1709,7 +1709,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
       errorType = 'INVALID_SOURCE';
     }
 
-    console.log(`[Translation] Caching error (type: ${errorType}) for user retry`);
+    log.debug(() => `[Translation] Caching error (type: ${errorType}) for user retry`);
 
     // Cache the error so user can see what went wrong and retry
     const bypass = config.bypassCache === true;
@@ -1728,14 +1728,14 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
       if (bypass && bypassEnabled) {
         // Save to bypass storage with short TTL
         await saveToBypassStorage(cacheKey, errorCache);
-        console.log('[Translation] Error cached to bypass storage');
+        log.debug(() => '[Translation] Error cached to bypass storage');
       } else {
         // Save to permanent storage with TTL
         await saveToStorage(cacheKey, errorCache);
-        console.log('[Translation] Error cached to permanent storage');
+        log.debug(() => '[Translation] Error cached to permanent storage');
       }
     } catch (cacheError) {
-      console.warn('[Translation] Failed to cache error:', cacheError.message);
+      log.warn(() => ['[Translation] Failed to cache error:', cacheError.message]);
     }
 
     // Remove from status so it can be retried
@@ -1748,7 +1748,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
       const current = userTranslationCounts.get(key) || 0;
       if (current > 1) userTranslationCounts.set(key, current - 1);
       else userTranslationCounts.delete(key);
-      console.log(`[Translation] User concurrency updated user=${key} count=${userTranslationCounts.get(key) || 0}`);
+      log.debug(() => `[Translation] User concurrency updated user=${key} count=${userTranslationCounts.get(key) || 0}`);
     } catch (_) {}
   }
 }
@@ -1761,7 +1761,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
  */
 async function getAvailableSubtitlesForTranslation(videoId, config) {
   try {
-    console.log('[Translation Selector] Getting subtitles for:', videoId);
+    log.debug(() => ['[Translation Selector] Getting subtitles for:', videoId]);
 
     const videoInfo = parseStremioId(videoId);
     if (!videoInfo) {
@@ -1834,7 +1834,7 @@ async function getAvailableSubtitlesForTranslation(videoId, config) {
       let subs = [];
       for (const result of providerResults) {
         if (result.error) {
-          console.error(`[Translation Selector] ${result.provider} search failed:`, result.error.message);
+          log.error(() => [`[Translation Selector] ${result.provider} search failed:`, result.error.message]);
         } else {
           subs = [...subs, ...result.results];
         }
@@ -1842,14 +1842,14 @@ async function getAvailableSubtitlesForTranslation(videoId, config) {
 
       // Future providers can be added here
 
-      console.log(`[Translation Selector] Found ${subs.length} subtitles total`);
+      log.debug(() => `[Translation Selector] Found ${subs.length} subtitles total`);
       return subs;
     });
 
     return subtitles;
 
   } catch (error) {
-    console.error('[Translation Selector] Error:', error.message);
+    log.error(() => ['[Translation Selector] Error:', error.message]);
     return [];
   }
 }
@@ -1884,10 +1884,10 @@ setInterval(() => {
     }
 
     if (removedCount > 0) {
-      console.log(`[Cache] Cleaned up ${removedCount} expired disk cache entries`);
+      log.debug(() => `[Cache] Cleaned up ${removedCount} expired disk cache entries`);
     }
   } catch (error) {
-    console.error('[Cache] Failed to clean up disk cache:', error.message);
+    log.error(() => ['[Cache] Failed to clean up disk cache:', error.message]);
   }
 }, 1000 * 60 * 60); // Every hour (less frequent for disk operations)
 // Also clean up bypass cache (more frequent not needed here)
@@ -1933,9 +1933,9 @@ module.exports = {
       // Delete permanent cache
       try {
         await adapter.delete(baseKey, StorageAdapter.CACHE_TYPES.TRANSLATION);
-        console.log(`[Purge] Removed permanent cache for ${baseKey}`);
+        log.debug(() => `[Purge] Removed permanent cache for ${baseKey}`);
       } catch (e) {
-        console.warn(`[Purge] Failed removing permanent cache for ${baseKey}:`, e.message);
+        log.warn(() => [`[Purge] Failed removing permanent cache for ${baseKey}:`, e.message]);
       }
 
       // Delete bypass cache (both scoped and unscoped variants just in case)
@@ -1949,21 +1949,21 @@ module.exports = {
         for (const key of bypassKeys) {
           try {
             await adapter.delete(key, StorageAdapter.CACHE_TYPES.BYPASS);
-            console.log(`[Purge] Removed bypass cache for ${key}`);
+            log.debug(() => `[Purge] Removed bypass cache for ${key}`);
           } catch (e) {
             // Ignore - key might not exist
           }
         }
       } catch (e) {
-        console.warn(`[Purge] Failed removing bypass cache for ${baseKey}:`, e.message);
+        log.warn(() => [`[Purge] Failed removing bypass cache for ${baseKey}:`, e.message]);
       }
 
       // Delete partial cache (in-flight translations)
       try {
         await adapter.delete(baseKey, StorageAdapter.CACHE_TYPES.PARTIAL);
-        console.log(`[Purge] Removed partial cache for ${baseKey}`);
+        log.debug(() => `[Purge] Removed partial cache for ${baseKey}`);
       } catch (e) {
-        console.warn(`[Purge] Failed removing partial cache for ${baseKey}:`, e.message);
+        log.warn(() => [`[Purge] Failed removing partial cache for ${baseKey}:`, e.message]);
       }
 
       // Clear in-progress status so a fresh translation can start
@@ -1978,7 +1978,7 @@ module.exports = {
 
       return true;
     } catch (error) {
-      console.error('[Purge] Error purging translation cache:', error.message);
+      log.error(() => ['[Purge] Error purging translation cache:', error.message]);
       return false;
     }
   }

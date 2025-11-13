@@ -2,7 +2,7 @@
 require('dotenv').config();
 
 // Load logger utility first to intercept all console methods with timestamps
-require('./src/utils/logger');
+const log = require('./src/utils/logger');
 
 const express = require('express');
 const compression = require('compression');
@@ -92,24 +92,24 @@ async function deduplicate(key, fn) {
     // Check if request is already in flight
     const cached = inFlightRequests.get(key);
     if (cached) {
-        console.log(`[Dedup] Returning cached promise for duplicate request: ${shortKey}`);
+        log.debug(() => `[Dedup] Returning cached promise for duplicate request: ${shortKey}`);
         const result = await cached.promise;
-        console.log(`[Dedup] Duplicate request completed with result length: ${result ? result.length : 'undefined/null'}`);
+        log.debug(() => `[Dedup] Duplicate request completed with result length: ${result ? result.length : 'undefined/null'}`);
         return result;
     }
 
     // Create new promise and cache it
-    console.log(`[Dedup] Starting new operation: ${shortKey}`);
+    log.debug(() => `[Dedup] Starting new operation: ${shortKey}`);
     const promise = fn();
 
     inFlightRequests.set(key, { promise });
 
     try {
         const result = await promise;
-        console.log(`[Dedup] Operation completed: ${shortKey}, result length: ${result ? result.length : 'undefined/null'}`);
+        log.debug(() => `[Dedup] Operation completed: ${shortKey}, result length: ${result ? result.length : 'undefined/null'}`);
         return result;
     } catch (error) {
-        console.error(`[Dedup] Operation failed: ${shortKey}`, error.message);
+        log.error(() => `[Dedup] Operation failed: ${shortKey}`, error.message);
         throw error;
     } finally {
         // Clean up immediately after completion
@@ -194,10 +194,10 @@ function shouldBlockCacheReset(clickKey, sourceFileId, configHash, targetLang) {
         // The clickKey already includes the sourceFileId and configStr (which is used to compute configHash)
         // So if we got here with the same clickKey, it means all 3 clicks are for the same subtitle and user
 
-        console.log(`[SafetyBlock] Blocking cache reset: Translation is in progress for ${sourceFileId} (user: ${configHash}, target: ${targetLang})`);
+        log.debug(() => `[SafetyBlock] Blocking cache reset: Translation is in progress for ${sourceFileId} (user: ${configHash}, target: ${targetLang})`);
         return true; // BLOCK the cache reset
     } catch (e) {
-        console.warn('[SafetyBlock] Error checking cache reset safety:', e.message);
+        log.warn(() => '[SafetyBlock] Error checking cache reset safety:', e.message);
         return false; // On error, allow the reset to proceed
     }
 }
@@ -369,7 +369,7 @@ app.get('/api/languages', (req, res) => {
         const languages = getAllLanguages();
         res.json(languages);
     } catch (error) {
-        console.error('[API] Error getting languages:', error);
+        log.error(() => '[API] Error getting languages:', error);
         res.status(500).json({ error: 'Failed to get languages' });
     }
 });
@@ -387,18 +387,18 @@ app.get('/api/test-opensubtitles', async (req, res) => {
             languages: ['eng', 'spa']
         };
         
-        console.log('[Test] Testing OpenSubtitles with:', testParams);
+        log.debug(() => '[Test] Testing OpenSubtitles with:', testParams);
         const results = await opensubtitles.searchSubtitles(testParams);
-        
+
         res.json({
             success: true,
             count: results.length,
             results: results.slice(0, 5) // Return first 5 results
         });
     } catch (error) {
-        console.error('[Test] Error:', error);
-        res.status(500).json({ 
-            success: false, 
+        log.error(() => '[Test] Error:', error);
+        res.status(500).json({
+            success: false,
             error: error.message
         });
     }
@@ -418,7 +418,7 @@ app.post('/api/gemini-models', async (req, res) => {
 
         res.json(models);
     } catch (error) {
-        console.error('[API] Error fetching Gemini models:', error);
+        log.error(() => '[API] Error fetching Gemini models:', error);
         res.status(500).json({ error: 'Failed to fetch models' });
     }
 });
@@ -438,7 +438,7 @@ app.post('/api/create-session', async (req, res) => {
         if (localhost && process.env.FORCE_SESSIONS !== 'true') {
             // For localhost, return base64 encoded config (old method)
             const configStr = Buffer.from(JSON.stringify(config), 'utf-8').toString('base64');
-            console.log('[Session API] Localhost detected - using base64 encoding');
+            log.debug(() => '[Session API] Localhost detected - using base64 encoding');
             return res.json({
                 token: configStr,
                 type: 'base64',
@@ -448,7 +448,7 @@ app.post('/api/create-session', async (req, res) => {
 
         // Production mode: create session
         const token = sessionManager.createSession(config);
-        console.log(`[Session API] Created session token: ${token}`);
+        log.debug(() => `[Session API] Created session token: ${token}`);
 
         res.json({
             token,
@@ -456,7 +456,7 @@ app.post('/api/create-session', async (req, res) => {
             expiresIn: process.env.SESSION_MAX_AGE || 90 * 24 * 60 * 60 * 1000
         });
     } catch (error) {
-        console.error('[Session API] Error creating session:', error);
+        log.error(() => '[Session API] Error creating session:', error);
         res.status(500).json({ error: 'Failed to create session' });
     }
 });
@@ -482,7 +482,7 @@ app.post('/api/update-session/:token', async (req, res) => {
         if (localhost && isBase64Token && process.env.FORCE_SESSIONS !== 'true') {
             // For localhost base64, just return new encoded config
             const configStr = Buffer.from(JSON.stringify(config), 'utf-8').toString('base64');
-            console.log('[Session API] Localhost detected - creating new base64 token');
+            log.debug(() => '[Session API] Localhost detected - creating new base64 token');
             return res.json({
                 token: configStr,
                 type: 'base64',
@@ -496,7 +496,7 @@ app.post('/api/update-session/:token', async (req, res) => {
 
         if (!updated) {
             // Session doesn't exist - create new one instead
-            console.log(`[Session API] Session not found, creating new one`);
+            log.debug(() => `[Session API] Session not found, creating new one`);
             const newToken = sessionManager.createSession(config);
             return res.json({
                 token: newToken,
@@ -508,7 +508,7 @@ app.post('/api/update-session/:token', async (req, res) => {
             });
         }
 
-        console.log(`[Session API] Updated session token: ${token}`);
+        log.debug(() => `[Session API] Updated session token: ${token}`);
 
         res.json({
             token,
@@ -517,7 +517,7 @@ app.post('/api/update-session/:token', async (req, res) => {
             message: 'Session configuration updated successfully'
         });
     } catch (error) {
-        console.error('[Session API] Error updating session:', error);
+        log.error(() => '[Session API] Error updating session:', error);
         res.status(500).json({ error: 'Failed to update session' });
     }
 });
@@ -528,7 +528,7 @@ app.get('/api/session-stats', (req, res) => {
         const stats = sessionManager.getStats();
         res.json({ ...stats, version });
     } catch (error) {
-        console.error('[Session API] Error getting stats:', error);
+        log.error(() => '[Session API] Error getting stats:', error);
         res.status(500).json({ error: 'Failed to get session statistics' });
     }
 });
@@ -550,7 +550,7 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
             return res.status(400).send('Configuration is required');
         }
 
-        console.log(`[File Translation API] Translating to ${targetLanguage}`);
+        log.debug(() => `[File Translation API] Translating to ${targetLanguage}`);
 
         // Parse config
         const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
@@ -560,20 +560,20 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
 
         // Initialize Gemini service with advanced settings
         const gemini = new GeminiService(
-          config.geminiApiKey, 
+          config.geminiApiKey,
           config.geminiModel,
           config.advancedSettings || {}
         );
 
         // Estimate token count
         const estimatedTokens = gemini.estimateTokenCount(content);
-        console.log(`[File Translation API] Estimated tokens: ${estimatedTokens}`);
+        log.debug(() => `[File Translation API] Estimated tokens: ${estimatedTokens}`);
 
         // Translate
         let translatedContent;
         if (estimatedTokens > 7000) {
             // Use chunked translation for large files
-            console.log('[File Translation API] Using chunked translation');
+            log.debug(() => '[File Translation API] Using chunked translation');
             translatedContent = await gemini.translateSubtitleInChunks(
                 content,
                 'detected source language',
@@ -589,14 +589,14 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
             );
         }
 
-        console.log('[File Translation API] Translation completed');
+        log.debug(() => '[File Translation API] Translation completed');
 
         // Return translated content as plain text
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.send(translatedContent);
 
     } catch (error) {
-        console.error('[File Translation API] Error:', error);
+        log.error(() => '[File Translation API] Error:', error);
         res.status(500).send(`Translation failed: ${error.message}`);
     }
 });
@@ -627,11 +627,11 @@ app.get('/addon/:config/subtitle/:fileId/:language.srt', searchLimiter, validate
 
         // Check if already in flight BEFORE logging
         const isAlreadyInFlight = inFlightRequests.has(dedupKey);
-        
+
         if (isAlreadyInFlight) {
-            console.log(`[Download] Duplicate request detected for ${fileId} in ${langCode} - waiting for in-flight download`);
+            log.debug(() => `[Download] Duplicate request detected for ${fileId} in ${langCode} - waiting for in-flight download`);
         } else {
-            console.log(`[Download] New request for subtitle ${fileId} in ${langCode}`);
+            log.debug(() => `[Download] New request for subtitle ${fileId} in ${langCode}`);
         }
 
         // Deduplicate download requests
@@ -644,7 +644,7 @@ app.get('/addon/:config/subtitle/:fileId/:language.srt', searchLimiter, validate
         res.send(content);
 
     } catch (error) {
-        console.error('[Download] Error:', error);
+        log.error(() => '[Download] Error:', error);
         res.status(404).send('Subtitle not found');
     }
 });
@@ -661,11 +661,11 @@ app.get('/addon/:config/translate-selector/:videoId/:targetLang', searchLimiter,
 
         // Check if already in flight BEFORE logging
         const isAlreadyInFlight = inFlightRequests.has(dedupKey);
-        
+
         if (isAlreadyInFlight) {
-            console.log(`[Translation Selector] Duplicate request detected for ${videoId} to ${targetLang}`);
+            log.debug(() => `[Translation Selector] Duplicate request detected for ${videoId} to ${targetLang}`);
         } else {
-            console.log(`[Translation Selector] New request for ${videoId} to ${targetLang}`);
+            log.debug(() => `[Translation Selector] New request for ${videoId} to ${targetLang}`);
         }
 
         // Get available subtitles with deduplication
@@ -680,7 +680,7 @@ app.get('/addon/:config/translate-selector/:videoId/:targetLang', searchLimiter,
         res.send(html);
 
     } catch (error) {
-        console.error('[Translation Selector] Error:', error);
+        log.error(() => '[Translation Selector] Error:', error);
         res.status(500).send('Failed to load subtitle selector');
     }
 });
@@ -712,35 +712,35 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
                 const shouldBlock = shouldBlockCacheReset(clickKey, sourceFileId, config.__configHash, targetLang);
 
                 if (shouldBlock) {
-                    console.log(`[PurgeTrigger] 3 rapid loads detected but BLOCKED: Translation in progress for ${sourceFileId}/${targetLang} (user: ${config.__configHash})`);
+                    log.debug(() => `[PurgeTrigger] 3 rapid loads detected but BLOCKED: Translation in progress for ${sourceFileId}/${targetLang} (user: ${config.__configHash})`);
                 } else {
                     // Reset the counter immediately to avoid loops
                     firstClickTracker.set(clickKey, { times: [] });
                     const hadCache = await hasCachedTranslation(sourceFileId, targetLang, config);
                     if (hadCache) {
-                        console.log(`[PurgeTrigger] 3 rapid loads detected (<6s) for ${sourceFileId}/${targetLang}. Purging cache and re-triggering translation.`);
+                        log.debug(() => `[PurgeTrigger] 3 rapid loads detected (<6s) for ${sourceFileId}/${targetLang}. Purging cache and re-triggering translation.`);
                         await purgeTranslationCache(sourceFileId, targetLang, config);
                     } else {
-                        console.log(`[PurgeTrigger] 3 rapid loads detected but no cached translation found for ${sourceFileId}/${targetLang}. Skipping purge.`);
+                        log.debug(() => `[PurgeTrigger] 3 rapid loads detected but no cached translation found for ${sourceFileId}/${targetLang}. Skipping purge.`);
                     }
                 }
             }
         } catch (e) {
-            console.warn('[PurgeTrigger] Click tracking error:', e.message);
+            log.warn(() => '[PurgeTrigger] Click tracking error:', e.message);
         }
 
         // Check if already in flight BEFORE logging to reduce confusion
         const isAlreadyInFlight = inFlightRequests.has(dedupKey);
 
         if (isAlreadyInFlight) {
-            console.log(`[Translation] Duplicate request detected for ${sourceFileId} to ${targetLang} - checking for partial results`);
+            log.debug(() => `[Translation] Duplicate request detected for ${sourceFileId} to ${targetLang} - checking for partial results`);
 
             const baseKey = `${sourceFileId}_${targetLang}`;
 
             // For duplicate requests, check partial cache FIRST (in-flight translations)
             const partialCached = await readFromPartialCache(baseKey);
             if (partialCached && typeof partialCached.content === 'string' && partialCached.content.length > 0) {
-                console.log(`[Translation] Found in-flight partial in partial cache for ${sourceFileId} (${partialCached.content.length} chars)`);
+                log.debug(() => `[Translation] Found in-flight partial in partial cache for ${sourceFileId} (${partialCached.content.length} chars)`);
                 res.setHeader('Content-Type', 'text/plain; charset=utf-8');
                 res.setHeader('Cache-Control', 'no-cache, must-revalidate');
                 res.setHeader('Pragma', 'no-cache');
@@ -759,7 +759,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
             const adapter = await getStorageAdapter();
             const bypassCached = await adapter.get(bypassCacheKey, StorageAdapter.CACHE_TYPES.BYPASS);
             if (bypassCached && typeof bypassCached.content === 'string' && bypassCached.content.length > 0) {
-                console.log(`[Translation] Found bypass cache result for ${sourceFileId} (${bypassCached.content.length} chars)`);
+                log.debug(() => `[Translation] Found bypass cache result for ${sourceFileId} (${bypassCached.content.length} chars)`);
                 res.setHeader('Content-Type', 'text/plain; charset=utf-8');
                 res.setHeader('Cache-Control', 'no-cache, must-revalidate');
                 res.setHeader('Pragma', 'no-cache');
@@ -767,14 +767,14 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
             }
 
             // No partial yet, serve loading message
-            console.log(`[Translation] No partial found yet, serving loading message to duplicate request for ${sourceFileId}`);
+            log.debug(() => `[Translation] No partial found yet, serving loading message to duplicate request for ${sourceFileId}`);
             const loadingMsg = createLoadingSubtitle();
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Cache-Control', 'no-cache, must-revalidate');
             res.setHeader('Pragma', 'no-cache');
             return res.send(loadingMsg);
         } else {
-            console.log(`[Translation] New request to translate ${sourceFileId} to ${targetLang}`);
+            log.debug(() => `[Translation] New request to translate ${sourceFileId} to ${targetLang}`);
         }
 
         // Deduplicate translation requests - handles the first request
@@ -784,7 +784,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
 
         // Validate content before processing
         if (!subtitleContent || typeof subtitleContent !== 'string') {
-            console.error(`[Translation] Invalid subtitle content returned: ${typeof subtitleContent}, value: ${subtitleContent}`);
+            log.error(() => `[Translation] Invalid subtitle content returned: ${typeof subtitleContent}, value: ${subtitleContent}`);
             return res.status(500).send('Translation returned invalid content');
         }
 
@@ -793,8 +793,8 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
                                  subtitleContent.includes('Translation is happening in the background') ||
                                  subtitleContent.includes('Click this subtitle again to confirm translation') ||
                                  subtitleContent.includes('TRANSLATION IN PROGRESS');
-        console.log(`[Translation] Serving ${isLoadingMessage ? 'loading message' : 'translated content'} for ${sourceFileId} (was duplicate: ${isAlreadyInFlight})`);
-        console.log(`[Translation] Content length: ${subtitleContent.length} characters, first 200 chars: ${subtitleContent.substring(0, 200)}`);
+        log.debug(() => `[Translation] Serving ${isLoadingMessage ? 'loading message' : 'translated content'} for ${sourceFileId} (was duplicate: ${isAlreadyInFlight})`);
+        log.debug(() => `[Translation] Content length: ${subtitleContent.length} characters, first 200 chars: ${subtitleContent.substring(0, 200)}`);
 
         // Don't use 'attachment' for loading messages - we want them to display inline
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -803,16 +803,16 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
         if (isLoadingMessage) {
             res.setHeader('Cache-Control', 'no-cache, must-revalidate');
             res.setHeader('Pragma', 'no-cache');
-            console.log(`[Translation] Set no-cache headers for loading message`);
+            log.debug(() => `[Translation] Set no-cache headers for loading message`);
         } else {
             res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
         }
 
         res.send(subtitleContent);
-        console.log(`[Translation] Response sent successfully for ${sourceFileId}`);
+        log.debug(() => `[Translation] Response sent successfully for ${sourceFileId}`);
 
     } catch (error) {
-        console.error('[Translation] Error:', error);
+        log.error(() => '[Translation] Error:', error);
         res.status(500).send(`Translation failed: ${error.message}`);
     }
 });
@@ -823,14 +823,14 @@ app.get('/addon/:config/file-translate/:videoId', async (req, res) => {
         const { config: configStr, videoId } = req.params;
         const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
 
-        console.log(`[File Translation] Request for video ${videoId}`);
+        log.debug(() => `[File Translation] Request for video ${videoId}`);
 
         // Redirect to the actual upload page
         // Using a separate non-addon route so browser opens it directly
         res.redirect(302, `/file-upload?config=${encodeURIComponent(configStr)}&videoId=${encodeURIComponent(videoId)}`);
 
     } catch (error) {
-        console.error('[File Translation] Error:', error);
+        log.error(() => '[File Translation] Error:', error);
         res.status(500).send('Failed to load file translation page');
     }
 });
@@ -847,7 +847,7 @@ app.get('/file-upload', async (req, res) => {
         const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
         config.__configHash = computeConfigHash(configStr);
 
-        console.log(`[File Upload Page] Loading page for video ${videoId}`);
+        log.debug(() => `[File Upload Page] Loading page for video ${videoId}`);
 
         // Generate HTML page for file upload and translation
         const html = generateFileTranslationPage(videoId, configStr, config);
@@ -856,7 +856,7 @@ app.get('/file-upload', async (req, res) => {
         res.send(html);
 
     } catch (error) {
-        console.error('[File Upload Page] Error:', error);
+        log.error(() => '[File Upload Page] Error:', error);
         res.status(500).send('Failed to load file translation page');
     }
 });
@@ -866,11 +866,11 @@ app.get('/file-upload', async (req, res) => {
 app.get('/addon/:config/configure', (req, res) => {
     try {
         const { config: configStr } = req.params;
-        console.log(`[Configure] Redirecting to configure page with config`);
+        log.debug(() => `[Configure] Redirecting to configure page with config`);
         // Redirect to main configure page with config parameter
         res.redirect(302, `/configure?config=${encodeURIComponent(configStr)}`);
     } catch (error) {
-        console.error('[Configure] Error:', error);
+        log.error(() => '[Configure] Error:', error);
         res.status(500).send('Failed to load configuration page');
     }
 });
@@ -882,13 +882,13 @@ app.get('/addon/:config/sync-subtitles/:videoId', async (req, res) => {
         const { filename } = req.query;
         const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
 
-        console.log(`[Sync Subtitles] Request for video ${videoId}, filename: ${filename}`);
+        log.debug(() => `[Sync Subtitles] Request for video ${videoId}, filename: ${filename}`);
 
         // Redirect to the actual sync page
         res.redirect(302, `/subtitle-sync?config=${encodeURIComponent(configStr)}&videoId=${encodeURIComponent(videoId)}&filename=${encodeURIComponent(filename || '')}`);
 
     } catch (error) {
-        console.error('[Sync Subtitles] Error:', error);
+        log.error(() => '[Sync Subtitles] Error:', error);
         res.status(500).send('Failed to load subtitle sync page');
     }
 });
@@ -905,7 +905,7 @@ app.get('/subtitle-sync', async (req, res) => {
         const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
         config.__configHash = computeConfigHash(configStr);
 
-        console.log(`[Subtitle Sync Page] Loading page for video ${videoId}`);
+        log.debug(() => `[Subtitle Sync Page] Loading page for video ${videoId}`);
 
         // Get available subtitles for this video
         const subtitleHandler = createSubtitleHandler(config);
@@ -920,7 +920,7 @@ app.get('/subtitle-sync', async (req, res) => {
         res.send(html);
 
     } catch (error) {
-        console.error('[Subtitle Sync Page] Error:', error);
+        log.error(() => '[Subtitle Sync Page] Error:', error);
         res.status(500).send('Failed to load subtitle sync page');
     }
 });
@@ -931,24 +931,24 @@ app.get('/addon/:config/xsync/:videoHash/:lang/:sourceSubId', async (req, res) =
         const { config: configStr, videoHash, lang, sourceSubId } = req.params;
         const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
 
-        console.log(`[xSync Download] Request for ${videoHash}_${lang}_${sourceSubId}`);
+        log.debug(() => `[xSync Download] Request for ${videoHash}_${lang}_${sourceSubId}`);
 
         // Get synced subtitle from cache
         const syncedSub = await syncCache.getSyncedSubtitle(videoHash, lang, sourceSubId);
 
         if (!syncedSub || !syncedSub.content) {
-            console.log('[xSync Download] Not found in cache');
+            log.debug(() => '[xSync Download] Not found in cache');
             return res.status(404).send('Synced subtitle not found');
         }
 
-        console.log('[xSync Download] Serving synced subtitle from cache');
+        log.debug(() => '[xSync Download] Serving synced subtitle from cache');
 
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="${videoHash}_${lang}_synced.srt"`);
         res.send(syncedSub.content);
 
     } catch (error) {
-        console.error('[xSync Download] Error:', error);
+        log.error(() => '[xSync Download] Error:', error);
         res.status(500).send('Failed to download synced subtitle');
     }
 });
@@ -965,7 +965,7 @@ app.post('/api/save-synced-subtitle', async (req, res) => {
         // Validate config
         const config = parseConfig(configStr, { isLocalhost: isLocalhost(req) });
 
-        console.log(`[Save Synced] Saving synced subtitle: ${videoHash}_${languageCode}_${sourceSubId}`);
+        log.debug(() => `[Save Synced] Saving synced subtitle: ${videoHash}_${languageCode}_${sourceSubId}`);
 
         // Save to sync cache
         await syncCache.saveSyncedSubtitle(videoHash, languageCode, sourceSubId, {
@@ -977,7 +977,7 @@ app.post('/api/save-synced-subtitle', async (req, res) => {
         res.json({ success: true, message: 'Synced subtitle saved successfully' });
 
     } catch (error) {
-        console.error('[Save Synced] Error:', error);
+        log.error(() => '[Save Synced] Error:', error);
         res.status(500).json({ error: 'Failed to save synced subtitle' });
     }
 });
@@ -1796,7 +1796,7 @@ app.use('/addon/:config', (req, res, next) => {
     res.end = function(chunk, encoding) {
         // Prevent res.end() from being called multiple times
         if (responseEnded) {
-            console.warn('[Server] res.end() called multiple times on response');
+            log.warn(() => '[Server] res.end() called multiple times on response');
             return;
         }
         responseEnded = true;
@@ -1813,7 +1813,7 @@ app.use('/addon/:config', (req, res, next) => {
                 str = str.replace(/\{\{ADDON_URL\}\}/g, addonUrl);
                 chunk = Buffer.from(str, 'utf-8');
             } catch (e) {
-                console.error('[Server] Failed to process buffer chunk:', e.message);
+                log.error(() => '[Server] Failed to process buffer chunk:', e.message);
                 // Continue with original chunk if processing fails
             }
         }
@@ -1827,7 +1827,7 @@ app.use('/addon/:config', (req, res, next) => {
 // Stremio addon manifest route (AFTER middleware so URLs get replaced)
 app.get('/addon/:config/manifest.json', (req, res) => {
     try {
-        console.log(`[Manifest] Parsing config for manifest request`);
+        log.debug(() => `[Manifest] Parsing config for manifest request`);
         const localhost = isLocalhost(req);
         const config = parseConfig(req.params.config, { isLocalhost: localhost });
         config.__configHash = computeConfigHash(req.params.config);
@@ -1839,14 +1839,14 @@ app.get('/addon/:config/manifest.json', (req, res) => {
             ? (req.get('x-forwarded-proto') || req.protocol)
             : (req.get('x-forwarded-proto') || 'https');
         const baseUrl = `${protocol}://${host}`;
-        console.log(`[Manifest] Using base URL: ${baseUrl}`);
+        log.debug(() => `[Manifest] Using base URL: ${baseUrl}`);
 
         const builder = createAddonWithConfig(config, baseUrl);
         const manifest = builder.getInterface().manifest;
 
         res.json(manifest);
     } catch (error) {
-        console.error('[Manifest] Error:', error);
+        log.error(() => '[Manifest] Error:', error);
         res.status(500).json({ error: 'Failed to generate manifest' });
     }
 });
@@ -1857,11 +1857,11 @@ app.get('/addon/:config/manifest.json', (req, res) => {
 app.get('/addon/:config', (req, res, next) => {
     try {
         const { config: configStr } = req.params;
-        console.log(`[Addon Base] Request to base addon path, redirecting to configure page`);
+        log.debug(() => `[Addon Base] Request to base addon path, redirecting to configure page`);
         // Redirect to main configure page with config parameter
         res.redirect(302, `/configure?config=${encodeURIComponent(configStr)}`);
     } catch (error) {
-        console.error('[Addon Base] Error:', error);
+        log.error(() => '[Addon Base] Error:', error);
         res.status(500).send('Failed to load configuration page');
     }
 });
@@ -1873,7 +1873,7 @@ app.use('/addon/:config', (req, res, next) => {
 
         // Check cache first
         if (!routerCache.has(configStr)) {
-            console.log(`[Router] Parsing config for new router (path: ${req.path})`);
+            log.debug(() => `[Router] Parsing config for new router (path: ${req.path})`);
             const localhost = isLocalhost(req);
             const config = parseConfig(configStr, { isLocalhost: localhost });
             config.__configHash = computeConfigHash(configStr);
@@ -1889,13 +1889,13 @@ app.use('/addon/:config', (req, res, next) => {
             const builder = createAddonWithConfig(config, baseUrl);
             const router = getRouter(builder.getInterface());
             routerCache.set(configStr, router);
-            console.log(`[Router] Created and cached router for config`);
+            log.debug(() => `[Router] Created and cached router for config`);
         }
 
         const router = routerCache.get(configStr);
         router(req, res, next);
     } catch (error) {
-        console.error('[Router] Error:', error);
+        log.error(() => '[Router] Error:', error);
         next(error);
     }
 });
@@ -1903,35 +1903,35 @@ app.use('/addon/:config', (req, res, next) => {
 // Error handling middleware - Route-specific handlers
 // Error handler for /addon/:config/subtitle/* routes (returns SRT format)
 app.use('/addon/:config/subtitle', (error, req, res, next) => {
-    console.error('[Server] Subtitle Error:', error.message);
+    log.error(() => '[Server] Subtitle Error:', error.message);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.status(500).end('ERROR: Subtitle unavailable\n\n');
 });
 
 // Error handler for /addon/:config/translate/* routes (returns SRT format)
 app.use('/addon/:config/translate', (error, req, res, next) => {
-    console.error('[Server] Translation Error:', error.message);
+    log.error(() => '[Server] Translation Error:', error.message);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.status(500).end('ERROR: Translation unavailable\n\n');
 });
 
 // Error handler for /addon/:config/translate-selector/* routes (returns HTML format)
 app.use('/addon/:config/translate-selector', (error, req, res, next) => {
-    console.error('[Server] Translation Selector Error:', error.message);
+    log.error(() => '[Server] Translation Selector Error:', error.message);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.status(500).end('<html><body><p>Error: Failed to load subtitle selector</p></body></html>');
 });
 
 // Error handler for /addon/:config/file-translate/* routes (returns redirect/HTML format)
 app.use('/addon/:config/file-translate', (error, req, res, next) => {
-    console.error('[Server] File Translation Error:', error.message);
+    log.error(() => '[Server] File Translation Error:', error.message);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.status(500).end('<html><body><p>Error: Failed to load file translation page</p></body></html>');
 });
 
 // Default error handler for manifest/router and other routes (JSON responses)
 app.use((error, req, res, next) => {
-    console.error('[Server] General Error:', error.message);
+    log.error(() => '[Server] General Error:', error.message);
     res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -1939,9 +1939,9 @@ app.use((error, req, res, next) => {
 (async () => {
     try {
         await syncCache.initSyncCache();
-        console.log('[Startup] Sync cache initialized successfully');
+        log.debug(() => '[Startup] Sync cache initialized successfully');
     } catch (error) {
-        console.error('[Startup] Failed to initialize sync cache:', error.message);
+        log.error(() => '[Startup] Failed to initialize sync cache:', error.message);
     }
 })();
 

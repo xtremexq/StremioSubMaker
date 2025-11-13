@@ -1,3 +1,4 @@
+const log = require('../utils/logger');
 const StorageAdapter = require('./StorageAdapter');
 const FilesystemStorageAdapter = require('./FilesystemStorageAdapter');
 const RedisStorageAdapter = require('./RedisStorageAdapter');
@@ -25,7 +26,7 @@ class StorageFactory {
     let adapter;
 
     if (storageType === 'redis') {
-      console.log('Initializing Redis storage adapter...');
+      log.debug(() => 'Initializing Redis storage adapter...');
       adapter = new RedisStorageAdapter({
         host: process.env.REDIS_HOST,
         port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : undefined,
@@ -34,7 +35,7 @@ class StorageFactory {
         keyPrefix: process.env.REDIS_KEY_PREFIX || 'stremio:'
       });
     } else {
-      console.log('Initializing Filesystem storage adapter...');
+      log.debug(() => 'Initializing Filesystem storage adapter...');
       adapter = new FilesystemStorageAdapter();
     }
 
@@ -49,7 +50,7 @@ class StorageFactory {
     } catch (error) {
       // If Redis fails, fall back to filesystem
       if (storageType === 'redis') {
-        console.log('Falling back to filesystem storage...');
+        log.debug(() => 'Falling back to filesystem storage...');
         adapter = new FilesystemStorageAdapter();
         await adapter.initialize();
         StorageFactory.instance = adapter;
@@ -59,7 +60,7 @@ class StorageFactory {
         return adapter;
       }
 
-      console.error('Failed to initialize storage adapter:', error);
+      log.error(() => 'Failed to initialize storage adapter:', error);
       throw error;
     }
   }
@@ -74,7 +75,7 @@ class StorageFactory {
       try {
         await adapter.cleanup(StorageAdapter.CACHE_TYPES.BYPASS);
       } catch (error) {
-        console.error('[Cleanup] Failed to cleanup bypass cache:', error);
+        log.error(() => '[Cleanup] Failed to cleanup bypass cache:', error);
       }
     }, 30 * 60 * 1000);
 
@@ -83,7 +84,7 @@ class StorageFactory {
       try {
         await adapter.cleanup(StorageAdapter.CACHE_TYPES.PARTIAL);
       } catch (error) {
-        console.error('[Cleanup] Failed to cleanup partial cache:', error);
+        log.error(() => '[Cleanup] Failed to cleanup partial cache:', error);
       }
     }, 60 * 60 * 1000);
 
@@ -92,7 +93,7 @@ class StorageFactory {
       try {
         await adapter.cleanup(StorageAdapter.CACHE_TYPES.TRANSLATION);
       } catch (error) {
-        console.error('[Cleanup] Failed to cleanup translation cache:', error);
+        log.error(() => '[Cleanup] Failed to cleanup translation cache:', error);
       }
     }, 10 * 60 * 1000);
 
@@ -101,11 +102,11 @@ class StorageFactory {
       try {
         await adapter.cleanup(StorageAdapter.CACHE_TYPES.SYNC);
       } catch (error) {
-        console.error('[Cleanup] Failed to cleanup sync cache:', error);
+        log.error(() => '[Cleanup] Failed to cleanup sync cache:', error);
       }
     }, 60 * 60 * 1000);
 
-    console.log('Scheduled periodic cache cleanup tasks');
+    log.debug(() => 'Scheduled periodic cache cleanup tasks');
   }
 
   /**

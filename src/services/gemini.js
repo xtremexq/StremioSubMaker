@@ -2,6 +2,7 @@ const axios = require('axios');
 const { parseSRT, toSRT } = require('../utils/subtitle');
 const { handleTranslationError, logApiError } = require('../utils/apiErrorHandler');
 const { httpAgent, httpsAgent } = require('../utils/httpAgents');
+const log = require('../utils/logger');
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -141,17 +142,17 @@ class GeminiService {
         }
       }
 
-      console.log(`[Gemini] Model: ${this.model}, Output limit: ${limits.outputTokenLimit}, Input limit: ${limits.inputTokenLimit || 'unlimited'}`);
+      log.debug(() => `[Gemini] Model: ${this.model}, Output limit: ${limits.outputTokenLimit}, Input limit: ${limits.inputTokenLimit || 'unlimited'}`);
       this._modelLimits = limits;
       return limits;
     } catch (error) {
-      console.warn('[Gemini] Could not fetch model limits, using conservative defaults:', error.message);
+      log.warn(() => ['[Gemini] Could not fetch model limits, using conservative defaults:', error.message]);
       const modelName = String(this.model).toLowerCase();
       const limits = {
         inputTokenLimit: undefined,
         outputTokenLimit: modelName.includes('2.5') ? 65536 : 8192 // 2.0 = 8k, 2.5 = 65k
       };
-      console.log(`[Gemini] Fallback limits for ${this.model}: ${limits.outputTokenLimit} output tokens`);
+      log.debug(() => `[Gemini] Fallback limits for ${this.model}: ${limits.outputTokenLimit} output tokens`);
       this._modelLimits = limits;
       return limits;
     }
@@ -186,10 +187,10 @@ class GeminiService {
         if (isLastAttempt || (!isTimeout && !isNetworkError && !isSocketHangup)) {
           throw error;
         }
-        
+
         const delay = baseDelay * Math.pow(2, attempt);
         const errorType = isSocketHangup ? 'socket hang up' : isTimeout ? 'timeout' : 'network error';
-        console.log(`[Gemini] Attempt ${attempt + 1} failed (${errorType}), retrying in ${delay}ms...`);
+        log.debug(() => `[Gemini] Attempt ${attempt + 1} failed (${errorType}), retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -208,7 +209,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
       try {
         // Normalize target language to a human-readable form
         const normalizedTarget = normalizeTargetName(targetLanguage);
-        console.log(`[Gemini] Translating to ${normalizedTarget}`);
+        log.debug(() => `[Gemini] Translating to ${normalizedTarget}`);
 
       // Prepare the prompt
       const systemPrompt = (customPrompt || DEFAULT_TRANSLATION_PROMPT)
@@ -237,8 +238,8 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
           availableForOutput,
           Math.max(8192, estimatedSubtitleTokens * 3.5)
         ));
-      
-      console.log(`[Gemini] Estimated input tokens: ${estimatedInputTokens}, thinking budget: ${thinkingReserve}, output limit: ${estimatedOutputTokens} (total: ${estimatedOutputTokens + thinkingReserve})`);
+
+      log.debug(() => `[Gemini] Estimated input tokens: ${estimatedInputTokens}, thinking budget: ${thinkingReserve}, output limit: ${estimatedOutputTokens} (total: ${estimatedOutputTokens + thinkingReserve})`);
 
       // Call Gemini API
       const response = await axios.post(
@@ -271,12 +272,12 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
 
       // Detailed response validation
       if (!response.data) {
-        console.error('[Gemini] No data in response');
+        log.error(() => '[Gemini] No data in response');
         throw new Error('No data returned from Gemini API');
       }
 
       if (!response.data.candidates || response.data.candidates.length === 0) {
-        console.error('[Gemini] No candidates in response:', JSON.stringify(response.data, null, 2));
+        log.error(() => ['[Gemini] No candidates in response:', JSON.stringify(response.data, null, 2)]);
         throw new Error('No response candidates from Gemini API - possibly content filtered or API error');
       }
 
@@ -287,8 +288,8 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
 
       // Check for finish reason issues
       if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-        console.error('[Gemini] Unusual finish reason:', candidate.finishReason);
-        console.error('[Gemini] Full candidate:', JSON.stringify(candidate, null, 2));
+        log.error(() => ['[Gemini] Unusual finish reason:', candidate.finishReason]);
+        log.error(() => ['[Gemini] Full candidate:', JSON.stringify(candidate, null, 2)]);
         
                   if (candidate.finishReason === 'SAFETY') {
             throw new Error('Translation blocked by safety filters');
@@ -296,7 +297,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
             throw new Error('Translation blocked due to recitation concerns');
           } else if (candidate.finishReason === 'MAX_TOKENS') {
             // Log warning but check if we got usable output
-            console.log('[Gemini] MAX_TOKENS reached - translation may be incomplete');
+            log.debug(() => '[Gemini] MAX_TOKENS reached - translation may be incomplete');
             const outputText = aggregatedText;
             
             if (outputText.length < subtitleContent.length * 0.3) {
@@ -316,22 +317,22 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
 
       // Check for content
       if (!candidate.content) {
-        console.error('[Gemini] No content in candidate:', JSON.stringify(candidate, null, 2));
+        log.error(() => ['[Gemini] No content in candidate:', JSON.stringify(candidate, null, 2)]);
         throw new Error('No content in response candidate');
       }
 
       if (!candidate.content.parts || candidate.content.parts.length === 0) {
-        console.error('[Gemini] No parts in content:', JSON.stringify(candidate.content, null, 2));
+        log.error(() => ['[Gemini] No parts in content:', JSON.stringify(candidate.content, null, 2)]);
         throw new Error('No content parts in response');
       }
 
       if (!candidate.content.parts[0].text && aggregatedText.length === 0) {
-        console.error('[Gemini] No text in content parts:', JSON.stringify(candidate.content.parts, null, 2));
+        log.error(() => ['[Gemini] No text in content parts:', JSON.stringify(candidate.content.parts, null, 2)]);
         throw new Error('No text in response content');
       }
 
       const translatedText = aggregatedText.length > 0 ? aggregatedText : candidate.content.parts[0].text;
-      console.log('[Gemini] Translation completed successfully');
+      log.debug(() => '[Gemini] Translation completed successfully');
 
       return this.cleanTranslatedSubtitle(translatedText);
 
@@ -381,16 +382,16 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
     targetTokensPerChunk = targetTokensPerChunk !== null ? targetTokensPerChunk : this.chunkSize;
     const normalizedTarget = normalizeTargetName(targetLanguage);
     try {
-              console.log('[Gemini] Starting chunked translation');
-  
+              log.debug(() => '[Gemini] Starting chunked translation');
+
         // Split by subtitle entries (separated by double newlines)
         // Handle both Unix (\n) and Windows (\r\n) line endings
         const entries = subtitleContent.split(/(\r?\n){2,}/);
-        
+
         // Filter out empty entries and the captured newline groups from split
         const validEntries = entries.filter(entry => entry && entry.trim() && !entry.match(/^(\r?\n)+$/));
-        
-                console.log(`[Gemini] Split subtitle into ${validEntries.length} entries`);
+
+                log.debug(() => `[Gemini] Split subtitle into ${validEntries.length} entries`);
         const chunks = [];
         
                // Dynamically create chunks based on token count, not fixed entry count
@@ -413,7 +414,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
                currentChunkTokens = 0;
              }
              // Add oversized entry as its own chunk (will be handled by retry logic)
-             console.log(`[Gemini] Warning: Single entry with ${entryTokens} tokens exceeds effective target ${effectiveTarget} - will process separately`);
+             log.debug(() => `[Gemini] Warning: Single entry with ${entryTokens} tokens exceeds effective target ${effectiveTarget} - will process separately`);
              chunks.push(entry);
              continue;
            }
@@ -436,7 +437,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
 
       // Calculate total tokens for better logging
       const totalTokens = chunks.reduce((sum, chunk) => sum + this.estimateTokenCount(chunk), 0);
-      console.log(`[Gemini] Split into ${chunks.length} chunks (avg ~${Math.round(totalTokens / chunks.length)} tokens each)`);
+      log.debug(() => `[Gemini] Split into ${chunks.length} chunks (avg ~${Math.round(totalTokens / chunks.length)} tokens each)`);
 
       // Translate each chunk
       const translatedChunks = [];
@@ -476,7 +477,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
         // Log ACTUAL tokens including context
         const totalTokens = this.estimateTokenCount(composed);
         const contextTokens = totalTokens - chunkTokens;
-        console.log(`[Gemini] Translating chunk ${i + 1}/${chunks.length}: ${chunkTokens} chunk + ${contextTokens} context = ${totalTokens} total tokens`);
+        log.debug(() => `[Gemini] Translating chunk ${i + 1}/${chunks.length}: ${chunkTokens} chunk + ${contextTokens} context = ${totalTokens} total tokens`);
         const translated = await this.translateSubtitle(composed, sourceLanguage, normalizedTarget, customPrompt);
         translatedChunks.push(translated);
 
@@ -486,7 +487,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
         }
       }
 
-      console.log('[Gemini] All chunks translated');
+      log.debug(() => '[Gemini] All chunks translated');
       const merged = translatedChunks.join('\n\n');
       const parsed = parseSRT(merged);
       if (parsed.length > 0) {
@@ -507,7 +508,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
       return merged;
 
     } catch (error) {
-      console.error('[Gemini] Chunked translation error:', error.message);
+      log.error(() => ['[Gemini] Chunked translation error:', error.message]);
       throw error;
     }
   }
@@ -578,7 +579,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
       const merged = translatedChunks.join('\n\n');
       return this.cleanTranslatedSubtitle(merged);
     } catch (error) {
-      console.error('[Gemini] translateSubtitleInChunksWithProgress error:', error.message);
+      log.error(() => ['[Gemini] translateSubtitleInChunksWithProgress error:', error.message]);
       throw error;
     }
   }
@@ -630,7 +631,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
       }
       if (currentChunk.length > 0) chunks.push(currentChunk.join('\n\n'));
 
-      console.log(`[Gemini] Streaming chunks: Split into ${chunks.length} chunks for streaming translation`);
+      log.debug(() => `[Gemini] Streaming chunks: Split into ${chunks.length} chunks for streaming translation`);
 
       const translatedChunks = [];
       for (let i = 0; i < chunks.length; i++) {
@@ -669,7 +670,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
         // Log ACTUAL tokens including context
         const totalTokens = this.estimateTokenCount(composed);
         const contextTokens = totalTokens - chunkTokens;
-        console.log(`[Gemini] Streaming chunk ${i + 1}/${chunks.length}: ${chunkTokens} chunk + ${contextTokens} context = ${totalTokens} total tokens`);
+        log.debug(() => `[Gemini] Streaming chunk ${i + 1}/${chunks.length}: ${chunkTokens} chunk + ${contextTokens} context = ${totalTokens} total tokens`);
 
         // Use streaming for each chunk to get progressive per-chunk updates with retry logic
         let chunkBuffer = '';
@@ -708,7 +709,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
             if (is503 && attempt < maxRetries) {
               // Exponential backoff: 2s, 4s, 8s
               const delayMs = Math.pow(2, attempt) * 1000;
-              console.log(`[Gemini] Chunk ${i + 1} got 503 error, retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})`);
+              log.debug(() => `[Gemini] Chunk ${i + 1} got 503 error, retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})`);
               await new Promise(resolve => setTimeout(resolve, delayMs));
             } else {
               // Not a 503 or out of retries
@@ -737,7 +738,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
         }
       }
 
-      console.log(`[Gemini] All chunks streamed and translated (${chunks.length} chunks)`);
+      log.debug(() => `[Gemini] All chunks streamed and translated (${chunks.length} chunks)`);
       const merged = translatedChunks.join('\n\n');
       const parsed = parseSRT(merged);
       if (parsed.length > 0) {
@@ -757,7 +758,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
       }
       return merged;
     } catch (error) {
-      console.error('[Gemini] Streaming chunks translation error:', error.message);
+      log.error(() => ['[Gemini] Streaming chunks translation error:', error.message]);
       throw error;
     }
   }
@@ -784,11 +785,11 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
     const thinkingReserve = this.thinkingBudget > 0 ? this.thinkingBudget : 0;
     const availableForOutput = Math.max(1024, Math.min(this.maxOutputTokens, modelOutputCap - safetyMargin - thinkingReserve));
 
-    console.log(`[Gemini] Stream: Estimated input tokens: ${estimatedInputTokens}, output limit: ${availableForOutput}`);
+    log.debug(() => `[Gemini] Stream: Estimated input tokens: ${estimatedInputTokens}, output limit: ${availableForOutput}`);
 
     // Gemini streaming API requires SSE format and alt=sse parameter
     const url = `${this.baseUrl}/models/${this.model}:streamGenerateContent`;
-    console.log('[Gemini] Starting stream request to:', url);
+    log.debug(() => ['[Gemini] Starting stream request to:', url]);
 
     try {
       const response = await axios.post(
@@ -821,7 +822,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
           httpsAgent
         }
       );
-      console.log('[Gemini] Stream response received, status:', response.status);
+      log.debug(() => ['[Gemini] Stream response received, status:', response.status]);
 
       await new Promise((resolve, reject) => {
         let buffer = '';
@@ -854,7 +855,7 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
                   try {
                     onDelta(delta);
                   } catch (e) {
-                    console.warn('[Gemini] Error in onDelta callback:', e.message);
+                    log.warn(() => ['[Gemini] Error in onDelta callback:', e.message]);
                   }
                 }
                 deltaCount++;
@@ -862,13 +863,13 @@ async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customP
             } catch (parseError) {
               // Silently skip lines that aren't valid JSON (e.g., empty SSE markers)
               if (jsonStr.length > 0 && jsonStr !== '{}' && !jsonStr.startsWith('[')) {
-                console.debug('[Gemini] Failed to parse stream line (non-critical):', jsonStr.substring(0, 80));
+                log.debug(() => ['[Gemini] Failed to parse stream line (non-critical):', jsonStr.substring(0, 80)]);
               }
             }
           }
         });
         response.data.on('end', () => {
-          console.log(`[Gemini] Stream ended with ${deltaCount} deltas received`);
+          log.debug(() => `[Gemini] Stream ended with ${deltaCount} deltas received`);
           resolve();
         });
         response.data.on('error', reject);
