@@ -72,6 +72,13 @@ function getEncryptionKey() {
   const keyHex = encryptionKey.toString('hex');
 
   try {
+    // Ensure the directory exists before writing
+    const keyDir = path.dirname(ENCRYPTION_KEY_FILE);
+    if (!fs.existsSync(keyDir)) {
+      fs.mkdirSync(keyDir, { recursive: true, mode: 0o700 });
+      log.debug(() => ['[Encryption] Created encryption key directory:', keyDir]);
+    }
+
     fs.writeFileSync(ENCRYPTION_KEY_FILE, keyHex, { mode: 0o600 }); // Read/write for owner only
     log.warn(() => ['[Encryption] ⚠️  Generated NEW encryption key and saved to:', ENCRYPTION_KEY_FILE]);
     log.warn(() => '[Encryption] ⚠️  IMPORTANT: Back up this file! Loss of this key means loss of encrypted data.');
