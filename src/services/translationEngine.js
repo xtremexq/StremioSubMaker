@@ -75,8 +75,9 @@ class TranslationEngine {
       log.debug(() => `  - Malformed: ${isMalformed ? 'YES' : 'NO'}`);
 
       // Use Gemini's chunking with streaming and progress callback
-      let accumulatedChunks = [];
-      let streamBuffer = ''; // Buffer for accumulating streaming deltas
+      // Use indexed array to maintain chunk order when processing in parallel
+      let chunkResults = []; // Indexed array: chunkResults[chunkIndex] = translated content
+      let streamBuffers = []; // Indexed array: streamBuffers[chunkIndex] = streaming buffer
 
       const translatedSrt = await this.gemini.translateSubtitleInChunksWithStreaming(
         srtContent,
@@ -89,18 +90,29 @@ class TranslationEngine {
           if (typeof onProgress === 'function') {
             try {
               if (info.isDelta) {
-                // Accumulate streaming deltas (don't save partial content from incomplete tokens)
+                // Accumulate streaming deltas in indexed array (order-preserving)
                 // Saving incomplete streaming deltas causes malformed SRT with overlapping timestamps
-                streamBuffer += info.translatedChunk;
+                if (!streamBuffers[info.index]) {
+                  streamBuffers[info.index] = '';
+                }
+                streamBuffers[info.index] += info.translatedChunk;
               } else {
-                // Chunk completed - add buffer to accumulated chunks
-                if (streamBuffer.length > 0) {
-                  accumulatedChunks.push(streamBuffer);
-                  streamBuffer = ''; // Reset buffer for next chunk
+                // Chunk completed - store in indexed array to maintain order
+                if (streamBuffers[info.index] && streamBuffers[info.index].length > 0) {
+                  chunkResults[info.index] = streamBuffers[info.index];
+                  streamBuffers[info.index] = ''; // Clear buffer for this chunk
                 }
 
-                // Parse all accumulated chunks to get actual entries
-                const mergedChunks = accumulatedChunks.join('\n\n');
+                // Collect all completed chunks IN ORDER (skip undefined/empty slots)
+                const completedChunks = chunkResults.filter(chunk => chunk && chunk.length > 0);
+
+                // Only save partial if we have at least one complete chunk
+                if (completedChunks.length === 0) {
+                  return;
+                }
+
+                // Merge chunks in order and parse to get entries
+                const mergedChunks = completedChunks.join('\n\n');
                 const parsedEntries = parseSRT(mergedChunks);
 
                 // Validate that we have well-formed SRT before saving as partial
@@ -109,8 +121,18 @@ class TranslationEngine {
                   return;
                 }
 
+                // Re-index entries to fix any numbering issues from merged chunks
+                const reindexedEntries = parsedEntries.map((entry, idx) => ({
+                  id: idx + 1,
+                  timecode: entry.timecode,
+                  text: entry.text
+                }));
+
                 const totalEstimatedEntries = Math.floor(estimatedTotalTokens / 50); // Rough estimate
-                const completedEntries = parsedEntries.length;
+                const completedEntries = reindexedEntries.length;
+
+                // Convert back to SRT for partial caching
+                const reindexedSrt = toSRT(reindexedEntries);
 
                 // Provide ONLY validated, complete chunks for partial caching
                 // This prevents malformed SRT from being displayed to users
@@ -120,7 +142,7 @@ class TranslationEngine {
                   currentBatch: info.index + 1,
                   totalBatches: info.total,
                   entry: null, // No individual entry
-                  partialContent: mergedChunks // Provide accumulated chunks for partial caching
+                  partialContent: reindexedSrt // Provide re-indexed, validated SRT
                 });
               }
             } catch (err) {

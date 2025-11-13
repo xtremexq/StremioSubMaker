@@ -1720,13 +1720,20 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
 
     log.debug(() => '[Translation] Using new structure-first translation engine');
 
-    // Setup progressive partial saving
+    // Setup progressive partial saving with adaptive timing
     const translatedEntries = [];
     let lastFlush = Date.now();
-    // Flush interval: How often to save partial results (default: 30s)
-    // Reduced from 15s to decrease I/O overhead
-    // Configurable via PARTIAL_FLUSH_INTERVAL_MS environment variable
-    const flushInterval = parseInt(process.env.PARTIAL_FLUSH_INTERVAL_MS) || 30000; // Flush every 30 seconds (was 15s)
+    let partialSaveCount = 0; // Track how many times we've saved partial results
+
+    // Adaptive flush timing:
+    // - First partial: 15s (quick initial feedback to user)
+    // - Subsequent partials: 30-60s (reduce I/O overhead)
+    const firstFlushInterval = parseInt(process.env.PARTIAL_FIRST_FLUSH_MS) || 15000; // 15s for first partial
+    const subsequentFlushInterval = parseInt(process.env.PARTIAL_FLUSH_INTERVAL_MS) || 30000; // 30s for subsequent partials
+
+    const getFlushInterval = () => {
+      return partialSaveCount === 0 ? firstFlushInterval : subsequentFlushInterval;
+    };
 
     const savePartial = async () => {
       if (translatedEntries.length === 0) return;
@@ -1738,7 +1745,9 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
           content: partialSrt,
           expiresAt: Date.now() + 60 * 60 * 1000
         });
-        log.debug(() => `[Translation] Saved partial: ${translatedEntries.length} entries (${partialSrt.length} chars)`);
+        partialSaveCount++;
+        const interval = partialSaveCount === 1 ? 'first' : 'subsequent';
+        log.debug(() => `[Translation] Saved partial (${interval}): ${translatedEntries.length} entries (${partialSrt.length} chars)`);
       }
     };
 
@@ -1763,12 +1772,15 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
                 content: partialSrt,
                 expiresAt: Date.now() + 60 * 60 * 1000
               });
-              log.debug(() => `[Translation] Saved partial (chunked mode): ${progress.completedEntries} entries (${partialSrt.length} chars)`);
+              partialSaveCount++;
+              const interval = partialSaveCount === 1 ? 'first' : 'subsequent';
+              log.debug(() => `[Translation] Saved partial (chunked, ${interval}): ${progress.completedEntries} entries (${partialSrt.length} chars)`);
             }
           } else {
-            // For batch mode: flush periodically
+            // For batch mode: flush periodically with adaptive timing
             const now = Date.now();
-            if (now - lastFlush > flushInterval) {
+            const currentInterval = getFlushInterval();
+            if (now - lastFlush > currentInterval) {
               lastFlush = now;
               await savePartial();
             }
