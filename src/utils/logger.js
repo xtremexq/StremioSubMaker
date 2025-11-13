@@ -256,12 +256,128 @@ function maybeRotate(nextBytes) {
     if (currentLogSize + nextBytes > LOG_MAX_SIZE_BYTES) rotateLogs();
 }
 
+/**
+ * Serialize an Error object with truncation to prevent ridiculously long logs
+ * @param {Error} error - Error object to serialize
+ * @param {number} maxStackLines - Maximum stack trace lines to include
+ * @returns {string} - Serialized error string
+ */
+function serializeError(error, maxStackLines = 5) {
+    const result = {
+        message: error.message || 'Unknown error',
+        name: error.name || 'Error'
+    };
+
+    // Add essential properties only
+    if (error.code) result.code = error.code;
+    if (error.statusCode) result.statusCode = error.statusCode;
+    if (error.status) result.status = error.status;
+    if (error.type) result.type = error.type;
+    if (error.errno) result.errno = error.errno;
+    if (error.syscall) result.syscall = error.syscall;
+
+    // Truncate stack trace to prevent excessive log size
+    if (error.stack) {
+        const lines = error.stack.split('\n');
+        if (lines.length <= maxStackLines) {
+            result.stack = error.stack;
+        } else {
+            result.stack = lines.slice(0, maxStackLines).join('\n') +
+                          `\n... (${lines.length - maxStackLines} more lines omitted)`;
+        }
+    }
+
+    // DO NOT include: originalError, request, response, config, data, socket, etc.
+    // These can contain massive objects (buffers, streams, circular refs)
+
+    try {
+        return JSON.stringify(result, null, 2);
+    } catch (_) {
+        return `[Error: ${result.message}]`;
+    }
+}
+
+/**
+ * Create a JSON replacer that prevents logging of large/circular objects
+ * @param {number} maxDepth - Maximum object nesting depth
+ * @param {number} maxStringLength - Maximum string length before truncation
+ * @returns {Function} - JSON replacer function
+ */
+function createSafeReplacer(maxDepth = 3, maxStringLength = 500) {
+    const seen = new WeakSet();
+    let depth = 0;
+
+    return function(key, value) {
+        // Skip known problematic/large objects that bloat logs
+        const skipKeys = [
+            'request',      // Axios request object (huge)
+            'socket',       // Network socket (circular)
+            'agent',        // HTTP agent (circular)
+            'originalError',// Can contain all of the above
+            'config',       // Axios config (redundant)
+            'data',         // Response data buffers (huge)
+            'rawHeaders',   // Duplicate header data
+            'req',          // Express request (huge)
+            'res',          // Express response (circular)
+            '_eventsCount', // Internal Node.js (noise)
+            '_events',      // Internal Node.js (noise)
+            'domain',       // Internal Node.js (noise)
+            '_readableState', // Stream internals (huge)
+            '_writableState'  // Stream internals (huge)
+        ];
+
+        if (skipKeys.includes(key)) {
+            return '[Omitted]';
+        }
+
+        // Handle objects
+        if (typeof value === 'object' && value !== null) {
+            // Check for circular references
+            if (seen.has(value)) {
+                return '[Circular]';
+            }
+            seen.add(value);
+
+            // Limit depth to prevent massive nested structures
+            if (depth >= maxDepth) {
+                return '[Max Depth Exceeded]';
+            }
+            depth++;
+        }
+
+        // Truncate long strings (like response bodies, large buffers)
+        if (typeof value === 'string' && value.length > maxStringLength) {
+            return value.substring(0, maxStringLength) +
+                   `... (${value.length - maxStringLength} more characters)`;
+        }
+
+        // Truncate buffers
+        if (Buffer.isBuffer(value)) {
+            if (value.length > 100) {
+                return `[Buffer ${value.length} bytes (truncated): ${value.slice(0, 100).toString('hex')}...]`;
+            }
+            return `[Buffer ${value.length} bytes: ${value.toString('hex')}]`;
+        }
+
+        return value;
+    };
+}
+
 function serializeArg(arg) {
     if (arg === null) return 'null';
     if (arg === undefined) return 'undefined';
     if (typeof arg === 'string') return arg;
     if (typeof arg === 'number' || typeof arg === 'boolean') return String(arg);
-    try { return JSON.stringify(arg); } catch (_) {
+
+    // Special handling for Error objects to prevent massive stack traces and circular refs
+    if (arg instanceof Error) {
+        return serializeError(arg);
+    }
+
+    try {
+        // Use safe replacer to prevent logging huge objects or circular references
+        return JSON.stringify(arg, createSafeReplacer(), 2);
+    } catch (_) {
         try { return String(arg); } catch (_) { return '[Unserializable]'; }
     }
 }
