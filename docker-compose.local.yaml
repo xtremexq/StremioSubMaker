@@ -13,6 +13,9 @@ services:
       # Storage configuration - Use filesystem (default)
       - STORAGE_TYPE=filesystem
 
+      # Encryption key file path (persisted in bind mount)
+      - ENCRYPTION_KEY_FILE=/app/data/.encryption-key
+
     volumes:
       # Persist cache and data directories
       - ./data:/app/data

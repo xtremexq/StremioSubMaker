@@ -20,6 +20,9 @@ services:
       - REDIS_DB=0
       - REDIS_KEY_PREFIX=stremio
 
+      # Encryption key file path (persisted in volume)
+      - ENCRYPTION_KEY_FILE=/app/keys/.encryption-key
+
     depends_on:
       redis:
         condition: service_healthy
@@ -32,6 +35,8 @@ services:
       - app-data:/app/data
       - app-cache:/app/.cache
       - app-logs:/app/logs
+      # Persist encryption key file to maintain access to encrypted session data
+      - encryption-key:/app/keys
 
   # Redis for caching and storage
   redis:
@@ -70,4 +75,6 @@ volumes:
   app-cache:
     driver: local
   app-logs:
+    driver: local
+  encryption-key:
     driver: local
