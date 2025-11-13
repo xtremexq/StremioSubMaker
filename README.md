@@ -10,6 +10,8 @@ No-Translation mode: simply fetch selected languages from OpenSubtitles, SubSour
 
 Auto-sync subtitles in development!
 
+## 🚀 [Roadmap 🗺️](ROADMAP.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Stremio Addon](https://img.shields.io/badge/Stremio-Addon-purple)](https://www.stremio.com)
