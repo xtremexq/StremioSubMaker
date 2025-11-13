@@ -5,10 +5,11 @@ services:
     container_name: stremio-submaker-local
     ports:
       - "${PORT:-7001}:7001"
+    # Load ALL environment variables from .env file
+    env_file:
+      - .env
     environment:
-      # Application configuration
-      - PORT=7001
-
+      # Override specific variables for local development
       # Storage configuration - Use filesystem (default)
       - STORAGE_TYPE=filesystem
 
