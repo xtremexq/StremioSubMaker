@@ -939,26 +939,79 @@ function calculateFilenameMatchScore(streamFilename, subtitleName) {
   const streamTokens = stream
     .replace(/\.[^.]+$/, '') // Remove extension
     .split(/[_\-\.\s]+/)
-    .filter(t => t.length > 2); // Only meaningful tokens
+    .filter(t => t.length > 1); // Allow 2+ character tokens
 
   const subtitleTokens = subtitle
     .replace(/\.[^.]+$/, '')
     .split(/[_\-\.\s]+/)
-    .filter(t => t.length > 2);
+    .filter(t => t.length > 1);
 
-  // Match tokens (especially year, season/episode numbers)
+  // Match tokens (especially year, season/episode numbers, edition info)
   let tokenMatches = 0;
+  const IMPORTANT_TOKENS = new Set([
+    'repack', 'proper', 'extended', 'unrated', 'directors', 'cut',
+    'theatrical', 'imax', 'remux', 'atmos', 'hybrid', 'hc', 'dual'
+  ]);
+
   for (const token of streamTokens) {
-    if (/^\d+$/.test(token) && subtitleTokens.includes(token)) {
-      // Numeric tokens (year, season, episode) are very important
+    if (!subtitleTokens.includes(token)) continue;
+
+    // Year matching (4-digit number starting with 19 or 20)
+    if (/^(19|20)\d{2}$/.test(token)) {
+      tokenMatches += 3; // Year is VERY important
+    }
+    // Season/Episode numbers (S01, E05, etc.)
+    else if (/^[se]\d+$/i.test(token)) {
+      tokenMatches += 4; // Episode/Season numbers are CRITICAL
+    }
+    // Other numeric tokens (could be episode number, part number, etc.)
+    else if (/^\d+$/.test(token)) {
       tokenMatches += 2;
-    } else if (subtitleTokens.includes(token)) {
+    }
+    // Important edition/quality tokens
+    else if (IMPORTANT_TOKENS.has(token)) {
+      tokenMatches += 2; // Edition markers are important for correct version
+    }
+    // Regular token match
+    else {
       tokenMatches += 1;
     }
   }
 
   if (tokenMatches > 0) {
     score += tokenMatches * 100;
+  }
+
+  // EDITION/CUT MATCHING (different cuts have different timing!)
+  const EDITION_MARKERS = ['extended', 'unrated', 'directors.cut', 'theatrical', 'imax', 'remastered'];
+  let streamEdition = null;
+  let subtitleEdition = null;
+
+  for (const marker of EDITION_MARKERS) {
+    if (stream.includes(marker)) streamEdition = marker;
+    if (subtitle.includes(marker)) subtitleEdition = marker;
+  }
+
+  if (streamEdition && subtitleEdition) {
+    if (streamEdition === subtitleEdition) {
+      score += 1500; // Same cut/edition = critical for sync
+    } else {
+      score -= 1000; // Different cuts = very likely desync
+    }
+  } else if (streamEdition && !subtitleEdition) {
+    score -= 300; // Stream is special edition, subtitle is not
+  } else if (!streamEdition && subtitleEdition) {
+    score -= 300; // Subtitle is special edition, stream is not
+  }
+
+  // PROPER/REPACK MATCHING (scene release fixes)
+  const streamIsProper = stream.includes('proper') || stream.includes('repack');
+  const subtitleIsProper = subtitle.includes('proper') || subtitle.includes('repack');
+
+  if (streamIsProper && subtitleIsProper) {
+    score += 800; // Both PROPER/REPACK = same fixed release
+  } else if (streamIsProper !== subtitleIsProper) {
+    score -= 400; // One is PROPER, other is not = different releases
   }
 
   // PENALTY: If subtitle has minimal info (very short), it's less likely to be accurate match
@@ -969,8 +1022,22 @@ function calculateFilenameMatchScore(streamFilename, subtitleName) {
   // BONUS: If subtitle name is very similar in structure/length, it's probably the right one
   const tokenRatio = Math.min(streamTokens.length, subtitleTokens.length) /
                      Math.max(streamTokens.length, subtitleTokens.length);
-  if (tokenRatio > 0.7) {
-    score *= 1.2; // Similar structure = good sign
+  if (tokenRatio > 0.8) {
+    score *= 1.3; // Very similar structure = very good sign (increased threshold and bonus)
+  } else if (tokenRatio > 0.6) {
+    score *= 1.15; // Moderately similar structure = good sign
+  }
+
+  // BONUS: Exact match on multiple critical factors = compound boost
+  let criticalMatches = 0;
+  if (streamMeta.releaseGroup && streamMeta.releaseGroup === subtitleMeta.releaseGroup) criticalMatches++;
+  if (streamMeta.ripType && streamMeta.ripType === subtitleMeta.ripType) criticalMatches++;
+  if (streamMeta.resolution && streamMeta.resolution === subtitleMeta.resolution) criticalMatches++;
+
+  if (criticalMatches >= 3) {
+    score *= 1.5; // Triple match (group + rip + resolution) = extremely likely correct
+  } else if (criticalMatches === 2) {
+    score *= 1.25; // Double match = very likely correct
   }
 
   return Math.max(0, Math.round(score));
