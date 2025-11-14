@@ -730,7 +730,6 @@ Translate to {target_language}.`;
         // API Key Validation Buttons
         document.getElementById('validateSubSource').addEventListener('click', () => validateApiKey('subsource'));
         document.getElementById('validateSubDL').addEventListener('click', () => validateApiKey('subdl'));
-        document.getElementById('validateOpenSubtitles').addEventListener('click', () => validateApiKey('opensubtitles'));
         document.getElementById('validateGemini').addEventListener('click', () => validateApiKey('gemini'));
 
         // File translation toggle - show modal when enabled
