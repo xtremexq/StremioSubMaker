@@ -89,6 +89,13 @@
             color: #64748b;
         }
 
+        /* Dark mode keyboard hint contrast fix */
+        [data-theme="dark"] .keyboard-hint {
+            background: rgba(20, 25, 49, 0.9);
+            color: var(--text-primary);
+            border-color: var(--border);
+        }
+
         /* Fix radio button label backgrounds in dark mode */
         /* Unselected options should be darker */
         [data-theme="dark"] label:has(input[type="radio"]:not(:checked))[style*="background: white"] {
