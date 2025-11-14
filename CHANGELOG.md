@@ -5,16 +5,23 @@ All notable changes to this project will be documented in this file.
 ## SubMaker 1.1.2
 
 **New Features:**
+- **Intelligent Subtitle Ranking**: Advanced filename matching algorithm prioritizes exact release group matches (RARBG, YTS, etc.) and rip type compatibility (WEB-DL, BluRay) for optimal sync probability
+  - Matches resolution, codec, audio, HDR, streaming platform (Netflix, Amazon), and edition markers (Extended, Director's Cut) to find best-synced subtitles
 - Added Advanced Settings (EXPERIMENTAL) section to configuration page for fine-tuning AI behavior
-- Model selection override: Choose any available Gemini model to override the default (gemini-2.5-flash-lite-preview-09-2025)
-- Thinking Budget control: Configure extended reasoning (0 = disabled, -1 = dynamic, or fixed token count up to 32768)
-- Temperature and Top-P sampling parameters: Adjust translation creativity and determinism
-- QQ Mode (Quantum Quality): Experimental mode that forces bypass cache to ensure unique translation parameters per request
+- Secret unlock: Click the heart (❤️) in the footer to reveal Advanced Settings
 
-**Configuration Enhancements:**
-- Advanced settings configuration now overrides both default model and environment variable settings when enabled
-- QQ Mode automatically enables and locks bypass cache to prevent translation sharing in the main database
-- All advanced settings properly integrated with existing translation pipeline (file translation and subtitle translation)
+**Performance Improvements:**
+- Automatic cache purging when user changes configuration (different config hash = different cache key)
+- Configurable environment variables: `SUBTITLE_SEARCH_CACHE_MAX`, `SUBTITLE_SEARCH_CACHE_TTL_MS`
+
+**File Translation:**
+- **Parallel Translation for File Upload**: Large SRT files (>15K tokens) are now automatically split into chunks and translated concurrently
+  - Parallel API calls, context preservation, environment variables configuration, automatic retry.
+- **File Translation Advanced Settings**: Added experimental advanced settings section to file translation page for temporary per-translation overrides of model, prompt, and AI parameters (thinking budget, temperature, top-P, top-K, max tokens, timeout, retries)
+
+**Bug Fixes:**
+- **User-Isolated Subtitle Search Cache**: Fixed a problem of cache sharing between users with different configurations (API keys, providers, languages)
+- Various major and minor bug fixes.
 
 ## SubMaker 1.1.1
 
