@@ -364,6 +364,11 @@ app.use((req, res, next) => {
         '/api/languages',
         '/api/test-opensubtitles',
         '/api/gemini-models',
+        // Allow config page to call validation/test endpoints from browser
+        '/api/validate-gemini',
+        '/api/validate-subsource',
+        '/api/validate-subdl',
+        '/api/validate-opensubtitles',
         '/api/translate-file',
         '/addon/:config/translate-selector/',
         '/addon/:config/file-translate/'
@@ -551,14 +556,14 @@ app.get('/api/test-opensubtitles', async (req, res) => {
 // API endpoint to fetch Gemini models
 app.post('/api/gemini-models', async (req, res) => {
     try {
-        const { apiKey } = req.body;
+        const { apiKey } = req.body || {};
 
         if (!apiKey) {
             return res.status(400).json({ error: 'API key is required' });
         }
 
-        const gemini = new GeminiService(apiKey);
-        const models = await gemini.getAvailableModels();
+        const gemini = new GeminiService(String(apiKey).trim());
+        const models = await gemini.getAvailableModels({ silent: true });
 
         // Filter to only show models containing "pro" or "flash" (case-insensitive)
         const filteredModels = models.filter(model => {
@@ -569,7 +574,9 @@ app.post('/api/gemini-models', async (req, res) => {
         res.json(filteredModels);
     } catch (error) {
         log.error(() => '[API] Error fetching Gemini models:', error);
-        res.status(500).json({ error: 'Failed to fetch models' });
+        // Surface upstream error details if available for easier debugging in UI
+        const message = error?.response?.data?.error || error?.response?.data?.message || error.message || 'Failed to fetch models';
+        res.status(500).json({ error: message });
     }
 });
 
@@ -826,7 +833,7 @@ app.post('/api/validate-opensubtitles', async (req, res) => {
 // API endpoint to validate Gemini API key
 app.post('/api/validate-gemini', async (req, res) => {
     try {
-        const { apiKey } = req.body;
+        const { apiKey } = req.body || {};
 
         if (!apiKey) {
             return res.status(400).json({
@@ -838,12 +845,12 @@ app.post('/api/validate-gemini', async (req, res) => {
         const axios = require('axios');
         const { httpAgent, httpsAgent } = require('./src/utils/httpAgents');
 
-        // Make direct API call to Gemini to validate the key
-        const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
+        // Use v1 endpoint and API key header for validation
+        const geminiUrl = 'https://generativelanguage.googleapis.com/v1/models';
 
         try {
             const response = await axios.get(geminiUrl, {
-                params: { key: apiKey.trim() },
+                headers: { 'x-goog-api-key': String(apiKey || '').trim() },
                 timeout: 10000,
                 httpAgent,
                 httpsAgent
@@ -871,7 +878,7 @@ app.post('/api/validate-gemini', async (req, res) => {
             } else if (apiError.response?.status === 400) {
                 res.json({
                     valid: false,
-                    error: 'Invalid API key'
+                    error: apiError.response?.data?.error || apiError.response?.data?.message || 'Invalid API key'
                 });
             } else {
                 throw apiError;

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker 1.1.4
+
+**Bug Fixes:**
+- Fixed Gemini API key validation: Removed duplicate model fetching messages that appeared after clicking "Test" button
+- Fixed Gemini API key input: Green border now only appears when API key is successfully validated by backend, not just when field is not empty
+- Moved model fetching status messages to Advanced Settings section only (no longer shows in main config area)
+
 ## SubMaker 1.1.3
 
 **New Features:**

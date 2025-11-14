@@ -3,7 +3,8 @@ const { handleTranslationError, logApiError } = require('../utils/apiErrorHandle
 const { httpAgent, httpsAgent } = require('../utils/httpAgents');
 const log = require('../utils/logger');
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta';
+// Prefer stable v1 endpoint; some keys return 400 against v1beta
+const GEMINI_API_URL = process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com/v1';
 
 // Normalize human-readable target language names for Gemini prompts
 function normalizeTargetName(name) {
@@ -91,11 +92,15 @@ class GeminiService {
   /**
    * Get available models from Gemini API
    */
-  async getAvailableModels() {
+  async getAvailableModels(options = {}) {
+    const silent = !!options.silent;
     try {
       const response = await axios.get(`${this.baseUrl}/models`, {
-        params: { key: this.apiKey },
-        timeout: 10000
+        // Use header form for API key to avoid query parsing/proxy quirks
+        headers: { 'x-goog-api-key': String(this.apiKey || '').trim() },
+        timeout: 10000,
+        httpAgent,
+        httpsAgent
       });
 
       if (!response.data || !response.data.models) {
@@ -114,7 +119,10 @@ class GeminiService {
       return models;
 
     } catch (error) {
-      logApiError(error, 'Gemini', 'Fetch models', { skipResponseData: true });
+      if (!silent) {
+        // Log response details to help diagnose issues when not in config UI
+        logApiError(error, 'Gemini', 'Fetch models', { skipResponseData: true });
+      }
       return [];
     }
   }

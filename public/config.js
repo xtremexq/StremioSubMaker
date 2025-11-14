@@ -607,12 +607,23 @@ Translate to {target_language}.`;
         // Gemini API key auto-fetch - triggers when API key is typed/pasted
         const apiKeyInput = document.getElementById('geminiApiKey');
         if (apiKeyInput) {
-            apiKeyInput.addEventListener('input', debounce((e) => {
+            apiKeyInput.addEventListener('input', (e) => {
                 const apiKey = e.target.value.trim();
-                if (apiKey && apiKey.length >= 10 && apiKey !== lastFetchedApiKey) {
-                    autoFetchModels(apiKey);
+
+                // Clear any existing timeout
+                if (modelsFetchTimeout) {
+                    clearTimeout(modelsFetchTimeout);
+                    modelsFetchTimeout = null;
                 }
-            }, 1500));
+
+                // Schedule model fetch if API key is valid length
+                if (apiKey && apiKey.length >= 10 && apiKey !== lastFetchedApiKey) {
+                    modelsFetchTimeout = setTimeout(() => {
+                        autoFetchModels(apiKey);
+                        modelsFetchTimeout = null;
+                    }, 1500);
+                }
+            });
         }
 
         // Search functionality
@@ -719,7 +730,6 @@ Translate to {target_language}.`;
         // API Key Validation Buttons
         document.getElementById('validateSubSource').addEventListener('click', () => validateApiKey('subsource'));
         document.getElementById('validateSubDL').addEventListener('click', () => validateApiKey('subdl'));
-        document.getElementById('validateOpenSubtitles').addEventListener('click', () => validateApiKey('opensubtitles'));
         document.getElementById('validateGemini').addEventListener('click', () => validateApiKey('gemini'));
 
         // File translation toggle - show modal when enabled
@@ -895,7 +905,7 @@ Translate to {target_language}.`;
             return false;
         } else {
             input.classList.remove('invalid');
-            input.classList.add('valid');
+            // Don't add 'valid' class here - only backend validation should do that
             error.classList.remove('show');
             return true;
         }
@@ -976,6 +986,12 @@ Translate to {target_language}.`;
         // Clear previous feedback
         feedback.classList.remove('show', 'success', 'error');
 
+        // For Gemini: Clear any pending model fetch to avoid duplicate messages
+        if (provider === 'gemini' && modelsFetchTimeout) {
+            clearTimeout(modelsFetchTimeout);
+            modelsFetchTimeout = null;
+        }
+
         try {
             // Call validation endpoint
             const body = provider === 'opensubtitles'
@@ -1009,6 +1025,15 @@ Translate to {target_language}.`;
 
                 showValidationFeedback(feedback, 'success', message);
 
+                // For Gemini: Mark input as valid (green border)
+                if (provider === 'gemini') {
+                    const apiKeyInput = document.getElementById('geminiApiKey');
+                    if (apiKeyInput) {
+                        apiKeyInput.classList.add('valid');
+                        apiKeyInput.classList.remove('invalid');
+                    }
+                }
+
                 // Reset button after 3 seconds
                 setTimeout(() => {
                     btn.classList.remove('success');
@@ -1021,6 +1046,15 @@ Translate to {target_language}.`;
                 iconEl.textContent = '✗';
                 textEl.textContent = 'Invalid';
                 showValidationFeedback(feedback, 'error', result.error || 'Validation failed');
+
+                // For Gemini: Mark input as invalid (red border)
+                if (provider === 'gemini') {
+                    const apiKeyInput = document.getElementById('geminiApiKey');
+                    if (apiKeyInput) {
+                        apiKeyInput.classList.add('invalid');
+                        apiKeyInput.classList.remove('valid');
+                    }
+                }
 
                 // Reset button after 4 seconds
                 setTimeout(() => {
@@ -1038,6 +1072,15 @@ Translate to {target_language}.`;
             iconEl.textContent = '✗';
             textEl.textContent = 'Error';
             showValidationFeedback(feedback, 'error', 'Connection error. Please try again.');
+
+            // For Gemini: Mark input as invalid on connection error
+            if (provider === 'gemini') {
+                const apiKeyInput = document.getElementById('geminiApiKey');
+                if (apiKeyInput) {
+                    apiKeyInput.classList.add('invalid');
+                    apiKeyInput.classList.remove('valid');
+                }
+            }
 
             // Reset button after 4 seconds
             setTimeout(() => {
