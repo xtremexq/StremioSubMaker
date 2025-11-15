@@ -958,8 +958,11 @@ app.post('/api/create-session', async (req, res) => {
 
         // For localhost, can use either session or base64 (backward compatibility)
         const localhost = isLocalhost(req);
+        const storageType = process.env.STORAGE_TYPE || 'filesystem';
 
-        if (localhost && process.env.FORCE_SESSIONS !== 'true') {
+        // Use base64 only if: localhost AND not forced sessions AND not using Redis storage
+        // Redis storage should always use sessions for proper data persistence
+        if (localhost && process.env.FORCE_SESSIONS !== 'true' && storageType !== 'redis') {
             // For localhost, return base64 encoded config (old method)
             const configStr = Buffer.from(JSON.stringify(config), 'utf-8').toString('base64');
             log.debug(() => '[Session API] Localhost detected - using base64 encoding');
@@ -1001,9 +1004,12 @@ app.post('/api/update-session/:token', async (req, res) => {
 
         // For localhost with base64, we can't update (create new instead)
         const localhost = isLocalhost(req);
+        const storageType = process.env.STORAGE_TYPE || 'filesystem';
         const isBase64Token = !/^[a-f0-9]{32}$/.test(token);
 
-        if (localhost && isBase64Token && process.env.FORCE_SESSIONS !== 'true') {
+        // Use base64 only if: localhost AND base64 token AND not forced sessions AND not using Redis storage
+        // Redis storage should always use sessions for proper data persistence
+        if (localhost && isBase64Token && process.env.FORCE_SESSIONS !== 'true' && storageType !== 'redis') {
             // For localhost base64, just return new encoded config
             const configStr = Buffer.from(JSON.stringify(config), 'utf-8').toString('base64');
             log.debug(() => '[Session API] Localhost detected - creating new base64 token');
