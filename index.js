@@ -3768,18 +3768,29 @@ app.use((error, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// Initialize sync cache
+// Initialize sync cache and session manager, then start server
 (async () => {
     try {
+        // Initialize sync cache
         await syncCache.initSyncCache();
         log.debug(() => '[Startup] Sync cache initialized successfully');
     } catch (error) {
         log.error(() => '[Startup] Failed to initialize sync cache:', error.message);
     }
-})();
 
-// Start server and setup graceful shutdown
-const server = app.listen(PORT, () => {
+    // CRITICAL FIX: Wait for session manager to be ready before accepting requests
+    // This prevents "session not found" errors during server startup
+    try {
+        log.info(() => '[Startup] Waiting for session manager to be ready...');
+        await sessionManager.waitUntilReady();
+        log.info(() => '[Startup] Session manager is ready - sessions loaded successfully');
+    } catch (error) {
+        log.error(() => ['[Startup] Session manager initialization failed:', error.message]);
+        log.warn(() => '[Startup] Continuing startup anyway, but sessions may not be available');
+    }
+
+    // Start server and setup graceful shutdown
+    const server = app.listen(PORT, () => {
     // Get log level and file logging status
     const logLevel = (process.env.LOG_LEVEL || 'warn').toUpperCase();
     const logToFile = process.env.LOG_TO_FILE !== 'false' ? 'ENABLED' : 'DISABLED';
@@ -3809,6 +3820,7 @@ const server = app.listen(PORT, () => {
 
     // Setup graceful shutdown handlers now that server is running
     sessionManager.setupShutdownHandlers(server);
-});
+    });
+})();
 
 module.exports = app;

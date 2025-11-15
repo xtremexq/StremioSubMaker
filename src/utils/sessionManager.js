@@ -52,8 +52,14 @@ class SessionManager {
         // Auto-save timer
         this.saveTimer = null;
 
+        // Memory cleanup timer (for preventing memory leaks)
+        this.cleanupTimer = null;
+
         // Track if we've made changes since last save
         this.dirty = false;
+
+        // Track consecutive save failures for alerting
+        this.consecutiveSaveFailures = 0;
 
         // Readiness flag - ensures sessions are loaded before handling requests
         this.isReady = false;
@@ -64,6 +70,9 @@ class SessionManager {
 
         // Start auto-save interval
         this.startAutoSave();
+
+        // Start memory cleanup interval (runs less frequently)
+        this.startMemoryCleanup();
     }
 
     /**
@@ -260,11 +269,34 @@ class SessionManager {
                 sessions
             };
 
+            const expectedCount = Object.keys(sessions).length;
+
             // Save to storage
             await adapter.set('sessions', data, StorageAdapter.CACHE_TYPES.SESSION);
 
+            // CRITICAL FIX: Verify save succeeded by reading back the data
+            try {
+                const verification = await adapter.get('sessions', StorageAdapter.CACHE_TYPES.SESSION);
+
+                if (!verification || !verification.sessions) {
+                    throw new Error('Session save verification failed - data not found after save');
+                }
+
+                const savedCount = Object.keys(verification.sessions).length;
+                if (savedCount !== expectedCount) {
+                    throw new Error(`Session count mismatch: saved ${savedCount}, expected ${expectedCount}`);
+                }
+
+                log.debug(() => `[SessionManager] Save verified: ${savedCount} sessions persisted successfully`);
+            } catch (verifyError) {
+                log.error(() => ['[SessionManager] Save verification failed:', verifyError.message]);
+                // Don't mark as clean if verification failed
+                throw verifyError;
+            }
+
             this.dirty = false;
-            log.debug(() => `[SessionManager] Saved ${Object.keys(sessions).length} sessions to storage`);
+            this.consecutiveSaveFailures = 0; // Reset on successful save
+            log.debug(() => `[SessionManager] Saved ${expectedCount} sessions to storage`);
         } catch (err) {
             log.error(() => ['[SessionManager] Failed to save sessions:', err]);
             throw err;
@@ -289,8 +321,17 @@ class SessionManager {
             let loadedCount = 0;
             let expiredCount = 0;
             let migratedCount = 0;
+            let invalidTokenCount = 0;
 
             for (const [token, sessionData] of Object.entries(data.sessions)) {
+                // CRITICAL FIX: Validate token format before loading
+                // Session tokens must be 32-character hexadecimal strings
+                if (!/^[a-f0-9]{32}$/.test(token)) {
+                    log.warn(() => `[SessionManager] Skipping invalid token format in storage: ${token.substring(0, 8)}...`);
+                    invalidTokenCount++;
+                    continue;
+                }
+
                 // FIXED: Check expiration using createdAt (absolute TTL) not lastAccessedAt
                 // lastAccessedAt should only be used for sliding window within the absolute max
                 const absoluteAge = now - sessionData.createdAt;
@@ -322,7 +363,12 @@ class SessionManager {
                 this.dirty = true; // Mark as dirty to save encrypted versions
             }
 
-            log.debug(() => `[SessionManager] Loaded ${loadedCount} sessions from storage (${expiredCount} expired)`);
+            if (invalidTokenCount > 0) {
+                log.warn(() => `[SessionManager] Skipped ${invalidTokenCount} sessions with invalid token formats`);
+                this.dirty = true; // Mark as dirty to clean up invalid tokens on next save
+            }
+
+            log.debug(() => `[SessionManager] Loaded ${loadedCount} sessions from storage (${expiredCount} expired, ${invalidTokenCount} invalid)`);
         } catch (err) {
             if (err.code === 'ENOENT') {
                 log.debug(() => '[SessionManager] No existing sessions file found, starting fresh');
@@ -344,14 +390,67 @@ class SessionManager {
             if (this.dirty) {
                 try {
                     await this.saveToDisk();
+                    // consecutiveSaveFailures is reset in saveToDisk on success
                 } catch (err) {
-                    log.error(() => ['[SessionManager] Auto-save failed:', err]);
+                    this.consecutiveSaveFailures++;
+                    log.error(() => [`[SessionManager] Auto-save failed (${this.consecutiveSaveFailures} consecutive):`, err.message]);
+
+                    // CRITICAL ALERT: Alert after 5 consecutive failures (25 minutes with 5min interval)
+                    if (this.consecutiveSaveFailures >= 5) {
+                        log.error(() => `[SessionManager] CRITICAL: ${this.consecutiveSaveFailures} consecutive save failures! Sessions may be lost on restart!`);
+                        // This critical error will be visible in logs for monitoring/alerting systems
+                    }
                 }
             }
         }, this.autoSaveInterval);
 
         // Don't prevent process from exiting
         this.saveTimer.unref();
+    }
+
+    /**
+     * Start memory cleanup interval
+     * Periodically removes old sessions from memory to prevent unbounded growth
+     * Sessions are still preserved in persistent storage and will be loaded on next access
+     */
+    startMemoryCleanup() {
+        if (this.cleanupTimer) {
+            clearInterval(this.cleanupTimer);
+        }
+
+        // Run cleanup every hour (less frequent than auto-save)
+        const cleanupInterval = 60 * 60 * 1000; // 1 hour
+
+        this.cleanupTimer = setInterval(() => {
+            try {
+                const now = Date.now();
+                const memoryThreshold = 30 * 24 * 60 * 60 * 1000; // 30 days - sessions older than this in memory get evicted
+                let evictedCount = 0;
+                const initialSize = this.cache.size;
+
+                // Iterate through cache and evict sessions that haven't been accessed in 30 days
+                // They remain in persistent storage and will be loaded if accessed again
+                for (const [token, sessionData] of this.cache.entries()) {
+                    const timeSinceLastAccess = now - sessionData.lastAccessedAt;
+
+                    // If session hasn't been accessed in 30 days, remove from memory
+                    if (timeSinceLastAccess > memoryThreshold) {
+                        this.cache.delete(token);
+                        evictedCount++;
+                    }
+                }
+
+                if (evictedCount > 0) {
+                    log.info(() => `[SessionManager] Memory cleanup: evicted ${evictedCount} old sessions from memory (${initialSize} → ${this.cache.size})`);
+                    log.debug(() => '[SessionManager] Evicted sessions remain in persistent storage and will reload if accessed');
+                }
+            } catch (err) {
+                log.error(() => ['[SessionManager] Memory cleanup failed:', err.message]);
+            }
+        }, cleanupInterval);
+
+        // Don't prevent process from exiting
+        this.cleanupTimer.unref();
     }
 
     /**
@@ -375,6 +474,12 @@ class SessionManager {
             if (this.saveTimer) {
                 clearInterval(this.saveTimer);
                 log.warn(() => '[SessionManager] Cleared auto-save timer');
+            }
+
+            // Clear the memory cleanup timer
+            if (this.cleanupTimer) {
+                clearInterval(this.cleanupTimer);
+                log.warn(() => '[SessionManager] Cleared memory cleanup timer');
             }
 
             // Save with generous timeout to prevent data loss
