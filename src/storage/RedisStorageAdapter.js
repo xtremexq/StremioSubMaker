@@ -75,7 +75,9 @@ class RedisStorageAdapter extends StorageAdapter {
    * @private
    */
   _getKey(key, cacheType) {
-    return `${this.options.keyPrefix}${cacheType}:${key}`;
+    // Note: ioredis already applies `keyPrefix` to all command keys.
+    // Do NOT include the prefix here to avoid double-prefixing.
+    return `${cacheType}:${key}`;
   }
 
   /**
@@ -91,7 +93,8 @@ class RedisStorageAdapter extends StorageAdapter {
    * @private
    */
   _getLruKey(cacheType) {
-    return `${this.options.keyPrefix}lru:${cacheType}`;
+    // Keep raw key; client keyPrefix will be applied by ioredis
+    return `lru:${cacheType}`;
   }
 
   /**
@@ -99,7 +102,8 @@ class RedisStorageAdapter extends StorageAdapter {
    * @private
    */
   _getSizeKey(cacheType) {
-    return `${this.options.keyPrefix}size:${cacheType}`;
+    // Keep raw key; client keyPrefix will be applied by ioredis
+    return `size:${cacheType}`;
   }
 
   /**

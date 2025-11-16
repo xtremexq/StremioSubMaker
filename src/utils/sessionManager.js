@@ -181,7 +181,11 @@ class SessionManager {
         // Update last accessed time
         sessionData.lastAccessedAt = Date.now();
         this.cache.set(token, sessionData);
-        this.dirty = true;
+        // In Redis mode we persist/touch per access already; avoid marking dirty to
+        // prevent periodic full flushes that rewrite all sessions unnecessarily.
+        if ((process.env.STORAGE_TYPE || 'filesystem') !== 'redis') {
+            this.dirty = true;
+        }
 
         // Persist touch to refresh persistent TTL
         Promise.resolve().then(async () => {
@@ -350,6 +354,15 @@ class SessionManager {
      * @returns {Promise<void>}
      */
     async loadFromDisk() {
+        // In HA/Redis mode, optionally skip preloading all sessions to avoid
+        // SCAN + GET overhead across large datasets. Rely on lazy
+        // loadSessionFromStorage() when tokens are accessed.
+        const storageType = process.env.STORAGE_TYPE || 'filesystem';
+        const preloadEnabled = process.env.SESSION_PRELOAD === 'true';
+        if (storageType === 'redis' && !preloadEnabled) {
+            log.debug(() => '[SessionManager] Skipping session preload in Redis mode (SESSION_PRELOAD!=true)');
+            return;
+        }
         try {
             const adapter = await getStorageAdapter();
 
@@ -360,8 +373,12 @@ class SessionManager {
                     let migrated = 0;
                     for (const [token, sessionData] of Object.entries(legacy.sessions)) {
                         if (!/^[a-f0-9]{32}$/.test(token)) continue;
-                        await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION);
-                        migrated++;
+                        const ok = await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION);
+                        if (ok) {
+                            migrated++;
+                        } else {
+                            log.error(() => [`[SessionManager] Failed to persist migrated legacy session token ${token}`]);
+                        }
                     }
                     try { await adapter.delete('sessions', StorageAdapter.CACHE_TYPES.SESSION); } catch (_) {}
                     if (migrated > 0) {
@@ -399,9 +416,13 @@ class SessionManager {
                 if (sessionData.config && !sessionData.config._encrypted) {
                     try {
                         sessionData.config = encryptUserConfig(sessionData.config);
-                        migratedCount++;
                         const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
-                        await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
+                        const ok = await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
+                        if (ok) {
+                            migratedCount++;
+                        } else {
+                            log.error(() => [`[SessionManager] Failed to persist encrypted config for token ${token}`]);
+                        }
                     } catch (error) {
                         log.error(() => [`[SessionManager] Failed to encrypt config for token ${token}:`, error.message]);
                     }
@@ -432,6 +453,12 @@ class SessionManager {
      * Start auto-save interval
      */
     startAutoSave() {
+        // In Redis mode, touches and updates persist immediately per token.
+        // Skip the periodic auto-save to reduce redundant writes.
+        if ((process.env.STORAGE_TYPE || 'filesystem') === 'redis') {
+            log.debug(() => '[SessionManager] Skipping auto-save timer in Redis mode');
+            return;
+        }
         if (this.saveTimer) {
             clearInterval(this.saveTimer);
         }

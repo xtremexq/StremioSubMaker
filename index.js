@@ -266,6 +266,8 @@ app.use(helmet({
             upgradeInsecureRequests: null,
         },
     },
+    // Prevent leaking query params (like ?config= tokens) via referrers
+    referrerPolicy: { policy: 'no-referrer' },
     crossOriginEmbedderPolicy: false, // Disable for Stremio compatibility
     crossOriginResourcePolicy: false, // Disable to allow Stremio to load logo/images
     strictTransportSecurity: false, // Disable HSTS for localhost (allows HTTP)
