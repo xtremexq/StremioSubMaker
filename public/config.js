@@ -353,6 +353,7 @@ Translate to {target_language}.`;
                 duration: 12
             },
             fileTranslationEnabled: false, // enable file upload translation feature
+            syncSubtitlesEnabled: false, // enable 'Sync Subtitles' action in subtitles list
             advancedSettings: {
                 enabled: false, // Auto-set to true if any setting differs from defaults (forces bypass cache)
                 geminiModel: '', // Override model (empty = use default)
@@ -1213,6 +1214,19 @@ Translate to {target_language}.`;
                 e.preventDefault();
                 toggleAllSections();
             }
+
+            // Ctrl/Cmd + Alt + D to reveal Dev panel
+            if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'd' || e.key === 'D')) {
+                e.preventDefault();
+                const devCard = document.getElementById('devSettingsCard');
+                if (devCard && devCard.style.display === 'none') {
+                    devCard.style.display = 'block';
+                    try { showAlert('🧪 Dev Panel Unlocked', 'success'); } catch (_) {}
+                    setTimeout(() => {
+                        devCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 300);
+                }
+            }
         });
     }
 
@@ -1826,6 +1840,10 @@ Translate to {target_language}.`;
         // Load file translation setting
         document.getElementById('fileTranslationEnabled').checked = currentConfig.fileTranslationEnabled !== false;
 
+        // Load Dev: Sync Subtitles setting (if panel exists)
+        const syncEl = document.getElementById('syncSubtitlesEnabled');
+        if (syncEl) syncEl.checked = currentConfig.syncSubtitlesEnabled === true;
+
         // Load translation cache settings
         if (!currentConfig.translationCache) {
             currentConfig.translationCache = getDefaultConfig().translationCache;
@@ -1942,6 +1960,7 @@ Translate to {target_language}.`;
                 duration: 12
             },
             fileTranslationEnabled: document.getElementById('fileTranslationEnabled').checked,
+            syncSubtitlesEnabled: (function(){ const el = document.getElementById('syncSubtitlesEnabled'); return el ? el.checked : false; })(),
             advancedSettings: {
                 enabled: areAdvancedSettingsModified(), // Auto-detect if any setting differs from defaults
                 geminiModel: (function(){ const el = document.getElementById('advancedModel'); return el ? el.value : ''; })(),

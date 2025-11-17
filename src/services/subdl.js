@@ -333,7 +333,7 @@ class SubDLService {
         return subtitleContent;
       }
 
-      // Fallback: support .vtt/.ass/.ssa by converting to .srt
+      // Fallback: support .vtt/.ass/.ssa
       const altEntry = entries.find(filename => {
         const f = filename.toLowerCase();
         return f.endsWith('.vtt') || f.endsWith('.ass') || f.endsWith('.ssa');
@@ -342,6 +342,15 @@ class SubDLService {
       if (altEntry) {
         try {
           const raw = await zip.files[altEntry].async('string');
+
+          // Keep original VTT intact; only convert ASS/SSA to SRT
+          const lower = altEntry.toLowerCase();
+          if (lower.endsWith('.vtt')) {
+            log.debug(() => `[SubDL] Keeping original VTT: ${altEntry}`);
+            return raw;
+          }
+
+          // Convert ASS/SSA to SRT
           const subsrt = require('subsrt-ts');
           const converted = subsrt.convert(raw, { to: 'srt' });
           log.debug(() => `[SubDL] Converted ${altEntry} to .srt successfully`);

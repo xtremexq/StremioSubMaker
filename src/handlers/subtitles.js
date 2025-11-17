@@ -114,8 +114,7 @@ function createLoadingSubtitle() {
   const srt = `1
 00:00:00,000 --> 04:00:00,000
 TRANSLATION IN PROGRESS
-Please wait ~1-3 minutes and reselect this subtitle.
-Partial results will appear as they are ready.`;
+Partial results will appear as they are ready. (~15s)`;
 
   // Log the loading subtitle for debugging
   log.debug(() => ['[Subtitles] Created loading subtitle with', srt.split('\n\n').length, 'entries']);
@@ -155,7 +154,7 @@ function buildPartialSrtWithTail(mergedSrt) {
       // so users see progress instead of a loading screen
       // Append a loading indicator
       const lineCount = mergedSrt.split('\n').length + 10;
-      return `${mergedSrt}\n\n${lineCount}\n00:00:00,000 --> 04:00:00,000\nTRANSLATION IN PROGRESS\nReload this subtitle later to get more`;
+      return `${mergedSrt}\n\n${lineCount}\n00:00:00,000 --> 04:00:00,000\nTRANSLATION IN PROGRESS\nReload this subtitle to get more`;
     }
 
     const reindexed = entries.map((e, idx) => ({ id: idx + 1, timecode: e.timecode, text: (e.text || '').trim() }))
@@ -164,7 +163,7 @@ function buildPartialSrtWithTail(mergedSrt) {
     if (reindexed.length === 0) {
       // No valid entries after filtering, but we have content - append loading tail
       const lineCount = mergedSrt.split('\n').length + 10;
-      return `${mergedSrt}\n\n${lineCount}\n00:00:00,000 --> 04:00:00,000\nTRANSLATION IN PROGRESS\nReload this subtitle later to get more`;
+      return `${mergedSrt}\n\n${lineCount}\n00:00:00,000 --> 04:00:00,000\nTRANSLATION IN PROGRESS\nReload this subtitle to get more`;
     }
 
     const last = reindexed[reindexed.length - 1];
@@ -2059,6 +2058,18 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
         return;
       }
     } catch (_) {}
+
+    // Convert VTT originals to SRT for translation
+    try {
+      const trimmed = (sourceContent || '').trimStart();
+      if (trimmed.startsWith('WEBVTT')) {
+        const subsrt = require('subsrt-ts');
+        sourceContent = subsrt.convert(sourceContent, { to: 'srt' });
+        log.debug(() => '[Translation] Converted VTT source to SRT for translation');
+      }
+    } catch (e) {
+      log.warn(() => ['[Translation] VTT to SRT conversion failed; proceeding with original content:', e.message]);
+    }
 
     // Get language names for better translation context
     const targetLangName = getLanguageName(targetLanguage) || targetLanguage;

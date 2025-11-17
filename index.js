@@ -1270,8 +1270,15 @@ app.get('/addon/:config/subtitle/:fileId/:language.srt', searchLimiter, validate
             const cacheStats = getDownloadCacheStats();
             log.debug(() => `[Download Cache] HIT for ${fileId} in ${langCode} (${cachedContent.length} bytes) - Cache: ${cacheStats.size}/${cacheStats.max} entries, ${cacheStats.sizeMB}/${cacheStats.maxSizeMB}MB`);
 
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${fileId}.srt"`);
+            // Decide headers based on content (serve VTT originals when applicable)
+            const isVtt = (cachedContent || '').trimStart().startsWith('WEBVTT');
+            if (isVtt) {
+                res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+                res.setHeader('Content-Disposition', `attachment; filename="${fileId}.vtt"`);
+            } else {
+                res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                res.setHeader('Content-Disposition', `attachment; filename="${fileId}.srt"`);
+            }
             res.send(cachedContent);
             return;
         }
@@ -1293,8 +1300,15 @@ app.get('/addon/:config/subtitle/:fileId/:language.srt', searchLimiter, validate
         // STEP 4: Save to cache for future requests (shared with translation flow)
         saveDownloadCached(fileId, content);
 
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${fileId}.srt"`);
+        // Decide headers based on content (serve VTT originals when applicable)
+        const isVtt = (content || '').trimStart().startsWith('WEBVTT');
+        if (isVtt) {
+            res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${fileId}.vtt"`);
+        } else {
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${fileId}.srt"`);
+        }
         res.send(content);
 
     } catch (error) {

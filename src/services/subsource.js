@@ -567,7 +567,7 @@ class SubSourceService {
           return subtitleContent;
         }
 
-        // Fallback: support common formats and convert to .srt
+        // Fallback: support common formats
         const altEntry = entries.find(filename => {
           const f = filename.toLowerCase();
           return f.endsWith('.vtt') || f.endsWith('.ass') || f.endsWith('.ssa');
@@ -576,6 +576,14 @@ class SubSourceService {
         if (altEntry) {
           try {
             const raw = await zip.files[altEntry].async('string');
+
+            // Keep original VTT intact; only convert ASS/SSA to SRT
+            const lower = altEntry.toLowerCase();
+            if (lower.endsWith('.vtt')) {
+              log.debug(() => `[SubSource] Keeping original VTT: ${altEntry}`);
+              return raw;
+            }
+
             const subsrt = require('subsrt-ts');
             const converted = subsrt.convert(raw, { to: 'srt' });
             log.debug(() => `[SubSource] Converted ${altEntry} to .srt successfully`);
@@ -592,16 +600,11 @@ class SubSourceService {
         log.debug(() => '[SubSource] Subtitle downloaded successfully');
         const content = responseBuffer.toString('utf-8');
 
-        // If content appears to be WebVTT, convert to SRT
+        // If content appears to be WebVTT, keep it intact (we serve original to Stremio)
         const ct = contentType.toLowerCase();
         if (ct.includes('text/vtt') || content.trim().startsWith('WEBVTT')) {
-          try {
-            const subsrt = require('subsrt-ts');
-            const converted = subsrt.convert(content, { to: 'srt' });
-            return converted;
-          } catch (_) {
-            // If conversion fails, fall through to validation
-          }
+          log.debug(() => '[SubSource] Detected VTT in direct response; returning original VTT');
+          return content;
         }
 
         // Validate that the decoded content looks like SRT (contains timecodes or text)

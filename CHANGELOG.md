@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker 1.2.3
+
+**New Features:**
+- Native VTT subtitle support: Original VTT files now served directly to Stremio with proper `text/vtt` headers and `.vtt` file extension
+- Fixed VTT content type detection: Server now properly detects VTT content and serves with correct MIME type
+
+**UI Improvements:**
+- Improved loading subtitle messages
+- Simplified partial translation messages
+
 ## SubMaker 1.2.2
 
 **Performance Improvements:**

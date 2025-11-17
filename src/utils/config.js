@@ -299,6 +299,7 @@ function getDefaultConfig() {
       duration: 12
     },
     fileTranslationEnabled: false, // enable file upload translation feature
+    syncSubtitlesEnabled: false, // enable 'Sync Subtitles' action in subtitles list
     // Minimum size for a subtitle file to be considered valid (bytes)
     // Prevents attempting to load/translate obviously broken files
     minSubtitleSizeBytes: 200,
