@@ -4,113 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker 1.2.2 (Unreleased)
 
-**SubSource Subtitle Ranking & Quality Improvements**
+**New Features:**
+- SubSource episode filtering: Client-side filtering using regex patterns (S02E01, 2x01, etc.) to show only requested episode's subtitles
+- SubSource metadata enhancements: Added productionType, releaseType, and framerate info for better subtitle matching
+- SubSource Bayesian rating algorithm: Confidence-weighted ratings prevent low-vote subtitles from ranking unfairly high
+- Subtitle format conversion: SubDL and SubSource now support .vtt, .ass, .ssa formats with automatic conversion to .srt
+- OpenSubtitles language support: Added mappings for Asturian, Manipuri, Syriac, Tetum, Santali, Extremaduran, Toki Pona, and regional variants (pt-PT, Spanish Latin America)
 
-Enhanced SubSource integration to leverage their advanced API features for better subtitle quality and matching:
+**Bug Fixes:**
+- Fixed SubSource returning subtitles from ALL episodes in a season instead of only the requested episode
 
-1. **Episode Filtering**
-   - **Fixed critical bug**: SubSource was returning subtitles from ALL episodes in a season
-   - Pass `season` parameter to movie search to get season-specific movieId
-   - Removed unsupported `episode` API parameter that was being ignored
-   - Added client-side episode filtering using regex patterns (S02E01, 2x01, etc.)
-   - Now correctly filters to show ONLY the requested episode's subtitles
-
-2. **Rebalanced Sorting Strategy**
-   - Changed from `sort=rating` to `sort=popular` (downloads)
-   - Prioritizes filename/release matching over raw ratings
-   - Prevents excluding correct subtitles that may have lower ratings
-   - Increased limit to 100 results for better diversity
-
-3. **Enhanced Metadata for Better Matching**
-   - Added `productionType` (e.g., translated, retail) to subtitle metadata
-   - Added `releaseType` (e.g., web, bluray) for improved filename matching
-   - Added `framerate` information for precise video/subtitle sync
-   - Automatically enhance subtitle names with production/release type info
-
-4. **Improved Rating Algorithm**
-   - Implemented Bayesian averaging for confidence-weighted ratings
-   - Prevents low-vote subtitles from ranking unfairly high
-   - Better quality assessment using SubSource's good/bad voting system
-   - Store detailed rating breakdown (good, bad, total votes)
-
-5. **Provider Reputation Upgrade**
-   - Increased SubSource reputation score from 1 to 2 (equal to SubDL)
-   - Justified by rich API features and quality metadata
+**Performance Improvements:**
+- SubSource reputation increased from 1 to 2 (equal to SubDL) based on rich API features and quality metadata
+- SubSource sorting changed from rating to popular (downloads) for better filename/release matching
+- SubSource result limit increased to 100 for better diversity and matching quality
 
 ## SubMaker 1.2.0, 1.2.1
 
-**Critical Session Persistence & Reliability Improvements**
-
-This release focuses on completely overhauling the session token/config persistence system to eliminate "session not found" errors that occurred during server restarts, code updates, Docker rebuilds and deployments.
-
-1. **Session Manager Initialization**
-   - Added proper async initialization with `waitUntilReady()` method
-   - Server now waits for sessions to load before accepting requests
-   - Eliminates race conditions during startup
-
-2. **Token/Config Lifecycle Improvements**
-   - Fixed session expiration to use `createdAt` (absolute TTL) instead of `lastAccessedAt`
-   - Added token format validation (32-char hex) during loading and client-side
-   - Client-side token validation and automatic cleanup of malformed tokens
-
-3. **Storage Reliability**
-   - Per-token session persistence: each token is stored independently (no single shared blob) to prevent multi-instance clobbering
-   - Immediate per-token save on create/update/delete for durability between restarts
-   - Automatic migration: legacy `sessions` blob is migrated to per-token entries on startup
-   - Concurrent initialization protection in StorageFactory
-   - Better Redis fallback to filesystem on connection failures
-
-4. **Enhanced Shutdown Handling**
-   - Retry logic (3 attempts) for session saves during shutdown
-   - Increased timeout to 10 seconds for shutdown saves
-   - Better error handling and logging throughout shutdown process
-
-5. **Error Handling & Logging**
-   - Proper 404/410 handling for expired/missing tokens
-   - Graceful fallback to creating new sessions on errors
-   - `_alreadyLogged` flag to prevent duplicate error logs in translation chains
-
-6. **Memory Management**
-   - Periodic memory cleanup (hourly) for sessions not accessed in 30 days
-   - Evicted sessions remain in persistent storage and reload if accessed
-   - Prevents memory leaks with frequently accessed sessions
-
 **New Features:**
-
-- **Per-Token Persistence**: Sessions are saved individually and immediately, enabling safe multi-instance deployments and reducing data-loss windows
-- **Cross-Instance Token Resolution**: Routes fall back to loading tokens directly from shared storage when not found in memory (seamless across replicas)
-- **Token Format Validation**: Invalid token formats are detected and filtered during loading, preventing corruption
-- **Consecutive Save Failure Tracking**: Critical alerts after 5 consecutive save failures (25 minutes) for monitoring
-- **Memory Cleanup**: Automatic hourly cleanup of old sessions from memory while preserving in storage
-- **Startup Readiness**: Server waits for session manager to load all sessions before accepting requests
-- Sessions now use a sliding inactivity TTL: expire only after 90 days without access. Persistent storage TTL is refreshed on use, and original createdAt is preserved.
-- Redis/HA optimizations:
-  - Skip Redis preload of all sessions at startup (lazy load per token); can be re-enabled with `SESSION_PRELOAD=true`.
-  - Do not mark sessions dirty on read in Redis mode and disable periodic auto-save timer to avoid redundant writes.
-  - Added strict referrer policy (`no-referrer`) via Helmet to prevent leaking `?config=` tokens in Referer headers.
-  - Note: Ensure all instances share the same `ENCRYPTION_KEY` and `REDIS_KEY_PREFIX` for cross-instance session access.
-- Enhanced session diagnostics and logging (fixes #1, #2, #8):
-  - Session creation logs now clarify "in-memory" count vs total sessions. In Redis lazy-load mode, this shows only loaded sessions, not all sessions in storage.
-  - Added `isLazyLoadingMode` flag to session stats to help operators understand session loading behavior.
-  - Detailed error context logging in session fallback mechanism: now logs specific failure modes (not found, expired, decryption error, storage error).
-  - Initialization logs clarify when Redis lazy-load mode is active and explain cross-instance fallback behavior.
-  - Encryption logs clarified: config contains encrypted individual fields (not double-encrypted full config).
-
+- Per-token session persistence: Sessions saved individually and immediately for safe multi-instance deployments
+- Cross-instance token resolution: Automatic fallback to shared storage when token not found in memory
+- Token format validation: Invalid token formats detected and filtered during loading
+- Startup readiness: Server waits for session manager initialization before accepting requests
+- Sliding inactivity TTL: Sessions expire only after 90 days without access
+- Redis lazy-load mode: Optional session preloading (disable with `SESSION_PRELOAD=false`)
+- Strict referrer policy: Prevents leaking config tokens in Referer headers
+- Enhanced session diagnostics: Detailed logging for session creation, loading, and failure modes
+- Memory cleanup: Automatic hourly cleanup of sessions not accessed in 30 days
+- Consecutive save failure tracking: Critical alerts after 5 consecutive failures
 
 **Bug Fixes:**
-
-- Redis session keys were double-prefixed (client `keyPrefix` + manual prefix), causing migrated sessions to be invisible to preload scans. Removed manual prefixing in the Redis adapter and kept the client `keyPrefix` only.
-- Migration counters for sessions now increment only on successful writes; failures are logged to aid troubleshooting.
-- Fixed silent failures in session fallback loading: now logs detailed context explaining why session load failed (missing token, expired, decryption error, storage error).
+- Fixed Redis session double-prefixing causing migrated sessions to be invisible
 - Fixed server accepting requests before sessions loaded (race condition during startup)
-- Fixed multi-instance race where saving a single `sessions` blob could overwrite other instances’ sessions
-- Fixed session expiration using wrong timestamp (lastAccessedAt instead of createdAt)
+- Fixed multi-instance race where single sessions blob could overwrite other instances' sessions
+- Fixed session expiration using lastAccessedAt instead of createdAt
 - Fixed potential memory leak with LRU cache and sliding TTL
 - Fixed invalid tokens in storage breaking session loading
-- Fixed no alerting when storage repeatedly fails
 - Fixed client not validating token format before storage
 - Fixed concurrent StorageFactory initializations causing race conditions
 - Fixed config page blank fields when opened from Stremio gear
+- Fixed silent failures in session fallback loading
+
+**Performance Improvements:**
+- Redis mode skips marking sessions dirty on read and disables periodic auto-save timer
+- Enhanced shutdown handling: Retry logic (3 attempts) with 10-second timeout for session saves
 
 
 ## SubMaker 1.1.7
