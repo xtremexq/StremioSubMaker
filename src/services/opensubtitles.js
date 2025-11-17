@@ -425,6 +425,23 @@ class OpenSubtitlesService {
       return 'pob';
     }
 
+    // Spanish (Latin America) short code sometimes appears as 'ea'
+    if (lower === 'ea') {
+      return 'spn';
+    }
+
+    // OS two-letter or variant codes requiring explicit mapping
+    if (lower === 'sx') return 'sat'; // Santali
+    if (lower === 'at') return 'ast'; // Asturian
+    if (lower === 'pr') return 'per'; // Dari -> Persian macro
+    if (lower === 'ex') return 'ext'; // Extremaduran (639-3)
+    if (lower === 'ma') return 'mni'; // Manipuri
+    if (lower === 'pm') return 'por'; // Portuguese (Mozambique)
+    if (lower === 'sp') return 'spa'; // Spanish (EU)
+    if (lower === 'sy') return 'syr'; // Syriac
+    if (lower === 'tm-td') return 'tet'; // Tetum
+    if (lower === 'tp') return 'tok'; // Toki Pona (639-3)
+
     // Handle Chinese variants per OpenSubtitles API format
     if (lower === 'zh-cn' || lower === 'zhcn' || (lower.includes('chinese') && lower.includes('simplified'))) {
       return 'zhs';
@@ -439,6 +456,21 @@ class OpenSubtitlesService {
     // Handle Montenegrin
     if (lower === 'me' || lower === 'montenegrin') {
       return 'mne';
+    }
+
+    // Normalize region-style codes like 'pt-PT', 'az-ZB' to base ISO-639-2
+    // Keep 'pt-br' handled above to map specifically to 'pob'
+    const regionMatch = lower.match(/^([a-z]{2})-[a-z0-9]{2,}$/);
+    if (regionMatch) {
+      const base = regionMatch[1];
+      // Map 'pt-pt' explicitly to Portuguese
+      if (lower === 'pt-pt') {
+        return 'por';
+      }
+      const iso2Codes = toISO6392(base);
+      if (iso2Codes && iso2Codes.length > 0) {
+        return iso2Codes[0].code2; // Convert base to ISO-639-2
+      }
     }
 
     // If it's already 3 letters, assume it's ISO-639-2

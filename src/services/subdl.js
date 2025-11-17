@@ -249,22 +249,39 @@ class SubDLService {
         throw new Error('Downloaded file is not a valid ZIP file. Server may have returned an error or the file may be corrupted.');
       }
 
-      // Extract .srt file from ZIP
+      // Extract subtitle from ZIP (support multiple formats)
       const JSZip = require('jszip');
       const zip = await JSZip.loadAsync(subtitleResponse.data);
 
-      // Find the first .srt file in the ZIP
-      const srtFile = Object.keys(zip.files).find(filename => filename.toLowerCase().endsWith('.srt'));
-
-      if (!srtFile) {
-        log.error(() => ['[SubDL] Available files in ZIP:', Object.keys(zip.files).join(', ')]);
-        throw new Error('No .srt file found in downloaded ZIP');
+      const entries = Object.keys(zip.files);
+      // Prefer .srt if available
+      const srtEntry = entries.find(filename => filename.toLowerCase().endsWith('.srt'));
+      if (srtEntry) {
+        const subtitleContent = await zip.files[srtEntry].async('string');
+        log.debug(() => '[SubDL] Subtitle downloaded and extracted successfully (.srt)');
+        return subtitleContent;
       }
 
-      const subtitleContent = await zip.files[srtFile].async('string');
-      log.debug(() => '[SubDL] Subtitle downloaded and extracted successfully');
+      // Fallback: support .vtt/.ass/.ssa by converting to .srt
+      const altEntry = entries.find(filename => {
+        const f = filename.toLowerCase();
+        return f.endsWith('.vtt') || f.endsWith('.ass') || f.endsWith('.ssa');
+      });
 
-      return subtitleContent;
+      if (altEntry) {
+        try {
+          const raw = await zip.files[altEntry].async('string');
+          const subsrt = require('subsrt-ts');
+          const converted = subsrt.convert(raw, { to: 'srt' });
+          log.debug(() => `[SubDL] Converted ${altEntry} to .srt successfully`);
+          return converted;
+        } catch (convErr) {
+          log.error(() => ['[SubDL] Failed to convert to .srt:', convErr.message, 'file:', altEntry]);
+        }
+      }
+
+      log.error(() => ['[SubDL] Available files in ZIP:', entries.join(', ')]);
+      throw new Error('No .srt file found in downloaded ZIP');
 
     } catch (error) {
       handleDownloadError(error, 'SubDL');

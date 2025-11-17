@@ -271,7 +271,7 @@ class OpenSubtitlesV3Service {
       'en': 'English', 'eng': 'English',
       'pt': 'Portuguese', 'por': 'Portuguese',
       'pob': 'Portuguese (BR)', 'pb': 'Portuguese (BR)',
-      'es': 'Spanish', 'spa': 'Spanish', 'spn': 'Spanish',
+      'es': 'Spanish', 'spa': 'Spanish', 'spn': 'Spanish (Latin America)',
       'fr': 'French', 'fre': 'French', 'fra': 'French',
       'de': 'German', 'ger': 'German', 'deu': 'German',
       'it': 'Italian', 'ita': 'Italian',
@@ -301,7 +301,15 @@ class OpenSubtitlesV3Service {
       'hr': 'Croatian', 'hrv': 'Croatian',
       'sr': 'Serbian', 'srp': 'Serbian',
       'sk': 'Slovak', 'slo': 'Slovak', 'slk': 'Slovak',
-      'sl': 'Slovenian', 'slv': 'Slovenian'
+      'sl': 'Slovenian', 'slv': 'Slovenian',
+      // Additional display names for OS variants
+      'ast': 'Asturian',
+      'mni': 'Manipuri',
+      'syr': 'Syriac',
+      'tet': 'Tetum',
+      'sat': 'Santali',
+      'ext': 'Extremaduran',
+      'tok': 'Toki Pona'
     };
 
     return displayNames[lower] || languageCode.toUpperCase();
@@ -323,6 +331,23 @@ class OpenSubtitlesV3Service {
       return 'pob';
     }
 
+    // 'ea' appears in V3 feed for Spanish (Latin America)
+    if (lower === 'ea') {
+      return 'spn';
+    }
+
+    // OS two-letter codes or aliases that need explicit mapping
+    if (lower === 'sx') return 'sat'; // Santali
+    if (lower === 'at') return 'ast'; // Asturian
+    if (lower === 'pr') return 'per'; // Dari -> Persian macro
+    if (lower === 'ex') return 'ext'; // Extremaduran (639-3)
+    if (lower === 'ma') return 'mni'; // Manipuri
+    if (lower === 'pm') return 'por'; // Portuguese (Mozambique)
+    if (lower === 'sp') return 'spa'; // Spanish (EU)
+    if (lower === 'sy') return 'syr'; // Syriac
+    if (lower === 'tm-td') return 'tet'; // Tetum
+    if (lower === 'tp') return 'tok'; // Toki Pona (639-3)
+
     // Handle Chinese variants
     if (lower === 'zh-cn' || lower === 'zhcn') {
       return 'zhs';
@@ -337,6 +362,21 @@ class OpenSubtitlesV3Service {
     // Handle Montenegrin
     if (lower === 'me') {
       return 'mne';
+    }
+
+    // Normalize region-style codes like 'pt-PT', 'az-ZB' to base ISO-639-2
+    // Keep 'pt-br' handled above to map specifically to 'pob'
+    const regionMatch = lower.match(/^([a-z]{2})-[a-z0-9]{2,}$/);
+    if (regionMatch) {
+      const base = regionMatch[1];
+      // Explicitly map Portuguese (Portugal) to 'por'
+      if (lower === 'pt-pt') {
+        return 'por';
+      }
+      const iso2Codes = toISO6392(base);
+      if (iso2Codes && iso2Codes.length > 0) {
+        return iso2Codes[0].code2;
+      }
     }
 
     // If already 3 letters, assume it's ISO-639-2

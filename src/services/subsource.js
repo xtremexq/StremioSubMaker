@@ -59,11 +59,18 @@ class SubSourceService {
   /**
    * Search for movie/show by IMDB ID to get SubSource movieId
    * @param {string} imdb_id - IMDB ID (with 'tt' prefix)
+   * @param {number} season - Season number (for TV shows)
    * @returns {Promise<string|null>} - SubSource movie ID or null
    */
-  async getMovieId(imdb_id) {
+  async getMovieId(imdb_id, season = null) {
     try {
-      const searchUrl = `${this.baseURL}/movies/search?searchType=imdb&imdb=${imdb_id}`;
+      let searchUrl = `${this.baseURL}/movies/search?searchType=imdb&imdb=${imdb_id}`;
+
+      // For TV shows, include season to get season-specific movieId
+      if (season) {
+        searchUrl += `&season=${season}`;
+      }
+
       log.debug(() => ['[SubSource] Searching for movie:', searchUrl]);
 
       const response = await axios.get(searchUrl, {
@@ -112,7 +119,8 @@ class SubSourceService {
       const { imdb_id, type, season, episode, languages } = params;
 
       // First, get SubSource's internal movie ID
-      const movieId = await this.getMovieId(imdb_id);
+      // For TV shows, pass season to get season-specific movieId
+      const movieId = await this.getMovieId(imdb_id, season);
       if (!movieId) {
         log.debug(() => ['[SubSource] Could not find movie ID for:', imdb_id]);
         return [];
@@ -120,7 +128,12 @@ class SubSourceService {
 
       // Build query parameters for SubSource API
       const queryParams = {
-        movieId: movieId
+        movieId: movieId,
+        // Sort by downloads (popularity) to get diverse, well-tested subtitles
+        // This balances quality with filename/release matching (unlike 'rating' which may exclude correct releases)
+        sort: 'popular',
+        // Request more results to allow for better ranking/filtering
+        limit: 100
       };
 
       // Convert ISO codes to full language names for SubSource API
@@ -215,11 +228,8 @@ class SubSourceService {
         queryParams.language = uniqueLanguages.join(',');
       }
 
-      // For TV shows, add season and episode parameters
-      if (type === 'episode' && season && episode) {
-        queryParams.season = season;
-        queryParams.episode = episode;
-      }
+      // Note: Season filtering is handled via getMovieId(imdb_id, season)
+      // Note: Episode filtering is NOT supported by the API - we'll filter client-side below
 
       log.debug(() => ['[SubSource] Searching with params:', JSON.stringify(queryParams)]);
 
@@ -334,12 +344,21 @@ class SubSourceService {
         }
 
         // If still no name found, construct one from available info
+        // Also enhance with productionType and releaseType for better matching
         let finalName = extractedName;
         if (!finalName || finalName.trim() === '') {
           const langName = originalLang || 'Unknown Language';
           const dlCount = parseInt(sub.downloads || sub.download_count || 0) || 0;
-          finalName = `SubSource ${langName}${dlCount > 0 ? ` (${dlCount} downloads)` : ''}`;
+          // Include production/release type if available to improve matching
+          const typeInfo = sub.productionType || sub.releaseType || '';
+          finalName = `SubSource ${langName}${typeInfo ? ` [${typeInfo}]` : ''}${dlCount > 0 ? ` (${dlCount} downloads)` : ''}`;
           log.debug(() => `[SubSource] No name field found for subtitle ${subtitleId}, constructed: ${finalName}`);
+        } else {
+          // Enhance existing name with production/release type if not already present
+          const typeInfo = sub.productionType || sub.releaseType || '';
+          if (typeInfo && !finalName.toLowerCase().includes(typeInfo.toLowerCase())) {
+            finalName = `${finalName} [${typeInfo}]`;
+          }
         }
 
         // Extract upload date from various possible field names (createdAt is the correct field for SubSource)
@@ -373,13 +392,23 @@ class SubSourceService {
         // Extract rating - SubSource returns rating as an object {good, bad, total}
         let extractedRating = 0;
         if (sub.rating && typeof sub.rating === 'object') {
-          // Calculate rating based on good/bad votes
+          // Calculate confidence-weighted rating (Bayesian average)
+          // This prevents subtitles with few votes from ranking unfairly high
           const good = parseInt(sub.rating.good) || 0;
           const bad = parseInt(sub.rating.bad) || 0;
           const total = good + bad;
+
           if (total > 0) {
-            // Convert to 0-10 scale based on percentage of good votes
-            extractedRating = (good / total) * 10;
+            // Use Bayesian averaging with confidence factor
+            // Assume a prior of 5 votes at 70% positive (3.5 good, 1.5 bad)
+            const CONFIDENCE = 5;
+            const PRIOR_POSITIVE_RATIO = 0.7;
+
+            const weightedGood = good + (CONFIDENCE * PRIOR_POSITIVE_RATIO);
+            const weightedTotal = total + CONFIDENCE;
+
+            // Convert to 0-10 scale
+            extractedRating = (weightedGood / weightedTotal) * 10;
           }
         } else {
           extractedRating = parseFloat(sub.rating || sub.score || 0) || 0;
@@ -401,16 +430,58 @@ class SubSourceService {
           machine_translated: false,
           uploader: sub.uploader || sub.author || sub.user || 'Unknown',
           provider: 'subsource',
-          // Store SubSource-specific IDs for download
-          subsource_id: subtitleId
+          // Store SubSource-specific metadata for improved matching
+          subsource_id: subtitleId,
+          productionType: sub.productionType || null,
+          releaseType: sub.releaseType || null,
+          framerate: sub.framerate || null,
+          // Include rating breakdown for better quality assessment
+          ratingDetails: sub.rating && typeof sub.rating === 'object' ? {
+            good: parseInt(sub.rating.good) || 0,
+            bad: parseInt(sub.rating.bad) || 0,
+            total: parseInt(sub.rating.total) || 0
+          } : null
         };
       });
+
+      // Client-side episode filtering for TV shows
+      // SubSource API doesn't support episode-level filtering, so we filter by subtitle name
+      let filteredSubtitles = subtitles;
+      if (type === 'episode' && season && episode) {
+        const targetSeason = season;
+        const targetEpisode = episode;
+
+        log.debug(() => [`[SubSource] Filtering for S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')} (${subtitles.length} pre-filter)`]);
+
+        filteredSubtitles = subtitles.filter(sub => {
+          const name = (sub.name || '').toLowerCase();
+
+          // Check for season/episode patterns in subtitle name
+          // Patterns: S02E01, s02e01, 2x01, S02.E01, etc.
+          const seasonEpisodePatterns = [
+            new RegExp(`s0*${targetSeason}e0*${targetEpisode}(?![0-9])`, 'i'),        // S02E01, s02e01 (ensure not matching S02E011)
+            new RegExp(`${targetSeason}x0*${targetEpisode}(?![0-9])`, 'i'),           // 2x01
+            new RegExp(`s0*${targetSeason}\\.e0*${targetEpisode}(?![0-9])`, 'i'),     // S02.E01
+            new RegExp(`season\\s*0*${targetSeason}.*episode\\s*0*${targetEpisode}(?![0-9])`, 'i')  // Season 2 Episode 1
+          ];
+
+          const hasCorrectEpisode = seasonEpisodePatterns.some(pattern => pattern.test(name));
+
+          if (!hasCorrectEpisode) {
+            log.debug(() => [`[SubSource] Filtered out (wrong episode): ${name}`]);
+          }
+
+          return hasCorrectEpisode;
+        });
+
+        log.debug(() => [`[SubSource] After episode filtering: ${filteredSubtitles.length} subtitles`]);
+      }
 
       // Limit to 20 results per language to control response size
       const MAX_RESULTS_PER_LANGUAGE = 20;
       const groupedByLanguage = {};
 
-      for (const sub of subtitles) {
+      for (const sub of filteredSubtitles) {
         const lang = sub.languageCode || 'unknown';
         if (!groupedByLanguage[lang]) {
           groupedByLanguage[lang] = [];
@@ -421,6 +492,7 @@ class SubSourceService {
       }
 
       const limitedSubtitles = Object.values(groupedByLanguage).flat();
+      log.debug(() => [`[SubSource] Returning ${limitedSubtitles.length} subtitles after per-language limit`]);
       return limitedSubtitles;
 
     } catch (error) {
@@ -483,20 +555,51 @@ class SubSourceService {
         console.log('[SubSource] Detected ZIP file format (checking contents)');
         const zip = await JSZip.loadAsync(responseBuffer, { base64: false });
 
-        // Find the first .srt file in the ZIP
-        const srtFile = Object.keys(zip.files).find(filename => filename.toLowerCase().endsWith('.srt'));
-
-        if (!srtFile) {
-          throw new Error('No .srt file found in downloaded ZIP');
+        const entries = Object.keys(zip.files);
+        // Prefer .srt if available
+        const srtEntry = entries.find(filename => filename.toLowerCase().endsWith('.srt'));
+        if (srtEntry) {
+          const subtitleContent = await zip.files[srtEntry].async('string');
+          log.debug(() => '[SubSource] Subtitle downloaded and extracted successfully from ZIP (.srt)');
+          return subtitleContent;
         }
 
-        const subtitleContent = await zip.files[srtFile].async('string');
-        log.debug(() => '[SubSource] Subtitle downloaded and extracted successfully from ZIP');
-        return subtitleContent;
+        // Fallback: support common formats and convert to .srt
+        const altEntry = entries.find(filename => {
+          const f = filename.toLowerCase();
+          return f.endsWith('.vtt') || f.endsWith('.ass') || f.endsWith('.ssa');
+        });
+
+        if (altEntry) {
+          try {
+            const raw = await zip.files[altEntry].async('string');
+            const subsrt = require('subsrt-ts');
+            const converted = subsrt.convert(raw, { to: 'srt' });
+            log.debug(() => `[SubSource] Converted ${altEntry} to .srt successfully`);
+            return converted;
+          } catch (convErr) {
+            log.error(() => ['[SubSource] Failed to convert to .srt:', convErr.message, 'file:', altEntry]);
+          }
+        }
+
+        log.error(() => ['[SubSource] Available files in ZIP:', entries.join(', ')]);
+        throw new Error('No .srt file found in downloaded ZIP');
       } else {
         // Direct SRT content - decode as UTF-8
         log.debug(() => '[SubSource] Subtitle downloaded successfully');
         const content = responseBuffer.toString('utf-8');
+
+        // If content appears to be WebVTT, convert to SRT
+        const ct = contentType.toLowerCase();
+        if (ct.includes('text/vtt') || content.trim().startsWith('WEBVTT')) {
+          try {
+            const subsrt = require('subsrt-ts');
+            const converted = subsrt.convert(content, { to: 'srt' });
+            return converted;
+          } catch (_) {
+            // If conversion fails, fall through to validation
+          }
+        }
 
         // Validate that the decoded content looks like SRT (contains timecodes or text)
         if (!content || content.trim().length === 0) {

@@ -217,6 +217,16 @@ const languageMap = {
   'zhs': { code1: 'zh-cn', name: 'Chinese (simplified)', isCustom: true },
   'ze': { code1: 'ze', name: 'Chinese bilingual', isCustom: true },
 
+  // Additional languages observed in OpenSubtitles API list
+  // Use OS-specific short codes in code1 to maximize compatibility with their REST API
+  'ast': { code1: 'at', name: 'Asturian', isCustom: true },
+  'ext': { code1: 'ex', name: 'Extremaduran', isCustom: true },
+  'mni': { code1: 'ma', name: 'Manipuri', isCustom: true },
+  'syr': { code1: 'sy', name: 'Syriac', isCustom: true },
+  'tet': { code1: 'tm-td', name: 'Tetum', isCustom: true },
+  'sat': { code1: 'sx', name: 'Santali', isCustom: true },
+  'tok': { code1: 'tp', name: 'Toki Pona', isCustom: true },
+
   // Special fake language for file upload/translation feature (display-only)
   'Translate SRT': { code1: '__', name: 'Translate SRT', isCustom: true }
 };

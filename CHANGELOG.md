@@ -2,7 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
-## SubMaker 1.2.0
+## SubMaker 1.2.2 (Unreleased)
+
+**SubSource Subtitle Ranking & Quality Improvements**
+
+Enhanced SubSource integration to leverage their advanced API features for better subtitle quality and matching:
+
+1. **Episode Filtering**
+   - **Fixed critical bug**: SubSource was returning subtitles from ALL episodes in a season
+   - Pass `season` parameter to movie search to get season-specific movieId
+   - Removed unsupported `episode` API parameter that was being ignored
+   - Added client-side episode filtering using regex patterns (S02E01, 2x01, etc.)
+   - Now correctly filters to show ONLY the requested episode's subtitles
+
+2. **Rebalanced Sorting Strategy**
+   - Changed from `sort=rating` to `sort=popular` (downloads)
+   - Prioritizes filename/release matching over raw ratings
+   - Prevents excluding correct subtitles that may have lower ratings
+   - Increased limit to 100 results for better diversity
+
+3. **Enhanced Metadata for Better Matching**
+   - Added `productionType` (e.g., translated, retail) to subtitle metadata
+   - Added `releaseType` (e.g., web, bluray) for improved filename matching
+   - Added `framerate` information for precise video/subtitle sync
+   - Automatically enhance subtitle names with production/release type info
+
+4. **Improved Rating Algorithm**
+   - Implemented Bayesian averaging for confidence-weighted ratings
+   - Prevents low-vote subtitles from ranking unfairly high
+   - Better quality assessment using SubSource's good/bad voting system
+   - Store detailed rating breakdown (good, bad, total votes)
+
+5. **Provider Reputation Upgrade**
+   - Increased SubSource reputation score from 1 to 2 (equal to SubDL)
+   - Justified by rich API features and quality metadata
+
+## SubMaker 1.2.0, 1.2.1
 
 **Critical Session Persistence & Reliability Improvements**
 
@@ -67,8 +102,7 @@ This release focuses on completely overhauling the session token/config persiste
 - Redis session keys were double-prefixed (client `keyPrefix` + manual prefix), causing migrated sessions to be invisible to preload scans. Removed manual prefixing in the Redis adapter and kept the client `keyPrefix` only.
 - Migration counters for sessions now increment only on successful writes; failures are logged to aid troubleshooting.
 - Fixed silent failures in session fallback loading: now logs detailed context explaining why session load failed (missing token, expired, decryption error, storage error).
-- Note for operators: if already affected, look for double-prefixed keys (e.g. `stremio:stremio:session:*`) and rename to single-prefixed (`stremio:session:*`).
-- **CRITICAL**: Fixed server accepting requests before sessions loaded (race condition during startup)
+- Fixed server accepting requests before sessions loaded (race condition during startup)
 - Fixed multi-instance race where saving a single `sessions` blob could overwrite other instances’ sessions
 - Fixed session expiration using wrong timestamp (lastAccessedAt instead of createdAt)
 - Fixed potential memory leak with LRU cache and sliding TTL

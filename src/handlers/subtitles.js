@@ -1159,7 +1159,7 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
   const providerReputation = {
     'opensubtitles-v3': 3, // Highest reputation (largest database, most reliable)
     'subdl': 2,            // Good reputation
-    'subsource': 1         // Newer/smaller provider
+    'subsource': 2         // Good reputation - API provides rating-sorted results with rich metadata
   };
 
   // Two-tier ranking system:
