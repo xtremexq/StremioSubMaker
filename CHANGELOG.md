@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## SubMaker 1.2.2 (Unreleased)
+## SubMaker 1.2.2
 
 **Performance Improvements:**
 - OpenSubtitles V3 filename extraction now batched (10 concurrent requests per batch) to reduce rate limiting errors
