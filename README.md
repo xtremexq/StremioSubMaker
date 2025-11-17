@@ -36,11 +36,11 @@ Check their [FREE Stremio Addons Guide](https://stremio-addons-guide.elfhosted.c
 
 ## ✨ Why SubMaker?
 
-- 🌍 **190+ Languages** - Full ISO-639-2 support including regional variants (PT-BR, etc.)
+- 🌍 **197 Languages** - Full ISO-639-2 support including regional variants (PT-BR, etc.)
 - 📥 **3 Subtitle Sources** - OpenSubtitles, SubDL, SubSource, with automatic fallback
 - 🎯 **One-Click Translation** - Translate on-the-fly without ever leaving Stremio
 - 🤖 **Context-Aware AI** - Google Gemini preserves timing, formatting, and natural dialogue flow
-- ⚡ **Translation Caching** - Permanent subtitles database with dual-layer cache (memory + disk) and deduplication
+- ⚡ **Translation Caching** - Permanent subtitles database with dual-layer cache (memory + redis/disk) and deduplication
 - 🔒 **Production-Ready** - Rate limiting, CORS protection, session tokens, HTTPS enforcement
 - 🎨 **Beautiful UI** - Modern configuration interface with live model fetching
 
@@ -64,31 +64,15 @@ git clone https://github.com/xtremexq/StremioSubMaker.git
 cd StremioSubMaker
 npm install
 
-# Create .env file with your OpenSubtitles API key (NECESSARY FOR OPENSUBTITLES)
-# Option 1: Create a new file called `.env` in the project root and add:
-# OPENSUBTITLES_API_KEY=your_api_key_here
-# Option 2: Use command line (PowerShell, bash, or terminal)
-# echo "OPENSUBTITLES_API_KEY=your_api_key_here" > .env
+# Create .env
+cp .env.example .env
+
+# Configure .env
+nano .env
 
 # Start the server
 npm start
 ```
-
-### Open configuration page in your browser
-Visit: http://localhost:7001
-
-### Configure & Install
-
-1. **Add Subtitle Sources API keys** (required)
-2. **Add Gemini API Key** (required)
-3. **Select source languages**
-4. **Select target languages** (what to translate to)
-5. **Click "Install in Stremio"** or copy the URL
-
-That's it!
-Fetched languages and translation buttons (Make [Language]) will now appear in your Stremio subtitle menu.
-
----
 
 ## 🐳 Docker Deployment
 
@@ -96,8 +80,31 @@ Fetched languages and translation buttons (Make [Language]) will now appear in y
 
 Quick start:
 ```bash
+# Clone the repo
+git clone https://github.com/xtremexq/StremioSubMaker.git && cd StremioSubMaker
+
+# Configure .env
+cp .env.example .env && nano .env
+
+# Build and start docker
 docker-compose up -d
 ```
+
+### Open configuration page in your browser
+Visit: http://localhost:7001
+
+### Configure & Install
+
+1. **Add Subtitle Sources API keys**
+2. **Add Gemini API Key** (required)
+3. **Select source languages**
+4. **Select target languages** (what to translate to)
+5. **Click "Install in Stremio"** or copy and paste the URL to Stremio
+
+That's it!
+Fetched languages and translation buttons (Make [Language]) will now appear in your Stremio subtitle menu.
+
+---
 
 ## 🎯 How It Works
 
@@ -120,25 +127,7 @@ Stremio Player
 SubMaker Addon (Express + Stremio SDK)
     ├── Subtitle Fetcher → [OpenSubtitles, SubDL, SubSource]
     ├── Translation Engine → [Google Gemini AI]
-    └── Cache Manager → [Memory LRU + Persistent Disk]
-```
-
-### Key Features
-
-**Multi-Source Fetching**
-- Queries 3 providers simultaneously
-- Automatic fallback if one fails
-- Ranks by filename, downloads, ratings, quality
-
-**AI Translation**
-- Context-aware (processes entire subtitle at once)
-- Handles files up to unlimited size with chunking
-- Customizable translation prompts
-- Fetches all Gemini models
-
-**Intelligent Caching**
-- **Memory**: LRU cache for hot translations (~200ms)
-- **Disk**: Persistent cache survives restarts
+    └── Cache Manager → [Memory LRU + Redis/Filesystem]
 
 ---
 
