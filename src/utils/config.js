@@ -27,9 +27,9 @@ const DEPRECATED_MODEL_NAMES = [
  * Parse configuration from config string or session token
  * @param {string} configStr - Base64 encoded config string OR session token
  * @param {Object} options - Options { isLocalhost: boolean }
- * @returns {Object} - Parsed configuration
+ * @returns {Promise<Object>} - Parsed configuration
  */
-function parseConfig(configStr, options = {}) {
+async function parseConfig(configStr, options = {}) {
   try {
     if (!configStr) {
       return getDefaultConfig();
@@ -39,9 +39,9 @@ function parseConfig(configStr, options = {}) {
     const isSessionToken = /^[a-f0-9]{32}$/.test(configStr);
 
     if (isSessionToken) {
-      // Try to get config from session
+      // Try to get config from session (now with Redis fallback)
       const sessionManager = getSessionManager();
-      const config = sessionManager.getSession(configStr);
+      const config = await sessionManager.getSession(configStr);
 
       if (config) {
         log.debug(() => '[Config] Retrieved config from session token');

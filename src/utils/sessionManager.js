@@ -327,15 +327,22 @@ class SessionManager {
     /**
      * Get config from session token
      * @param {string} token - Session token
-     * @returns {Object|null} User config or null if not found
+     * @returns {Promise<Object|null>} User config or null if not found
      */
-    getSession(token) {
+    async getSession(token) {
         if (!token) return null;
 
-        const sessionData = this.cache.get(token);
+        let sessionData = this.cache.get(token);
 
+        // If not in cache, try loading from storage (Redis/filesystem)
         if (!sessionData) {
-            return null;
+            log.debug(() => `[SessionManager] Session not in cache, checking storage: ${token}`);
+            const loadedConfig = await this.loadSessionFromStorage(token);
+            if (!loadedConfig) {
+                return null;
+            }
+            // loadSessionFromStorage already added to cache and returns decrypted config
+            return loadedConfig;
         }
 
         // Update last accessed time
@@ -375,16 +382,23 @@ class SessionManager {
      * Update an existing session with new config
      * @param {string} token - Session token
      * @param {Object} config - New user configuration
-     * @returns {boolean} True if updated, false if session not found
+     * @returns {Promise<boolean>} True if updated, false if session not found
      */
-    updateSession(token, config) {
+    async updateSession(token, config) {
         if (!token) return false;
 
-        const sessionData = this.cache.get(token);
+        let sessionData = this.cache.get(token);
 
+        // If not in cache, try loading from storage (Redis/filesystem)
         if (!sessionData) {
-            log.warn(() => `[SessionManager] Cannot update - session not found: ${token}`);
-            return false;
+            log.debug(() => `[SessionManager] Session not in cache for update, checking storage: ${token}`);
+            const loadedConfig = await this.loadSessionFromStorage(token);
+            if (!loadedConfig) {
+                log.warn(() => `[SessionManager] Cannot update - session not found in cache or storage: ${token}`);
+                return false;
+            }
+            // loadSessionFromStorage already added to cache, retrieve it
+            sessionData = this.cache.get(token);
         }
 
         // Encrypt sensitive fields in config before storing

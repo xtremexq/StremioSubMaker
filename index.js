@@ -1064,8 +1064,8 @@ app.post('/api/update-session/:token', async (req, res) => {
             });
         }
 
-        // Try to update existing session
-        const updated = sessionManager.updateSession(token, config);
+        // Try to update existing session (now checks Redis if not in cache)
+        const updated = await sessionManager.updateSession(token, config);
 
         if (!updated) {
             // Session doesn't exist - create new one instead
@@ -1114,16 +1114,8 @@ app.get('/api/get-session/:token', async (req, res) => {
             return res.status(400).json({ error: 'Invalid session token format' });
         }
 
-        // Try in-memory first
-        let cfg = sessionManager.getSession(token);
-        // Fallback to storage for cross-instance scenarios
-        if (!cfg) {
-            try {
-                cfg = await sessionManager.loadSessionFromStorage(token);
-            } catch (e) {
-                // ignore and treat as not found
-            }
-        }
+        // getSession now automatically falls back to storage if not in cache
+        const cfg = await sessionManager.getSession(token);
 
         if (!cfg) {
             return res.status(404).json({ error: 'Session not found' });
@@ -1248,13 +1240,10 @@ async function resolveConfigAsync(configStr, req) {
     const localhost = isLocalhost(req);
     const isToken = /^[a-f0-9]{32}$/.test(configStr);
     if (!isToken) {
-        return parseConfig(configStr, { isLocalhost: localhost });
+        return await parseConfig(configStr, { isLocalhost: localhost });
     }
-    // Token path: try in-memory first, then cross-instance storage
-    let cfg = sessionManager.getSession(configStr);
-    if (!cfg) {
-        cfg = await sessionManager.loadSessionFromStorage(configStr);
-    }
+    // Token path: getSession now automatically checks cache first, then storage
+    const cfg = await sessionManager.getSession(configStr);
     if (cfg) {
         return normalizeConfig(cfg);
     }

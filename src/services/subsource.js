@@ -472,11 +472,6 @@ class SubSourceService {
           ];
 
           const hasCorrectEpisode = seasonEpisodePatterns.some(pattern => pattern.test(name));
-
-          if (!hasCorrectEpisode) {
-            log.debug(() => [`[SubSource] Filtered out (wrong episode): ${name}`]);
-          }
-
           return hasCorrectEpisode;
         });
 
