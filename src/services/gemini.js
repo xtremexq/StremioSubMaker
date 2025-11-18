@@ -27,7 +27,7 @@ function normalizeTargetName(name) {
   return n;
 }
 
-// Default translation prompt
+// Default translation prompt (base - thinking rules added conditionally)
 const DEFAULT_TRANSLATION_PROMPT = `Translate the following subtitles while:
 
 1. Preserving the timing and structure exactly as given
@@ -39,7 +39,6 @@ const DEFAULT_TRANSLATION_PROMPT = `Translate the following subtitles while:
 Translate to {target_language}.
 
 Do NOT include acknowledgements, explanations, notes or alternative translations.
-Do NOT overthink. Do NOT overplan.
 
 Output ONLY the translated content, nothing else.`;
 
@@ -247,8 +246,27 @@ class GeminiService {
         const normalizedTarget = normalizeTargetName(targetLanguage);
 
         // Prepare the prompt
-        const systemPrompt = (customPrompt || DEFAULT_TRANSLATION_PROMPT)
+        let systemPrompt = (customPrompt || DEFAULT_TRANSLATION_PROMPT)
           .replace('{target_language}', normalizedTarget);
+
+        // Add thinking-specific rules only when thinking is enabled (thinkingBudget !== 0)
+        // When thinking is disabled (thinkingBudget === 0), these rules are unnecessary
+        if (this.thinkingBudget !== 0) {
+          // Find the last "Do NOT" line and add the thinking rules after it
+          const doNotPattern = /(Do NOT include acknowledgements[^\n]+)\n/;
+          if (doNotPattern.test(systemPrompt)) {
+            systemPrompt = systemPrompt.replace(
+              doNotPattern,
+              '$1\nDo NOT overthink. Do NOT overplan.\n'
+            );
+          } else {
+            // Fallback: add before "Output ONLY" if pattern not found
+            systemPrompt = systemPrompt.replace(
+              /\n(Output ONLY)/,
+              '\n\nDo NOT overthink. Do NOT overplan.\n\n$1'
+            );
+          }
+        }
 
         const userPrompt = `${systemPrompt}\n\nContent to translate:\n\n${subtitleContent}`;
 
