@@ -95,7 +95,7 @@ class SubSourceService {
       httpAgent,
       httpsAgent,
       lookup: dnsLookup,
-      timeout: 10000,
+      timeout: 7000,
       maxRedirects: 5,
       decompress: true
     });
