@@ -2,15 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
-## SubMaker 1.2.7
+## SubMaker 1.3.0
 
 **Improvements:**
-- Model-specific default configurations: individual default settings for each model of the configuration page for different translation workflows
-- Entries batch size logic for translation changed from static to a dynamic model-based function
-- Default translation model changed from Flash-lite to Flash on configuration page
+
+- Model-specific default configurations: individual default settings for each model on the configuration page for different translation workflows
+- Model-specific thinking budget and temperature defaults
+- Dynamic batch sizing: Changed from static to model-based function (Flash: 200, Flash-Lite: 150)
+- Default translation model changed from Flash-Lite to Flash on configuration page
 - Translation engine now retries batch 1 time on MAX_TOKENS errors before failing to avoid discarding the whole translation
 - Enhanced debug logging: Comprehensive Gemini API configuration display showing all parameters (model, temperature, topK, topP, thinkingBudget, maxOutputTokens, timeout, maxRetries)
+
+**Bug Fixes:**
+
+- Enhanced ASS/SSA to VTT conversion quality: Added comprehensive preprocessing and postprocessing to prevent text loss, missing first letters, and formatting issues
+  - New enhanced converter with BOM removal, malformed tag fixing, and smart override tag handling
+  - Updated subsrt-ts from 2.0.1 to 2.1.2 for improved conversion reliability
+  - Multi-layer fallback strategy: Enhanced converter → subsrt-ts → manual parser
+  - Fixes missing first letters, weird appendings, text loss from malformed tags, and empty output
+- Fixed .ass to .vtt conversion producing empty files (~23 bytes): Now validates converted VTT contains timing cues and falls back to manual ASS parser if library conversion produces invalid output
+- Removed unused advanced configs from install page
+
+**New Features:**
+
 - Optional batch context feature: Include original surrounding entries and previous translations when processing batches for improved translation coherence across batch boundaries (disabled by default, can be enabled in Advanced Settings with configurable context size 1-10)
+- MicroDVD .sub format support: All subtitle providers now support MicroDVD .sub files with automatic conversion
+- Season pack subtitle support: SubSource and SubDL now automatically extract individual episodes from season pack ZIP archives
+  - Season packs included in search results as fallback options (ranked last with -5000 penalty)
+  - Automatic episode extraction on download (only requested episode extracted from ZIP)
+  - Support for both .srt and alternate formats (.vtt, .ass, .ssa, .sub) in season packs
+  - Episode info encoded in fileId: `*_seasonpack_s<season>e<episode>`
+- Anime season pack support: Enhanced detection and extraction for anime where season numbers are often omitted
+  - Detects anime-specific patterns: "complete", "batch", "full series", episode ranges "01-12", "1~12"
+  - Episode extraction using anime-friendly patterns: "01", "ep01", "[01]"
+  - Avoids false matches with resolutions (1080p) and years (2023)
 
 ## SubMaker 1.2.6
 
