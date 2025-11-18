@@ -353,6 +353,15 @@ class OpenSubtitlesV3Service {
               }
             }
 
+            // Try enhanced ASS/SSA conversion first
+            if (lname.endsWith('.ass') || lname.endsWith('.ssa')) {
+              const assConverter = require('../utils/assConverter');
+              const format = lname.endsWith('.ass') ? 'ass' : 'ssa';
+              const result = assConverter.convertASSToVTT(raw, format);
+              if (result.success) return result.content;
+              log.debug(() => `[OpenSubtitles V3] Enhanced converter failed: ${result.error}, trying fallback`);
+            }
+
             try {
               const subsrt = require('subsrt-ts');
               let converted;
@@ -420,6 +429,12 @@ class OpenSubtitlesV3Service {
         }
 
         if (/\[events\]/i.test(text) || /^dialogue\s*:/im.test(text)) {
+          // Try enhanced ASS converter first
+          const assConverter = require('../utils/assConverter');
+          const result = assConverter.convertASSToVTT(text, 'ass');
+          if (result.success) return result.content;
+          log.debug(() => `[OpenSubtitles V3] Enhanced converter failed: ${result.error}, trying standard conversion`);
+
           try {
             const subsrt = require('subsrt-ts');
             let converted = subsrt.convert(text, { to: 'vtt', from: 'ass' });

@@ -34,7 +34,7 @@
     "node-fetch": "^2.7.0",
     "srt-parser-2": "^1.2.3",
     "stremio-addon-sdk": "^1.6.10",
-    "subsrt-ts": "^2.0.1"
+    "subsrt-ts": "^2.1.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

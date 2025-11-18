@@ -936,7 +936,21 @@ class SubSourceService {
             }
           }
 
-          // Try library conversion first (to VTT)
+          // Try enhanced ASS/SSA conversion for .ass and .ssa files
+          if (lower.endsWith('.ass') || lower.endsWith('.ssa')) {
+            const assConverter = require('../utils/assConverter');
+            const format = lower.endsWith('.ass') ? 'ass' : 'ssa';
+            const result = assConverter.convertASSToVTT(raw, format);
+
+            if (result.success) {
+              log.debug(() => `[SubSource] Converted ${altEntry} to .vtt successfully (enhanced converter)`);
+              return result.content;
+            } else {
+              log.warn(() => `[SubSource] Enhanced converter failed: ${result.error}, trying fallback`);
+            }
+          }
+
+          // Try library conversion first (to VTT) for other formats
           let converted = null;
           let conversionError = null;
 

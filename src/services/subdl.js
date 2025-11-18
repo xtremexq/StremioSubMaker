@@ -617,6 +617,20 @@ class SubDLService {
           }
         }
 
+        // Try enhanced ASS/SSA conversion for .ass and .ssa files
+        if (lower.endsWith('.ass') || lower.endsWith('.ssa')) {
+          const assConverter = require('../utils/assConverter');
+          const format = lower.endsWith('.ass') ? 'ass' : 'ssa';
+          const result = assConverter.convertASSToVTT(raw, format);
+
+          if (result.success) {
+            log.debug(() => `[SubDL] Converted ${altEntry} to .vtt successfully (enhanced converter)`);
+            return result.content;
+          } else {
+            log.warn(() => `[SubDL] Enhanced converter failed: ${result.error}, trying fallback`);
+          }
+        }
+
         // Try library conversion first (to VTT)
         try {
           const subsrt = require('subsrt-ts');
