@@ -208,13 +208,29 @@ class SubDLService {
             new RegExp(`s0*${season}\\s*(?:complete|full|pack)`, 'i')
           ];
 
+          // Anime-specific season pack patterns (often don't include season numbers)
+          const animeSeasonPackPatterns = [
+            /(?:complete|batch|full(?:\s+series)?|\d{1,2}\s*[-~]\s*\d{1,2})/i,
+            /\[(?:batch|complete|full)\]/i,
+            /(?:episode\s*)?(?:01|001)\s*[-~]\s*(?:\d{2}|\d{3})/i  // 01-12, 001-024
+          ];
+
           // Check if any name matches season pack pattern
           for (const name of namesToCheck) {
             if (!name) continue;
             const nameLower = name.toLowerCase();
 
-            const isSeasonPack = seasonPackPatterns.some(pattern => pattern.test(nameLower)) &&
-                                 !/s0*\d+e0*\d+|\d+x\d+|episode\s*\d+|ep\s*\d+/i.test(nameLower);
+            let isSeasonPack = false;
+
+            if (type === 'anime-episode') {
+              // For anime, use anime-specific patterns
+              isSeasonPack = animeSeasonPackPatterns.some(pattern => pattern.test(nameLower)) &&
+                            !/(?:^|[^0-9])0*${episode}(?:v\d+)?(?:[^0-9]|$)/.test(nameLower);
+            } else {
+              // For regular TV shows, use season-based patterns
+              isSeasonPack = seasonPackPatterns.some(pattern => pattern.test(nameLower)) &&
+                            !/s0*\d+e0*\d+|\d+x\d+|episode\s*\d+|ep\s*\d+/i.test(nameLower);
+            }
 
             if (isSeasonPack) {
               // Mark as season pack and include it
@@ -392,7 +408,7 @@ class SubDLService {
 
       const entries = Object.keys(zip.files);
 
-      // Helper function to find episode file in season pack
+      // Helper function to find episode file in season pack (regular TV shows)
       const findEpisodeFile = (files, season, episode) => {
         const seasonEpisodePatterns = [
           new RegExp(`s0*${season}e0*${episode}(?![0-9])`, 'i'),        // S02E01, s02e01
@@ -416,6 +432,46 @@ class SubDLService {
         return null;
       };
 
+      // Helper function to find episode file in anime season pack (episode number only)
+      const findEpisodeFileAnime = (files, episode) => {
+        // Anime-friendly episode-only patterns (no season required)
+        const animeEpisodePatterns = [
+          // E01 / EP01 / Episode 01 / Ep 01
+          new RegExp(`(?<=\\b|\\s|\\[|\\(|-|_)e(?:p(?:isode)?)?[\\s._-]*0*${episode}(?:v\\d+)?(?=\\b|\\s|\\]|\\)|\\.|-|_|$)`, 'i'),
+          // [01] / (01) / - 01 / _01 / .01. (with boundaries)
+          new RegExp(`(?:^|[\\s\\[\\(\\-_.])0*${episode}(?:v\\d+)?(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+          // Episode 01 / Episodio 01 / Capitulo 01
+          new RegExp(`(?:episode|episodio|ep|cap(?:itulo)?)\\s*0*${episode}(?![0-9])`, 'i'),
+          // Japanese/Chinese/Korean: 第01話 / 01話 / 01集 / 1화
+          new RegExp(`第?\\s*0*${episode}\\s*(?:話|集|화)`, 'i'),
+          // Must NOT match resolution/year patterns
+          new RegExp(`^(?!.*(?:720|1080|480|2160)p).*[\\[\\(\\-_\\s]0*${episode}[\\]\\)\\-_\\s\\.]`, 'i')
+        ];
+
+        // Find file that matches the episode pattern
+        for (const filename of files) {
+          const lowerName = filename.toLowerCase();
+          // Skip directories
+          if (zip.files[filename].dir) continue;
+
+          // Skip if it looks like a resolution or year (e.g., 1080p, 2023)
+          if (/(?:720|1080|480|2160)p|(?:19|20)\d{2}/.test(lowerName)) {
+            // Only skip if the episode number appears in these contexts
+            const episodeStr = String(episode).padStart(2, '0');
+            if (lowerName.includes(`${episodeStr}p`) || lowerName.includes(`20${episodeStr}`)) {
+              continue;
+            }
+          }
+
+          // Check if file matches episode patterns
+          if (animeEpisodePatterns.some(pattern => pattern.test(lowerName))) {
+            return filename;
+          }
+        }
+
+        return null;
+      };
+
       let targetEntry = null;
 
       // If this is a season pack, find the specific episode file
@@ -423,13 +479,23 @@ class SubDLService {
         log.debug(() => `[SubDL] Searching for S${String(seasonPackSeason).padStart(2, '0')}E${String(seasonPackEpisode).padStart(2, '0')} in season pack ZIP`);
         log.debug(() => `[SubDL] Available files in ZIP: ${entries.join(', ')}`);
 
-        targetEntry = findEpisodeFile(entries, seasonPackSeason, seasonPackEpisode);
+        // Try anime-specific patterns first (episode-only, no season)
+        // This works for anime where files are just "01.srt", "ep01.srt", etc.
+        targetEntry = findEpisodeFileAnime(entries, seasonPackEpisode);
 
         if (targetEntry) {
-          log.debug(() => `[SubDL] Found episode file in season pack: ${targetEntry}`);
+          log.debug(() => `[SubDL] Found episode file using anime patterns: ${targetEntry}`);
         } else {
-          log.error(() => `[SubDL] Could not find S${String(seasonPackSeason).padStart(2, '0')}E${String(seasonPackEpisode).padStart(2, '0')} in season pack ZIP`);
-          throw new Error(`Episode S${String(seasonPackSeason).padStart(2, '0')}E${String(seasonPackEpisode).padStart(2, '0')} not found in season pack`);
+          // Fallback to regular TV show patterns (season+episode)
+          targetEntry = findEpisodeFile(entries, seasonPackSeason, seasonPackEpisode);
+
+          if (targetEntry) {
+            log.debug(() => `[SubDL] Found episode file using TV show patterns: ${targetEntry}`);
+          } else {
+            log.error(() => `[SubDL] Could not find episode ${seasonPackEpisode} (S${String(seasonPackSeason).padStart(2, '0')}E${String(seasonPackEpisode).padStart(2, '0')}) in season pack ZIP`);
+            log.error(() => `[SubDL] Available files: ${entries.join(', ')}`);
+            throw new Error(`Episode ${seasonPackEpisode} not found in season pack`);
+          }
         }
       } else {
         // Not a season pack - use the first .srt file
@@ -453,7 +519,12 @@ class SubDLService {
           return (f.endsWith('.vtt') || f.endsWith('.ass') || f.endsWith('.ssa') || f.endsWith('.sub')) && !zip.files[filename].dir;
         });
 
-        altEntry = findEpisodeFile(altFormatFiles, seasonPackSeason, seasonPackEpisode);
+        // Try anime-specific patterns first, then regular TV show patterns
+        altEntry = findEpisodeFileAnime(altFormatFiles, seasonPackEpisode);
+
+        if (!altEntry) {
+          altEntry = findEpisodeFile(altFormatFiles, seasonPackSeason, seasonPackEpisode);
+        }
 
         if (altEntry) {
           log.debug(() => `[SubDL] Found episode file with alternate format in season pack: ${altEntry}`);
