@@ -20,7 +20,7 @@ const { version } = require('./src/utils/version');
 const { getAllLanguages, getLanguageName } = require('./src/utils/languages');
 const { generateCacheKeys } = require('./src/utils/cacheKeys');
 const { getCached: getDownloadCached, saveCached: saveDownloadCached, getCacheStats: getDownloadCacheStats } = require('./src/utils/downloadCache');
-const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, createSessionTokenErrorSubtitle, readFromPartialCache, readFromBypassCache, hasCachedTranslation, purgeTranslationCache, translationStatus, canUserStartTranslation } = require('./src/handlers/subtitles');
+const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, createSessionTokenErrorSubtitle, createOpenSubtitlesAuthErrorSubtitle, readFromPartialCache, readFromBypassCache, hasCachedTranslation, purgeTranslationCache, translationStatus, inFlightTranslations, canUserStartTranslation } = require('./src/handlers/subtitles');
 const GeminiService = require('./src/services/gemini');
 const { translateInParallel } = require('./src/utils/parallelTranslation');
 const syncCache = require('./src/utils/syncCache');
@@ -1328,6 +1328,9 @@ app.get('/addon/:config/error-subtitle/:errorType.srt', (req, res) => {
         switch (errorType) {
             case 'session-token-not-found':
                 content = createSessionTokenErrorSubtitle();
+                break;
+            case 'opensubtitles-auth':
+                content = createOpenSubtitlesAuthErrorSubtitle();
                 break;
             default:
                 content = createSessionTokenErrorSubtitle(); // Default to session token error

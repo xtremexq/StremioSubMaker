@@ -118,19 +118,25 @@ function logApiError(error, serviceName, operation, options = {}) {
   if (error.response && error.response.data && !options.skipResponseData) {
     // Only log response data for non-retryable errors or when explicitly requested
     if (!parsed.isRetryable || options.logResponseData) {
-      const data = error.response.data;
-      if (typeof data === 'string' && data.length > 500) {
-        log.error(() => [`${logPrefix} Response data (truncated):`, data.substring(0, 500) + '...']);
-      } else if (typeof data === 'object') {
-        // Log only essential fields for objects
-        const essentialData = {
-          message: data.message,
-          error: data.error,
-          code: data.code
-        };
-        log.error(() => [`${logPrefix} Response data:`, essentialData]);
-      } else {
-        log.error(() => [`${logPrefix} Response data:`, data]);
+      try {
+        const data = error.response.data;
+        if (typeof data === 'string' && data.length > 500) {
+          log.error(() => [`${logPrefix} Response data (truncated):`, data.substring(0, 500) + '...']);
+        } else if (typeof data === 'object' && data !== null) {
+          // Log only essential fields for objects
+          const essentialData = {
+            message: data.message,
+            error: data.error,
+            code: data.code,
+            status: data.status
+          };
+          log.error(() => [`${logPrefix} Response data:`, JSON.stringify(essentialData)]);
+        } else {
+          log.error(() => [`${logPrefix} Response data:`, String(data)]);
+        }
+      } catch (logError) {
+        // If logging the response data fails, log a safe error message
+        log.error(() => [`${logPrefix} Unable to parse response data:`, logError.message]);
       }
     }
   }

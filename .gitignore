@@ -18,6 +18,7 @@ data/
 
 # Extensions
 SubMaker xSync/
+nSync/
 
 # IDEs
 .idea/

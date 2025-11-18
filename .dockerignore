@@ -14,6 +14,7 @@ logs
 .env
 .env.local
 .env.*.local
+.encryption-key
 
 # IDE
 .vscode
@@ -29,6 +30,8 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Testing
 coverage
@@ -38,3 +41,17 @@ coverage
 *.md
 !README.md
 .editorconfig
+
+# Extensions & temp files
+nul
+SubMaker xSync
+SubMaker xSync/
+nSync
+nSync/
+.claude/
+dist/
+build/
+.sidedocs/
+temp/
+temp
+.temp

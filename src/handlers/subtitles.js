@@ -4,6 +4,8 @@ const SubDLService = require('../services/subdl');
 const SubSourceService = require('../services/subsource');
 const GeminiService = require('../services/gemini');
 const TranslationEngine = require('../services/translationEngine');
+const AniDBService = require('../services/anidb');
+const KitsuService = require('../services/kitsu');
 const { parseSRT, toSRT, parseStremioId } = require('../utils/subtitle');
 const { getLanguageName, getDisplayName } = require('../utils/languages');
 const { LRUCache } = require('lru-cache');
@@ -25,6 +27,10 @@ async function getStorageAdapter() {
   }
   return storageAdapter;
 }
+
+// Initialize anime ID mapping services
+const anidbService = new AniDBService();
+const kitsuService = new KitsuService();
 
 // Redact/noise-reduce helper for logging large cache keys
 function shortKey(v) {
@@ -212,6 +218,18 @@ Session Token Error\nSomething is wrong or an update broke your SubMaker config.
 `;
 
   return srt;
+}
+
+/**
+ * Create an error subtitle for OpenSubtitles authentication failure
+ * Single cue from 0 to 4h with 2 lines
+ * @returns {string}
+ */
+function createOpenSubtitlesAuthErrorSubtitle() {
+  return `1
+00:00:00,000 --> 04:00:00,000
+OpenSubtitles login failed
+Please fix your username/password in addon config`;
 }
 
 // Create a concise error subtitle when a source file looks invalid/corrupted
@@ -1140,10 +1158,11 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
     };
   });
 
-  // Add episode metadata match bonus/penalty (for TV shows)
+  // Add episode metadata match bonus/penalty (for TV shows and anime)
   // This helps rank subtitles when filename matching fails (e.g., numeric IDs)
-  if (videoInfo && videoInfo.type === 'episode' && videoInfo.season && videoInfo.episode) {
-    const targetSeason = videoInfo.season;
+  if (videoInfo && (videoInfo.type === 'episode' || videoInfo.type === 'anime-episode') && videoInfo.episode) {
+    // Default season to 1 for anime when not present
+    const targetSeason = videoInfo.season || 1;
     const targetEpisode = videoInfo.episode;
 
     for (const sub of withScores) {
@@ -1158,14 +1177,39 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
         new RegExp(`season\\s*0*${targetSeason}.*episode\\s*0*${targetEpisode}`, 'i')  // Season 2 Episode 1
       ];
 
-      const hasCorrectEpisode = seasonEpisodePatterns.some(pattern => pattern.test(name));
+      // Anime-friendly episode-only patterns when type is anime-episode
+      // Expanded to match common anime naming without season markers
+      const animeEpisodePatterns = [
+        // E01 / EP01 / E 01 / EP 01 / (01) / [01] / - 01 / _01 / 01v2
+        new RegExp(`(?<=\\b|\\s|\\[|\\(|-|_)e?p?\\s*0*${targetEpisode}(?:v\\d+)?(?=\\b|\\s|\\]|\\)|\\.|-|_|$)`, 'i'),
+        new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${targetEpisode}(?:v\\d+)?(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+
+        // Explicit words
+        new RegExp(`(?:^|[\\s\\[\\(\\-_])episode\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+        new RegExp(`(?:^|[\\s\\[\\(\\-_])ep\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+
+        // Spanish/Portuguese
+        new RegExp(`(?:^|[\\s\\[\\(\\-_])cap(?:itulo|\\.)?\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+        new RegExp(`(?:^|[\\s\\[\\(\\-_])epis[oó]dio\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+
+        // Japanese/Chinese/Korean: 第01話 / 01話 / 01集 / 1화
+        new RegExp(`第\\s*0*${targetEpisode}\\s*(?:話|集)`, 'i'),
+        new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${targetEpisode}\\s*(?:話|集|화)(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+
+        // Multi-episode pack ranges that include the requested episode (e.g., 01-02 / 01~02)
+        new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${targetEpisode}\\s*[-~](?=\\s*\\d)`, 'i'),
+        new RegExp(`(?:^|[\\s\\[\\(\\-_])\\d+\\s*[-~]\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+      ];
+
+      const hasCorrectEpisode = seasonEpisodePatterns.some(pattern => pattern.test(name)) ||
+        (videoInfo.type === 'anime-episode' && animeEpisodePatterns.some(p => p.test(name)));
 
       if (hasCorrectEpisode) {
         // BONUS: Subtitle name explicitly mentions correct episode
         sub._matchScore += 2000; // Large bonus to prioritize correct episodes
       } else {
         // Check if subtitle has ANY episode number (wrong episode)
-        const hasWrongEpisode = /s\d+e\d+|\d+x\d+|season\s*\d+.*episode\s*\d+/i.test(name);
+        const hasWrongEpisode = /s\d+e\d+|\d+x\d+|season\s*\d+.*episode\s*\d+|\b(ep?\d{1,3})\b/i.test(name);
         if (hasWrongEpisode) {
           // PENALTY: Subtitle is for wrong episode (e.g., S02E11 when we want S02E01)
           sub._matchScore -= 3000; // Heavy penalty for wrong episode
@@ -1294,6 +1338,41 @@ function createSubtitleHandler(config) {
 
       log.debug(() => `[Subtitles] Video info: ${JSON.stringify(videoInfo)}`);
 
+      // Handle anime content - try to map anime ID to IMDB ID
+      if (videoInfo.isAnime && videoInfo.animeId) {
+        log.debug(() => `[Subtitles] Anime content detected (${videoInfo.animeIdType}), attempting to map to IMDB ID`);
+
+        if (videoInfo.animeIdType === 'anidb') {
+          try {
+            const imdbId = await anidbService.getImdbId(videoInfo.anidbId);
+            if (imdbId) {
+              log.info(() => `[Subtitles] Mapped AniDB ${videoInfo.anidbId} to ${imdbId}`);
+              videoInfo.imdbId = imdbId;
+            } else {
+              log.warn(() => `[Subtitles] Could not find IMDB mapping for AniDB ${videoInfo.anidbId}, subtitles may be limited`);
+            }
+          } catch (error) {
+            log.error(() => `[Subtitles] Error mapping AniDB to IMDB: ${error.message}`);
+          }
+        } else if (videoInfo.animeIdType === 'kitsu') {
+          try {
+            const imdbId = await kitsuService.getImdbId(videoInfo.animeId);
+            if (imdbId) {
+              log.info(() => `[Subtitles] Mapped Kitsu ${videoInfo.animeId} to ${imdbId}`);
+              videoInfo.imdbId = imdbId;
+            } else {
+              log.warn(() => `[Subtitles] Could not find IMDB mapping for Kitsu ${videoInfo.animeId}, subtitles may be limited`);
+            }
+          } catch (error) {
+            log.error(() => `[Subtitles] Error mapping Kitsu to IMDB: ${error.message}`);
+          }
+        } else {
+          log.debug(() => `[Subtitles] No IMDB mapping available for ${videoInfo.animeIdType} IDs yet, will search by anime metadata`);
+          // For mal/anilist IDs, we'll need to implement mapping services
+          // Continue anyway - subtitle providers will skip search if no IMDB ID
+        }
+      }
+
       // Check if this is a session token error - if so, return error entry immediately
       if (config.__sessionTokenError === true) {
         log.warn(() => '[Subtitles] Session token error detected - returning config error entry');
@@ -1337,6 +1416,7 @@ function createSubtitleHandler(config) {
       const dedupKey = `subtitle-search:${videoInfo.imdbId}:${videoInfo.type}:${videoInfo.season || ''}:${videoInfo.episode || ''}:${allLanguages.join(',')}:${userHash}`;
 
       // Collect subtitles from all enabled providers with deduplication
+      let openSubsAuthFailed = false; // track OpenSubtitles auth failures to append UX hint entries later
       const foundSubtitles = await deduplicateSearch(dedupKey, async () => {
         // Parallelize all provider searches using Promise.allSettled for better performance
         // This reduces search time from (OpenSubtitles + SubDL + SubSource) sequential
@@ -1358,7 +1438,15 @@ function createSubtitleHandler(config) {
           searchPromises.push(
             opensubtitles.searchSubtitles(searchParams)
               .then(results => ({ provider: `OpenSubtitles (${implementationType})`, results }))
-              .catch(error => ({ provider: `OpenSubtitles (${implementationType})`, results: [], error }))
+              .catch(error => {
+                try {
+                  const msg = String(error?.message || '').toLowerCase();
+                  if (error?.authError === true || error?.statusCode === 400 || error?.statusCode === 401 || error?.statusCode === 403 || msg.includes('auth')) {
+                    openSubsAuthFailed = true;
+                  }
+                } catch (_) {}
+                return ({ provider: `OpenSubtitles (${implementationType})`, results: [], error });
+              })
           );
         } else {
           log.debug(() => '[Subtitles] OpenSubtitles provider is disabled');
@@ -1589,6 +1677,24 @@ function createSubtitleHandler(config) {
 
       // Add special action buttons
       let allSubtitles = [...stremioSubtitles, ...translationEntries, ...xSyncEntries];
+
+      // If OpenSubtitles auth failed, append a final entry per source language with a helpful SRT
+      if (openSubsAuthFailed === true) {
+        try {
+          const normalizedSourceLangs = [...new Set(config.sourceLanguages.map(lang => normalizeLanguageCode(lang)))].filter(Boolean);
+          const authEntries = normalizedSourceLangs.map(lang => ({
+            id: `opensubtitles_auth_error_${lang}`,
+            lang: lang,
+            url: `{{ADDON_URL}}/error-subtitle/opensubtitles-auth.srt`
+          }));
+          if (authEntries.length > 0) {
+            allSubtitles = [...allSubtitles, ...authEntries];
+            log.debug(() => `[Subtitles] Appended ${authEntries.length} OpenSubtitles auth-fix entries at end of source language lists`);
+          }
+        } catch (e) {
+          log.warn(() => `[Subtitles] Failed to append OpenSubtitles auth hint entries: ${e.message}`);
+        }
+      }
 
       // Add "Sync Subtitles" button if enabled
       let actionButtons = [];
@@ -2457,6 +2563,7 @@ module.exports = {
   getAvailableSubtitlesForTranslation,
   createLoadingSubtitle, // Export for loading message in translation endpoint
   createSessionTokenErrorSubtitle, // Export for session token error subtitle
+  createOpenSubtitlesAuthErrorSubtitle, // Export for OpenSubtitles auth error subtitle
   readFromPartialCache, // Export for checking in-flight partial results during duplicate requests
   translationStatus, // Export for safety block to check if translation is in progress
   /**
@@ -2588,6 +2695,11 @@ module.exports = {
    * Check if a user can start a new translation without hitting the concurrency limit
    * Used by the 3-click reset safety check to prevent purging cache if re-translation would fail
    */
-  canUserStartTranslation
+  canUserStartTranslation,
+  /**
+   * In-flight translations tracker
+   * Used by the 3-click reset safety check to prevent purging cache during active translations
+   */
+  inFlightTranslations
 };
 

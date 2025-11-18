@@ -62,6 +62,28 @@
             --glow: rgba(8, 164, 213, 0.35);
         }
 
+        /* True Dark mode (Blackhole) color scheme */
+        [data-theme="true-dark"] {
+            --primary: #08A4D5;
+            --primary-light: #33B9E1;
+            --primary-dark: #068DB7;
+            --secondary: #33B9E1;
+            --accent: #0ea5e9;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg-primary: #000000;
+            --bg-secondary: #0a0a0a;
+            --bg-tertiary: #111111;
+            --surface: #0a0a0a;
+            --surface-light: #151515;
+            --text-primary: #E8EAED;
+            --text-secondary: #8A8A8A;
+            --border: #1a1a1a;
+            --shadow: rgba(0, 0, 0, 0.8);
+            --glow: rgba(8, 164, 213, 0.45);
+        }
+
         /* Dark mode specific overrides */
         [data-theme="dark"] body {
             background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 60%, var(--bg-primary) 100%);
@@ -110,6 +132,57 @@
         [data-theme="dark"] label:has(input[type="radio"]:checked)[style*="background: white"] {
             background: var(--surface-light) !important;
             border-color: var(--primary) !important;
+        }
+
+        /* True Dark mode (Blackhole) specific overrides */
+        [data-theme="true-dark"] body {
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 60%, var(--bg-primary) 100%);
+        }
+
+        [data-theme="true-dark"] body::before {
+            background:
+                radial-gradient(circle at 20% 50%, rgba(8, 164, 213, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 50%, rgba(51, 185, 225, 0.08) 0%, transparent 50%);
+        }
+
+        [data-theme="true-dark"] .modal-overlay {
+            background: rgba(0, 0, 0, 0.9);
+        }
+
+        [data-theme="true-dark"] .card {
+            background: rgba(10, 10, 10, 0.95);
+        }
+
+        [data-theme="true-dark"] input[type="text"],
+        [data-theme="true-dark"] input[type="password"],
+        [data-theme="true-dark"] select {
+            background: var(--surface-light);
+            color: var(--text-primary);
+        }
+
+        [data-theme="true-dark"] input[type="text"]::placeholder,
+        [data-theme="true-dark"] input[type="password"]::placeholder {
+            color: #4a4a4a;
+        }
+
+        [data-theme="true-dark"] .keyboard-hint {
+            background: rgba(10, 10, 10, 0.95);
+            color: var(--text-primary);
+            border-color: var(--border);
+        }
+
+        [data-theme="true-dark"] label:has(input[type="radio"]:not(:checked))[style*="background: white"] {
+            background: var(--bg-secondary) !important;
+        }
+
+        [data-theme="true-dark"] label:has(input[type="radio"]:checked)[style*="background: white"] {
+            background: var(--surface-light) !important;
+            border-color: var(--primary) !important;
+        }
+
+        [data-theme="true-dark"] .theme-toggle {
+            background: rgba(10, 10, 10, 0.95);
+            border-color: var(--border);
         }
 
         body {
@@ -1450,11 +1523,31 @@
             display: none;
         }
 
+        .theme-toggle-icon.blackhole {
+            display: none;
+        }
+
         [data-theme="dark"] .theme-toggle-icon.sun {
             display: none;
         }
 
         [data-theme="dark"] .theme-toggle-icon.moon {
+            display: block;
+        }
+
+        [data-theme="dark"] .theme-toggle-icon.blackhole {
+            display: none;
+        }
+
+        [data-theme="true-dark"] .theme-toggle-icon.sun {
+            display: none;
+        }
+
+        [data-theme="true-dark"] .theme-toggle-icon.moon {
+            display: none;
+        }
+
+        [data-theme="true-dark"] .theme-toggle-icon.blackhole {
             display: block;
         }
 
@@ -1477,6 +1570,7 @@
     <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
         <span class="theme-toggle-icon sun">☀️</span>
         <span class="theme-toggle-icon moon">🌙</span>
+        <span class="theme-toggle-icon blackhole">🕳️</span>
     </button>
 
     <div class="container">
@@ -2091,11 +2185,20 @@
         const initialTheme = getPreferredTheme();
         setTheme(initialTheme);
 
-        // Toggle theme on button click
+        // Toggle theme on button click - cycles through light → dark → true-dark → light
         if (themeToggle) {
             themeToggle.addEventListener('click', function() {
-                const currentTheme = html.getAttribute('data-theme');
-                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                const currentTheme = html.getAttribute('data-theme') || 'light';
+                let newTheme;
+
+                if (currentTheme === 'light') {
+                    newTheme = 'dark';
+                } else if (currentTheme === 'dark') {
+                    newTheme = 'true-dark';
+                } else {
+                    newTheme = 'light';
+                }
+
                 setTheme(newTheme);
             });
         }

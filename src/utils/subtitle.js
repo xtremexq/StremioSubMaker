@@ -93,13 +93,64 @@ function normalizeImdbId(id) {
 
 /**
  * Extract video info from Stremio ID
- * @param {string} id - Stremio video ID (e.g., "tt1234567:1:2" for episode)
+ * @param {string} id - Stremio video ID (e.g., "tt1234567:1:2" for episode, "anidb:123:1:2" for anime)
  * @returns {Object} - Parsed video info
  */
 function parseStremioId(id) {
   if (!id) return null;
 
   const parts = id.split(':');
+
+  // Handle anime IDs (anidb, kitsu, mal, anilist)
+  if (parts[0] && /^(anidb|kitsu|mal|anilist)/.test(parts[0])) {
+    const animeIdType = parts[0]; // Platform name (anidb, kitsu, etc.)
+
+    if (parts.length === 1) {
+      // Anime movie or series (format: platform:id)
+      const animeId = parts[0];
+      return {
+        animeId,
+        animeIdType,
+        type: 'anime',
+        isAnime: true,
+        // Keep anidbId for backward compatibility if it's an AniDB ID
+        ...(animeIdType === 'anidb' && { anidbId: animeId })
+      };
+    }
+
+    if (parts.length === 3) {
+      // Anime episode (format: platform:id:episode)
+      // Example: kitsu:8640:2 -> platform=kitsu, id=8640, episode=2
+      const animeId = `${parts[0]}:${parts[1]}`; // Full ID with platform prefix
+      return {
+        animeId,
+        animeIdType,
+        type: 'anime-episode',
+        episode: parseInt(parts[2]),
+        isAnime: true,
+        // Keep anidbId for backward compatibility if it's an AniDB ID
+        ...(animeIdType === 'anidb' && { anidbId: animeId })
+      };
+    }
+
+    if (parts.length === 4) {
+      // Anime episode with season (format: platform:id:season:episode)
+      // Example: kitsu:8640:1:2 -> platform=kitsu, id=8640, season=1, episode=2
+      const animeId = `${parts[0]}:${parts[1]}`; // Full ID with platform prefix
+      return {
+        animeId,
+        animeIdType,
+        type: 'anime-episode',
+        season: parseInt(parts[2]),
+        episode: parseInt(parts[3]),
+        isAnime: true,
+        // Keep anidbId for backward compatibility if it's an AniDB ID
+        ...(animeIdType === 'anidb' && { anidbId: animeId })
+      };
+    }
+  }
+
+  // Handle IMDB IDs (regular content)
   const imdbId = normalizeImdbId(parts[0]);
 
   if (parts.length === 1) {

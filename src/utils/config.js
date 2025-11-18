@@ -91,7 +91,7 @@ function parseBase64Config(configStr) {
     const trimmed = decoded.trim();
     if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
       log.error(() => '[Config] Decoded content does not look like JSON');
-      log.error(() => ['[Config] Decoded preview (first 100 chars):', decoded.substring(0, 100).replace(/[^\x20-\x7E]/g, '�')]);
+      log.error(() => ['[Config] Decoded preview (first 100 chars):', decoded.substring(0, 100).replace(/[^\x20-\x7E]/g, ' ')]);
       return getDefaultConfig();
     }
 
@@ -400,9 +400,9 @@ function buildManifest(config, baseUrl = '') {
 
     catalogs: [],
     resources: ['subtitles'],
-    types: ['movie', 'series'],
+    types: ['movie', 'series', 'anime'],
 
-    idPrefixes: ['tt'],
+    idPrefixes: ['tt', 'tmdb', 'anidb', 'kitsu', 'mal', 'anilist'],
 
     behaviorHints: {
       configurable: true,

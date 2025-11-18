@@ -56,6 +56,12 @@ class SubDLService {
 
       const { imdb_id, type, season, episode, languages } = params;
 
+      // SubDL requires IMDB ID - skip if not available (e.g., anime with Kitsu IDs)
+      if (!imdb_id || imdb_id === 'undefined') {
+        log.debug(() => '[SubDL] No IMDB ID available, skipping search');
+        return [];
+      }
+
       // Convert ISO-639-2 codes to SubDL format (uppercase codes)
       // SubDL uses uppercase 2-letter codes with special cases like BR_PT
       const subdlLanguageMap = {
@@ -107,10 +113,11 @@ class SubDLService {
         hi: 1 // Get hearing impaired flag for filtering
       };
 
-      // For TV shows, add season and episode parameters
-      if (type === 'episode' && season && episode) {
+      // For TV shows and anime episodes, add season and episode parameters
+      if ((type === 'episode' || type === 'anime-episode') && episode) {
         queryParams.type = 'tv';
-        queryParams.season_number = season;
+        // Default to season 1 if not specified (common for anime)
+        queryParams.season_number = season || 1;
         queryParams.episode_number = episode;
       }
 
@@ -178,9 +185,9 @@ class SubDLService {
         };
       });
 
-      // CRITICAL: Filter out wrong episodes for TV shows
+      // CRITICAL: Filter out wrong episodes for TV shows and anime
       // SubDL API may return other episodes despite episode_number parameter
-      if (type === 'episode' && season && episode) {
+      if ((type === 'episode' || type === 'anime-episode') && season && episode) {
         const beforeCount = subtitles.length;
 
         subtitles = subtitles.filter(sub => {
@@ -325,7 +332,7 @@ class SubDLService {
       const zip = await JSZip.loadAsync(subtitleResponse.data);
 
       const entries = Object.keys(zip.files);
-      // Prefer .srt if available
+      // Prefer .srt if available (return as-is). If not, try .vtt or convert .ass/.ssa -> .vtt
       const srtEntry = entries.find(filename => filename.toLowerCase().endsWith('.srt'));
       if (srtEntry) {
         const subtitleContent = await zip.files[srtEntry].async('string');
@@ -340,28 +347,128 @@ class SubDLService {
       });
 
       if (altEntry) {
-        try {
-          const raw = await zip.files[altEntry].async('string');
+        // Read with BOM awareness (handles UTF-16 ASS/SSA)
+        const uint8 = await zip.files[altEntry].async('uint8array');
+        const buf = Buffer.from(uint8);
+        let raw;
+        if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
+          raw = buf.slice(2).toString('utf16le');
+          log.debug(() => `[SubDL] Detected UTF-16LE BOM in ${altEntry}; decoded as UTF-16LE`);
+        } else if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) {
+          const swapped = Buffer.allocUnsafe(Math.max(0, buf.length - 2));
+          for (let i = 2, j = 0; i + 1 < buf.length; i += 2, j += 2) { swapped[j] = buf[i + 1]; swapped[j + 1] = buf[i]; }
+          raw = swapped.toString('utf16le');
+          log.debug(() => `[SubDL] Detected UTF-16BE BOM in ${altEntry}; decoded as UTF-16BE->LE`);
+        } else {
+          raw = buf.toString('utf8');
+        }
 
-          // Keep original VTT intact; only convert ASS/SSA to SRT
-          const lower = altEntry.toLowerCase();
-          if (lower.endsWith('.vtt')) {
-            log.debug(() => `[SubDL] Keeping original VTT: ${altEntry}`);
-            return raw;
+        const lower = altEntry.toLowerCase();
+        if (lower.endsWith('.vtt')) {
+          log.debug(() => `[SubDL] Keeping original VTT: ${altEntry}`);
+          return raw;
+        }
+
+        // Try library conversion first (to VTT)
+        try {
+          const subsrt = require('subsrt-ts');
+          let converted;
+          if (lower.endsWith('.ass')) {
+            converted = subsrt.convert(raw, { to: 'vtt', from: 'ass' });
+          } else if (lower.endsWith('.ssa')) {
+            converted = subsrt.convert(raw, { to: 'vtt', from: 'ssa' });
+          } else {
+            converted = subsrt.convert(raw, { to: 'vtt' });
           }
 
-          // Convert ASS/SSA to SRT
-          const subsrt = require('subsrt-ts');
-          const converted = subsrt.convert(raw, { to: 'srt' });
-          log.debug(() => `[SubDL] Converted ${altEntry} to .srt successfully`);
-          return converted;
+          if (!converted || typeof converted !== 'string' || converted.trim().length === 0) {
+            const sanitized = (raw || '').replace(/\u0000/g, '');
+            if (sanitized && sanitized !== raw) {
+              if (lower.endsWith('.ass')) {
+                converted = subsrt.convert(sanitized, { to: 'vtt', from: 'ass' });
+              } else if (lower.endsWith('.ssa')) {
+                converted = subsrt.convert(sanitized, { to: 'vtt', from: 'ssa' });
+              } else {
+                converted = subsrt.convert(sanitized, { to: 'vtt' });
+              }
+            }
+          }
+
+          if (converted && typeof converted === 'string' && converted.trim().length > 0) {
+            log.debug(() => `[SubDL] Converted ${altEntry} to .vtt successfully`);
+            return converted;
+          }
+          throw new Error('Conversion to VTT resulted in empty output');
         } catch (convErr) {
-          log.error(() => ['[SubDL] Failed to convert to .srt:', convErr.message, 'file:', altEntry]);
+          log.error(() => ['[SubDL] Failed to convert to .vtt:', convErr.message, 'file:', altEntry]);
+
+          // Manual ASS/SSA fallback
+          try {
+            const manual = (function assToVttFallback(input) {
+              if (!input || !/\[events\]/i.test(input)) return null;
+              const lines = input.split(/\r?\n/);
+              let format = [];
+              let inEvents = false;
+              for (const line of lines) {
+                const l = line.trim();
+                if (/^\[events\]/i.test(l)) { inEvents = true; continue; }
+                if (!inEvents) continue;
+                if (/^\[.*\]/.test(l)) break;
+                if (/^format\s*:/i.test(l)) {
+                  format = l.split(':')[1].split(',').map(s => s.trim().toLowerCase());
+                }
+              }
+              const idxStart = Math.max(0, format.indexOf('start'));
+              const idxEnd = Math.max(1, format.indexOf('end'));
+              const idxText = format.length > 0 ? Math.max(format.indexOf('text'), format.length - 1) : 9;
+              const out = ['WEBVTT', ''];
+              const parseTime = (t) => {
+                const m = t.trim().match(/(\d+):(\d{2}):(\d{2})[\.\:](\d{2})/);
+                if (!m) return null;
+                const h = parseInt(m[1], 10) || 0; const mi = parseInt(m[2], 10) || 0; const s = parseInt(m[3], 10) || 0; const cs = parseInt(m[4], 10) || 0;
+                const ms = (h*3600 + mi*60 + s) * 1000 + cs * 10;
+                const hh = String(Math.floor(ms / 3600000)).padStart(2, '0');
+                const mm = String(Math.floor((ms % 3600000) / 60000)).padStart(2, '0');
+                const ss = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+                const mmm = String(ms % 1000).padStart(3, '0');
+                return `${hh}:${mm}:${ss}.${mmm}`;
+              };
+              const cleanText = (txt) => {
+                let t = txt.replace(/\{[^}]*\}/g, '');
+                t = t.replace(/\\N/g, '\n').replace(/\\n/g, '\n').replace(/\\h/g, ' ');
+                t = t.replace(/[\u0000-\u001F]/g, '');
+                return t.trim();
+              };
+              for (const line of lines) {
+                if (!/^dialogue\s*:/i.test(line)) continue;
+                const payload = line.split(':').slice(1).join(':');
+                const parts = []; let cur = ''; let splits = 0;
+                for (let i = 0; i < payload.length; i++) {
+                  const ch = payload[i];
+                  if (ch === ',' && splits < Math.max(idxText, 9)) { parts.push(cur); cur = ''; splits++; }
+                  else { cur += ch; }
+                }
+                parts.push(cur);
+                const start = parts[idxStart]; const end = parts[idxEnd]; const text = parts[idxText] ?? '';
+                const st = parseTime(start); const et = parseTime(end);
+                if (!st || !et) continue;
+                const ct = cleanText(text); if (!ct) continue;
+                out.push(`${st} --> ${et}`); out.push(ct); out.push('');
+              }
+              if (out.length <= 2) return null; return out.join('\n');
+            })(raw);
+            if (manual && manual.trim().length > 0) {
+              log.debug(() => `[SubDL] Fallback converted ${altEntry} to .vtt successfully (manual parser)`);
+              return manual;
+            }
+          } catch (fallbackErr) {
+            log.error(() => ['[SubDL] Manual ASS/SSA fallback failed:', fallbackErr.message, 'file:', altEntry]);
+          }
         }
       }
 
       log.error(() => ['[SubDL] Available files in ZIP:', entries.join(', ')]);
-      throw new Error('No .srt file found in downloaded ZIP');
+      throw new Error('Failed to extract or convert subtitle from ZIP (no .srt and conversion to VTT failed)');
 
     } catch (error) {
       handleDownloadError(error, 'SubDL');

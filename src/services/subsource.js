@@ -27,24 +27,29 @@ class SubSourceService {
     // Include Client Hints headers for better compatibility
     this.defaultHeaders = {
       'User-Agent': USER_AGENT,
-      'Accept': 'application/json, text/plain, */*',
+      // Broaden Accept to cover JSON and common subtitle/binary types
+      'Accept': 'application/json, application/*+json, application/zip, application/octet-stream, application/x-subrip, text/plain, text/srt, */*',
       'Accept-Encoding': 'gzip, deflate, br',
       'Accept-Language': 'en-US,en;q=0.9',
       'Referer': 'https://subsource.net/',
       'Origin': 'https://subsource.net',
       'DNT': '1',
+      'Sec-GPC': '1',
       'Connection': 'keep-alive',
       'Sec-Fetch-Dest': 'empty',
       'Sec-Fetch-Mode': 'cors',
       'Sec-Fetch-Site': 'same-site',
-      'Sec-CH-UA': '"Chromium";v="131", "Not_A Brand";v="24"',
-      'Sec-CH-UA-Mobile': '?0',
-      'Sec-CH-UA-Platform': '"Windows"',
-      'Sec-CH-UA-Platform-Version': '"15.0.0"',
-      'Sec-CH-UA-Arch': '"x86"',
-      'Sec-CH-UA-Bitness': '"64"',
-      'Sec-CH-UA-Full-Version': '"131.0.6778.86"',
-      'sec-ch-ua-full-version-list': '"Chromium";v="131.0.6778.86", "Not_A Brand";v="24.0.0.0"'
+      // Normalize Client Hints header casing to typical browser style
+      'sec-ch-ua': '"Chromium";v="131", "Not_A Brand";v="24"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-ch-ua-platform-version': '"15.0.0"',
+      'sec-ch-ua-arch': '"x86"',
+      'sec-ch-ua-bitness': '"64"',
+      'sec-ch-ua-full-version': '"131.0.6778.86"',
+      'sec-ch-ua-full-version-list': '"Chromium";v="131.0.6778.86", "Not_A Brand";v="24.0.0.0"',
+      // Common XHR indicator header seen from browsers/frameworks
+      'X-Requested-With': 'XMLHttpRequest'
     };
 
     // Add API key to headers
@@ -65,6 +70,71 @@ class SubSourceService {
       maxRedirects: 5,
       decompress: true
     });
+  }
+
+  /**
+   * Retry a function with exponential backoff and a total time budget.
+   * The provided function is called as fn(attemptTimeoutMs) so it can use
+   * a per-attempt timeout that fits within the remaining time budget.
+   * Retries on: timeouts, connection resets/refused, 5xx, 429, 503
+   * @param {(attemptTimeout:number)=>Promise<any>} fn
+   * @param {Object} options
+   * @param {number} [options.totalTimeoutMs=15000] - Total time budget for all attempts
+   * @param {number} [options.maxRetries=2] - Number of retries (in addition to first attempt)
+   * @param {number} [options.baseDelay=800] - Base delay in ms for backoff
+   * @param {number} [options.minAttemptTimeoutMs=2500] - Minimum per-attempt timeout
+   */
+  async retryWithBackoff(fn, options = {}) {
+    const totalTimeoutMs = options.totalTimeoutMs ?? 15000;
+    const maxRetries = options.maxRetries ?? 2;
+    const baseDelay = options.baseDelay ?? 800;
+    const minAttemptTimeoutMs = options.minAttemptTimeoutMs ?? 2500;
+
+    const startedAt = Date.now();
+    let attempt = 0;
+
+    // Helper to compute remaining budget
+    const remaining = () => Math.max(0, totalTimeoutMs - (Date.now() - startedAt));
+
+    while (true) {
+      // Reserve some time for a potential delay before the next retry
+      const r = remaining();
+      if (r <= 0) throw new Error('Request timed out');
+
+      const hasMoreRetries = attempt < maxRetries;
+      const plannedDelay = hasMoreRetries
+        ? Math.min(Math.round(baseDelay * Math.pow(2, attempt)), Math.floor(r / 3))
+        : 0;
+
+      // Allocate attempt timeout from remaining budget minus planned delay
+      const attemptTimeout = Math.max(minAttemptTimeoutMs, r - plannedDelay);
+
+      try {
+        return await fn(attemptTimeout);
+      } catch (error) {
+        const status = error.response?.status;
+        const code = error.code;
+        const isTimeout = code === 'ECONNABORTED' || code === 'ETIMEDOUT' || /timeout/i.test(error.message || '');
+        const isNetwork = code === 'ECONNRESET' || code === 'ECONNREFUSED';
+        const isRetryableStatus = status === 429 || status === 503 || (status >= 500 && status <= 599);
+        const retryable = isTimeout || isNetwork || isRetryableStatus;
+
+        if (!retryable || attempt >= maxRetries) {
+          throw error;
+        }
+
+        // Wait with backoff but do not exceed remaining budget
+        const r2 = remaining();
+        const delay = Math.min(plannedDelay, Math.max(0, r2 - minAttemptTimeoutMs));
+        if (delay <= 0) {
+          // No time left for a safe retry attempt
+          throw error;
+        }
+        log.warn(() => `[SubSource] Request failed (attempt ${attempt + 1}) — ${status || code || error.message}. Retrying in ${delay}ms...`);
+        await new Promise(res => setTimeout(res, delay));
+        attempt++;
+      }
+    }
   }
 
   /**
@@ -127,6 +197,12 @@ class SubSourceService {
       }
 
       const { imdb_id, type, season, episode, languages } = params;
+
+      // SubSource requires IMDB ID - skip if not available (e.g., anime with Kitsu IDs)
+      if (!imdb_id || imdb_id === 'undefined') {
+        log.debug(() => '[SubSource] No IMDB ID available, skipping search');
+        return [];
+      }
 
       // First, get SubSource's internal movie ID
       // For TV shows, pass season to get season-specific movieId
@@ -450,11 +526,12 @@ class SubSourceService {
         };
       });
 
-      // Client-side episode filtering for TV shows
+      // Client-side episode filtering for TV shows and anime
       // SubSource API doesn't support episode-level filtering, so we filter by subtitle name
       let filteredSubtitles = subtitles;
-      if (type === 'episode' && season && episode) {
-        const targetSeason = season;
+      if ((type === 'episode' || type === 'anime-episode') && episode) {
+        // Default to season 1 if not specified (common for anime)
+        const targetSeason = season || 1;
         const targetEpisode = episode;
 
         log.debug(() => [`[SubSource] Filtering for S${String(targetSeason).padStart(2, '0')}E${String(targetEpisode).padStart(2, '0')} (${subtitles.length} pre-filter)`]);
@@ -471,9 +548,39 @@ class SubSourceService {
             new RegExp(`season\\s*0*${targetSeason}.*episode\\s*0*${targetEpisode}(?![0-9])`, 'i')  // Season 2 Episode 1
           ];
 
-          const hasCorrectEpisode = seasonEpisodePatterns.some(pattern => pattern.test(name));
+          // Anime-friendly episode-only patterns (commonly used without Sxx)
+          // Broaden coverage while guarding against matching years/resolutions (e.g., 1080p)
+          const animeEpisodePatterns = [
+            // E01 / EP01 / E 01 / EP 01 / (01) / [01] / - 01 / _01 / 01v2
+            new RegExp(`(?<=\\b|\\s|\\[|\\(|-|_)e?p?\\s*0*${targetEpisode}(?:v\\d+)?(?=\\b|\\s|\\]|\\)|\\.|-|_|$)`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${targetEpisode}(?:v\\d+)?(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+
+            // Explicit words
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])episode\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])ep\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+
+            // Spanish/Portuguese
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])cap(?:itulo|\\.)?\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])epis[oó]dio\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+
+            // Japanese/Chinese/Korean: 第01話 / 01話 / 01集 / 1화
+            new RegExp(`第\\s*0*${targetEpisode}\\s*(?:話|集)`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${targetEpisode}\\s*(?:話|集|화)(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+
+            // Multi-episode pack ranges that include the requested episode (e.g., 01-02)
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${targetEpisode}\\s*[-~](?=\\s*\\d)`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])\\d+\\s*[-~]\\s*0*${targetEpisode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+          ];
+
+          const hasCorrectEpisode = seasonEpisodePatterns.some(pattern => pattern.test(name))
+            || (type === 'anime-episode' && animeEpisodePatterns.some(p => p.test(name)));
           return hasCorrectEpisode;
         });
+
+        // If nothing matched, do NOT fall back to unfiltered list
+        if (filteredSubtitles.length === 0) {
+          log.debug(() => '[SubSource] No matches after episode filtering; returning no results for this episode');
+        }
 
         log.debug(() => [`[SubSource] After episode filtering: ${filteredSubtitles.length} subtitles`]);
       }
@@ -535,10 +642,11 @@ class SubSourceService {
       const downloadHeaders = { ...this.defaultHeaders };
       delete downloadHeaders['Cache-Control'];
       delete downloadHeaders['Pragma'];
-      const response = await this.client.get(url, {
+      const response = await this.retryWithBackoff((attemptTimeout) => this.client.get(url, {
         headers: downloadHeaders,
-        responseType: 'arraybuffer'
-      });
+        responseType: 'arraybuffer',
+        timeout: attemptTimeout
+      }), { totalTimeoutMs: 15000, maxRetries: 2, baseDelay: 800, minAttemptTimeoutMs: 2500 });
 
       // Check if response is a ZIP file or direct SRT content
       const contentType = response.headers['content-type'] || '';
@@ -559,7 +667,7 @@ class SubSourceService {
         const zip = await JSZip.loadAsync(responseBuffer, { base64: false });
 
         const entries = Object.keys(zip.files);
-        // Prefer .srt if available
+        // Prefer .srt if available (return as-is). If not, try .vtt or convert .ass/.ssa -> .vtt
         const srtEntry = entries.find(filename => filename.toLowerCase().endsWith('.srt'));
         if (srtEntry) {
           const subtitleContent = await zip.files[srtEntry].async('string');
@@ -574,27 +682,145 @@ class SubSourceService {
         });
 
         if (altEntry) {
-          try {
-            const raw = await zip.files[altEntry].async('string');
+          // Read raw bytes and decode with BOM awareness
+          const uint8 = await zip.files[altEntry].async('uint8array');
+          const buf = Buffer.from(uint8);
 
-            // Keep original VTT intact; only convert ASS/SSA to SRT
-            const lower = altEntry.toLowerCase();
-            if (lower.endsWith('.vtt')) {
-              log.debug(() => `[SubSource] Keeping original VTT: ${altEntry}`);
-              return raw;
+          let raw;
+          if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
+            raw = buf.slice(2).toString('utf16le');
+            log.debug(() => `[SubSource] Detected UTF-16LE BOM in ${altEntry}; decoded as UTF-16LE`);
+          } else if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) {
+            const swapped = Buffer.allocUnsafe(Math.max(0, buf.length - 2));
+            for (let i = 2, j = 0; i + 1 < buf.length; i += 2, j += 2) {
+              swapped[j] = buf[i + 1];
+              swapped[j + 1] = buf[i];
+            }
+            raw = swapped.toString('utf16le');
+            log.debug(() => `[SubSource] Detected UTF-16BE BOM in ${altEntry}; decoded as UTF-16BE->LE`);
+          } else {
+            raw = buf.toString('utf8');
+          }
+
+          const lower = altEntry.toLowerCase();
+          if (lower.endsWith('.vtt')) {
+            log.debug(() => `[SubSource] Keeping original VTT: ${altEntry}`);
+            return raw;
+          }
+
+          // Try library conversion first (to VTT)
+          try {
+            const subsrt = require('subsrt-ts');
+            let converted;
+            if (lower.endsWith('.ass')) {
+              converted = subsrt.convert(raw, { to: 'vtt', from: 'ass' });
+            } else if (lower.endsWith('.ssa')) {
+              converted = subsrt.convert(raw, { to: 'vtt', from: 'ssa' });
+            } else {
+              converted = subsrt.convert(raw, { to: 'vtt' });
             }
 
-            const subsrt = require('subsrt-ts');
-            const converted = subsrt.convert(raw, { to: 'srt' });
-            log.debug(() => `[SubSource] Converted ${altEntry} to .srt successfully`);
-            return converted;
+            if (!converted || typeof converted !== 'string' || converted.trim().length === 0) {
+              const sanitized = (raw || '').replace(/\u0000/g, '');
+              if (sanitized && sanitized !== raw) {
+                if (lower.endsWith('.ass')) {
+                  converted = subsrt.convert(sanitized, { to: 'vtt', from: 'ass' });
+                } else if (lower.endsWith('.ssa')) {
+                  converted = subsrt.convert(sanitized, { to: 'vtt', from: 'ssa' });
+                } else {
+                  converted = subsrt.convert(sanitized, { to: 'vtt' });
+                }
+              }
+            }
+
+            if (converted && typeof converted === 'string' && converted.trim().length > 0) {
+              log.debug(() => `[SubSource] Converted ${altEntry} to .vtt successfully`);
+              return converted;
+            }
+            throw new Error('Conversion to VTT resulted in empty output');
           } catch (convErr) {
-            log.error(() => ['[SubSource] Failed to convert to .srt:', convErr.message, 'file:', altEntry]);
+            log.error(() => ['[SubSource] Failed to convert to .vtt:', convErr.message, 'file:', altEntry]);
+
+            // Manual fallback for common ASS/SSA formats
+            try {
+              const manual = (function assToVttFallback(input) {
+                if (!input || !/\[events\]/i.test(input)) return null;
+                const lines = input.split(/\r?\n/);
+                let format = [];
+                let inEvents = false;
+                for (const line of lines) {
+                  const l = line.trim();
+                  if (/^\[events\]/i.test(l)) { inEvents = true; continue; }
+                  if (!inEvents) continue;
+                  if (/^\[.*\]/.test(l)) break;
+                  if (/^format\s*:/i.test(l)) {
+                    format = l.split(':')[1].split(',').map(s => s.trim().toLowerCase());
+                  }
+                }
+                const idxStart = Math.max(0, format.indexOf('start'));
+                const idxEnd = Math.max(1, format.indexOf('end'));
+                const idxText = format.length > 0 ? Math.max(format.indexOf('text'), format.length - 1) : 9;
+                const out = ['WEBVTT', ''];
+                const parseTime = (t) => {
+                  const m = t.trim().match(/(\d+):(\d{2}):(\d{2})[\.\:](\d{2})/);
+                  if (!m) return null;
+                  const h = parseInt(m[1], 10) || 0;
+                  const mi = parseInt(m[2], 10) || 0;
+                  const s = parseInt(m[3], 10) || 0;
+                  const cs = parseInt(m[4], 10) || 0;
+                  const ms = (h*3600 + mi*60 + s) * 1000 + cs * 10;
+                  const hh = String(Math.floor(ms / 3600000)).padStart(2, '0');
+                  const mm = String(Math.floor((ms % 3600000) / 60000)).padStart(2, '0');
+                  const ss = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+                  const mmm = String(ms % 1000).padStart(3, '0');
+                  return `${hh}:${mm}:${ss}.${mmm}`;
+                };
+                const cleanText = (txt) => {
+                  let t = txt.replace(/\{[^}]*\}/g, '');
+                  t = t.replace(/\\N/g, '\n').replace(/\\n/g, '\n').replace(/\\h/g, ' ');
+                  t = t.replace(/[\u0000-\u001F]/g, '');
+                  return t.trim();
+                };
+                for (const line of lines) {
+                  if (!/^dialogue\s*:/i.test(line)) continue;
+                  const payload = line.split(':').slice(1).join(':');
+                  const parts = [];
+                  let cur = '';
+                  let splits = 0;
+                  for (let i = 0; i < payload.length; i++) {
+                    const ch = payload[i];
+                    if (ch === ',' && splits < Math.max(idxText, 9)) { parts.push(cur); cur = ''; splits++; }
+                    else { cur += ch; }
+                  }
+                  parts.push(cur);
+                  const start = parts[idxStart];
+                  const end = parts[idxEnd];
+                  const text = parts[idxText] ?? '';
+                  const st = parseTime(start);
+                  const et = parseTime(end);
+                  if (!st || !et) continue;
+                  const ct = cleanText(text);
+                  if (!ct) continue;
+                  out.push(`${st} --> ${et}`);
+                  out.push(ct);
+                  out.push('');
+                }
+                if (out.length <= 2) return null;
+                return out.join('\n');
+              })(raw);
+
+              if (manual && manual.trim().length > 0) {
+                log.debug(() => `[SubSource] Fallback converted ${altEntry} to .vtt successfully (manual parser)`);
+                return manual;
+              }
+            } catch (fallbackErr) {
+              log.error(() => ['[SubSource] Manual ASS/SSA fallback failed:', fallbackErr.message, 'file:', altEntry]);
+            }
           }
         }
 
         log.error(() => ['[SubSource] Available files in ZIP:', entries.join(', ')]);
-        throw new Error('No .srt file found in downloaded ZIP');
+        throw new Error('Failed to extract or convert subtitle from ZIP (no .srt and conversion to VTT failed)');
       } else {
         // Direct SRT content - decode as UTF-8
         log.debug(() => '[SubSource] Subtitle downloaded successfully');

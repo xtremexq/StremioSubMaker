@@ -163,8 +163,11 @@ class OpenSubtitlesService {
       if (this.isTokenExpired()) {
         const loginResult = await this.login();
         if (!loginResult) {
-          // Authentication failed, handleAuthError already logged it
-          return [];
+          // Authentication failed; surface this so callers can react (e.g., append UX hint entries)
+          const authErr = new Error('OpenSubtitles authentication failed: invalid username/password');
+          authErr.statusCode = 400;
+          authErr.authError = true;
+          throw authErr;
         }
       }
 
@@ -207,8 +210,9 @@ class OpenSubtitlesService {
         languages: convertedLanguages.join(',')
       };
 
-      if (type === 'episode' && season && episode) {
-        queryParams.season_number = season;
+      if ((type === 'episode' || type === 'anime-episode') && episode) {
+        // Default to season 1 if not specified (common for anime)
+        queryParams.season_number = season || 1;
         queryParams.episode_number = episode;
       }
 
@@ -311,17 +315,177 @@ class OpenSubtitlesService {
       const downloadLink = downloadResponse.data.link;
       log.debug(() => ['[OpenSubtitles] Got download link:', downloadLink]);
 
-      // Download the subtitle file
+      // Download the subtitle file as raw bytes to handle BOM/ZIP cases efficiently
       const subtitleResponse = await this.client.get(downloadLink, {
-        responseType: 'text',
-        headers: {
-          'User-Agent': USER_AGENT
-        }
+        responseType: 'arraybuffer',
+        headers: { 'User-Agent': USER_AGENT },
+        timeout: 12000
       });
 
-      const subtitleContent = subtitleResponse.data;
+      const buf = Buffer.isBuffer(subtitleResponse.data)
+        ? subtitleResponse.data
+        : Buffer.from(subtitleResponse.data);
+
+      // ZIP by magic bytes: 50 4B 03 04
+      const isZip = buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04;
+
+      if (isZip) {
+        const JSZip = require('jszip');
+        const zip = await JSZip.loadAsync(buf, { base64: false });
+        const entries = Object.keys(zip.files);
+        const srtEntry = entries.find(f => f.toLowerCase().endsWith('.srt'));
+        if (srtEntry) {
+          const srt = await zip.files[srtEntry].async('string');
+          log.debug(() => '[OpenSubtitles] Extracted .srt from ZIP');
+          return srt;
+        }
+        const altEntry = entries.find(f => {
+          const l = f.toLowerCase();
+          return l.endsWith('.vtt') || l.endsWith('.ass') || l.endsWith('.ssa');
+        });
+        if (altEntry) {
+          const uint8 = await zip.files[altEntry].async('uint8array');
+          const abuf = Buffer.from(uint8);
+          let raw;
+          if (abuf.length >= 2 && abuf[0] === 0xFF && abuf[1] === 0xFE) raw = abuf.slice(2).toString('utf16le');
+          else if (abuf.length >= 2 && abuf[0] === 0xFE && abuf[1] === 0xFF) {
+            const swapped = Buffer.allocUnsafe(Math.max(0, abuf.length - 2));
+            for (let i = 2, j = 0; i + 1 < abuf.length; i += 2, j += 2) { swapped[j] = abuf[i + 1]; swapped[j + 1] = abuf[i]; }
+            raw = swapped.toString('utf16le');
+          } else raw = abuf.toString('utf8');
+
+          const lname = altEntry.toLowerCase();
+          if (lname.endsWith('.vtt')) return raw;
+
+          // Try library conversion, then manual fallback
+          try {
+            const subsrt = require('subsrt-ts');
+            let converted;
+            if (lname.endsWith('.ass')) converted = subsrt.convert(raw, { to: 'vtt', from: 'ass' });
+            else if (lname.endsWith('.ssa')) converted = subsrt.convert(raw, { to: 'vtt', from: 'ssa' });
+            else converted = subsrt.convert(raw, { to: 'vtt' });
+            if (!converted || typeof converted !== 'string' || converted.trim().length === 0) {
+              const sanitized = (raw || '').replace(/\u0000/g, '');
+              if (sanitized && sanitized !== raw) {
+                if (lname.endsWith('.ass')) converted = subsrt.convert(sanitized, { to: 'vtt', from: 'ass' });
+                else if (lname.endsWith('.ssa')) converted = subsrt.convert(sanitized, { to: 'vtt', from: 'ssa' });
+                else converted = subsrt.convert(sanitized, { to: 'vtt' });
+              }
+            }
+            if (converted && converted.trim().length > 0) return converted;
+            throw new Error('Empty VTT after conversion');
+          } catch (_) {
+            const manual = (function assToVttFallback(input) {
+              if (!input || !/\[events\]/i.test(input)) return null;
+              const lines = input.split(/\r?\n/); let format = []; let inEvents = false;
+              for (const line of lines) {
+                const l = line.trim();
+                if (/^\[events\]/i.test(l)) { inEvents = true; continue; }
+                if (!inEvents) continue;
+                if (/^\[.*\]/.test(l)) break;
+                if (/^format\s*:/i.test(l)) format = l.split(':')[1].split(',').map(s => s.trim().toLowerCase());
+              }
+              const idxStart = Math.max(0, format.indexOf('start'));
+              const idxEnd = Math.max(1, format.indexOf('end'));
+              const idxText = format.length > 0 ? Math.max(format.indexOf('text'), format.length - 1) : 9;
+              const out = ['WEBVTT', ''];
+              const parseTime = (t) => {
+                const m = t.trim().match(/(\d+):(\d{2}):(\d{2})[\.\:](\d{2})/);
+                if (!m) return null;
+                const h = +m[1]||0, mi=+m[2]||0, s=+m[3]||0, cs=+m[4]||0;
+                const ms=(h*3600+mi*60+s)*1000+cs*10;
+                const hh=String(Math.floor(ms/3600000)).padStart(2,'0');
+                const mm=String(Math.floor((ms%3600000)/60000)).padStart(2,'0');
+                const ss=String(Math.floor((ms%60000)/1000)).padStart(2,'0');
+                const mmm=String(ms%1000).padStart(3,'0');
+                return `${hh}:${mm}:${ss}.${mmm}`;
+              };
+              const cleanText = (txt) => {
+                let t = txt.replace(/\{[^}]*\}/g,'');
+                t = t.replace(/\\N/g,'\n').replace(/\\n/g,'\n').replace(/\\h/g,' ');
+                t = t.replace(/[\u0000-\u001F]/g,'');
+                return t.trim();
+              };
+              for (const line of lines) {
+                if (!/^dialogue\s*:/i.test(line)) continue;
+                const payload=line.split(':').slice(1).join(':');
+                const parts=[]; let cur=''; let splits=0;
+                for (let i=0;i<payload.length;i++){const ch=payload[i]; if(ch===',' && splits<Math.max(idxText,9)){parts.push(cur);cur='';splits++;} else {cur+=ch;}}
+                parts.push(cur);
+                const st=parseTime(parts[idxStart]); const et=parseTime(parts[idxEnd]);
+                if (!st||!et) continue; const ct=cleanText(parts[idxText]??''); if(!ct) continue;
+                out.push(`${st} --> ${et}`); out.push(ct); out.push('');
+              }
+              return out.length>2?out.join('\n'):null;
+            })(raw);
+            if (manual && manual.trim().length>0) return manual;
+          }
+        }
+        throw new Error('Failed to extract or convert subtitle from ZIP (no .srt and conversion to VTT failed)');
+      }
+
+      // Non-ZIP: decode with BOM awareness
+      let text;
+      if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) text = buf.slice(2).toString('utf16le');
+      else if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) {
+        const swapped = Buffer.allocUnsafe(Math.max(0, buf.length - 2));
+        for (let i = 2, j = 0; i + 1 < buf.length; i += 2, j += 2) { swapped[j] = buf[i + 1]; swapped[j + 1] = buf[i]; }
+        text = swapped.toString('utf16le');
+      } else text = buf.toString('utf8');
+
+      const trimmed = (text || '').trimStart();
+      if (trimmed.startsWith('WEBVTT')) {
+        log.debug(() => '[OpenSubtitles] Detected VTT; returning original VTT');
+        return text;
+      }
+
+      // If content looks like ASS/SSA, convert to SRT
+      if (/\[events\]/i.test(text) || /^dialogue\s*:/im.test(text)) {
+        try {
+          const subsrt = require('subsrt-ts');
+          let converted = subsrt.convert(text, { to: 'vtt', from: 'ass' });
+          if (!converted || converted.trim().length === 0) {
+            const sanitized = (text || '').replace(/\u0000/g, '');
+            converted = subsrt.convert(sanitized, { to: 'vtt', from: 'ass' });
+          }
+          if (converted && converted.trim().length > 0) return converted;
+        } catch (_) {
+          // ignore and fallback to manual
+        }
+        const manual = (function assToVttFallback(input) {
+          if (!input || !/\[events\]/i.test(input)) return null;
+          const lines = input.split(/\r?\n/); let format = []; let inEvents = false;
+          for (const line of lines) {
+            const l = line.trim(); if (/^\[events\]/i.test(l)) { inEvents = true; continue; }
+            if (!inEvents) continue; if (/^\[.*\]/.test(l)) break;
+            if (/^format\s*:/i.test(l)) format = l.split(':')[1].split(',').map(s => s.trim().toLowerCase());
+          }
+          const idxStart = Math.max(0, format.indexOf('start'));
+          const idxEnd = Math.max(1, format.indexOf('end'));
+          const idxText = format.length > 0 ? Math.max(format.indexOf('text'), format.length - 1) : 9;
+          const out = ['WEBVTT', ''];
+          const parseTime = (t) => {
+            const m = t.trim().match(/(\d+):(\d{2}):(\d{2})[\.\:](\d{2})/);
+            if (!m) return null; const h=+m[1]||0, mi=+m[2]||0, s=+m[3]||0, cs=+m[4]||0;
+            const ms=(h*3600+mi*60+s)*1000+cs*10; const hh=String(Math.floor(ms/3600000)).padStart(2,'0');
+            const mm=String(Math.floor((ms%3600000)/60000)).padStart(2,'0'); const ss=String(Math.floor((ms%60000)/1000)).padStart(2,'0');
+            const mmm=String(ms%1000).padStart(3,'0'); return `${hh}:${mm}:${ss}.${mmm}`;
+          };
+          const cleanText = (txt) => { let t = txt.replace(/\{[^}]*\}/g,''); t = t.replace(/\\N/g,'\n').replace(/\\n/g,'\n').replace(/\\h/g,' ');
+            t = t.replace(/[\u0000-\u001F]/g,''); return t.trim(); };
+          for (const line of lines) {
+            if (!/^dialogue\s*:/i.test(line)) continue; const payload=line.split(':').slice(1).join(':');
+            const parts=[]; let cur=''; let splits=0; for (let i=0;i<payload.length;i++){const ch=payload[i]; if(ch===',' && splits<Math.max(idxText,9)){parts.push(cur);cur='';splits++;} else {cur+=ch;}}
+            parts.push(cur); const st=parseTime(parts[idxStart]); const et=parseTime(parts[idxEnd]); if(!st||!et) continue;
+            const ct=cleanText(parts[idxText]??''); if(!ct) continue; out.push(`${st} --> ${et}`); out.push(ct); out.push('');
+          }
+          return out.length>2?out.join('\n'):null;
+        })(text);
+        if (manual && manual.trim().length > 0) return manual;
+      }
+
       log.debug(() => '[OpenSubtitles] Subtitle downloaded successfully');
-      return subtitleContent;
+      return text;
 
     } catch (error) {
       handleDownloadError(error, 'OpenSubtitles');
