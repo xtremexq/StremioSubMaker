@@ -2293,7 +2293,9 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
     );
 
     // Initialize new Translation Engine (structure-first approach)
-    const translationEngine = new TranslationEngine(gemini);
+    // Pass model to enable model-specific batch size optimization
+    // Pass advancedSettings to enable optional features (like batch context)
+    const translationEngine = new TranslationEngine(gemini, config.geminiModel, config.advancedSettings || {});
 
     log.debug(() => '[Translation] Using unified translation engine');
 

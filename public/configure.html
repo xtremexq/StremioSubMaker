@@ -1807,8 +1807,8 @@
                             <span class="label-description">AI model for translations</span>
                         </label>
                         <select id="geminiModel" required>
-                            <option value="gemini-2.5-flash-lite-preview-09-2025" selected>Gemini 2.5 Flash-Lite</option>
-                            <option value="gemini-2.5-flash-preview-09-2025">Gemini 2.5 Flash</option>
+                            <option value="gemini-2.5-flash-lite-preview-09-2025">Gemini 2.5 Flash-Lite</option>
+                            <option value="gemini-2.5-flash-preview-09-2025" selected>Gemini 2.5 Flash</option>
                         </select>
                         <div class="field-error" id="geminiModelError">Please select a model</div>
                         <div style="margin-top: 0.75rem; padding: 0.75rem; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; font-size: 0.875rem; color: var(--text-secondary);">
@@ -1988,6 +1988,22 @@
                             <span class="label-description">Probability threshold (0.0-1.0). Lower = more focused, Higher = more diverse. Default: 0.95</span>
                         </label>
                         <input type="number" id="advancedTopP" min="0" max="1" step="0.05" value="0.95" placeholder="0.95">
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="enableBatchContext">
+                            Enable Batch Context
+                            <span class="label-description">Include original surrounding context and previous translations when processing batches. Improves translation coherence but slightly increases token usage. Disabled by default.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group" id="contextSizeGroup" style="display: none;">
+                        <label for="contextSize">
+                            Context Size
+                            <span class="label-description">Number of surrounding entries to include as context (1-10). Default: 3</span>
+                        </label>
+                        <input type="number" id="contextSize" min="1" max="10" step="1" value="3" placeholder="3">
                     </div>
                 </div>
             </div>

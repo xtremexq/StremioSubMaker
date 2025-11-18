@@ -47,6 +47,94 @@ Translate to {target_language}.`;
 This is an automatic system, you must return ONLY the subtitles output/file.
 Translate to {target_language}.`;
 
+    /**
+     * Model-specific default configurations
+     * Each model has its own optimal settings for thinking and temperature
+     */
+    const MODEL_SPECIFIC_DEFAULTS = {
+        'gemini-2.5-flash-lite-preview-09-2025': {
+            thinkingBudget: 0,      // No thinking for lite model
+            temperature: 0.8        // Higher temperature for creativity
+        },
+        'gemini-2.5-flash-preview-09-2025': {
+            thinkingBudget: -1,     // Dynamic thinking for flash model
+            temperature: 0.5        // Lower temperature for consistency
+        }
+    };
+
+    /**
+     * Get model-specific defaults for thinking and temperature
+     * @param {string} modelName - The Gemini model name
+     * @returns {Object} - Model-specific settings { thinkingBudget, temperature }
+     */
+    function getModelSpecificDefaults(modelName) {
+        return MODEL_SPECIFIC_DEFAULTS[modelName] || {
+            thinkingBudget: 0,
+            temperature: 0.8
+        };
+    }
+
+    function getDefaultConfig(modelName = 'gemini-2.5-flash-preview-09-2025') {
+        const modelDefaults = getModelSpecificDefaults(modelName);
+
+        return {
+            noTranslationMode: false, // If true, skip translation and just fetch subtitles
+            noTranslationLanguages: [], // Languages to fetch when in no-translation mode
+            sourceLanguages: ['eng'], // Up to 3 source languages allowed
+            targetLanguages: [],
+            geminiApiKey: DEFAULT_API_KEYS.GEMINI,
+            geminiModel: modelName,
+            promptStyle: 'strict', // 'natural' or 'strict'
+            translationPrompt: STRICT_TRANSLATION_PROMPT,
+            subtitleProviders: {
+                opensubtitles: {
+                    enabled: true,
+                    implementationType: 'v3', // 'auth' or 'v3'
+                    username: '',
+                    password: ''
+                },
+                subdl: {
+                    enabled: true,
+                    apiKey: DEFAULT_API_KEYS.SUBDL
+                },
+                subsource: {
+                    enabled: true,
+                    apiKey: DEFAULT_API_KEYS.SUBSOURCE
+                }
+            },
+            translationCache: {
+                enabled: true,
+                duration: 0, // hours, 0 = permanent
+                persistent: true // save to disk
+            },
+            bypassCache: false,
+            bypassCacheConfig: {
+                enabled: true,
+                duration: 12
+            },
+            tempCache: { // Deprecated: kept for backward compatibility, use bypassCacheConfig instead
+                enabled: true,
+                duration: 12
+            },
+            fileTranslationEnabled: false, // enable file upload translation feature
+            syncSubtitlesEnabled: false, // enable 'Sync Subtitles' action in subtitles list
+            advancedSettings: {
+                enabled: false, // Auto-set to true if any setting differs from defaults (forces bypass cache)
+                geminiModel: '', // Override model (empty = use default)
+                maxOutputTokens: 65536,
+                chunkSize: 12000,
+                translationTimeout: 600, // seconds
+                maxRetries: 5,
+                thinkingBudget: modelDefaults.thinkingBudget,
+                temperature: modelDefaults.temperature,
+                topP: 0.95,
+                topK: 40,
+                enableBatchContext: false, // Include original surrounding context and previous translations
+                contextSize: 3 // Number of surrounding entries to include as context
+            }
+        };
+    }
+
     // State management
     let currentConfig = parseConfigFromUrl();
     let allLanguages = [];
@@ -312,69 +400,15 @@ Translate to {target_language}.`;
         return getDefaultConfig();
     }
 
-    function getDefaultConfig() {
-        return {
-            noTranslationMode: false, // If true, skip translation and just fetch subtitles
-            noTranslationLanguages: [], // Languages to fetch when in no-translation mode
-            sourceLanguages: ['eng'], // Up to 3 source languages allowed
-            targetLanguages: [],
-            geminiApiKey: DEFAULT_API_KEYS.GEMINI,
-            geminiModel: 'gemini-2.5-flash-lite-preview-09-2025',
-            promptStyle: 'strict', // 'natural' or 'strict'
-            translationPrompt: STRICT_TRANSLATION_PROMPT,
-            subtitleProviders: {
-                opensubtitles: {
-                    enabled: true,
-                    implementationType: 'v3', // 'auth' or 'v3'
-                    username: '',
-                    password: ''
-                },
-                subdl: {
-                    enabled: true,
-                    apiKey: DEFAULT_API_KEYS.SUBDL
-                },
-                subsource: {
-                    enabled: true,
-                    apiKey: DEFAULT_API_KEYS.SUBSOURCE
-                }
-            },
-            translationCache: {
-                enabled: true,
-                duration: 0, // hours, 0 = permanent
-                persistent: true // save to disk
-            },
-            bypassCache: false,
-            bypassCacheConfig: {
-                enabled: true,
-                duration: 12
-            },
-            tempCache: { // Deprecated: kept for backward compatibility, use bypassCacheConfig instead
-                enabled: true,
-                duration: 12
-            },
-            fileTranslationEnabled: false, // enable file upload translation feature
-            syncSubtitlesEnabled: false, // enable 'Sync Subtitles' action in subtitles list
-            advancedSettings: {
-                enabled: false, // Auto-set to true if any setting differs from defaults (forces bypass cache)
-                geminiModel: '', // Override model (empty = use default)
-                maxOutputTokens: 65536,
-                chunkSize: 12000,
-                translationTimeout: 600, // seconds
-                maxRetries: 5,
-                thinkingBudget: 0, // 0 = disabled, -1 = dynamic, >0 = fixed
-                temperature: 0.8,
-                topP: 0.95,
-                topK: 40
-            }
-        };
-    }
-
     /**
      * Check if advanced settings differ from defaults
      * @returns {boolean} - True if any advanced setting is modified
      */
     function areAdvancedSettingsModified() {
-        const defaults = getDefaultConfig().advancedSettings;
+        // Get the currently selected base model to determine model-specific defaults
+        const geminiModelEl = document.getElementById('geminiModel');
+        const currentBaseModel = geminiModelEl ? geminiModelEl.value : 'gemini-2.5-flash-preview-09-2025';
+        const defaults = getDefaultConfig(currentBaseModel).advancedSettings;
 
         const advModelEl = document.getElementById('advancedModel');
         const advThinkingEl = document.getElementById('advancedThinkingBudget');
@@ -385,7 +419,7 @@ Translate to {target_language}.`;
             return false; // Elements not loaded yet
         }
 
-        // Check if any value differs from defaults
+        // Check if any value differs from model-specific defaults
         const modelChanged = advModelEl.value !== (defaults.geminiModel || '');
         const thinkingChanged = parseInt(advThinkingEl.value) !== defaults.thinkingBudget;
         const tempChanged = parseFloat(advTempEl.value) !== defaults.temperature;
@@ -783,6 +817,26 @@ Translate to {target_language}.`;
         document.getElementById('geminiApiKey').addEventListener('input', validateGeminiApiKey);
         document.getElementById('geminiModel').addEventListener('change', validateGeminiModel);
 
+        // Update advanced settings when model changes (apply model-specific defaults)
+        document.getElementById('geminiModel').addEventListener('change', function(e) {
+            const selectedModel = e.target.value;
+            const modelDefaults = getModelSpecificDefaults(selectedModel);
+
+            // Update advanced settings with model-specific defaults (if not explicitly modified by user)
+            const advThinkingEl = document.getElementById('advancedThinkingBudget');
+            const advTempEl = document.getElementById('advancedTemperature');
+
+            if (advThinkingEl && advTempEl) {
+                // Only update if user hasn't explicitly modified these in advanced settings
+                // Check if current values match the previous model's defaults
+                advThinkingEl.value = modelDefaults.thinkingBudget;
+                advTempEl.value = modelDefaults.temperature;
+
+                // Update bypass cache state based on new defaults
+                updateBypassCacheForAdvancedSettings();
+            }
+        });
+
         // API Key Validation Buttons
         document.getElementById('validateSubSource').addEventListener('click', () => validateApiKey('subsource'));
         document.getElementById('validateSubDL').addEventListener('click', () => validateApiKey('subdl'));
@@ -819,6 +873,15 @@ Translate to {target_language}.`;
                 el.addEventListener('input', updateBypassCacheForAdvancedSettings);
             }
         });
+
+        // Batch context toggle - show/hide context size field
+        const enableBatchContextEl = document.getElementById('enableBatchContext');
+        const contextSizeGroupEl = document.getElementById('contextSizeGroup');
+        if (enableBatchContextEl && contextSizeGroupEl) {
+            enableBatchContextEl.addEventListener('change', (e) => {
+                contextSizeGroupEl.style.display = e.target.checked ? 'block' : 'none';
+            });
+        }
 
         // Secret experimental mode: Click the heart to reveal advanced settings
         const secretHeart = document.getElementById('secretHeart');
@@ -1881,6 +1944,20 @@ Translate to {target_language}.`;
         if (advTempEl) advTempEl.value = currentConfig.advancedSettings?.temperature ?? 0.8;
         if (advTopPEl) advTopPEl.value = currentConfig.advancedSettings?.topP ?? 0.95;
 
+        // Load batch context settings
+        const enableBatchContextEl = document.getElementById('enableBatchContext');
+        const contextSizeEl = document.getElementById('contextSize');
+        const contextSizeGroupEl = document.getElementById('contextSizeGroup');
+
+        if (enableBatchContextEl) {
+            enableBatchContextEl.checked = currentConfig.advancedSettings?.enableBatchContext === true;
+            // Show/hide context size field based on checkbox
+            if (contextSizeGroupEl) {
+                contextSizeGroupEl.style.display = enableBatchContextEl.checked ? 'block' : 'none';
+            }
+        }
+        if (contextSizeEl) contextSizeEl.value = currentConfig.advancedSettings?.contextSize || 3;
+
         // Check if advanced settings are modified and update bypass cache accordingly
         updateBypassCacheForAdvancedSettings();
     }
@@ -1971,7 +2048,9 @@ Translate to {target_language}.`;
                 thinkingBudget: (function(){ const el = document.getElementById('advancedThinkingBudget'); return el ? parseInt(el.value) : 0; })(),
                 temperature: (function(){ const el = document.getElementById('advancedTemperature'); return el ? parseFloat(el.value) : 0.8; })(),
                 topP: (function(){ const el = document.getElementById('advancedTopP'); return el ? parseFloat(el.value) : 0.95; })(),
-                topK: 40 // Keep default topK
+                topK: 40, // Keep default topK
+                enableBatchContext: (function(){ const el = document.getElementById('enableBatchContext'); return el ? el.checked : false; })(),
+                contextSize: (function(){ const el = document.getElementById('contextSize'); return el ? parseInt(el.value) : 3; })()
             }
         };
 

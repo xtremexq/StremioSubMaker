@@ -678,7 +678,7 @@ class SubSourceService {
         // Fallback: support common formats
         const altEntry = entries.find(filename => {
           const f = filename.toLowerCase();
-          return f.endsWith('.vtt') || f.endsWith('.ass') || f.endsWith('.ssa');
+          return f.endsWith('.vtt') || f.endsWith('.ass') || f.endsWith('.ssa') || f.endsWith('.sub');
         });
 
         if (altEntry) {
@@ -706,6 +706,27 @@ class SubSourceService {
           if (lower.endsWith('.vtt')) {
             log.debug(() => `[SubSource] Keeping original VTT: ${altEntry}`);
             return raw;
+          }
+
+          // Handle MicroDVD .sub files (text-based, frame-based timing)
+          if (lower.endsWith('.sub')) {
+            const isMicroDVD = /^\s*\{\d+\}\{\d+\}/.test(raw);
+            if (isMicroDVD) {
+              log.debug(() => `[SubSource] Detected MicroDVD .sub format: ${altEntry}`);
+              try {
+                const subsrt = require('subsrt-ts');
+                const fps = 25;
+                const converted = subsrt.convert(raw, { to: 'vtt', from: 'sub', fps: fps });
+                if (converted && typeof converted === 'string' && converted.trim().length > 0) {
+                  log.debug(() => `[SubSource] Converted MicroDVD .sub to .vtt successfully (fps=${fps})`);
+                  return converted;
+                }
+              } catch (subErr) {
+                log.error(() => ['[SubSource] Failed to convert MicroDVD .sub to .vtt:', subErr.message]);
+              }
+            } else {
+              log.warn(() => `[SubSource] Detected VobSub .sub format (binary/image-based): ${altEntry} - not supported, skipping`);
+            }
           }
 
           // Try library conversion first (to VTT)

@@ -26,17 +26,59 @@ const entryCache = new Map();
 const MAX_ENTRY_CACHE_SIZE = parseInt(process.env.ENTRY_CACHE_SIZE) || 100000;
 
 // Configuration constants
-const BATCH_SIZE = parseInt(process.env.TRANSLATION_BATCH_SIZE) || 150; // Entries per batch
 const MAX_TOKENS_PER_BATCH = parseInt(process.env.MAX_TOKENS_PER_BATCH) || 25000; // Max tokens before auto-chunking
 // Entry cache disabled by default - causes stale data on cache resets and not HA-aware
 // Only useful for repeated translations with identical config (rare)
 const CACHE_TRANSLATIONS = process.env.CACHE_TRANSLATIONS === 'true'; // Enable/disable entry caching
 
+/**
+ * Get batch size for model (model-specific optimization)
+ * Priority: Environment variable > Model-specific > Default (200)
+ *
+ * Model-specific batch sizes are hardcoded in backend and safe from client manipulation.
+ * Different models have different processing speeds and capabilities:
+ * - Flash models: 200 entries (faster, more capable)
+ * - Flash-lite models: 150 entries (more conservative for stability)
+ *
+ * @param {string} model - Gemini model name
+ * @returns {number} - Batch size for this model
+ */
+function getBatchSizeForModel(model) {
+  // Environment variable override (highest priority)
+  if (process.env.TRANSLATION_BATCH_SIZE) {
+    return parseInt(process.env.TRANSLATION_BATCH_SIZE);
+  }
+
+  // Model-specific batch sizes (hardcoded, safe from client manipulation)
+  const modelStr = String(model || '').toLowerCase();
+
+  // Flash-lite models: More conservative batch size for stability
+  if (modelStr.includes('flash-lite')) {
+    return 150;
+  }
+
+  // Flash models (non-lite): Larger batch size for better throughput
+  if (modelStr.includes('flash')) {
+    return 200;
+  }
+
+  // Default batch size for unknown models
+  return 200;
+}
+
 class TranslationEngine {
-  constructor(geminiService) {
+  constructor(geminiService, model = null, advancedSettings = {}) {
     this.gemini = geminiService;
-    this.batchSize = BATCH_SIZE;
+    this.model = model;
+    this.batchSize = getBatchSizeForModel(model);
     this.maxTokensPerBatch = MAX_TOKENS_PER_BATCH;
+    this.advancedSettings = advancedSettings || {};
+
+    // Context settings (disabled by default)
+    this.enableBatchContext = this.advancedSettings.enableBatchContext === true;
+    this.contextSize = parseInt(this.advancedSettings.contextSize) || 3;
+
+    log.debug(() => `[TranslationEngine] Initialized with model: ${model || 'unknown'}, batch size: ${this.batchSize}, batch context: ${this.enableBatchContext ? 'enabled' : 'disabled'}`);
   }
 
   /**
@@ -66,13 +108,19 @@ class TranslationEngine {
       const batch = batches[batchIndex];
 
       try {
+        // Prepare context for this batch (if enabled)
+        const context = this.enableBatchContext
+          ? this.prepareContextForBatch(batch, entries, translatedEntries, batchIndex)
+          : null;
+
         // Translate batch (with auto-chunking if needed)
         const translatedBatch = await this.translateBatch(
           batch,
           targetLanguage,
           customPrompt,
           batchIndex,
-          batches.length
+          batches.length,
+          context
         );
 
         // Merge translated text with original structure
@@ -159,18 +207,62 @@ class TranslationEngine {
   }
 
   /**
+   * Prepare context for a batch (original surrounding entries + previous translations)
+   * Context improves translation coherence across batches
+   * @param {Array} batch - Current batch entries
+   * @param {Array} allOriginalEntries - All original entries
+   * @param {Array} translatedSoFar - Previously translated entries
+   * @param {number} batchIndex - Current batch index
+   * @returns {Object} - Context object with surrounding and previous entries
+   */
+  prepareContextForBatch(batch, allOriginalEntries, translatedSoFar, batchIndex) {
+    if (!this.enableBatchContext) {
+      return null;
+    }
+
+    const firstEntryId = batch[0].id;
+    const lastEntryId = batch[batch.length - 1].id;
+
+    // Get surrounding context from original entries (before the batch)
+    const surroundingStartIdx = Math.max(0, firstEntryId - 1 - this.contextSize);
+    const surroundingEndIdx = firstEntryId - 1;
+    const surroundingContext = [];
+
+    for (let i = surroundingStartIdx; i <= surroundingEndIdx && i < allOriginalEntries.length; i++) {
+      if (allOriginalEntries[i]) {
+        surroundingContext.push({
+          id: allOriginalEntries[i].id,
+          text: allOriginalEntries[i].text,
+          timecode: allOriginalEntries[i].timecode
+        });
+      }
+    }
+
+    // Get previous translations (last N entries that were already translated)
+    const previousTranslations = translatedSoFar.slice(Math.max(0, translatedSoFar.length - this.contextSize));
+
+    // Only include context if this is NOT the first batch
+    const hasContext = batchIndex > 0 && (surroundingContext.length > 0 || previousTranslations.length > 0);
+
+    return hasContext ? {
+      surroundingOriginal: surroundingContext,
+      previousTranslations: previousTranslations
+    } : null;
+  }
+
+  /**
    * Translate a batch of entries (with auto-chunking if needed)
    */
-  async translateBatch(batch, targetLanguage, customPrompt, batchIndex, totalBatches) {
+  async translateBatch(batch, targetLanguage, customPrompt, batchIndex, totalBatches, context = null) {
     // Check cache first
     const cacheResults = this.checkBatchCache(batch, targetLanguage, customPrompt);
     if (cacheResults.allCached) {
       return cacheResults.entries;
     }
 
-    // Prepare batch text
-    const batchText = this.prepareBatchText(batch);
-    const prompt = this.createBatchPrompt(batchText, targetLanguage, customPrompt, batch.length);
+    // Prepare batch text (with context if provided)
+    const batchText = this.prepareBatchText(batch, context);
+    const prompt = this.createBatchPrompt(batchText, targetLanguage, customPrompt, batch.length, context);
 
     // Check if we need to split due to token limits
     const estimatedTokens = this.gemini.estimateTokenCount(batchText + prompt);
@@ -184,15 +276,17 @@ class TranslationEngine {
       const secondHalf = batch.slice(midpoint);
 
       // Translate sequentially to avoid memory spikes
-      const firstTranslated = await this.translateBatch(firstHalf, targetLanguage, customPrompt, batchIndex, totalBatches);
-      const secondTranslated = await this.translateBatch(secondHalf, targetLanguage, customPrompt, batchIndex, totalBatches);
+      // Note: Don't pass context to recursive calls - context already included in original batch text
+      const firstTranslated = await this.translateBatch(firstHalf, targetLanguage, customPrompt, batchIndex, totalBatches, null);
+      const secondTranslated = await this.translateBatch(secondHalf, targetLanguage, customPrompt, batchIndex, totalBatches, null);
 
       return [...firstTranslated, ...secondTranslated];
     }
 
-    // Translate batch - with retry on PROHIBITED_CONTENT error
+    // Translate batch - with retry on PROHIBITED_CONTENT and MAX_TOKENS errors
     let translatedText;
     let prohibitedRetryAttempted = false;
+    let maxTokensRetryAttempted = false;
 
     try {
       translatedText = await this.gemini.translateSubtitle(
@@ -202,8 +296,27 @@ class TranslationEngine {
         prompt
       );
     } catch (error) {
+      // If MAX_TOKENS error and haven't retried yet, retry once
+      if (error.message && (error.message.includes('MAX_TOKENS') || error.message.includes('exceeded maximum token limit')) && !maxTokensRetryAttempted) {
+        maxTokensRetryAttempted = true;
+        log.warn(() => `[TranslationEngine] MAX_TOKENS error detected, retrying batch ${batchIndex + 1} once`);
+
+        try {
+          translatedText = await this.gemini.translateSubtitle(
+            batchText,
+            'detected',
+            targetLanguage,
+            prompt
+          );
+          log.info(() => `[TranslationEngine] MAX_TOKENS retry succeeded for batch ${batchIndex + 1}`);
+        } catch (retryError) {
+          // Retry also failed, give up and throw the original error
+          log.error(() => `[TranslationEngine] MAX_TOKENS retry also failed for batch ${batchIndex + 1}: ${retryError.message}`);
+          throw error; // Throw original error, not retry error
+        }
+      }
       // If PROHIBITED_CONTENT error and haven't retried yet, retry with modified prompt
-      if (error.message && error.message.includes('PROHIBITED_CONTENT') && !prohibitedRetryAttempted) {
+      else if (error.message && error.message.includes('PROHIBITED_CONTENT') && !prohibitedRetryAttempted) {
         prohibitedRetryAttempted = true;
         log.warn(() => `[TranslationEngine] PROHIBITED_CONTENT detected, retrying batch with modified prompt`);
 
@@ -224,7 +337,7 @@ class TranslationEngine {
           throw error; // Throw original error, not retry error
         }
       } else {
-        // Not a PROHIBITED_CONTENT error or already retried, throw as-is
+        // Not a retryable error or already retried, throw as-is
         throw error;
       }
     }
@@ -250,32 +363,79 @@ class TranslationEngine {
 
   /**
    * Prepare batch text for translation (numbered list format)
+   * Optionally includes context entries for better translation coherence
    */
-  prepareBatchText(batch) {
-    return batch.map((entry, index) => {
+  prepareBatchText(batch, context = null) {
+    let result = '';
+
+    // Add context section if provided
+    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
+      result += '=== CONTEXT (FOR REFERENCE ONLY - DO NOT TRANSLATE) ===\n\n';
+
+      // Add surrounding original context
+      if (context.surroundingOriginal && context.surroundingOriginal.length > 0) {
+        result += '--- Original Context (preceding entries) ---\n';
+        context.surroundingOriginal.forEach((entry, index) => {
+          const cleanText = entry.text.trim().replace(/\n+/g, '\n');
+          result += `[Context ${index + 1}] ${cleanText}\n\n`;
+        });
+      }
+
+      // Add previous translations
+      if (context.previousTranslations && context.previousTranslations.length > 0) {
+        result += '--- Previous Translations (recently translated) ---\n';
+        context.previousTranslations.forEach((entry, index) => {
+          const cleanText = entry.text.trim().replace(/\n+/g, '\n');
+          result += `[Translated ${index + 1}] ${cleanText}\n\n`;
+        });
+      }
+
+      result += '=== END OF CONTEXT ===\n\n';
+      result += '=== ENTRIES TO TRANSLATE (translate these) ===\n\n';
+    }
+
+    // Add batch entries to translate
+    const batchText = batch.map((entry, index) => {
       const num = index + 1;
       const cleanText = entry.text.trim().replace(/\n+/g, '\n');
       return `${num}. ${cleanText}`;
     }).join('\n\n');
+
+    result += batchText;
+
+    return result;
   }
 
   /**
    * Create translation prompt for a batch
    */
-  createBatchPrompt(batchText, targetLanguage, customPrompt, expectedCount) {
+  createBatchPrompt(batchText, targetLanguage, customPrompt, expectedCount, context = null) {
     if (customPrompt) {
       return customPrompt.replace('{target_language}', targetLanguage);
     }
 
-    return `You are translating subtitle text to ${targetLanguage}.
+    let contextInstructions = '';
+    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
+      contextInstructions = `
+CONTEXT PROVIDED:
+- Context entries are provided for reference to maintain coherence and consistency
+- Context entries are marked with [Context N] or [Translated N]
+- DO NOT translate context entries - they are for reference only
+- Use the context to understand dialogue flow, character names, and references
+- ONLY translate the numbered entries (1. 2. 3. etc.)
 
+`;
+    }
+
+    return `You are translating subtitle text to ${targetLanguage}.
+${contextInstructions}
 CRITICAL RULES:
-1. Translate ONLY the text content
+1. Translate ONLY the numbered text entries (1. 2. 3. etc.)
 2. PRESERVE the numbering exactly (1. 2. 3. etc.)
 3. Return EXACTLY ${expectedCount} numbered entries
 4. Keep line breaks within each entry
 5. Maintain natural dialogue flow for ${targetLanguage}
-6. Use appropriate colloquialisms for ${targetLanguage}
+6. Use appropriate colloquialisms for ${targetLanguage}${context ? '\n7. Use the provided context to ensure consistency with previous translations' : ''}
 
 DO NOT add ANY acknowledgements, explanations, notes, or commentary.
 Do not add alternative translations
@@ -284,6 +444,7 @@ Do not merge or split entries
 Do not change the numbering
 Do not add extra entries
 Do not include any timestamps/timecodes or time ranges
+${context ? 'Do not translate context entries - only translate numbered entries' : ''}
 
 YOUR RESPONSE MUST:
 - Start immediately with "1." (the first entry)

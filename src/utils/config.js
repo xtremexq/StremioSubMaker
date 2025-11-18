@@ -123,8 +123,11 @@ function normalizeConfig(config) {
     config = migrateOldConfig(config);
   }
 
-  // Merge with defaults to ensure all fields exist
-  const defaults = getDefaultConfig();
+  // Determine the model to use (from config or default)
+  const configModel = config.geminiModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash-preview-09-2025';
+
+  // Get model-specific defaults based on the selected model
+  const defaults = getDefaultConfig(configModel);
   const mergedConfig = {
     ...defaults,
     ...config,
@@ -197,6 +200,12 @@ function normalizeConfig(config) {
   // Keep old tempCache for backward compatibility
   mergedConfig.tempCache = mergedConfig.bypassCacheConfig;
 
+  // Show all Gemini API configs that will be used
+  const thinkingDisplay = mergedConfig.advancedSettings.thinkingBudget === -1 ? 'dynamic' :
+                         mergedConfig.advancedSettings.thinkingBudget === 0 ? 'disabled' :
+                         mergedConfig.advancedSettings.thinkingBudget;
+  log.debug(() => `[Config] Gemini API config: model=${mergedConfig.geminiModel}, temperature=${mergedConfig.advancedSettings.temperature}, topK=${mergedConfig.advancedSettings.topK}, topP=${mergedConfig.advancedSettings.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${mergedConfig.advancedSettings.maxOutputTokens}, timeout=${mergedConfig.advancedSettings.translationTimeout}s, maxRetries=${mergedConfig.advancedSettings.maxRetries}`);
+
   return mergedConfig;
 }
 
@@ -242,22 +251,62 @@ function encodeConfig(config) {
 }
 
 /**
+ * Model-specific default configurations
+ * Each model has its own optimal settings for thinking and temperature
+ */
+const MODEL_SPECIFIC_DEFAULTS = {
+  'gemini-2.5-flash-lite-preview-09-2025': {
+    thinkingBudget: 0,      // No thinking for lite model
+    temperature: 0.8        // Higher temperature for creativity
+  },
+  'gemini-2.5-flash-preview-09-2025': {
+    thinkingBudget: -1,     // Dynamic thinking for flash model
+    temperature: 0.5        // Lower temperature for consistency
+  }
+};
+
+/**
+ * Get model-specific defaults for thinking and temperature
+ * @param {string} modelName - The Gemini model name
+ * @returns {Object} - Model-specific settings { thinkingBudget, temperature }
+ */
+function getModelSpecificDefaults(modelName) {
+  return MODEL_SPECIFIC_DEFAULTS[modelName] || {
+    thinkingBudget: 0,
+    temperature: 0.8
+  };
+}
+
+/**
  * Get default configuration
+ * @param {string} modelName - Optional model name to get model-specific defaults
  * @returns {Object} - Default configuration
  */
-function getDefaultConfig() {
-  // Read advanced settings from environment variables with fallback defaults
+function getDefaultConfig(modelName = null) {
+  // Determine the model to use for defaults
+  const effectiveModel = modelName || process.env.GEMINI_MODEL || 'gemini-2.5-flash-preview-09-2025';
+  const modelDefaults = getModelSpecificDefaults(effectiveModel);
+
+  // Read advanced settings from environment variables with fallback to model-specific defaults
   const advancedSettings = {
     maxOutputTokens: parseInt(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 65536,
     chunkSize: 12000,
     translationTimeout: parseInt(process.env.GEMINI_TRANSLATION_TIMEOUT) || 600, // seconds
     maxRetries: process.env.GEMINI_MAX_RETRIES !== undefined ? parseInt(process.env.GEMINI_MAX_RETRIES) : 3,
-    // Extended thinking (0 = disabled, -1 = dynamic, >0 = fixed budget)
-    thinkingBudget: process.env.GEMINI_THINKING_BUDGET !== undefined ? parseInt(process.env.GEMINI_THINKING_BUDGET) : 0,
-    // Sampling parameters
-    temperature: process.env.GEMINI_TEMPERATURE !== undefined ? parseFloat(process.env.GEMINI_TEMPERATURE) : 0.8,
+    // Extended thinking (priority: .env > model-specific > global default)
+    thinkingBudget: process.env.GEMINI_THINKING_BUDGET !== undefined
+      ? parseInt(process.env.GEMINI_THINKING_BUDGET)
+      : modelDefaults.thinkingBudget,
+    // Sampling parameters (priority: .env > model-specific > global default)
+    temperature: process.env.GEMINI_TEMPERATURE !== undefined
+      ? parseFloat(process.env.GEMINI_TEMPERATURE)
+      : modelDefaults.temperature,
     topK: process.env.GEMINI_TOP_K !== undefined ? parseInt(process.env.GEMINI_TOP_K) : 40,
-    topP: process.env.GEMINI_TOP_P !== undefined ? parseFloat(process.env.GEMINI_TOP_P) : 0.95
+    topP: process.env.GEMINI_TOP_P !== undefined ? parseFloat(process.env.GEMINI_TOP_P) : 0.95,
+    // Batch context: Include original surrounding context and previous translations for better coherence
+    // Disabled by default for performance (can be enabled for improved translation quality)
+    enableBatchContext: process.env.ENABLE_BATCH_CONTEXT === 'true' ? true : false,
+    contextSize: parseInt(process.env.BATCH_CONTEXT_SIZE) || 3 // Number of surrounding entries to include as context
   };
 
   return {
@@ -266,8 +315,8 @@ function getDefaultConfig() {
     sourceLanguages: [],
     targetLanguages: [],
     geminiApiKey: '',
-    // Use env variable for model if set, otherwise use default
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite-preview-09-2025',
+    // Use effective model (from parameter, env variable, or default)
+    geminiModel: effectiveModel,
     translationPrompt: DEFAULT_TRANSLATION_PROMPT,
     subtitleProviders: {
       opensubtitles: {
@@ -422,6 +471,7 @@ module.exports = {
   parseConfig,
   encodeConfig,
   getDefaultConfig,
+  getModelSpecificDefaults,
   validateConfig,
   buildManifest,
   // Exported for async token resolution paths in routes

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker 1.2.7
+
+**Improvements:**
+- Model-specific default configurations: individual default settings for each model of the configuration page for different translation workflows
+- Entries batch size logic for translation changed from static to a dynamic model-based function
+- Default translation model changed from Flash-lite to Flash on configuration page
+- Translation engine now retries batch 1 time on MAX_TOKENS errors before failing to avoid discarding the whole translation
+- Enhanced debug logging: Comprehensive Gemini API configuration display showing all parameters (model, temperature, topK, topP, thinkingBudget, maxOutputTokens, timeout, maxRetries)
+- Optional batch context feature: Include original surrounding entries and previous translations when processing batches for improved translation coherence across batch boundaries (disabled by default, can be enabled in Advanced Settings with configurable context size 1-10)
+
 ## SubMaker 1.2.6
 
 **Bug Fixes:**

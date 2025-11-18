@@ -345,10 +345,10 @@ class SubDLService {
         return subtitleContent;
       }
 
-      // Fallback: support .vtt/.ass/.ssa
+      // Fallback: support .vtt/.ass/.ssa/.sub
       const altEntry = entries.find(filename => {
         const f = filename.toLowerCase();
-        return f.endsWith('.vtt') || f.endsWith('.ass') || f.endsWith('.ssa');
+        return f.endsWith('.vtt') || f.endsWith('.ass') || f.endsWith('.ssa') || f.endsWith('.sub');
       });
 
       if (altEntry) {
@@ -372,6 +372,33 @@ class SubDLService {
         if (lower.endsWith('.vtt')) {
           log.debug(() => `[SubDL] Keeping original VTT: ${altEntry}`);
           return raw;
+        }
+
+        // Handle MicroDVD .sub files (text-based, frame-based timing)
+        if (lower.endsWith('.sub')) {
+          // Check if it's MicroDVD format (text-based with {frame}{frame}text pattern)
+          const isMicroDVD = /^\s*\{\d+\}\{\d+\}/.test(raw);
+
+          if (isMicroDVD) {
+            log.debug(() => `[SubDL] Detected MicroDVD .sub format: ${altEntry}`);
+            try {
+              const subsrt = require('subsrt-ts');
+              // MicroDVD uses frame-based timing, need FPS for conversion
+              // Default to 25 FPS (PAL standard) - most common for European content
+              const fps = 25;
+              const converted = subsrt.convert(raw, { to: 'vtt', from: 'sub', fps: fps });
+
+              if (converted && typeof converted === 'string' && converted.trim().length > 0) {
+                log.debug(() => `[SubDL] Converted MicroDVD .sub to .vtt successfully (fps=${fps})`);
+                return converted;
+              }
+            } catch (subErr) {
+              log.error(() => ['[SubDL] Failed to convert MicroDVD .sub to .vtt:', subErr.message]);
+            }
+          } else {
+            // VobSub (binary/image-based) - not supported, requires OCR
+            log.warn(() => `[SubDL] Detected VobSub .sub format (binary/image-based): ${altEntry} - not supported, skipping`);
+          }
         }
 
         // Try library conversion first (to VTT)

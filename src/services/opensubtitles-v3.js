@@ -317,7 +317,7 @@ class OpenSubtitlesV3Service {
             log.debug(() => '[OpenSubtitles V3] Extracted .srt from ZIP');
             return srt;
           }
-          const altEntry = entries.find(f => { const l=f.toLowerCase(); return l.endsWith('.vtt') || l.endsWith('.ass') || l.endsWith('.ssa'); });
+          const altEntry = entries.find(f => { const l=f.toLowerCase(); return l.endsWith('.vtt') || l.endsWith('.ass') || l.endsWith('.ssa') || l.endsWith('.sub'); });
           if (altEntry) {
             const uint8 = await zip.files[altEntry].async('uint8array');
             const abuf = Buffer.from(uint8);
@@ -331,6 +331,27 @@ class OpenSubtitlesV3Service {
 
             const lname = altEntry.toLowerCase();
             if (lname.endsWith('.vtt')) return raw;
+
+            // Handle MicroDVD .sub files (text-based, frame-based timing)
+            if (lname.endsWith('.sub')) {
+              const isMicroDVD = /^\s*\{\d+\}\{\d+\}/.test(raw);
+              if (isMicroDVD) {
+                log.debug(() => `[OpenSubtitles V3] Detected MicroDVD .sub format: ${altEntry}`);
+                try {
+                  const subsrt = require('subsrt-ts');
+                  const fps = 25;
+                  const converted = subsrt.convert(raw, { to: 'vtt', from: 'sub', fps: fps });
+                  if (converted && typeof converted === 'string' && converted.trim().length > 0) {
+                    log.debug(() => `[OpenSubtitles V3] Converted MicroDVD .sub to .vtt successfully (fps=${fps})`);
+                    return converted;
+                  }
+                } catch (subErr) {
+                  log.error(() => ['[OpenSubtitles V3] Failed to convert MicroDVD .sub to .vtt:', subErr.message]);
+                }
+              } else {
+                log.warn(() => `[OpenSubtitles V3] Detected VobSub .sub format (binary/image-based): ${altEntry} - not supported, skipping`);
+              }
+            }
 
             try {
               const subsrt = require('subsrt-ts');
