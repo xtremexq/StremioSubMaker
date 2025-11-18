@@ -112,6 +112,17 @@ class SessionManager {
         this.autoSaveInterval = options.autoSaveInterval || 60 * 1000; // 1 minute
         this.shutdownTimeout = options.shutdownTimeout || 10 * 1000; // 10 seconds for shutdown save
 
+        // Storage session limits (defense-in-depth)
+        this.storageMaxSessions = (Number.isFinite(options.storageMaxSessions) && options.storageMaxSessions > 0)
+            ? options.storageMaxSessions
+            : null; // Default: 90k from index.js
+        this.storageMaxAge = options.storageMaxAge || 90 * 24 * 60 * 60 * 1000; // 90 days default
+
+        // Session monitoring and alerting
+        this.lastStorageCount = 0;
+        this.lastEvictionCount = 0;
+        this.evictionHistory = []; // Track evictions for spike detection (last 10 cleanups)
+
         // Ensure data directory exists
         this.ensureDataDir();
 
@@ -120,9 +131,10 @@ class SessionManager {
             ttl: this.maxAge,
             updateAgeOnGet: true, // Refresh TTL on access (sliding expiration)
             updateAgeOnHas: false,
-            // Dispose callback for cleanup
+            // Dispose callback for cleanup - tracks evictions for spike detection
             dispose: (value, key) => {
-                log.debug(() => `[SessionManager] Session expired: ${key}`);
+                this.lastEvictionCount++;
+                log.debug(() => `[SessionManager] Session evicted from memory: ${key}`);
             }
         };
         if (this.maxSessions) {
@@ -465,21 +477,45 @@ class SessionManager {
 
     /**
      * Get session statistics
-     * @returns {Object} Statistics
+     * @returns {Promise<Object>} Statistics
      */
-    getStats() {
-            const storageType = process.env.STORAGE_TYPE || 'filesystem';
-            return {
-                activeSessions: this.cache.size,
-                maxSessions: this.maxSessions || null,
-                maxAge: this.maxAge,
-                persistencePath: this.persistencePath,
-                storageType: storageType,
-                // Note: In Redis mode with lazy loading, activeSessions is only in-memory count
-                // Sessions in storage but not loaded in memory are NOT counted
-                isLazyLoadingMode: storageType === 'redis' && process.env.SESSION_PRELOAD !== 'true'
-            };
+    async getStats() {
+        const storageType = process.env.STORAGE_TYPE || 'filesystem';
+        const storageCount = await this.getStorageSessionCount();
+
+        return {
+            activeSessions: this.cache.size,
+            maxSessions: this.maxSessions || null,
+            storageSessionCount: storageCount,
+            storageMaxSessions: this.storageMaxSessions || null,
+            storageUtilization: this.storageMaxSessions ? (storageCount / this.storageMaxSessions * 100).toFixed(2) + '%' : 'N/A',
+            maxAge: this.maxAge,
+            storageMaxAge: this.storageMaxAge,
+            persistencePath: this.persistencePath,
+            storageType: storageType,
+            lastEvictionCount: this.lastEvictionCount,
+            // Note: In Redis mode with lazy loading, activeSessions is only in-memory count
+            // Sessions in storage but not loaded in memory are NOT counted in activeSessions
+            isLazyLoadingMode: storageType === 'redis' && process.env.SESSION_PRELOAD !== 'true'
+        };
+    }
+
+    /**
+     * Get total number of sessions in storage
+     * @returns {Promise<number>} Total session count
+     */
+    async getStorageSessionCount() {
+        try {
+            const adapter = await getStorageAdapter();
+            const keys = await adapter.list(StorageAdapter.CACHE_TYPES.SESSION, '*');
+            // Filter to only valid session tokens (32 hex chars)
+            const validKeys = keys.filter(token => /^[a-f0-9]{32}$/.test(token));
+            return validKeys.length;
+        } catch (err) {
+            log.error(() => ['[SessionManager] Failed to count storage sessions:', err.message]);
+            return 0;
         }
+    }
 
     /**
      * Attempt to load a session directly from storage (cross-instance support)
@@ -707,9 +743,118 @@ class SessionManager {
     }
 
     /**
+     * Purge oldest accessed sessions from storage
+     * @param {number} count - Number of sessions to purge
+     * @returns {Promise<number>} Number of sessions purged
+     */
+    async purgeOldestSessions(count = 100) {
+        try {
+            const adapter = await getStorageAdapter();
+            const keys = await adapter.list(StorageAdapter.CACHE_TYPES.SESSION, '*');
+
+            // Filter to valid session tokens only
+            const validTokens = keys.filter(token => /^[a-f0-9]{32}$/.test(token));
+
+            if (validTokens.length === 0) {
+                return 0;
+            }
+
+            // Load session metadata (lastAccessedAt) for all sessions
+            const sessionsWithMetadata = [];
+            for (const token of validTokens) {
+                try {
+                    const sessionData = await adapter.get(token, StorageAdapter.CACHE_TYPES.SESSION);
+                    if (sessionData) {
+                        sessionsWithMetadata.push({
+                            token,
+                            lastAccessedAt: sessionData.lastAccessedAt || sessionData.createdAt || 0
+                        });
+                    }
+                } catch (err) {
+                    log.debug(() => `[SessionManager] Failed to load session metadata for ${token}: ${err.message}`);
+                }
+            }
+
+            // Sort by lastAccessedAt (oldest first)
+            sessionsWithMetadata.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
+
+            // Purge the oldest N sessions
+            const toPurge = sessionsWithMetadata.slice(0, Math.min(count, sessionsWithMetadata.length));
+            let purged = 0;
+
+            for (const { token } of toPurge) {
+                try {
+                    await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION);
+                    // Also remove from memory cache if present
+                    this.cache.delete(token);
+                    purged++;
+                } catch (err) {
+                    log.error(() => [`[SessionManager] Failed to purge session ${token}:`, err.message]);
+                }
+            }
+
+            if (purged > 0) {
+                log.warn(() => `[SessionManager] Storage cleanup: purged ${purged} oldest accessed sessions`);
+            }
+
+            return purged;
+        } catch (err) {
+            log.error(() => ['[SessionManager] Failed to purge oldest sessions:', err.message]);
+            return 0;
+        }
+    }
+
+    /**
+     * Check storage session count and run cleanup if approaching limit
+     * @returns {Promise<void>}
+     */
+    async checkStorageLimitAndCleanup() {
+        if (!this.storageMaxSessions) {
+            return; // No storage limit configured
+        }
+
+        try {
+            const storageCount = await this.getStorageSessionCount();
+            const utilizationPercent = (storageCount / this.storageMaxSessions) * 100;
+
+            // Alert if approaching limit (>80%)
+            if (utilizationPercent > 80) {
+                log.warn(() => `[SessionManager] Storage session count approaching limit: ${storageCount} / ${this.storageMaxSessions} (${utilizationPercent.toFixed(1)}%)`);
+            }
+
+            // Run cleanup if at or above 90% of limit
+            if (utilizationPercent >= 90) {
+                const sessionsToRemove = Math.max(100, Math.floor(storageCount - (this.storageMaxSessions * 0.85))); // Target 85% utilization
+                log.warn(() => `[SessionManager] Storage limit reached (${utilizationPercent.toFixed(1)}%), purging ${sessionsToRemove} oldest sessions`);
+                const purged = await this.purgeOldestSessions(sessionsToRemove);
+
+                if (purged < sessionsToRemove) {
+                    log.error(() => `[SessionManager] ALERT: Only purged ${purged} / ${sessionsToRemove} sessions - storage may be exhausted!`);
+                }
+            }
+
+            // Track storage count changes for abnormal growth detection
+            if (this.lastStorageCount > 0) {
+                const growth = storageCount - this.lastStorageCount;
+                const growthPercent = (growth / this.lastStorageCount) * 100;
+
+                // Alert on abnormal growth (>20% increase in 1 hour)
+                if (growthPercent > 20) {
+                    log.warn(() => `[SessionManager] ALERT: Abnormal session growth detected: +${growth} sessions (+${growthPercent.toFixed(1)}%) in the last hour`);
+                }
+            }
+
+            this.lastStorageCount = storageCount;
+        } catch (err) {
+            log.error(() => ['[SessionManager] Storage limit check failed:', err.message]);
+        }
+    }
+
+    /**
      * Start memory cleanup interval
      * Periodically removes old sessions from memory to prevent unbounded growth
      * Sessions are still preserved in persistent storage and will be loaded on next access
+     * Also runs storage cleanup when approaching storage limits
      */
     startMemoryCleanup() {
         if (this.cleanupTimer) {
@@ -719,12 +864,13 @@ class SessionManager {
         // Run cleanup every hour (less frequent than auto-save)
         const cleanupInterval = 60 * 60 * 1000; // 1 hour
 
-        this.cleanupTimer = setInterval(() => {
+        this.cleanupTimer = setInterval(async () => {
             try {
                 const now = Date.now();
                 const memoryThreshold = 30 * 24 * 60 * 60 * 1000; // 30 days - sessions older than this in memory get evicted
-                let evictedCount = 0;
+                let memoryEvictedCount = 0;
                 const initialSize = this.cache.size;
+                const previousEvictionCount = this.lastEvictionCount;
 
                 // Iterate through cache and evict sessions that haven't been accessed in 30 days
                 // They remain in persistent storage and will be loaded if accessed again
@@ -734,14 +880,37 @@ class SessionManager {
                     // If session hasn't been accessed in 30 days, remove from memory
                     if (timeSinceLastAccess > memoryThreshold) {
                         this.cache.delete(token);
-                        evictedCount++;
+                        memoryEvictedCount++;
                     }
                 }
 
-                if (evictedCount > 0) {
-                    log.info(() => `[SessionManager] Memory cleanup: evicted ${evictedCount} old sessions from memory (${initialSize} → ${this.cache.size})`);
+                if (memoryEvictedCount > 0) {
+                    log.info(() => `[SessionManager] Memory cleanup: evicted ${memoryEvictedCount} old sessions from memory (${initialSize} → ${this.cache.size})`);
                     log.debug(() => '[SessionManager] Evicted sessions remain in persistent storage and will reload if accessed');
                 }
+
+                // Track eviction history for spike detection
+                const totalEvictionsSinceLastCheck = this.lastEvictionCount - previousEvictionCount;
+                this.evictionHistory.push(totalEvictionsSinceLastCheck);
+
+                // Keep only last 10 cleanup cycles
+                if (this.evictionHistory.length > 10) {
+                    this.evictionHistory.shift();
+                }
+
+                // Detect eviction spikes (current evictions > 3x average)
+                if (this.evictionHistory.length >= 3) {
+                    const avgEvictions = this.evictionHistory.slice(0, -1).reduce((sum, val) => sum + val, 0) / (this.evictionHistory.length - 1);
+                    if (totalEvictionsSinceLastCheck > avgEvictions * 3 && totalEvictionsSinceLastCheck > 100) {
+                        log.warn(() => `[SessionManager] ALERT: Eviction spike detected! ${totalEvictionsSinceLastCheck} evictions (avg: ${avgEvictions.toFixed(0)})`);
+                    }
+                }
+
+                // Reset eviction counter for next cycle
+                this.lastEvictionCount = 0;
+
+                // Run storage cleanup check
+                await this.checkStorageLimitAndCleanup();
             } catch (err) {
                 log.error(() => ['[SessionManager] Memory cleanup failed:', err.message]);
             }

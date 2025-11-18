@@ -38,11 +38,14 @@ const { runStartupValidation } = require('./src/utils/startupValidation');
 const PORT = process.env.PORT || 7001;
 
 // Initialize session manager with environment-based configuration
-// Limit to 50,000 sessions to prevent unbounded memory growth while allowing for production scale
+// Memory limit: 30,000 sessions (LRU eviction) - reduced from 50k to balance memory usage
+// Storage limit: 90,000 sessions (oldest-accessed purge at 90 days) - new cap to prevent unbounded growth
 const sessionOptions = {
-    maxSessions: parseInt(process.env.SESSION_MAX_SESSIONS) || 50000, // Limit to 50k concurrent sessions
+    maxSessions: parseInt(process.env.SESSION_MAX_SESSIONS) || 30000, // Limit to 30k concurrent in-memory sessions
     maxAge: parseInt(process.env.SESSION_MAX_AGE) || 90 * 24 * 60 * 60 * 1000, // 90 days (3 months)
-    persistencePath: process.env.SESSION_PERSISTENCE_PATH || path.join(process.cwd(), 'data', 'sessions.json')
+    persistencePath: process.env.SESSION_PERSISTENCE_PATH || path.join(process.cwd(), 'data', 'sessions.json'),
+    storageMaxSessions: parseInt(process.env.SESSION_STORAGE_MAX_SESSIONS) || 90000, // Limit to 90k sessions in storage
+    storageMaxAge: parseInt(process.env.SESSION_STORAGE_MAX_AGE) || 90 * 24 * 60 * 60 * 1000 // 90 days storage retention
 };
 // Only override autoSaveInterval if explicitly provided via env; otherwise let SessionManager default apply
 if (process.env.SESSION_SAVE_INTERVAL) {
@@ -349,6 +352,21 @@ const fileTranslationLimiter = rateLimit({
     }
 });
 
+// Security: Rate limiting for session creation (prevents session flooding attacks)
+// CRITICAL: Uses IP-based limiting to prevent single user from monopolizing global session pool
+const sessionCreationLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 10, // 10 session creations per hour per IP
+    message: 'Too many session creation requests from this IP. Please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Always use IP for session creation rate limiting (not config hash)
+    // This prevents attackers from bypassing the limit by changing configs
+    keyGenerator: (req) => {
+        return `session-create:${ipKeyGenerator(req.ip)}`;
+    }
+});
+
 // Enable gzip compression for all responses
 // SRT files compress extremely well (typically 5-10x reduction)
 // Use maximum compression (level 9) for best bandwidth savings
@@ -569,7 +587,7 @@ app.get('/health', async (req, res) => {
                 caches: cacheSizes
             },
             memory,
-            sessions: sessionManager.getStats()
+            sessions: await sessionManager.getStats()
         });
     } catch (error) {
         log.error(() => `[Health] Error: ${error.message}`);
@@ -991,7 +1009,8 @@ app.post('/api/validate-gemini', async (req, res) => {
 });
 
 // API endpoint to create a session (production mode)
-app.post('/api/create-session', async (req, res) => {
+// Apply rate limiting to prevent session flooding attacks
+app.post('/api/create-session', sessionCreationLimiter, async (req, res) => {
     try {
         const config = req.body;
 
@@ -1032,7 +1051,8 @@ app.post('/api/create-session', async (req, res) => {
 });
 
 // API endpoint to update an existing session
-app.post('/api/update-session/:token', async (req, res) => {
+// Apply rate limiting to prevent session flooding attacks (update can create new sessions)
+app.post('/api/update-session/:token', sessionCreationLimiter, async (req, res) => {
     try {
         const { token } = req.params;
         const config = req.body;
@@ -1096,9 +1116,9 @@ app.post('/api/update-session/:token', async (req, res) => {
 });
 
 // API endpoint to get session statistics (for monitoring)
-app.get('/api/session-stats', (req, res) => {
+app.get('/api/session-stats', async (req, res) => {
     try {
-        const stats = sessionManager.getStats();
+        const stats = await sessionManager.getStats();
         res.json({ ...stats, version });
     } catch (error) {
         log.error(() => '[Session API] Error getting stats:', error);
@@ -3935,7 +3955,9 @@ app.use((error, req, res, next) => {
     const logDir = process.env.LOG_DIR || 'logs/';
     const storageType = (process.env.STORAGE_TYPE || 'filesystem').toUpperCase();
     // Session stats (after readiness, so counts are accurate)
-    const { activeSessions, maxSessions } = sessionManager.getStats();
+    // Use synchronous access to cache size for startup banner (storage count requires async)
+    const activeSessions = sessionManager.cache.size;
+    const maxSessions = sessionManager.maxSessions;
     const sessionsInfo = maxSessions ? `${activeSessions} / ${maxSessions}` : String(activeSessions);
 
     // Use console.startup to ensure banner always shows regardless of log level
