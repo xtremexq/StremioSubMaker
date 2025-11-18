@@ -1270,6 +1270,18 @@ app.get('/addon/:config/subtitle/:fileId/:language.srt', searchLimiter, validate
             const cacheStats = getDownloadCacheStats();
             log.debug(() => `[Download Cache] HIT for ${fileId} in ${langCode} (${cachedContent.length} bytes) - Cache: ${cacheStats.size}/${cacheStats.max} entries, ${cacheStats.sizeMB}/${cacheStats.maxSizeMB}MB`);
 
+            // Validate cached content isn't corrupted (same check as download flow)
+            const minSize = Number(config.minSubtitleSizeBytes) || 200;
+            if (cachedContent.length < minSize) {
+                log.warn(() => `[Download Cache] Cached content too small (${cachedContent.length} bytes < ${minSize}). Serving corruption warning.`);
+                const { createInvalidSubtitleMessage } = require('./src/handlers/subtitles');
+                const errorMessage = createInvalidSubtitleMessage('The subtitle file is too small and seems corrupted.');
+                res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                res.setHeader('Content-Disposition', `attachment; filename="${fileId}.srt"`);
+                res.send(errorMessage);
+                return;
+            }
+
             // Decide headers based on content (serve VTT originals when applicable)
             const isVtt = (cachedContent || '').trimStart().startsWith('WEBVTT');
             if (isVtt) {

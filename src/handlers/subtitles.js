@@ -2669,6 +2669,7 @@ module.exports = {
   createLoadingSubtitle, // Export for loading message in translation endpoint
   createSessionTokenErrorSubtitle, // Export for session token error subtitle
   createOpenSubtitlesAuthErrorSubtitle, // Export for OpenSubtitles auth error subtitle
+  createInvalidSubtitleMessage, // Export for corrupted/invalid subtitle error message
   readFromPartialCache, // Export for checking in-flight partial results during duplicate requests
   translationStatus, // Export for safety block to check if translation is in progress
   /**
