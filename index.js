@@ -702,80 +702,45 @@ app.post('/api/gemini-models', async (req, res) => {
 
 app.post('/api/validate-subsource', async (req, res) => {
     try {
-        const { apiKey } = req.body;
+        const { apiKey } = req.body || {};
 
-        if (!apiKey) {
+        if (!apiKey || !String(apiKey).trim()) {
             return res.status(400).json({
                 valid: false,
                 error: 'API key is required'
             });
         }
 
-        const axios = require('axios');
-        const { httpAgent, httpsAgent, dnsLookup } = require('./src/utils/httpAgents');
-
-        // Make direct API call to test the key
-        // First get movie ID
-        const searchUrl = 'https://api.subsource.net/api/v1/movies/search?searchType=imdb&imdb=tt0133093';
+        // Reuse the dedicated SubSourceService which already
+        // sets all required headers, agents, DNS cache, and timeouts.
+        const SubSourceService = require('./src/services/subsource');
+        const subsource = new SubSourceService(String(apiKey).trim());
 
         try {
-            const movieResponse = await axios.get(searchUrl, {
-                headers: {
-                    'X-API-Key': apiKey.trim(),
-                    'api-key': apiKey.trim(),
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                },
-                timeout: 10000,
-                httpAgent,
-                httpsAgent,
-                lookup: dnsLookup
+            // A single lightweight movie search is enough to validate the key
+            // (The Matrix — imdb: tt0133093). This uses the service's axios client
+            // and inherits robust headers and a ~7s timeout with retries.
+            const resp = await subsource.client.get('/movies/search', {
+                params: { searchType: 'imdb', imdb: 'tt0133093' },
+                responseType: 'json'
             });
 
-            const movies = Array.isArray(movieResponse.data) ? movieResponse.data : (movieResponse.data.data || []);
+            const movies = Array.isArray(resp.data) ? resp.data : (resp.data?.data || []);
 
-            if (movies.length > 0) {
-                const movieId = movies[0].id || movies[0].movieId;
-
-                // Try to fetch subtitles with the movie ID
-                const subtitlesUrl = `https://api.subsource.net/api/v1/subtitles?movieId=${movieId}&language=english`;
-                const subtitlesResponse = await axios.get(subtitlesUrl, {
-                    headers: {
-                        'X-API-Key': apiKey.trim(),
-                        'api-key': apiKey.trim(),
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    },
-                    timeout: 10000,
-                    httpAgent,
-                    httpsAgent,
-                    lookup: dnsLookup
-                });
-
-                // If we got here without errors, API key is valid
-                const subtitles = Array.isArray(subtitlesResponse.data) ? subtitlesResponse.data : (subtitlesResponse.data.subtitles || subtitlesResponse.data.data || []);
-
-                res.json({
-                    valid: true,
-                    message: 'API key is valid',
-                    resultsCount: subtitles.length
-                });
-            } else {
-                // No movies found, but API key worked (no auth error)
-                res.json({
-                    valid: true,
-                    message: 'API key is valid',
-                    resultsCount: 0
-                });
-            }
+            return res.json({
+                valid: true,
+                message: 'API key is valid',
+                resultsCount: movies.length || 0
+            });
         } catch (apiError) {
-            // Check for authentication errors
-            if (apiError.response?.status === 401 || apiError.response?.status === 403) {
-                res.json({
-                    valid: false,
-                    error: 'Invalid API key - authentication failed'
-                });
-            } else {
-                throw apiError;
+            const status = apiError.response?.status;
+            if (status === 401 || status === 403) {
+                return res.json({ valid: false, error: 'Invalid API key - authentication failed' });
             }
+
+            // Surface a concise message
+            const upstream = apiError.response?.data?.error || apiError.response?.data?.message;
+            return res.json({ valid: false, error: upstream || apiError.message || 'Request failed' });
         }
     } catch (error) {
         res.json({

@@ -8,6 +8,8 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="shortcut icon" href="favicon.svg">
     <link rel="apple-touch-icon" href="favicon.svg">
+    <!-- Retro fonts for ghost hint -->
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Tiny5&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -103,6 +105,33 @@
             background: rgba(20, 25, 49, 0.85);
         }
 
+        /* Dark mode modal + components tuning */
+        [data-theme="dark"] .modal {
+            background:
+                linear-gradient(180deg, rgba(20, 25, 49, 0.92) 0%, rgba(20, 25, 49, 0.86) 100%),
+                var(--surface);
+            border-color: var(--border);
+            box-shadow: 0 24px 72px var(--shadow), 0 0 0 1px rgba(8, 164, 213, 0.12);
+        }
+        [data-theme="dark"] .modal-header {
+            background: linear-gradient(135deg, rgba(8, 164, 213, 0.06) 0%, rgba(51, 185, 225, 0.06) 100%);
+            border-bottom-color: var(--border);
+        }
+        [data-theme="dark"] .modal-footer {
+            background: var(--surface);
+            border-top-color: var(--border);
+        }
+        [data-theme="dark"] .reset-bar {
+            background: var(--surface);
+            border-color: var(--border);
+            box-shadow: 0 8px 24px var(--shadow);
+        }
+        [data-theme="dark"] .alert-info {
+            background: rgba(8, 164, 213, 0.16);
+            border-color: var(--primary);
+            color: var(--primary-light);
+        }
+
         [data-theme="dark"] input[type="text"],
         [data-theme="dark"] input[type="password"],
         [data-theme="dark"] select {
@@ -120,6 +149,18 @@
             background: rgba(20, 25, 49, 0.9);
             color: var(--text-primary);
             border-color: var(--border);
+        }
+
+        /* Dark/True Dark overrides for ghost hint color */
+        [data-theme="dark"] .ghost-hint .ghost-cta,
+        [data-theme="true-dark"] .ghost-hint .ghost-cta {
+            color: #ffffff;
+            mix-blend-mode: screen;
+        }
+        [data-theme="dark"] .ghost-hint .ghost-arrow,
+        [data-theme="true-dark"] .ghost-hint .ghost-arrow {
+            color: #ffffff;
+            mix-blend-mode: screen;
         }
 
         /* Fix radio button label backgrounds in dark mode */
@@ -151,6 +192,33 @@
 
         [data-theme="true-dark"] .card {
             background: rgba(10, 10, 10, 0.95);
+        }
+
+        /* True Dark mode modal + components tuning */
+        [data-theme="true-dark"] .modal {
+            background:
+                linear-gradient(180deg, rgba(10, 10, 10, 0.92) 0%, rgba(10, 10, 10, 0.86) 100%),
+                var(--surface);
+            border-color: var(--border);
+            box-shadow: 0 28px 84px var(--shadow), 0 0 0 1px rgba(8, 164, 213, 0.14);
+        }
+        [data-theme="true-dark"] .modal-header {
+            background: linear-gradient(135deg, rgba(8, 164, 213, 0.05) 0%, rgba(51, 185, 225, 0.05) 100%);
+            border-bottom-color: var(--border);
+        }
+        [data-theme="true-dark"] .modal-footer {
+            background: var(--surface);
+            border-top-color: var(--border);
+        }
+        [data-theme="true-dark"] .reset-bar {
+            background: var(--surface);
+            border-color: var(--border);
+            box-shadow: 0 10px 28px var(--shadow);
+        }
+        [data-theme="true-dark"] .alert-info {
+            background: rgba(8, 164, 213, 0.18);
+            border-color: var(--primary);
+            color: #d6f3ff;
         }
 
         [data-theme="true-dark"] input[type="text"],
@@ -742,6 +810,16 @@
             transform: none !important;
         }
 
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.12);
+            color: var(--danger);
+            border: 2px solid var(--danger);
+        }
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.18);
+            box-shadow: 0 10px 28px rgba(239, 68, 68, 0.25);
+        }
+
         .btn-group {
             display: flex;
             gap: 1rem;
@@ -1090,6 +1168,46 @@
             }
         }
 
+        /* Reset bar */
+        .reset-bar {
+            margin: 0;
+            padding: 1rem 1.25rem;
+            border: 2px dashed var(--border);
+            border-radius: 14px;
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            width: 100%;
+            max-width: 450px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .reset-bar .reset-text {
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+        .reset-btn {
+            appearance: none;
+            border: 2px solid var(--danger);
+            background: transparent;
+            color: var(--danger);
+            padding: 0.625rem 1rem;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+        .reset-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 28px var(--shadow);
+            background: rgba(239, 68, 68, 0.08);
+        }
+        .reset-btn:active { transform: translateY(0); }
+
+        /* (JS positions reset bar vertically in the gap) */
+
         /* Disabled file translation option */
         #fileTranslationEnabled:disabled {
             cursor: not-allowed;
@@ -1098,6 +1216,72 @@
 
         #fileTranslationEnabled:disabled + span {
             color: var(--text-secondary);
+        }
+
+        /* Ghost Hint (Easter Egg) — minimal, delicate */
+        .ghost-hint {
+            position: fixed;
+            left: 50%; /* JS will reposition near heart */
+            top: 60%;
+            transform: translateX(-50%) translateY(6px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.05rem; /* closer to the arrow */
+            opacity: 0;
+            pointer-events: none; /* only inner CTA is clickable */
+            z-index: 1200;
+            transition: opacity 0.45s ease, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .ghost-hint.show {
+            opacity: 0.75; /* much more visible */
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .ghost-hint .ghost-cta {
+            pointer-events: auto;
+            background: transparent;
+            border: none;
+            color: #000000; /* light mode: black for readability */
+            mix-blend-mode: normal;
+            padding: 0.05rem 0.25rem; /* even tighter */
+            border-radius: 6px;
+            font-size: 12px; /* +2px bigger */
+            line-height: 1; /* reduce vertical footprint */
+            font-family: 'Tiny5', 'Silkscreen', 'VT323', 'Press Start 2P', 'Courier New', monospace; /* retro, less wide */
+            font-weight: 400; /* lighter to reduce blur */
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+            letter-spacing: 0; /* reduce wide spacing for retro font */
+            text-transform: none;
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.15s ease, opacity 0.2s ease;
+            animation: ghostFloat 3.2s ease-in-out infinite;
+        }
+
+        .ghost-hint .ghost-cta:hover {
+            transform: translateY(-1px);
+            opacity: 0.6;
+        }
+
+        .ghost-hint .ghost-arrow {
+            font-size: 0.95rem;
+            line-height: 1;
+            color: #000000; /* light mode: black */
+            animation: arrowPulse 1.6s ease-in-out infinite;
+        }
+
+        @keyframes ghostFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-2px); }
+        }
+
+        @keyframes arrowPulse {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(2px); }
         }
 
         label:has(#fileTranslationEnabled:disabled) {
@@ -1129,34 +1313,89 @@
             display: flex;
         }
 
+        /* Fly-out animation for instructions modal */
+        .modal-overlay.fly-out {
+            animation: fadeOut 0.52s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            pointer-events: none;
+        }
+        .modal-overlay.fly-out .modal {
+            animation: flyToCorner 0.52s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            transform-origin: center center;
+        }
+
         .modal {
-            background: var(--bg-secondary);
-            border-radius: 24px;
-            max-width: 600px;
-            width: 90%;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.75) 100%),
+                var(--bg-secondary);
+            border-radius: 20px;
+            max-width: 640px;
+            width: 92%;
             max-height: 85vh;
             /* Clip scrollbars within rounded corners */
             overflow: hidden;
-            border: 2px solid var(--primary);
-            box-shadow: 0 20px 60px var(--glow), 0 0 0 1px rgba(8, 164, 213, 0.2);
-            animation: modalSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            border: 1px solid var(--border);
+            box-shadow: 0 24px 72px var(--shadow), 0 0 0 1px rgba(8, 164, 213, 0.14);
+            animation: modalSlideIn 0.42s cubic-bezier(0.22, 1, 0.36, 1);
             position: relative;
             display: flex;
             flex-direction: column;
+            backdrop-filter: blur(10px);
         }
 
         .modal-header {
-            padding: 2rem;
-            border-bottom: 2px solid var(--border);
-            background: linear-gradient(135deg, rgba(8, 164, 213, 0.10) 0%, rgba(51, 185, 225, 0.10) 100%);
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(135deg, rgba(8, 164, 213, 0.08) 0%, rgba(51, 185, 225, 0.08) 100%);
             position: sticky;
             top: 0;
             z-index: 1;
             backdrop-filter: blur(10px);
         }
 
+        /* Instructions mini floating button (FAB) */
+        .instructions-fab {
+            position: fixed;
+            bottom: 1.25rem;
+            right: 1.25rem;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: #ffffff;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            box-shadow: 0 12px 36px var(--glow);
+            z-index: 10001;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+            animation: fabPulse 2.2s ease-in-out infinite;
+        }
+        .instructions-fab:hover {
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 18px 48px var(--glow);
+        }
+        .instructions-fab.show { display: flex; }
+
+        /* Animations for overlay fade and fly trajectory */
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        @keyframes flyToCorner {
+            0%   { transform: translate(0, 0) scale(1);    opacity: 1; }
+            60%  { transform: translate(calc(28vw - 28px), calc(26vh)) scale(0.55); opacity: 0.98; }
+            100% { transform: translate(calc(40vw - 40px), calc(40vh)) scale(0.2); opacity: 0.95; }
+        }
+        @keyframes fabPulse {
+            0%, 100% { box-shadow: 0 12px 36px var(--glow); opacity: 0.95; }
+            50% { box-shadow: 0 18px 64px var(--glow); opacity: 1; }
+        }
+
         .modal-header h2 {
-            font-size: 1.75rem;
+            font-size: 1.5rem;
             font-weight: 700;
             background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary) 100%);
             -webkit-background-clip: text;
@@ -1175,7 +1414,7 @@
             width: 36px;
             height: 36px;
             background: var(--surface-light);
-            border: 2px solid var(--border);
+            border: 1px solid var(--border);
             border-radius: 8px;
             display: flex;
             align-items: center;
@@ -1194,7 +1433,7 @@
         }
 
         .modal-content {
-            padding: 2rem;
+            padding: 1.5rem;
             text-align: center;
             /* Make only content area scrollable */
             overflow: auto;
@@ -1251,8 +1490,8 @@
         }
 
         .modal-footer {
-            padding: 1.5rem 2rem;
-            border-top: 2px solid var(--border);
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border);
             display: flex;
             gap: 1rem;
             justify-content: flex-end;
@@ -1489,91 +1728,39 @@
             }
         }
 
-        /* Theme Toggle Button - styled like a retro ? block */
+        /* Theme Toggle Button */
         .theme-toggle {
             position: fixed;
             top: 2rem;
             right: 2rem;
-            width: 56px;
-            height: 56px;
-            border-radius: 14px;
+            width: 48px;
+            height: 48px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid var(--border);
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-weight: 700;
-            letter-spacing: 0.03em;
-            color: #fff;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-            transition:
-                transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-                box-shadow 0.3s ease,
-                background 0.35s ease,
-                filter 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
             z-index: 9999;
-            backdrop-filter: blur(12px);
-            --toggle-bg: radial-gradient(circle at 24% 28%, rgba(255, 255, 255, 0.75) 0, rgba(255, 255, 255, 0) 55%), linear-gradient(180deg, #fff9d3, #f4c750);
-            --toggle-border: #f28f00;
-            --toggle-outline: #a05d00;
-            --toggle-shadow: 0 6px 0 #d57a00, 0 18px 32px rgba(0, 0, 0, 0.45);
-            --toggle-hover-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-            --toggle-glow: rgba(255, 208, 70, 0.55);
-            background: var(--toggle-bg);
-            border: 3px solid var(--toggle-border);
-            outline: 2px solid var(--toggle-outline);
-            outline-offset: -6px;
-            box-shadow: var(--toggle-shadow);
-            filter: drop-shadow(0 0 22px var(--toggle-glow));
+            box-shadow: 0 4px 12px var(--shadow);
+            backdrop-filter: blur(10px);
+        }
+
+        [data-theme="dark"] .theme-toggle {
+            background: rgba(20, 25, 49, 0.9);
+            border-color: var(--border);
         }
 
         .theme-toggle:hover {
-            transform: translateY(-2px) scale(1.06);
-            box-shadow: var(--toggle-hover-shadow);
-            filter: drop-shadow(0 0 28px var(--toggle-glow));
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 20px var(--shadow);
+            border-color: var(--primary);
         }
 
         .theme-toggle:active {
             transform: translateY(0) scale(0.98);
-        }
-
-        [data-theme="light"] .theme-toggle {
-            --toggle-bg: radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.9) 0, rgba(255, 255, 255, 0) 55%), linear-gradient(180deg, #fff4c0, #f8c93d);
-            --toggle-border: #f5a400;
-            --toggle-outline: #c87b00;
-            --toggle-shadow: 0 6px 0 #c97b00, 0 20px 28px rgba(255, 173, 28, 0.5);
-            --toggle-hover-shadow: 0 12px 34px rgba(255, 166, 26, 0.6);
-            --toggle-glow: rgba(255, 214, 94, 0.6);
-        }
-
-        [data-theme="dark"] .theme-toggle {
-            --toggle-bg: radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.25) 0, rgba(255, 255, 255, 0) 55%), linear-gradient(180deg, #1f2d4d, #0d1326);
-            --toggle-border: #7f9efc;
-            --toggle-outline: #1c2644;
-            --toggle-shadow: 0 6px 0 #091129, 0 24px 40px rgba(7, 14, 33, 0.7);
-            --toggle-hover-shadow: 0 14px 36px rgba(7, 14, 33, 0.8);
-            --toggle-glow: rgba(99, 154, 255, 0.45);
-        }
-
-        [data-theme="true-dark"] .theme-toggle {
-            --toggle-bg: radial-gradient(circle at 22% 22%, rgba(135, 205, 255, 0.15) 0, rgba(135, 205, 255, 0) 45%), linear-gradient(180deg, #08080f, #030206);
-            --toggle-border: #4fc3ff;
-            --toggle-outline: #050505;
-            --toggle-shadow: 0 6px 0 #020205, 0 26px 44px rgba(0, 0, 0, 0.9);
-            --toggle-hover-shadow: 0 16px 40px rgba(3, 6, 18, 0.95);
-            --toggle-glow: rgba(128, 230, 255, 0.55);
-        }
-
-        /* Block bounce when hit */
-        @keyframes block-bounce {
-            0%   { transform: translateY(0); }
-            20%  { transform: translateY(-8px); }
-            40%  { transform: translateY(0); }
-            60%  { transform: translateY(-3px); }
-            100% { transform: translateY(0); }
-        }
-
-        .theme-toggle.block-hit {
-            animation: block-bounce 420ms ease-out;
         }
 
         .theme-toggle-icon {
@@ -1629,124 +1816,6 @@
                 font-size: 1.25rem;
             }
         }
-
-        .mario-stage {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            z-index: 9998; /* sit just below the toggle */
-        }
-
-        .plumber {
-            position: fixed;
-            bottom: 14px;
-            left: -60px;
-            width: 36px;
-            height: 36px;
-            transform-origin: 50% 100%;
-            image-rendering: pixelated;
-            filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.35));
-            transition: left 1400ms linear;
-        }
-
-        .plumber::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background:
-              linear-gradient(#b30000, #b30000) 6px 0/24px 10px no-repeat,
-              radial-gradient(circle at 18px 14px, #ffcc99 8px, transparent 9px),
-              linear-gradient(#d11, #b00) 6px 16px/24px 14px no-repeat,
-              linear-gradient(#223, #223) 8px 30px/8px 6px no-repeat,
-              linear-gradient(#223, #223) 20px 30px/8px 6px no-repeat,
-              linear-gradient(#432, #432) 6px 34px/12px 4px no-repeat,
-              linear-gradient(#432, #432) 18px 34px/12px 4px no-repeat,
-              linear-gradient(#d11, #b00) 0 18px/6px 10px no-repeat,
-              linear-gradient(#d11, #b00) 30px 18px/6px 10px no-repeat,
-              radial-gradient(circle at 3px 24px, #eee 3px, transparent 4px),
-              radial-gradient(circle at 33px 24px, #eee 3px, transparent 4px);
-            border-radius: 4px;
-        }
-
-        .plumber.face-right {
-            transform: scaleX(1);
-        }
-
-        .plumber.face-left {
-            transform: scaleX(-1);
-        }
-
-        .plumber.jump {
-            animation: plumber-jump 900ms cubic-bezier(.2, .9, .3, 1) forwards;
-        }
-
-        @keyframes plumber-jump {
-            0% {
-                transform: translateY(0) scale(var(--sx, 1), 1);
-            }
-            49% {
-                transform: translateY(var(--jump-height, -120px)) scale(var(--sx, 1), 1.08);
-            }
-            100% {
-                transform: translateY(0) scale(var(--sx, 1), 1);
-            }
-        }
-
-        .coin {
-            position: fixed;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: radial-gradient(circle at 35% 35%, #fff 0 20%, #f8e27a 21% 45%, #d9aa1f 46%);
-            box-shadow: 0 0 0 2px #b07a12 inset, 0 6px 12px rgba(0, 0, 0, 0.25);
-            transform: translate(-50%, -50%);
-            animation: coin-pop 700ms ease-out forwards;
-            z-index: 99999;
-            pointer-events: none;
-        }
-
-        @keyframes coin-pop {
-            0% {
-                opacity: 0;
-                transform: translate(-50%, -10%) scale(0.6);
-            }
-            15% {
-                opacity: 1;
-                transform: translate(-50%, -50%) scale(1);
-            }
-            60% {
-                opacity: 1;
-                transform: translate(-50%, -140%) scale(1);
-            }
-            100% {
-                opacity: 0;
-                transform: translate(-50%, -170%) scale(0.9);
-            }
-        }
-
-        .sparkle {
-            position: fixed;
-            width: 6px;
-            height: 6px;
-            background: radial-gradient(circle, #fff, #ffe08a 60%, transparent 61%);
-            border-radius: 50%;
-            opacity: 0.9;
-            animation: sparkle-fly 600ms ease-out forwards;
-            filter: drop-shadow(0 0 6px #ffd86b);
-            pointer-events: none;
-            z-index: 99999;
-        }
-
-        @keyframes sparkle-fly {
-            from {
-                transform: translate(0, 0) scale(1);
-                opacity: 1;
-            }
-            to {
-                transform: translate(var(--dx, 20px), var(--dy, -40px)) scale(0.6);
-                opacity: 0;
-            }
-        }
     </style>
 </head>
 <body>
@@ -1756,7 +1825,6 @@
         <span class="theme-toggle-icon moon">🌙</span>
         <span class="theme-toggle-icon blackhole">🕳️</span>
     </button>
-    <div id="marioStage" class="mario-stage" aria-hidden="true"></div>
 
     <div class="container">
         <div class="header">
@@ -2323,6 +2391,12 @@
                 <input type="text" id="installUrlDisplay" readonly>
             </div>
         </form>
+
+        <!-- Full Reset CTA (positioned vertically by JS) -->
+        <div id="resetBarWrapper" class="reset-bar">
+            <div class="reset-text">Any problems? Reset settings to default →</div>
+            <button type="button" id="resetSettingsBtn" class="reset-btn">Reset</button>
+        </div>
     </div>
 
     <footer class="footer">
@@ -2336,6 +2410,12 @@
         </div>
     </footer>
 
+    <!-- Ghost Hint (Easter Egg tooltip) -->
+    <div class="ghost-hint" id="ghostHint" aria-hidden="true">
+        <div class="ghost-cta" id="ghostHintBtn" title="Opens experimental settings">click here</div>
+        <div class="ghost-arrow" aria-hidden="true">⬇</div>
+    </div>
+
     <div class="loading-overlay" id="loadingOverlay">
         <div class="spinner"></div>
     </div>
@@ -2344,11 +2424,16 @@
         Press <span class="kbd">?</span> for keyboard shortcuts
     </div>
 
+    <!-- Instructions Mini-FAB (appears after auto-collapse) -->
+    <button class="instructions-fab" id="instructionsFab" aria-label="Info" title="Info">
+        ℹ️
+    </button>
+
     <!-- Main Instructions Modal -->
     <div class="modal-overlay" id="instructionsModal">
         <div class="modal">
             <div class="modal-header">
-                <h2>📖 How to Use SubMaker</h2>
+                <h2>ℹ️ How to Use SubMaker</h2>
                 <div class="modal-close" id="closeInstructionsBtn">×</div>
             </div>
             <div class="modal-content">
@@ -2370,7 +2455,11 @@
                 <p>When a subtitle is clicked within the "Make" translation lists, it'll start translation.<br>
 		After 20-30 seconds, reload the same subtitle entry.<br>
                 It'll load <strong>translated</strong>!</p>
-                <p>-<br>
+                <div class="highlight-box" style="margin-top: 0.75rem; text-align: left;">
+                    <strong>Quick Tip:</strong> If a translation looks off or broken, quickly triple‑click that subtitle in the list to force a fresh re‑translation.
+                </div>
+
+                <p style="margin-top: 0.75rem;">
 		<b>PS:</b>
 		Partial translation is delivered in batches so you can start watching almost instantly.<br>
                 Complete translation may take from <strong>30 seconds-5 minutes</strong> depending on movie/episode length.</p>
@@ -2418,6 +2507,27 @@
                 <button type="button" class="btn btn-primary" id="gotItFileTranslationBtn">
                     Got it!
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reset Confirmation Modal -->
+    <div class="modal-overlay" id="resetConfirmModal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="resetConfirmTitle">
+            <div class="modal-header">
+                <h2 id="resetConfirmTitle">🧹 Reset All Settings</h2>
+                <div class="modal-close" id="closeResetConfirmBtn">×</div>
+            </div>
+            <div class="modal-content">
+                <p><strong>This will reset literally everything for this site:</strong></p>
+                <p>- Local storage, session storage, cached config and tokens</p>
+                <p>- Service worker and all caches</p>
+                <p>- Any site data stored by this app</p>
+                <p style="margin-top: 0.75rem;">The page will reload afterward.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancelResetBtn">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmResetBtn">Reset Everything</button>
             </div>
         </div>
     </div>
@@ -2506,117 +2616,7 @@
     })();
     </script>
 
-    <!-- Mario block animation -->
-    <script>
-      (function() {
-        const toggle = document.getElementById('themeToggle');
-        if (!toggle) {
-          return;
-        }
-
-        const stage = document.getElementById('marioStage') || (() => {
-          const el = document.createElement('div');
-          el.id = 'marioStage';
-          el.className = 'mario-stage';
-          document.body.appendChild(el);
-          return el;
-        })();
-
-        const MIN_DELAY = 5000;
-        const MAX_DELAY = 19000;
-
-        function randomDelay() {
-          return MIN_DELAY + Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY));
-        }
-
-        function scheduleNext() {
-          window.setTimeout(spawnPlumber, randomDelay());
-        }
-
-        function spawnPlumber() {
-          const rect = toggle.getBoundingClientRect();
-          const fromLeft = Math.random() < 0.5;
-
-          const plumber = document.createElement('div');
-          plumber.className = 'plumber ' + (fromLeft ? 'face-right' : 'face-left');
-          plumber.dataset.direction = fromLeft ? 'right' : 'left';
-
-          const start = fromLeft ? -60 : window.innerWidth + 60;
-          plumber.style.left = start + 'px';
-          plumber.style.bottom = '14px';
-          stage.appendChild(plumber);
-
-          const W = 36;
-          const targetX = Math.max(8, Math.min(rect.left + rect.width / 2 - W / 2, window.innerWidth - W - 8));
-          requestAnimationFrame(() => {
-            plumber.style.left = targetX + 'px';
-          });
-
-          plumber.addEventListener('transitionend', () => onArrived(plumber, rect), { once: true });
-        }
-
-        function onArrived(plumber, rect) {
-          const bottomPx = 14;
-          const H = 36;
-          const plumberTop = window.innerHeight - (bottomPx + H);
-          const delta = plumberTop - rect.top + 8;
-          const jumpHeight = Math.min(220, Math.max(110, delta + 40));
-          plumber.style.setProperty('--jump-height', `-${jumpHeight}px`);
-          plumber.classList.add('jump');
-
-          setTimeout(() => hitBlock(rect), 450);
-          setTimeout(() => runAway(plumber), 900);
-        }
-
-        function runAway(plumber) {
-          const goLeft = plumber.dataset.direction === 'left';
-          const off = goLeft ? -80 : window.innerWidth + 80;
-          plumber.classList.remove('jump');
-          plumber.style.left = off + 'px';
-          setTimeout(() => {
-            plumber.remove();
-            scheduleNext();
-          }, 1400);
-        }
-
-        function hitBlock(rect) {
-          toggle.classList.add('block-hit');
-          setTimeout(() => toggle.classList.remove('block-hit'), 420);
-
-          spawnCoin(rect);
-          spawnSparkles(rect);
-          toggle.click();
-        }
-
-        function spawnCoin(rect) {
-          const coin = document.createElement('div');
-          coin.className = 'coin';
-          coin.style.left = rect.left + rect.width / 2 + 'px';
-          coin.style.top = rect.top + 6 + 'px';
-          document.body.appendChild(coin);
-          setTimeout(() => coin.remove(), 800);
-        }
-
-        function spawnSparkles(rect) {
-          for (let i = 0; i < 6; i++) {
-            const sparkle = document.createElement('div');
-            sparkle.className = 'sparkle';
-            sparkle.style.left = rect.left + rect.width / 2 + 'px';
-            sparkle.style.top = rect.top + 8 + 'px';
-            sparkle.style.setProperty('--dx', `${Math.random() * 60 - 30}px`);
-            sparkle.style.setProperty('--dy', `${-40 - Math.random() * 40}px`);
-            document.body.appendChild(sparkle);
-            setTimeout(() => sparkle.remove(), 700);
-          }
-        }
-
-        scheduleNext();
-        window.addEventListener('resize', () => {
-          /* layout recalculates automatically when scheduled next run occurs */
-        });
-      })();
-    </script>
-
+    <!-- Service Worker Registration for Cache Management -->
     <script>
         /**
          * Register service worker for automatic cache version management
