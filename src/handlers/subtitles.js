@@ -869,7 +869,80 @@ function parseReleaseMetadata(filename) {
     isPopularGroup
   };
 }
+/**
+ * Create a normalized release fingerprint for exact matching
+ * Returns a fingerprint object with critical metadata for matching
+ * @param {string} filename - Release filename
+ * @returns {Object} - Fingerprint object with critical metadata
+ */
+function createReleaseFingerprint(filename) {
+  const metadata = parseReleaseMetadata(filename);
+  // Extract normalized title (everything before year/season/resolution)
+  const normalizedTitle = filename
+    .toLowerCase()
+    .replace(/\b(19|20)\d{2}\b.*/, '') // Remove year and everything after
+    .replace(/\bs\d{1,2}e\d{1,2}\b.*/, '') // Remove season/episode and after
+    .replace(/\b(720p|1080p|2160p|4k|480p|360p)\b.*/, '') // Remove resolution and after
+    .replace(/[_\-\.]/g, ' ')
+    .trim();
+  return {
+    title: normalizedTitle,
+    releaseGroup: metadata.releaseGroup || null,
+    ripType: metadata.ripType || null,
+    resolution: metadata.resolution || null,
+    codec: metadata.codec || null,
+    platform: metadata.platform || null,
+    hdr: metadata.hdr || null
+  };
+}
 
+/**
+ * Check if stream filename exactly matches any SubDL releases
+ * Tier 1: Highest priority - exact match in releases array
+ * @param {string} streamFilename - Stream filename to match
+ * @param {Array} releases - Array of release names from SubDL
+ * @returns {boolean} - True if exact match found
+ */
+function checkSubDLExactMatch(streamFilename, releases) {
+  if (!streamFilename || !Array.isArray(releases) || releases.length === 0) {
+    return false;
+  }
+  const normalizedStream = streamFilename
+    .toLowerCase()
+    .replace(/\.[^.]+$/, ''); // Remove extension
+  for (const release of releases) {
+    const normalizedRelease = release
+      .toLowerCase()
+      .replace(/\.[^.]+$/, '');
+    // Exact string match
+    if (normalizedStream === normalizedRelease) {
+      return true;
+    }
+  }
+  return false;
+}
+/**
+ * Check if two release fingerprints match exactly on critical fields
+ * Tier 2: High priority - all critical metadata matches
+ * @param {Object} fp1 - First fingerprint
+ * @param {Object} fp2 - Second fingerprint
+ * @returns {number} - Match score (0 = no match, 1-5 = partial, 5 = perfect)
+ */
+function checkFingerprintMatch(fp1, fp2) {
+  // Title must always match (basic requirement)
+  if (!fp1.title || !fp2.title) return 0;
+  if (!fp1.title.includes(fp2.title) && !fp2.title.includes(fp1.title)) return 0;
+  // Count matching critical fields
+  let matches = 0;
+  const criticalFields = ['releaseGroup', 'ripType', 'resolution', 'codec', 'platform'];
+  for (const field of criticalFields) {
+    if (fp1[field] && fp2[field] && fp1[field] === fp2[field]) {
+      matches++;
+    }
+  }
+  // Return match score (0-5)
+  return matches;
+}
 /**
  * Calculate filename match score for a subtitle
  * Prioritizes sync probability: exact releases > quality matches > partial matches
@@ -1133,29 +1206,103 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
     return subtitles;
   }
 
+  // Create fingerprint for stream once (for Tier 2 matching)
+  const streamFingerprint = createReleaseFingerprint(streamFilename);
   const withScores = subtitles.map(sub => {
-    // Calculate base score using primary release name
-    let bestScore = calculateFilenameMatchScore(streamFilename, sub.name || '');
-
-    // For SubDL subtitles, also check all compatible releases from API
-    // This dramatically improves matching since SubDL provides all release variants
+    let finalScore = 0;
+    let matchTier = 'none';
+    let matchDetails = '';
+ 
+    // TIER 1: SubDL Releases Array Exact Match (100,000+ points)
+    // Highest priority - exact string match in SubDL's releases array
     if (sub.provider === 'subdl' && Array.isArray(sub.releases) && sub.releases.length > 0) {
-      for (const releaseName of sub.releases) {
-        const releaseScore = calculateFilenameMatchScore(streamFilename, releaseName);
-        if (releaseScore > bestScore) {
-          bestScore = releaseScore;
-          // Log when a better match is found in releases array
-          if (releaseScore > 100) { // Only log significant improvements
-            log.debug(() => `[SubDL Ranking] Better match found in releases: "${releaseName}" (score: ${releaseScore} vs ${calculateFilenameMatchScore(streamFilename, sub.name || '')})`);
+      if (checkSubDLExactMatch(streamFilename, sub.releases)) {
+        finalScore = 100000;
+        matchTier = 'tier1-subdl-exact';
+        matchDetails = 'Exact match in SubDL releases array';
+        log.debug(() => `[Tier 1 Match] ${sub.name}: ${matchDetails}`);
+      }
+    }
+    // TIER 2: Release Fingerprint Exact Match (50,000-99,999 points)
+    // High priority - all critical metadata matches (group, rip, resolution, codec, platform)
+    if (finalScore === 0) {
+      const subtitleFingerprint = createReleaseFingerprint(sub.name || '');
+      const fingerprintMatchScore = checkFingerprintMatch(streamFingerprint, subtitleFingerprint);
+      if (fingerprintMatchScore >= 5) {
+        // Perfect match: all 5 critical fields match
+        finalScore = 90000;
+        matchTier = 'tier2-perfect';
+        matchDetails = 'Perfect metadata match (5/5 fields)';
+        log.debug(() => `[Tier 2 Perfect] ${sub.name}: ${matchDetails}`);
+      } else if (fingerprintMatchScore === 4) {
+        // Very good match: 4/5 critical fields match
+        finalScore = 70000;
+        matchTier = 'tier2-very-good';
+        matchDetails = 'Very good metadata match (4/5 fields)';
+        log.debug(() => `[Tier 2 Very Good] ${sub.name}: ${matchDetails}`);
+      } else if (fingerprintMatchScore === 3) {
+        // Good match: 3/5 critical fields match
+        finalScore = 50000;
+        matchTier = 'tier2-good';
+        matchDetails = 'Good metadata match (3/5 fields)';
+        log.debug(() => `[Tier 2 Good] ${sub.name}: ${matchDetails}`);
+      }
+      // For SubDL, also check releases array for fingerprint matching
+      if (finalScore < 90000 && sub.provider === 'subdl' && Array.isArray(sub.releases)) {
+        for (const releaseName of sub.releases) {
+          const releaseFp = createReleaseFingerprint(releaseName);
+          const releaseMatchScore = checkFingerprintMatch(streamFingerprint, releaseFp);
+          if (releaseMatchScore >= 5 && finalScore < 90000) {
+            finalScore = 90000;
+            matchTier = 'tier2-perfect-subdl';
+            matchDetails = `Perfect match in SubDL release: ${releaseName}`;
+            log.debug(() => `[Tier 2 Perfect SubDL] ${sub.name}: ${matchDetails}`);
+            break;
+          } else if (releaseMatchScore === 4 && finalScore < 70000) {
+            finalScore = 70000;
+            matchTier = 'tier2-very-good-subdl';
+            matchDetails = `Very good match in SubDL release: ${releaseName}`;
+            log.debug(() => `[Tier 2 Very Good SubDL] ${sub.name}: ${matchDetails}`);
+            break;
+          } else if (releaseMatchScore === 3 && finalScore < 50000) {
+            finalScore = 50000;
+            matchTier = 'tier2-good-subdl';
+            matchDetails = `Good match in SubDL release: ${releaseName}`;
+            log.debug(() => `[Tier 2 Good SubDL] ${sub.name}: ${matchDetails}`);
+            break;
           }
         }
       }
     }
-
+    // TIER 3: Filename Similarity Match (0-20,000 points)
+    // Standard priority - fuzzy matching with quality metrics
+    if (finalScore === 0) {
+      let bestFilenameScore = calculateFilenameMatchScore(streamFilename, sub.name || '');
+      // For SubDL subtitles, also check all compatible releases from API
+      if (sub.provider === 'subdl' && Array.isArray(sub.releases) && sub.releases.length > 0) {
+        for (const releaseName of sub.releases) {
+          const releaseScore = calculateFilenameMatchScore(streamFilename, releaseName);
+          if (releaseScore > bestFilenameScore) {
+            bestFilenameScore = releaseScore;
+            matchDetails = `Better match in releases: ${releaseName}`;
+            if (releaseScore > 100) {
+              log.debug(() => `[Tier 3 SubDL] ${sub.name}: ${matchDetails} (score: ${releaseScore})`);
+            }
+          }
+        }
+      }
+      // Cap Tier 3 scores at 20,000 to keep them below Tier 2
+      finalScore = Math.min(bestFilenameScore, 20000);
+      matchTier = finalScore > 0 ? 'tier3-filename' : 'tier4-fallback';
+      if (finalScore === 0) {
+        matchDetails = 'No match - fallback';
+      }
+    }
     return {
       ...sub,
-      _matchScore: bestScore
-    };
+      _matchScore: finalScore,
+      _matchTier: matchTier,
+      _matchDetails: matchDetails    };
   });
 
   // Add episode metadata match bonus/penalty (for TV shows and anime)
@@ -1236,11 +1383,13 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
     'subsource': 2         // Good reputation - API provides rating-sorted results with rich metadata
   };
 
-  // Two-tier ranking system:
-  // 1. Primary: Filename match score (for subtitle sync accuracy)
-  // 2. Secondary: Composite quality score (weighted combination of downloads, rating, date)
-  //    - Used as tiebreaker when filename scores are similar
+  // Four-tier ranking system:
+  // 1. Tier 1 (100,000+ pts): SubDL releases array exact match - highest confidence
+  // 2. Tier 2 (50,000-99,999 pts): Release fingerprint match - all critical metadata matches
+  // 3. Tier 3 (0-20,000 pts): Filename similarity + quality metrics - fuzzy matching
+  // 4. Tier 4 (negative pts): Fallbacks - season packs, wrong episodes
 
+  // Within each tier, quality score (downloads, ratings, date) acts as tiebreaker
   // Helper: Calculate normalized quality score (0-100) from downloads, rating, and date
   // Missing metrics are treated neutrally (not penalized) to avoid unfairly ranking providers
   const calculateQualityScore = (sub) => {
@@ -1325,8 +1474,8 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
     return (providerReputation[b.provider] || 0) - (providerReputation[a.provider] || 0);
   });
 
-  // Remove the temporary score property before returning
-  return withScores.map(({ _matchScore, ...rest }) => rest);
+  // Remove the temporary score properties before returning
+  return withScores.map(({ _matchScore, _matchTier, _matchDetails, ...rest }) => rest);
 }
 
 /**
