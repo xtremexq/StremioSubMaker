@@ -8,8 +8,6 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="shortcut icon" href="favicon.svg">
     <link rel="apple-touch-icon" href="favicon.svg">
-    <!-- Retro fonts for ghost hint -->
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Tiny5&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -1102,72 +1100,6 @@
             color: var(--text-secondary);
         }
 
-        /* Ghost Hint (Easter Egg) — minimal, delicate */
-        .ghost-hint {
-            position: fixed;
-            left: 50%; /* JS will reposition near heart */
-            top: 60%;
-            transform: translateX(-50%) translateY(6px);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.05rem; /* closer to the arrow */
-            opacity: 0;
-            pointer-events: none; /* only inner CTA is clickable */
-            z-index: 1200;
-            transition: opacity 0.45s ease, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        .ghost-hint.show {
-            opacity: 0.75; /* much more visible */
-            transform: translateX(-50%) translateY(0);
-        }
-
-        .ghost-hint .ghost-cta {
-            pointer-events: auto;
-            background: transparent;
-            border: none;
-            color: #ffffff; /* white to blend on any bg */
-            mix-blend-mode: screen; /* blend with background */
-            padding: 0.05rem 0.25rem; /* even tighter */
-            border-radius: 6px;
-            font-size: 10px; /* compact and crisper */
-            line-height: 1; /* reduce vertical footprint */
-            font-family: 'Tiny5', 'Silkscreen', 'VT323', 'Press Start 2P', 'Courier New', monospace; /* retro, less wide */
-            font-weight: 400; /* lighter to reduce blur */
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-            text-rendering: optimizeLegibility;
-            letter-spacing: 0; /* reduce wide spacing for retro font */
-            text-transform: none;
-            cursor: pointer;
-            user-select: none;
-            transition: transform 0.15s ease, opacity 0.2s ease;
-            animation: ghostFloat 3.2s ease-in-out infinite;
-        }
-
-        .ghost-hint .ghost-cta:hover {
-            transform: translateY(-1px);
-            opacity: 0.6;
-        }
-
-        .ghost-hint .ghost-arrow {
-            font-size: 0.95rem;
-            line-height: 1;
-            color: var(--text-secondary);
-            animation: arrowPulse 1.6s ease-in-out infinite;
-        }
-
-        @keyframes ghostFloat {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-2px); }
-        }
-
-        @keyframes arrowPulse {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(2px); }
-        }
-
         label:has(#fileTranslationEnabled:disabled) {
             opacity: 0.6;
             cursor: not-allowed;
@@ -1557,39 +1489,91 @@
             }
         }
 
-        /* Theme Toggle Button */
+        /* Theme Toggle Button - styled like a retro ? block */
         .theme-toggle {
             position: fixed;
             top: 2rem;
             right: 2rem;
-            width: 48px;
-            height: 48px;
-            background: rgba(255, 255, 255, 0.9);
-            border: 2px solid var(--border);
-            border-radius: 12px;
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            color: #fff;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+            transition:
+                transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.3s ease,
+                background 0.35s ease,
+                filter 0.3s ease;
             z-index: 9999;
-            box-shadow: 0 4px 12px var(--shadow);
-            backdrop-filter: blur(10px);
-        }
-
-        [data-theme="dark"] .theme-toggle {
-            background: rgba(20, 25, 49, 0.9);
-            border-color: var(--border);
+            backdrop-filter: blur(12px);
+            --toggle-bg: radial-gradient(circle at 24% 28%, rgba(255, 255, 255, 0.75) 0, rgba(255, 255, 255, 0) 55%), linear-gradient(180deg, #fff9d3, #f4c750);
+            --toggle-border: #f28f00;
+            --toggle-outline: #a05d00;
+            --toggle-shadow: 0 6px 0 #d57a00, 0 18px 32px rgba(0, 0, 0, 0.45);
+            --toggle-hover-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+            --toggle-glow: rgba(255, 208, 70, 0.55);
+            background: var(--toggle-bg);
+            border: 3px solid var(--toggle-border);
+            outline: 2px solid var(--toggle-outline);
+            outline-offset: -6px;
+            box-shadow: var(--toggle-shadow);
+            filter: drop-shadow(0 0 22px var(--toggle-glow));
         }
 
         .theme-toggle:hover {
-            transform: translateY(-2px) scale(1.05);
-            box-shadow: 0 8px 20px var(--shadow);
-            border-color: var(--primary);
+            transform: translateY(-2px) scale(1.06);
+            box-shadow: var(--toggle-hover-shadow);
+            filter: drop-shadow(0 0 28px var(--toggle-glow));
         }
 
         .theme-toggle:active {
             transform: translateY(0) scale(0.98);
+        }
+
+        [data-theme="light"] .theme-toggle {
+            --toggle-bg: radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.9) 0, rgba(255, 255, 255, 0) 55%), linear-gradient(180deg, #fff4c0, #f8c93d);
+            --toggle-border: #f5a400;
+            --toggle-outline: #c87b00;
+            --toggle-shadow: 0 6px 0 #c97b00, 0 20px 28px rgba(255, 173, 28, 0.5);
+            --toggle-hover-shadow: 0 12px 34px rgba(255, 166, 26, 0.6);
+            --toggle-glow: rgba(255, 214, 94, 0.6);
+        }
+
+        [data-theme="dark"] .theme-toggle {
+            --toggle-bg: radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.25) 0, rgba(255, 255, 255, 0) 55%), linear-gradient(180deg, #1f2d4d, #0d1326);
+            --toggle-border: #7f9efc;
+            --toggle-outline: #1c2644;
+            --toggle-shadow: 0 6px 0 #091129, 0 24px 40px rgba(7, 14, 33, 0.7);
+            --toggle-hover-shadow: 0 14px 36px rgba(7, 14, 33, 0.8);
+            --toggle-glow: rgba(99, 154, 255, 0.45);
+        }
+
+        [data-theme="true-dark"] .theme-toggle {
+            --toggle-bg: radial-gradient(circle at 22% 22%, rgba(135, 205, 255, 0.15) 0, rgba(135, 205, 255, 0) 45%), linear-gradient(180deg, #08080f, #030206);
+            --toggle-border: #4fc3ff;
+            --toggle-outline: #050505;
+            --toggle-shadow: 0 6px 0 #020205, 0 26px 44px rgba(0, 0, 0, 0.9);
+            --toggle-hover-shadow: 0 16px 40px rgba(3, 6, 18, 0.95);
+            --toggle-glow: rgba(128, 230, 255, 0.55);
+        }
+
+        /* Block bounce when hit */
+        @keyframes block-bounce {
+            0%   { transform: translateY(0); }
+            20%  { transform: translateY(-8px); }
+            40%  { transform: translateY(0); }
+            60%  { transform: translateY(-3px); }
+            100% { transform: translateY(0); }
+        }
+
+        .theme-toggle.block-hit {
+            animation: block-bounce 420ms ease-out;
         }
 
         .theme-toggle-icon {
@@ -1645,6 +1629,124 @@
                 font-size: 1.25rem;
             }
         }
+
+        .mario-stage {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9998; /* sit just below the toggle */
+        }
+
+        .plumber {
+            position: fixed;
+            bottom: 14px;
+            left: -60px;
+            width: 36px;
+            height: 36px;
+            transform-origin: 50% 100%;
+            image-rendering: pixelated;
+            filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.35));
+            transition: left 1400ms linear;
+        }
+
+        .plumber::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+              linear-gradient(#b30000, #b30000) 6px 0/24px 10px no-repeat,
+              radial-gradient(circle at 18px 14px, #ffcc99 8px, transparent 9px),
+              linear-gradient(#d11, #b00) 6px 16px/24px 14px no-repeat,
+              linear-gradient(#223, #223) 8px 30px/8px 6px no-repeat,
+              linear-gradient(#223, #223) 20px 30px/8px 6px no-repeat,
+              linear-gradient(#432, #432) 6px 34px/12px 4px no-repeat,
+              linear-gradient(#432, #432) 18px 34px/12px 4px no-repeat,
+              linear-gradient(#d11, #b00) 0 18px/6px 10px no-repeat,
+              linear-gradient(#d11, #b00) 30px 18px/6px 10px no-repeat,
+              radial-gradient(circle at 3px 24px, #eee 3px, transparent 4px),
+              radial-gradient(circle at 33px 24px, #eee 3px, transparent 4px);
+            border-radius: 4px;
+        }
+
+        .plumber.face-right {
+            transform: scaleX(1);
+        }
+
+        .plumber.face-left {
+            transform: scaleX(-1);
+        }
+
+        .plumber.jump {
+            animation: plumber-jump 900ms cubic-bezier(.2, .9, .3, 1) forwards;
+        }
+
+        @keyframes plumber-jump {
+            0% {
+                transform: translateY(0) scale(var(--sx, 1), 1);
+            }
+            49% {
+                transform: translateY(var(--jump-height, -120px)) scale(var(--sx, 1), 1.08);
+            }
+            100% {
+                transform: translateY(0) scale(var(--sx, 1), 1);
+            }
+        }
+
+        .coin {
+            position: fixed;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 35%, #fff 0 20%, #f8e27a 21% 45%, #d9aa1f 46%);
+            box-shadow: 0 0 0 2px #b07a12 inset, 0 6px 12px rgba(0, 0, 0, 0.25);
+            transform: translate(-50%, -50%);
+            animation: coin-pop 700ms ease-out forwards;
+            z-index: 99999;
+            pointer-events: none;
+        }
+
+        @keyframes coin-pop {
+            0% {
+                opacity: 0;
+                transform: translate(-50%, -10%) scale(0.6);
+            }
+            15% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+            60% {
+                opacity: 1;
+                transform: translate(-50%, -140%) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -170%) scale(0.9);
+            }
+        }
+
+        .sparkle {
+            position: fixed;
+            width: 6px;
+            height: 6px;
+            background: radial-gradient(circle, #fff, #ffe08a 60%, transparent 61%);
+            border-radius: 50%;
+            opacity: 0.9;
+            animation: sparkle-fly 600ms ease-out forwards;
+            filter: drop-shadow(0 0 6px #ffd86b);
+            pointer-events: none;
+            z-index: 99999;
+        }
+
+        @keyframes sparkle-fly {
+            from {
+                transform: translate(0, 0) scale(1);
+                opacity: 1;
+            }
+            to {
+                transform: translate(var(--dx, 20px), var(--dy, -40px)) scale(0.6);
+                opacity: 0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1654,6 +1756,7 @@
         <span class="theme-toggle-icon moon">🌙</span>
         <span class="theme-toggle-icon blackhole">🕳️</span>
     </button>
+    <div id="marioStage" class="mario-stage" aria-hidden="true"></div>
 
     <div class="container">
         <div class="header">
@@ -2233,12 +2336,6 @@
         </div>
     </footer>
 
-    <!-- Ghost Hint (Easter Egg tooltip) -->
-    <div class="ghost-hint" id="ghostHint" aria-hidden="true">
-        <div class="ghost-cta" id="ghostHintBtn" title="Opens experimental settings">click here</div>
-        <div class="ghost-arrow" aria-hidden="true">⬇</div>
-    </div>
-
     <div class="loading-overlay" id="loadingOverlay">
         <div class="spinner"></div>
     </div>
@@ -2409,7 +2506,117 @@
     })();
     </script>
 
-    <!-- Service Worker Registration for Cache Management -->
+    <!-- Mario block animation -->
+    <script>
+      (function() {
+        const toggle = document.getElementById('themeToggle');
+        if (!toggle) {
+          return;
+        }
+
+        const stage = document.getElementById('marioStage') || (() => {
+          const el = document.createElement('div');
+          el.id = 'marioStage';
+          el.className = 'mario-stage';
+          document.body.appendChild(el);
+          return el;
+        })();
+
+        const MIN_DELAY = 5000;
+        const MAX_DELAY = 19000;
+
+        function randomDelay() {
+          return MIN_DELAY + Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY));
+        }
+
+        function scheduleNext() {
+          window.setTimeout(spawnPlumber, randomDelay());
+        }
+
+        function spawnPlumber() {
+          const rect = toggle.getBoundingClientRect();
+          const fromLeft = Math.random() < 0.5;
+
+          const plumber = document.createElement('div');
+          plumber.className = 'plumber ' + (fromLeft ? 'face-right' : 'face-left');
+          plumber.dataset.direction = fromLeft ? 'right' : 'left';
+
+          const start = fromLeft ? -60 : window.innerWidth + 60;
+          plumber.style.left = start + 'px';
+          plumber.style.bottom = '14px';
+          stage.appendChild(plumber);
+
+          const W = 36;
+          const targetX = Math.max(8, Math.min(rect.left + rect.width / 2 - W / 2, window.innerWidth - W - 8));
+          requestAnimationFrame(() => {
+            plumber.style.left = targetX + 'px';
+          });
+
+          plumber.addEventListener('transitionend', () => onArrived(plumber, rect), { once: true });
+        }
+
+        function onArrived(plumber, rect) {
+          const bottomPx = 14;
+          const H = 36;
+          const plumberTop = window.innerHeight - (bottomPx + H);
+          const delta = plumberTop - rect.top + 8;
+          const jumpHeight = Math.min(220, Math.max(110, delta + 40));
+          plumber.style.setProperty('--jump-height', `-${jumpHeight}px`);
+          plumber.classList.add('jump');
+
+          setTimeout(() => hitBlock(rect), 450);
+          setTimeout(() => runAway(plumber), 900);
+        }
+
+        function runAway(plumber) {
+          const goLeft = plumber.dataset.direction === 'left';
+          const off = goLeft ? -80 : window.innerWidth + 80;
+          plumber.classList.remove('jump');
+          plumber.style.left = off + 'px';
+          setTimeout(() => {
+            plumber.remove();
+            scheduleNext();
+          }, 1400);
+        }
+
+        function hitBlock(rect) {
+          toggle.classList.add('block-hit');
+          setTimeout(() => toggle.classList.remove('block-hit'), 420);
+
+          spawnCoin(rect);
+          spawnSparkles(rect);
+          toggle.click();
+        }
+
+        function spawnCoin(rect) {
+          const coin = document.createElement('div');
+          coin.className = 'coin';
+          coin.style.left = rect.left + rect.width / 2 + 'px';
+          coin.style.top = rect.top + 6 + 'px';
+          document.body.appendChild(coin);
+          setTimeout(() => coin.remove(), 800);
+        }
+
+        function spawnSparkles(rect) {
+          for (let i = 0; i < 6; i++) {
+            const sparkle = document.createElement('div');
+            sparkle.className = 'sparkle';
+            sparkle.style.left = rect.left + rect.width / 2 + 'px';
+            sparkle.style.top = rect.top + 8 + 'px';
+            sparkle.style.setProperty('--dx', `${Math.random() * 60 - 30}px`);
+            sparkle.style.setProperty('--dy', `${-40 - Math.random() * 40}px`);
+            document.body.appendChild(sparkle);
+            setTimeout(() => sparkle.remove(), 700);
+          }
+        }
+
+        scheduleNext();
+        window.addEventListener('resize', () => {
+          /* layout recalculates automatically when scheduled next run occurs */
+        });
+      })();
+    </script>
+
     <script>
         /**
          * Register service worker for automatic cache version management

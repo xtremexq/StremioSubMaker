@@ -2,12 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
-## SubMaker 1.3.1
-
-**Bug Fixes:**
-- Fixed Android subtitle display: Added `Content-Disposition: attachment` header to all translation responses (loading messages, partial results, bypass cache) to ensure Android/Stremio Android properly refreshes subtitle content and doesn't cache stale loading messages
+## SubMaker 1.3.2
 
 **Improvements:**
+
+- Version-aware config migration on app update: resets model and advanced settings to defaults while preserving API keys, provider toggles, source/target languages, and Other Settings. Ensures new/removed config fields are immediately reflected after version change.
+
+**Bug Fixes:**
+
+- Fixed Android subtitle display: Added `Content-Disposition: attachment` header to all translation responses (loading messages, partial results, bypass cache) to ensure Android/Stremio Android properly refreshes subtitle content and doesn't cache stale loading messages
+
+## SubMaker 1.3.1
+
+**Improvements:**
+
 - Multiple changes and improvements to the config page.
 - Season and episodes pack ZIP extraction: Prefer .srt over .ass/.ssa when both exist (SubSource & SubDL) to avoid unnecessary conversion and pick native SRT first
 
