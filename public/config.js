@@ -414,6 +414,8 @@ Translate to {target_language}.`;
         const advThinkingEl = document.getElementById('advancedThinkingBudget');
         const advTempEl = document.getElementById('advancedTemperature');
         const advTopPEl = document.getElementById('advancedTopP');
+        const batchCtxEl = document.getElementById('enableBatchContext');
+        const ctxSizeEl = document.getElementById('contextSize');
 
         if (!advModelEl || !advThinkingEl || !advTempEl || !advTopPEl) {
             return false; // Elements not loaded yet
@@ -424,8 +426,11 @@ Translate to {target_language}.`;
         const thinkingChanged = parseInt(advThinkingEl.value) !== defaults.thinkingBudget;
         const tempChanged = parseFloat(advTempEl.value) !== defaults.temperature;
         const topPChanged = parseFloat(advTopPEl.value) !== defaults.topP;
+        // Batch context changes are also considered advanced modifications
+        const batchCtxChanged = batchCtxEl ? (batchCtxEl.checked !== (defaults.enableBatchContext === true)) : false;
+        const ctxSizeChanged = ctxSizeEl ? (parseInt(ctxSizeEl.value) !== (defaults.contextSize || 3)) : false;
 
-        return modelChanged || thinkingChanged || tempChanged || topPChanged;
+        return modelChanged || thinkingChanged || tempChanged || topPChanged || batchCtxChanged || ctxSizeChanged;
     }
 
     /**
@@ -881,10 +886,17 @@ Translate to {target_language}.`;
         // Batch context toggle - show/hide context size field
         const enableBatchContextEl = document.getElementById('enableBatchContext');
         const contextSizeGroupEl = document.getElementById('contextSizeGroup');
+        const contextSizeEl = document.getElementById('contextSize');
         if (enableBatchContextEl && contextSizeGroupEl) {
             enableBatchContextEl.addEventListener('change', (e) => {
                 contextSizeGroupEl.style.display = e.target.checked ? 'block' : 'none';
+                // Changing batch context setting should force bypass cache logic
+                updateBypassCacheForAdvancedSettings();
             });
+        }
+        if (contextSizeEl) {
+            contextSizeEl.addEventListener('input', updateBypassCacheForAdvancedSettings);
+            contextSizeEl.addEventListener('change', updateBypassCacheForAdvancedSettings);
         }
 
         // Secret experimental mode: Click the heart to reveal advanced settings

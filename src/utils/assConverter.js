@@ -146,6 +146,32 @@ function postprocessVTT(vttContent) {
 
   let processed = vttContent;
 
+  // Defensive cleanup before deeper processing:
+  // - Remove stray lines that are exactly 'undefined' (should never appear in valid VTT)
+  // - Normalize the first non-empty line to the proper 'WEBVTT' header
+  try {
+    const prim = processed.split('\n');
+    const filtered = prim.filter(l => l.trim().toLowerCase() !== 'undefined');
+    const firstIdx = filtered.findIndex(l => l.trim().length > 0);
+    if (firstIdx >= 0) {
+      filtered[firstIdx] = 'WEBVTT';
+    }
+    processed = filtered.join('\n');
+  } catch (_) {}
+
+  // Defensive cleanup before deeper processing:
+  // - Remove stray lines that are exactly 'undefined' (should never appear in valid VTT)
+  // - Normalize the first non-empty line to the proper 'WEBVTT' header
+  try {
+    const prim = processed.split('\n');
+    const filtered = prim.filter(l => l.trim().toLowerCase() !== 'undefined');
+    const firstIdx = filtered.findIndex(l => l.trim().length > 0);
+    if (firstIdx >= 0) {
+      filtered[firstIdx] = 'WEBVTT';
+    }
+    processed = filtered.join('\n');
+  } catch (_) {}
+
   // 1. Ensure WEBVTT header is present and properly formatted
   if (!processed.startsWith('WEBVTT')) {
     processed = 'WEBVTT\n\n' + processed;
@@ -212,26 +238,14 @@ function postprocessVTT(vttContent) {
       let cleaned = line;
 
       // Remove ASS override tags: {\...}
-      // But preserve single letters that subsrt-ts mistakenly wraps (e.g., {\T} -> T)
-      cleaned = cleaned.replace(/\{\\([^}]*)\}/g, (match, content) => {
-        // If it's a single letter (subsrt-ts bug), preserve it
-        if (content.length === 1 && /[a-zA-Z]/.test(content)) {
-          return content;
-        }
-        // Otherwise remove the tag (it's a real ASS tag like \i1, \b0, etc.)
-        return '';
-      });
+      // These always have a backslash after the opening brace
+      cleaned = cleaned.replace(/\{\\([^}]*)\}/g, '');
 
-      // Remove any remaining braces that might be malformed tags
-      // But preserve single characters that might be text
-      cleaned = cleaned.replace(/\{([^}]*)\}/g, (match, content) => {
-        // If the content is a single character (likely text, not a tag), keep it
-        if (content.length === 1) {
-          return content;
-        }
-        // Otherwise, remove the entire thing (it's likely a malformed tag)
-        return '';
-      });
+      // Remove braces around text content (subsrt-ts bug)
+      // Pattern: {text} where text doesn't start with backslash
+      // These are NOT ASS tags (tags have backslash: {\tag}), so preserve the content
+      // Example: {Ta}dah! -> Tadah!, {Bor}derlines -> Borderlines
+      cleaned = cleaned.replace(/\{([^\\}]+)\}/g, '$1');
 
       // Handle escaped characters first (before orphaned tag removal)
       cleaned = cleaned.replace(/\\h/g, ' '); // non-breaking space
@@ -241,7 +255,7 @@ function postprocessVTT(vttContent) {
       // These are malformed tags left by subsrt-ts conversion
       // For single letters after \, preserve the letter (it's text, not a tag: \T}adah! -> Tadah!)
       // For actual tags, remove entirely (\i1}text -> text, \an8}text -> text)
-      cleaned = cleaned.replace(/\\([a-z])(\})/gi, '$1'); // Single letter: keep it
+      cleaned = cleaned.replace(/\\{1,2}([a-z])\}/gi, '$1'); // Single letter after orphaned tag: keep it
 
       // Handle multi-letter patterns that might be corrupted text (e.g., \Ta}dah! -> Tadah!)
       // Check if the letters form a known ASS tag; if not, preserve them (likely text)

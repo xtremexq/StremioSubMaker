@@ -1,6 +1,12 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project will be documented in this file.
+
+## SubMaker 1.3.1
+
+**Improvements:**
+- Multiple changes and improvements to the config page.
+- Season and episodes pack ZIP extraction: Prefer .srt over .ass/.ssa when both exist (SubSource & SubDL) to avoid unnecessary conversion and pick native SRT first
 
 ## SubMaker 1.3.0
 
@@ -322,3 +328,4 @@ All notable changes to this project will be documented in this file.
 **Bug Fixes:**
 - Fixed SRT integrity during partial loading: entries reindexed and tail message positioned after last translated timestamp
 - Fixed addon URL generation for private networks (192.168.x.x, 10.x.x.x, 172.16-31.x.x ranges now recognized as local, preventing forced HTTPS)
+

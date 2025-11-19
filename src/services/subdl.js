@@ -508,23 +508,39 @@ class SubDLService {
         log.debug(() => `[SubDL] Searching for S${String(seasonPackSeason).padStart(2, '0')}E${String(seasonPackEpisode).padStart(2, '0')} in season pack ZIP`);
         log.debug(() => `[SubDL] Available files in ZIP: ${entries.join(', ')}`);
 
+        // Prefer SRT when both SRT and ASS/SSA exist
+        const srtFiles = entries.filter(filename => filename.toLowerCase().endsWith('.srt') && !zip.files[filename].dir);
+
         // Try anime-specific patterns first (episode-only, no season)
         // This works for anime where files are just "01.srt", "ep01.srt", etc.
-        targetEntry = findEpisodeFileAnime(entries, seasonPackEpisode);
+        targetEntry = findEpisodeFileAnime(srtFiles, seasonPackEpisode);
 
         if (targetEntry) {
-          log.debug(() => `[SubDL] Found episode file using anime patterns: ${targetEntry}`);
+          log.debug(() => `[SubDL] Found SRT episode file using anime patterns: ${targetEntry}`);
         } else {
-          // Fallback to regular TV show patterns (season+episode)
-          targetEntry = findEpisodeFile(entries, seasonPackSeason, seasonPackEpisode);
+          // Fallback to regular TV show patterns (season+episode) within SRT files
+          targetEntry = findEpisodeFile(srtFiles, seasonPackSeason, seasonPackEpisode);
 
           if (targetEntry) {
-            log.debug(() => `[SubDL] Found episode file using TV show patterns: ${targetEntry}`);
+            log.debug(() => `[SubDL] Found SRT episode file using TV show patterns: ${targetEntry}`);
           } else {
-            log.warn(() => `[SubDL] Could not find episode ${seasonPackEpisode} (S${String(seasonPackSeason).padStart(2, '0')}E${String(seasonPackEpisode).padStart(2, '0')}) in season pack ZIP`);
-            log.warn(() => `[SubDL] Available files: ${entries.join(', ')}`);
-            // Return informative subtitle instead of throwing error
-            return createEpisodeNotFoundSubtitle(seasonPackEpisode, seasonPackSeason, entries);
+            // If no matching SRT, try any format (anime patterns first, then TV patterns)
+            let anyMatch = findEpisodeFileAnime(entries, seasonPackEpisode);
+            if (anyMatch) {
+              log.debug(() => `[SubDL] Found episode file using anime patterns: ${anyMatch}`);
+              targetEntry = anyMatch;
+            } else {
+              anyMatch = findEpisodeFile(entries, seasonPackSeason, seasonPackEpisode);
+              if (anyMatch) {
+                log.debug(() => `[SubDL] Found episode file using TV show patterns: ${anyMatch}`);
+                targetEntry = anyMatch;
+              } else {
+                log.warn(() => `[SubDL] Could not find episode ${seasonPackEpisode} (S${String(seasonPackSeason).padStart(2, '0')}E${String(seasonPackEpisode).padStart(2, '0')}) in season pack ZIP`);
+                log.warn(() => `[SubDL] Available files: ${entries.join(', ')}`);
+                // Return informative subtitle instead of throwing error
+                return createEpisodeNotFoundSubtitle(seasonPackEpisode, seasonPackSeason, entries);
+              }
+            }
           }
         }
       } else {
