@@ -284,6 +284,12 @@ Translate to {target_language}.`;
             const lc = String(c || '').toLowerCase();
             if (lc === 'ptbr' || lc === 'pt-br') return 'pob';
             return lc;
+        }).filter(lc => {
+            // Block UI-only fake entries from ever persisting into config
+            if (!lc) return false;
+            if (lc === 'translate srt' || lc === '__') return false;
+            if (lc.startsWith('___')) return false; // frontend/internal placeholders
+            return true;
         });
     }
 
@@ -984,15 +990,12 @@ Translate to {target_language}.`;
         if (togglePasswordBtn) {
             togglePasswordBtn.addEventListener('click', () => {
                 const passwordInput = document.getElementById('opensubtitlesPassword');
-                if (passwordInput.type === 'password') {
-                    passwordInput.type = 'text';
-                    togglePasswordBtn.textContent = '🙈';
-                    togglePasswordBtn.title = 'Hide password';
-                } else {
-                    passwordInput.type = 'password';
-                    togglePasswordBtn.textContent = '👁️';
-                    togglePasswordBtn.title = 'Show password';
-                }
+                if (!passwordInput) return;
+
+                // Toggle masked state without using password inputs to avoid browser save prompts
+                const isMasked = passwordInput.classList.toggle('masked');
+                togglePasswordBtn.textContent = isMasked ? '🔒👁' : '👁';
+                togglePasswordBtn.title = isMasked ? 'Show password' : 'Hide password';
             });
         }
 
@@ -2647,6 +2650,13 @@ Translate to {target_language}.`;
         }
         if (config.subtitleProviders.subsource?.enabled && !config.subtitleProviders.subsource.apiKey?.trim()) {
             errors.push('⚠️ SubSource is enabled but API key is missing');
+        }
+
+        // OpenSubtitles Auth requires credentials; block save if missing
+        const openSubCfg = config.subtitleProviders.opensubtitles;
+        const usingOpenSubsAuth = openSubCfg?.enabled && openSubCfg.implementationType === 'auth';
+        if (usingOpenSubsAuth && (!openSubCfg.username || !openSubCfg.password)) {
+            errors.push('⚠️ OpenSubtitles Auth requires both username and password. Enter credentials or switch to V3 (no login needed).');
         }
 
         // If not in no-translation mode, validate Gemini API and model

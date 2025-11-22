@@ -226,9 +226,6 @@ const languageMap = {
   'tet': { code1: 'tm-td', name: 'Tetum', isCustom: true },
   'sat': { code1: 'sx', name: 'Santali', isCustom: true },
   'tok': { code1: 'tp', name: 'Toki Pona', isCustom: true },
-
-  // Special fake language for file upload/translation feature (display-only)
-  'Translate SRT': { code1: '__', name: 'Translate SRT', isCustom: true }
 };
 
 // Reverse mapping for ISO-639-1 to ISO-639-2

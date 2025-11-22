@@ -242,7 +242,7 @@ function createOpenSubtitlesQuotaExceededSubtitle() {
 00:00:00,000 --> 04:00:00,000
 OpenSubtitles daily download limit reached
 You have downloaded the allowed 20 subtitles in the last 24 hours.
-Wait until the next UTC midnight (00:00) for quota reset, then try again.`;
+Wait until UTC midnight (00:00) or change to V3 on config page.`;
 }
 
 /**
@@ -270,12 +270,12 @@ Service temporarily unavailable. Try again in a few minutes.`;
 // Create a concise error subtitle when a source file looks invalid/corrupted
 function createInvalidSubtitleMessage(reason = 'The subtitle file appears to be invalid or incomplete.') {
   const srt = `1
-00:00:00,000 --> 00:00:08,000
+00:00:00,000 --> 00:00:03,000
 Subtitle Problem Detected
 
 2
-00:00:08,001 --> 04:00:18,000
-${reason}\nAn error occurred. Please try again.`;
+00:00:03,001 --> 04:00:18,000
+${reason}\nAn error occurred.\nPlease try again.`;
   return srt;
 }
 
@@ -330,15 +330,15 @@ function createTranslationErrorSubtitle(errorType, errorMessage) {
   }
 
   return `1
-00:00:00,000 --> 00:00:10,000
+00:00:00,000 --> 00:00:03,000
 ${errorTitle}
 
 2
-00:00:10,001 --> 00:00:25,000
+00:00:03,001 --> 00:00:06,000
 ${errorExplanation}
 
 3
-00:00:25,001 --> 04:00:00,000
+00:00:06,001 --> 04:00:00,000
 ${retryAdvice}`;
 }
 
@@ -2149,19 +2149,24 @@ async function handleSubtitleDownload(fileId, language, config) {
       else if (!fileId.startsWith('v3_')) serviceName = 'OpenSubtitles';
 
       return `1
-00:00:00,000 --> 00:00:12,000
+00:00:00,000 --> 00:00:03,000
 ${serviceName} rate limit reached (429)
 
 2
-00:00:12,001 --> 04:00:00,000
+00:00:03,001 --> 04:00:00,000
 Too many requests in a short period.
 Please wait a few minutes and try again.`;
     }
     const rawMsg = (error.response?.data?.message || error.message || '').toString();
     const lowerMsg = rawMsg.toLowerCase();
+    const isAuthError =
+      errorStatus === 401 ||
+      errorStatus === 403 ||
+      lowerMsg.includes('authentication failed') ||
+      lowerMsg.includes('invalid username/password');
 
-    // Handle 403 errors - API key authentication failures
-    if (errorStatus === 403 || error.message.includes('403') || error.message.includes('Authentication failed')) {
+    // Handle 401/403 errors - API key/authentication failures
+    if (isAuthError) {
       // Determine which service based on fileId
       let serviceName = 'Subtitle Provider';
       let apiKeyInstructions = 'Please check your API key in the addon configuration.';
@@ -2181,38 +2186,23 @@ Please wait a few minutes and try again.`;
       }
 
       return `1
-00:00:00,000 --> 00:00:08,000
-Authentication Error (403)
+00:00:00,000 --> 00:00:03,000
+Authentication Error
 
 2
-00:00:08,001 --> 00:00:16,000
+00:00:03,001 --> 00:00:06,000
 ${serviceName} rejected your API key or credentials
 
 3
-00:00:16,001 --> 04:00:00,000
+00:00:06,001 --> 04:00:00,000
 ${apiKeyInstructions}`;
     }
 
     // Handle 404 errors specifically - subtitle not available
     if (errorStatus === 404 || error.message.includes('Subtitle not available') || error.message.includes('404')) {
       return `1
-00:00:00,000 --> 00:00:10,000
-Subtitle Not Available (Error 404)
-
-2
-00:00:10,001 --> 00:00:15,000
-This subtitle was found in search results
-but the file is no longer available on the server
-
-3
-00:00:15,001 --> 00:00:20,000
-This often happens with unreleased movies
-or subtitles that were removed
-
-4
-00:00:20,001 --> 04:00:25,000
-Please try a different subtitle from the list
-or enable other subtitle providers in settings`;
+00:00:00,000 --> 04:00:00,000
+Subtitle Not Available (Error 404)\nThis often happens with subtitles that were removed.\nPlease try a different subtitle from the list`;
     }
 
     if (errorStatus === 503) {
@@ -2222,20 +2212,9 @@ or enable other subtitle providers in settings`;
       }
 
       return `1
-00:00:00,000 --> 00:00:10,000
+00:00:00,000 --> 04:00:40,000
 OpenSubtitles API is temporarily unavailable (Error 503)
-
-2
-00:00:10,001 --> 00:00:20,000
-The subtitle download service is experiencing high traffic
-
-3
-00:00:20,001 --> 00:00:30,000
-Please try again in a few minutes
-
-4
-00:00:30,001 --> 04:00:40,000
-      Or try a different subtitle from the list`;
+Please try again in a few minutes or try a different subtitle.`;
     }
 
     // Handle OpenSubtitles daily quota exceeded (HTTP 406 with specific message)
@@ -2251,7 +2230,18 @@ Please try again in a few minutes
 
     // Handle SubSource download timeouts with a user-facing subtitle (0 -> 4h)
     // Detect axios-style timeout/network signals and fileId prefix
-    const isTimeout = (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || /timeout/i.test(String(error.message || '')));
+    const msg = String(error.message || '');
+    const origMsg = String(error.originalError?.message || '');
+    const origCode = error.originalError?.code;
+    const isTimeout = (
+      error.type === 'timeout' ||
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ETIMEDOUT' ||
+      origCode === 'ECONNABORTED' ||
+      origCode === 'ETIMEDOUT' ||
+      /timeout|timed out|time out/i.test(msg) ||
+      /timeout|timed out|time out/i.test(origMsg)
+    );
     if (fileId.startsWith('subsource_') && isTimeout) {
       log.warn(() => '[SubSource] Request timed out during download — informing user via subtitle');
       return `1

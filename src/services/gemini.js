@@ -351,7 +351,20 @@ class GeminiService {
           const blockReason = pf.blockReason || null;
           const safetyRatings = pf.safetyRatings || null;
 
-          log.error(() => ['[Gemini] No candidates in response:', JSON.stringify(response.data, null, 2)]);
+          // Truncate noisy Gemini responses to keep logs readable
+          const truncatedResponse = (() => {
+            try {
+              const serialized = JSON.stringify(response.data, null, 2);
+              const MAX_LEN = 2000;
+              return serialized.length > MAX_LEN
+                ? `${serialized.slice(0, MAX_LEN)}... [truncated]`
+                : serialized;
+            } catch (err) {
+              return '[unserializable Gemini response]';
+            }
+          })();
+
+          log.error(() => ['[Gemini] No candidates in response (truncated):', truncatedResponse]);
 
           // If Gemini flagged safety, classify explicitly so upstream shows proper error subtitles
           if (blockReason || safetyRatings) {

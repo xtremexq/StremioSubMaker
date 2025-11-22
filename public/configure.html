@@ -757,6 +757,12 @@
             padding-right: 3rem;
         }
 
+        /* Mask sensitive inputs without triggering browser password managers */
+        .sensitive-input.masked {
+            -webkit-text-security: disc;
+            text-security: disc;
+        }
+
         .password-toggle-icon {
             position: absolute;
             right: 1rem;
@@ -2462,7 +2468,7 @@
         })();
         </script>
 
-        <form id="configForm">
+        <form id="configForm" autocomplete="off" spellcheck="false">
             <!-- No Translation Mode Toggle -->
             <div style="margin: 2rem 0; padding: 1.5rem; background: var(--surface-light); border: 2px solid var(--border); border-radius: 12px; display: flex; align-items: center; gap: 1rem;">
                 <span style="font-size: 1.75rem;">⏸️</span>
@@ -2561,11 +2567,11 @@
                                 <div class="opensubs-auth-layout">
                                     <div class="opensubs-auth-fields">
                                         <label style="display: block;">Username</label>
-                                        <input type="text" id="opensubtitlesUsername" placeholder="Enter OpenSubtitles Username">
+                                        <input type="text" id="opensubtitlesUsername" placeholder="Enter OpenSubtitles Username" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
 
                                         <label style="display: block;">Password</label>
                                         <div class="password-field-wrapper">
-                                            <input type="password" id="opensubtitlesPassword" placeholder="Enter OpenSubtitles Password">
+                                            <input type="text" class="sensitive-input masked" id="opensubtitlesPassword" placeholder="Enter OpenSubtitles Password" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text">
                                             <span class="password-toggle-icon" id="toggleOpenSubsPassword" title="Show/hide password">&#128274;&#128065;</span>
                                         </div>
 
@@ -2750,7 +2756,7 @@
                             </span></span>
                         </label>
                         <div style="display: flex; gap: 0.5rem; align-items: start;">
-                            <input type="password" id="geminiApiKey" placeholder="Enter your Gemini API key" style="flex: 1;">
+                            <input type="text" class="sensitive-input masked" id="geminiApiKey" placeholder="Enter your Gemini API key" style="flex: 1;" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text">
                             <button type="button" class="validate-api-btn" id="validateGemini" title="Validate API key">
                                 <span class="validate-icon">✓</span>
                                 <span class="validate-text">Test</span>

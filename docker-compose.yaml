@@ -2,9 +2,9 @@ services:
   # Stremio SubMaker application
   submaker:
     # Use pre-built image from Docker Hub (recommended)
-    image: xtremexq/submaker:latest
+    # image: xtremexq/submaker:latest
     # Or build locally (comment out 'image' above and uncomment 'build' below)
-    # build: .
+    build: .
     container_name: submaker
     ports:
       - "${PORT:-7001}:7001"

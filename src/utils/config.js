@@ -112,6 +112,27 @@ function parseBase64Config(configStr) {
 }
 
 /**
+ * Remove UI-only/fake language entries and normalize common variants
+ * @param {Array} list - Array of language codes
+ * @returns {Array} - Sanitized list (deduped, lowercased)
+ */
+function sanitizeLanguages(list) {
+  if (!Array.isArray(list)) return [];
+
+  const blocked = new Set(['translate srt', '__']);
+  const deduped = new Set();
+
+  for (const lang of list) {
+    let value = String(lang || '').trim().toLowerCase();
+    if (!value || blocked.has(value) || value.startsWith('___')) continue;
+    if (value === 'ptbr' || value === 'pt-br') value = 'pob';
+    deduped.add(value);
+  }
+
+  return Array.from(deduped);
+}
+
+/**
  * Normalize and merge config with defaults
  * @param {Object} config - User configuration
  * @returns {Object} - Normalized configuration
@@ -155,6 +176,12 @@ function normalizeConfig(config) {
 
   // Force Learn Mode placement to top-of-screen now that the UI no longer exposes this toggle
   mergedConfig.learnPlacement = 'top';
+
+  // Strip out UI-only/fake languages that might have been saved accidentally
+  mergedConfig.sourceLanguages = sanitizeLanguages(mergedConfig.sourceLanguages);
+  mergedConfig.targetLanguages = sanitizeLanguages(mergedConfig.targetLanguages);
+  mergedConfig.noTranslationLanguages = sanitizeLanguages(mergedConfig.noTranslationLanguages);
+  mergedConfig.learnTargetLanguages = sanitizeLanguages(mergedConfig.learnTargetLanguages);
 
   // If geminiModel is empty/null, use defaults (respects .env)
   if (!mergedConfig.geminiModel || mergedConfig.geminiModel.trim() === '') {
@@ -211,6 +238,22 @@ function normalizeConfig(config) {
                          mergedConfig.advancedSettings.thinkingBudget === 0 ? 'disabled' :
                          mergedConfig.advancedSettings.thinkingBudget;
   log.debug(() => `[Config] Gemini API config: model=${mergedConfig.geminiModel}, temperature=${mergedConfig.advancedSettings.temperature}, topK=${mergedConfig.advancedSettings.topK}, topP=${mergedConfig.advancedSettings.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${mergedConfig.advancedSettings.maxOutputTokens}, timeout=${mergedConfig.advancedSettings.translationTimeout}s, maxRetries=${mergedConfig.advancedSettings.maxRetries}`);
+
+  // Guardrail: if OpenSubtitles Auth is selected without credentials, fall back to V3 to avoid runtime auth errors
+  const openSubConfig = mergedConfig.subtitleProviders?.opensubtitles;
+  if (openSubConfig) {
+    openSubConfig.username = (openSubConfig.username || '').trim();
+    openSubConfig.password = (openSubConfig.password || '').trim();
+    const wantsAuth = openSubConfig.implementationType === 'auth';
+    const missingCreds = !openSubConfig.username || !openSubConfig.password;
+    if (wantsAuth && missingCreds) {
+      log.warn(() => '[Config] OpenSubtitles Auth selected without credentials; switching to V3 (no login required).');
+      mergedConfig.subtitleProviders.opensubtitles = {
+        ...openSubConfig,
+        implementationType: 'v3'
+      };
+    }
+  }
 
   return mergedConfig;
 }

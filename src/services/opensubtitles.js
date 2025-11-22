@@ -131,7 +131,7 @@ class OpenSubtitlesService {
     // Read API key at runtime (not at module load time)
     const apiKey = getOpenSubtitlesApiKey();
 
-    // Create axios instance with default configuration
+    // Base axios configuration
     const defaultHeaders = {
       'User-Agent': USER_AGENT,
       'Content-Type': 'application/json',
@@ -139,7 +139,7 @@ class OpenSubtitlesService {
       'Accept-Encoding': 'gzip, deflate, br'
     };
 
-    // Add API key if configured
+    // Add API key if configured (only for search/auth flows)
     if (apiKey) {
       defaultHeaders['Api-Key'] = apiKey;
       // Only log once at startup
@@ -148,7 +148,7 @@ class OpenSubtitlesService {
       }
     }
 
-    this.client = axios.create({
+    const baseAxiosConfig = {
       baseURL: OPENSUBTITLES_API_URL,
       headers: defaultHeaders,
       httpAgent,
@@ -157,6 +157,18 @@ class OpenSubtitlesService {
       timeout: 15000,
       maxRedirects: 5,
       decompress: true
+    };
+
+    // Primary client (search/auth) uses Api-Key
+    this.client = axios.create(baseAxiosConfig);
+
+    // Download client must NOT send Api-Key, to avoid global key rate limits on downloads
+    const downloadHeaders = { ...defaultHeaders };
+    delete downloadHeaders['Api-Key'];
+    delete downloadHeaders['api-key'];
+    this.downloadClient = axios.create({
+      ...baseAxiosConfig,
+      headers: downloadHeaders
     });
 
     // Only log initialization messages once at startup
@@ -180,12 +192,16 @@ class OpenSubtitlesService {
     }
 
     // Add request interceptor to handle token refresh for user authentication
-    this.client.interceptors.request.use((config) => {
-      if (this.token && !this.isTokenExpired()) {
-        config.headers['Authorization'] = `Bearer ${this.token}`;
-      }
-      return config;
-    });
+    const addAuthInterceptor = (axiosInstance) => {
+      axiosInstance.interceptors.request.use((config) => {
+        if (this.token && !this.isTokenExpired()) {
+          config.headers['Authorization'] = `Bearer ${this.token}`;
+        }
+        return config;
+      });
+    };
+    addAuthInterceptor(this.client);
+    addAuthInterceptor(this.downloadClient);
   }
 
   /**
@@ -522,7 +538,8 @@ class OpenSubtitlesService {
       }
 
       // First, request download link
-      const downloadResponse = await this.client.post('/download', {
+      // Use the download client (no Api-Key) to avoid shared-key throttling
+      const downloadResponse = await this.downloadClient.post('/download', {
         file_id: parseInt(baseFileId)
       });
 
@@ -534,7 +551,7 @@ class OpenSubtitlesService {
       log.debug(() => ['[OpenSubtitles] Got download link:', downloadLink]);
 
       // Download the subtitle file as raw bytes to handle BOM/ZIP cases efficiently
-      const subtitleResponse = await this.client.get(downloadLink, {
+      const subtitleResponse = await this.downloadClient.get(downloadLink, {
         responseType: 'arraybuffer',
         headers: { 'User-Agent': USER_AGENT },
         timeout: 12000
