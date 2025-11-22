@@ -2,22 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
-## SubMaker 1.3.4
+## SubMaker v1.3.5
+
+##Improvements:**
+
+- Initial html/js/css refactoring of the configure.html page
+
+## SubMaker v1.3.4
 
 **Infrastructure & Deployment:**
 
 - Docker Hub Integration: Pre-built multi-platform images now available at [xtremexq/submaker](https://hub.docker.com/r/xtremexq/submaker)
 - GitHub Actions: Automated Docker image publishing workflow for AMD64 and ARM64 platforms on release
-- Docker Compose: Updated to use pre-built Docker Hub images by default for faster deployment
 - Redis Configuration: Enhanced with connection timeouts (300s) and TCP keepalive (60s) for improved reliability
 - Security: Improved .dockerignore to prevent encryption keys from being copied into Docker images
 - Documentation: Complete rewrite of Docker deployment guide with Docker Hub examples and multiple deployment options
 
 **Bug fixes:**
 
-Multiple minor bug fixes
+- Multiple minor bug fixes
 
-## SubMaker 1.3.3
+## SubMaker v1.3.3
 
 **New Features:**
 
@@ -61,7 +66,7 @@ Multiple minor bug fixes
 - Gemini safety handling: Fixed case where Gemini returned `promptFeedback.blockReason` with no candidates. These are now classified as `PROHIBITED_CONTENT`, enabling the correct error subtitle and retry behavior instead of a generic "No response candidates" error.
 - Various minor bug fixes
 
-## SubMaker 1.3.2
+## SubMaker v1.3.2
 
 **Improvements:**
 
@@ -73,14 +78,14 @@ Multiple minor bug fixes
 
 - Fixed SubSource API key validation timing out: endpoint now reuses `SubSourceService` client (proper headers, pooled agents, DNS cache) and performs a single lightweight validation request with clearer error messages
 
-## SubMaker 1.3.1
+## SubMaker v1.3.1
 
 **Improvements:**
 
 - Multiple changes and improvements to the config page.
 - Season and episodes pack ZIP extraction: Prefer .srt over .ass/.ssa when both exist (SubSource & SubDL) to avoid unnecessary conversion and pick native SRT first
 
-## SubMaker 1.3.0
+## SubMaker v1.3.0
 
 **New Features:**
 
@@ -129,19 +134,19 @@ Multiple minor bug fixes
 - Updated subsrt-ts from 2.0.1 to 2.1.2 for improved conversion reliability
 - Removed unused advanced configs from install page
 
-## SubMaker 1.2.6
+## SubMaker v1.2.6
 
 **Bug Fixes:**
 - Translation flow now validates source subtitle size before returning loading message to prevent users from waiting indefinitely for corrupted files
 - Fixed purge trigger failing to detect cached translations in bypass cache mode: `hasCachedTranslation` now correctly calls `readFromBypassStorage` instead of non-existent `readFromBypassCache`
 
-## SubMaker 1.2.5
+## SubMaker v1.2.5
 
 **Bug Fixes:**
 - Fixed Spanish (Latin America) language code collision: Changed 'spn' mapping from 'sx' to 'ea' to resolve conflict with Santali language and ensure proper display in Stremio language lists
 - Fixed "just fetch subtitles (no translation)" mode returning zero results: Subtitle handler now properly uses `noTranslationLanguages` from config instead of empty `sourceLanguages`/`targetLanguages` arrays
 
-## SubMaker 1.2.4
+## SubMaker v1.2.4
 
 **New Features:**
 - Anime content support: Added AniDB and Kitsu ID mapping services to resolve anime IDs to IMDB for subtitle searching
@@ -166,7 +171,7 @@ Multiple minor bug fixes
 - Safer API error logging: Guarded parsing/logging of response payloads with essential fields to prevent logging failures
 - SubDL and SubSource API keys now properly redacted in debug logs to prevent credential exposure in debug logs
 
-## SubMaker 1.2.3
+## SubMaker v1.2.3
 
 **New Features:**
 - Native VTT subtitle support: Original VTT files now served directly to Stremio with proper `text/vtt` headers and `.vtt` file extension
@@ -176,7 +181,7 @@ Multiple minor bug fixes
 - Improved loading subtitle messages
 - Simplified partial translation messages
 
-## SubMaker 1.2.2
+## SubMaker v1.2.2
 
 **Performance Improvements:**
 - OpenSubtitles V3 filename extraction now batched (10 concurrent requests per batch) to reduce rate limiting errors
@@ -196,7 +201,7 @@ Multiple minor bug fixes
 - Fixed session lookup after server restart: `getSession()` and `updateSession()` now automatically fall back to Redis/storage when sessions are not in memory cache
 - Fixed Redis pub/sub self-invalidation: instances now ignore their own invalidation events to prevent sessions from expiring immediately after updates
 
-## SubMaker 1.2.0, 1.2.1
+## SubMaker v1.2.0, 1.2.1
 
 **New Features:**
 - Per-token session persistence: Sessions saved individually and immediately for safe multi-instance deployments
@@ -227,7 +232,7 @@ Multiple minor bug fixes
 - Enhanced shutdown handling: Retry logic (3 attempts) with 10-second timeout for session saves
 
 
-## SubMaker 1.1.7
+## SubMaker v1.1.7
 
 **New Features:**
 - Refined error messages: Improved user-facing error descriptions for safety filter blocks, rate limits, authentication failures, and source file issues
@@ -236,7 +241,7 @@ Multiple minor bug fixes
 - Expanded error type mapping: Enhanced error handler to classify all error types (403, 429, 503, MAX_TOKENS, PROHIBITED_CONTENT, RECITATION, SAFETY, INVALID_SOURCE)
 - Fixed 3-click cache reset safety: Now prevents cache deletion when user is at the concurrent translation limit, avoiding abuse and data loss
 
-## SubMaker 1.1.6
+## SubMaker v1.1.6
 
 **New Features:**
 - **Multi-Model Support**: Added Gemini model selection dropdown on config page with two options:
@@ -244,7 +249,7 @@ Multiple minor bug fixes
   - Gemini 2.5 Flash-Lite - Well tested, faster and cheaper alternative (recommended if Flash has issues)
 - Advanced Settings can still override the selected model for per-translation customization
 
-## SubMaker 1.1.5
+## SubMaker v1.1.5
 
 **Bug Fixes:**
 - Fixed PROHIBITED_CONTENT error detection: Now properly identifies all safety filter errors (PROHIBITED_CONTENT, RECITATION, SAFETY) and displays appropriate user message instead of generic "please retry" text
@@ -254,14 +259,14 @@ Multiple minor bug fixes
 **Translation Engine Improvements:**
 - Better error caching: Translation errors are now properly cached for 15 minutes, allowing users to understand what went wrong and retry appropriately
 
-## SubMaker 1.1.4
+## SubMaker v1.1.4
 
 **Bug Fixes:**
 - Fixed Gemini API key validation: Removed duplicate model fetching messages that appeared after clicking "Test" button
 - Fixed Gemini API key input: Green border now only appears when API key is successfully validated by backend, not just when field is not empty
 - Moved model fetching status messages to Advanced Settings section only (no longer shows in main config area)
 
-## SubMaker 1.1.3
+## SubMaker v1.1.3
 
 **New Features:**
 - **Gemini v1beta endpoint rollback**: Fixing previous change that introduced problems.
@@ -274,7 +279,7 @@ Multiple minor bug fixes
 - Fixed config page: Switching between translation and no-translation modes now clears language selections from the previous mode to prevent unwanted languages from being saved
 - Various minor  fixes.
 
-## SubMaker 1.1.2
+## SubMaker v1.1.2
 
 **New Features:**
 - **Intelligent Subtitle Ranking**: Advanced filename matching algorithm prioritizes exact release group matches (RARBG, YTS, etc.) and rip type compatibility (WEB-DL, BluRay) for optimal sync probability
@@ -295,7 +300,7 @@ Multiple minor bug fixes
 - **User-Isolated Subtitle Search Cache**: Fixed a problem of cache sharing between users with different configurations (API keys, providers, languages)
 - Various major and minor bug fixes.
 
-## SubMaker 1.1.1
+## SubMaker v1.1.1
 
 **Bug Fixes:**
 - Fixed Gemini model defaults: Old session tokens with deprecated models (gemini-flash-latest, gemini-2.0-flash-exp) now automatically use current stable model
@@ -308,7 +313,7 @@ Multiple minor bug fixes
 - Model defaults consolidated to single source of truth (easier to maintain, eliminates redundancy)
 - Deprecated model override system with easy re-enable flag for future user selection
 
-## SubMaker 1.1.0
+## SubMaker v1.1.0
 
 **Translation Engine - Complete Rewrite:**
 - Completely rewrote subtitle translation workflow with structure-first approach to eliminate sync problems
@@ -343,7 +348,7 @@ Multiple minor bug fixes
 - Config hash generation now handles edge cases gracefully with identifiable fallback values instead of silent failures
 - **Various major and minor bug fixes**
 
-## SubMaker 1.0.3
+## SubMaker v1.0.3
 
 **UI Redesign:**
 
@@ -367,7 +372,7 @@ Multiple minor bug fixes
 - Configuration page code cleanup: removed unused files and duplicate code, simplified cache/bypass toggle logic
 - Various small bug fixes.
 
-## SubMaker 1.0.2
+## SubMaker v1.0.2
 
 **UI & Configuration:**
 - Quick Start guide now appears only on first run, hidden after setup
@@ -389,7 +394,7 @@ Multiple minor bug fixes
 - Graceful shutdown: Server properly exits, clears timers, and saves sessions before closing
 - Duplicate translation prevention: In-flight request deduplication allows simultaneous identical requests to share one translation
 
-## SubMaker 1.0.1
+## SubMaker v1.0.1
 
 **Features:**
 - Progressive subtitle updates during translation: partial SRT saved after each chunk and served while translation is in progress

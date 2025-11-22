@@ -10,7 +10,7 @@ No-Translation mode: simply fetch selected languages from OpenSubtitles, SubSour
 
 Auto-sync subtitles in development!
 
-## 🚀 [Roadmap 🗺️](ROADMAP.md)
+## 🚀 [Roadmap 🗺️](docs/ROADMAP.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
@@ -76,7 +76,7 @@ npm start
 
 ## 🐳 Docker Deployment
 
-📦 **[See complete Docker deployment guide →](DOCKER.md)**
+📦 **[See complete Docker deployment guide →](docs/DOCKER.md)**
 
 Quick start:
 ```bash

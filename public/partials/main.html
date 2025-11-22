@@ -1,0 +1,677 @@
+<div class="container">
+        <div class="header">
+            <div class="logo">
+                <img src="logo.png" alt="SubMaker Logo" style="width: 80px; height: 80px; border-radius: 20px;">
+            </div>
+            <h1>SubMaker</h1>
+            <div class="version-badge-wrapper">
+                <p class="subtitle">AI-Powered Subtitle Translation</p>
+                <span id="version-badge" class="version-badge" style="display:none;"></span>
+            </div>
+        </div>
+
+
+        <div id="alertContainer"></div>
+
+        <!-- Floating Help Button (Config page) -->
+        <button class="help-button mario" id="configHelp" title="Help">?</button>
+
+        <form id="configForm" autocomplete="off" spellcheck="false">
+            <!-- No Translation Mode Toggle -->
+            <div style="margin: 2rem 0; padding: 1.5rem; background: var(--surface-light); border: 2px solid var(--border); border-radius: 12px; display: flex; align-items: center; gap: 1rem;">
+                <span style="font-size: 1.75rem;">⏸️</span>
+                <div style="flex: 1;">
+                    <span style="display: block; font-weight: 600; color: var(--text-primary);">Just Fetch Subtitles (No Translation)</span>
+                    <span style="display: block; font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">Skip AI translation and just fetch subtitles in your chosen languages</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="noTranslationMode">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <!-- Subtitle API Providers -->
+            <div class="card collapsed" data-card="subtitle-api">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="9" y="14" width="14" height="12" rx="2.5" ry="2.5" />
+                                    <path d="M12 14v-2a4 4 0 0 1 8 0v2" />
+                                    <circle cx="16" cy="20" r="2" />
+                                    <path d="M16 22v2" />
+                                </g>
+                            </svg>
+                        </div>
+                        <h2 class="card-title">Subtitles API Keys</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="subtitle-api"></button>
+                </div>
+<div class="card-content">
+                                        <!-- OpenSubtitles -->
+                    <div class="form-group" style="padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                            <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-size: 1.5rem;">📄</span>
+                                <div>
+                                    <strong style="display: block;">OpenSubtitles</strong>
+                                    <span class="label-description" style="margin: 0;">Choose your preferred OpenSubtitles implementation below.</span>
+                                </div>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableOpenSubtitles" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="opensubtitlesConfig">
+                            <!-- Implementation Type Selection -->
+                            <div style="margin-bottom: 1rem; padding: 1rem; background: var(--surface-light); border-radius: 8px;">
+                                <label style="display: block; margin-bottom: 0.75rem; font-weight: 600;">Implementation Type</label>
+                                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                    <label style="display: flex; align-items: start; gap: 0.5rem; cursor: pointer; padding: 0.75rem; background: white; border: 2px solid var(--border); border-radius: 8px; transition: all 0.2s;">
+                                        <input type="radio" name="opensubtitlesImplementation" id="opensubtitlesImplV3" value="v3" checked style="margin-top: 0.25rem;">
+                                        <div style="flex: 1;">
+                                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                                <strong style="margin-bottom: 0.25rem;">V3 (Default)</strong>
+                                                <div class="v3-warning-tooltip" style="position: relative; display: inline-flex; align-items: center;">
+                                                    <span class="warning-icon" style="font-size: 1rem; color: var(--warning); cursor: help; animation: pulse 2s ease-in-out infinite;">⚠️</span>
+                                                    <div class="tooltip-content" style="position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 0.5rem; background: rgba(245, 158, 11, 0.95); color: white; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8rem; white-space: normal; word-break: break-word; max-width: min(260px, calc(100vw - 4rem)); opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+                                                        V3 doesn't show all OpenSubtitles results and rate-limiting may apply.
+                                                        <div style="position: absolute; right: 100%; top: 50%; transform: translateY(-50%); width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 5px solid rgba(245, 158, 11, 0.95);"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <span class="label-description" style="margin: 0; font-size: 0.875rem;">Uses the official Stremio OpenSubtitles V3 addon. No authentication required, simple setup.</span>
+                                        </div>
+                                    </label>
+                                    <label style="display: flex; align-items: start; gap: 0.5rem; cursor: pointer; padding: 0.75rem; background: white; border: 2px solid var(--border); border-radius: 8px; transition: all 0.2s;">
+                                        <input type="radio" name="opensubtitlesImplementation" id="opensubtitlesImplAuth" value="auth" style="margin-top: 0.25rem;">
+                                        <div>
+                                            <strong style="display: block; margin-bottom: 0.25rem;">Auth (Recommended)</strong>
+                                            <span class="label-description" style="margin: 0; font-size: 0.875rem;">Uses your OpenSubtitles account with API key authentication. Requires username/password.</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Auth Configuration (shown when Auth is selected) -->
+                            <div id="opensubtitlesAuthConfig" style="display: none;">
+                                <div class="opensubs-auth-layout">
+                                    <div class="opensubs-auth-fields">
+                                        <label style="display: block;">Username</label>
+                                        <input type="text" id="opensubtitlesUsername" placeholder="Enter OpenSubtitles Username" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+
+                                        <label style="display: block;">Password</label>
+                                        <div class="password-field-wrapper">
+                                            <input type="text" class="sensitive-input masked" id="opensubtitlesPassword" placeholder="Enter OpenSubtitles Password" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text">
+                                            <span class="password-toggle-icon" id="toggleOpenSubsPassword" title="Show/hide password">&#128274;&#128065;</span>
+                                        </div>
+
+                                        <span class="label-description">20 subtitles a day. <a href="https://www.opensubtitles.com/en/newuser" target="_blank" style="color: var(--primary-light);">Create a free account</a> if you don't have one.</span>
+                                    </div>
+
+                                    <div class="validate-tile">
+                                        <div class="tile-eyebrow" style="text-align:center;">Run a quick ping before saving to validate your credentials.</div>
+                                        <button type="button" class="validate-api-btn" id="validateOpenSubtitles" title="Validate OpenSubtitles credentials">
+                                            <span class="validate-icon">&#10003;</span>
+                                            <span class="validate-text">Run Test</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="validation-feedback" id="opensubtitlesValidationFeedback"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SubSource -->
+                    <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                            <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-size: 1.5rem;">🎬</span>
+                                <div>
+                                    <strong style="display: block;">SubSource</strong>
+                                    <span class="label-description" style="margin: 0;">Get your free API key from <a href="https://subsource.net/" target="_blank" style="color: var(--primary-light);">SubSource.net</a></span>
+                                </div>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableSubSource" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="subsourceConfig">
+                            <div style="display: flex; gap: 0.5rem; align-items: start;">
+                                <input type="text" id="subsourceApiKey" placeholder="Enter SubSource API key" style="flex: 1;">
+                                <button type="button" class="validate-api-btn" id="validateSubSource" title="Validate API key">
+                                    <span class="validate-icon">✓</span>
+                                    <span class="validate-text">Test</span>
+                                </button>
+                            </div>
+                            <div class="validation-feedback" id="subsourceValidationFeedback"></div>
+                        </div>
+                    </div>
+
+                    <!-- SubDL -->
+                    <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                            <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-size: 1.5rem;">📋</span>
+                                <div>
+                                    <strong style="display: block;">SubDL</strong>
+                                    <span class="label-description" style="margin: 0;">Get your free API key from <a href="https://subdl.com" target="_blank" style="color: var(--primary-light);">SubDL.com</a></span>
+                                </div>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableSubDL" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="subdlConfig">
+                            <div style="display: flex; gap: 0.5rem; align-items: start;">
+                                <input type="text" id="subdlApiKey" placeholder="Enter SubDL API key" style="flex: 1;">
+                                <button type="button" class="validate-api-btn" id="validateSubDL" title="Validate API key">
+                                    <span class="validate-icon">✓</span>
+                                    <span class="validate-text">Test</span>
+                                </button>
+                            </div>
+                            <div class="validation-feedback" id="subdlValidationFeedback"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- No-Translation Languages -->
+            <div class="card collapsed" id="noTranslationCard" style="display: none;" data-card="notranslation">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="16" cy="16" r="10" />
+                                    <path d="M16 6v20M6 16h20" />
+                                    <path d="M10 10c2 4 4 6 6 6s4-2 6-6M10 22c2-4 4-6 6-6s4 2 6 6" />
+                                </g>
+                            </svg>
+                        </div>
+                        <h2 class="card-title">Languages</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="notranslation"></button>
+                </div>
+<div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            Subtitle Languages
+                            <span class="label-description">Select which languages you want to fetch subtitles in.</span>
+                        </label>
+
+                        <div class="language-search">
+                            <span class="language-search-icon">🔍</span>
+                            <input type="text" id="noTranslationSearch" placeholder="Search languages...">
+                        </div>
+
+                        <div id="selectedNoTranslationLanguages" class="selected-languages empty"></div>
+
+                        <div class="quick-actions">
+                            <button type="button" class="quick-btn" data-action="select-popular-notranslation">⭐ Popular</button>
+                            <button type="button" class="quick-btn" data-action="select-all-notranslation">✓ All</button>
+                            <button type="button" class="quick-btn" data-action="clear-notranslation">✗ Clear</button>
+                        </div>
+
+                        <div id="noTranslationLanguages" class="language-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gemini API -->
+            <div class="card collapsed" id="geminiCard" data-card="gemini">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="16" cy="16" r="10.5" stroke-width="2.2" />
+                                    <circle cx="16" cy="16" r="5" stroke-width="1.8" />
+                                    <path d="M16 6v-2M22.5 8.2l1.4-1.4M26 15h2M22.5 23.8l1.4 1.4M16 26v2M9.5 23.8l-1.4 1.4M6 15H4M9.5 8.2 8.1 6.8" stroke-width="1.15" />
+                                    <path d="M16 11v4.2l2.8 1.6" stroke-width="1.8" />
+                                    <path d="M12.8 21.4c0.7 1 1.9 1.6 3.2 1.6s2.5-0.6 3.2-1.6" stroke-width="1.2" opacity="0.8" />
+                                </g>
+                            </svg>
+                        </div>
+                        <h2 class="card-title">AI Translation API Keys</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="gemini"></button>
+                </div>
+<div class="card-content">
+                    <div class="form-group">
+                        <label for="geminiApiKey">
+                            Gemini API Key
+                            <span class="label-description">Get your free API key from <a href="https://makersuite.google.com/app/apikey" target="_blank" style="color: var(--primary-light);">Google AI Studio</a>
+                            <span class="gemini-help-tooltip" style="position: relative; display: inline-flex; align-items: center; margin-left: 0.4rem;">
+                                <span class="help-icon" tabindex="0" aria-label="Gemini API setup help" style="display: inline-flex; width: 1rem; height: 1rem; font-size: 0.75rem; line-height: 1rem; align-items: center; justify-content: center; border: 1px solid var(--primary); border-radius: 50%; color: var(--primary); cursor: help; user-select: none;">?</span>
+                                <div class="tooltip-content" style="position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 0.5rem; background: rgba(8, 164, 213, 0.98); color: #fff; padding: 0.6rem 0.75rem; border-radius: 8px; font-size: 0.85rem; width: 320px; max-width: 75vw; opacity: 0; pointer-events: none; transition: opacity 0.18s ease; z-index: 1000; box-shadow: 0 4px 14px rgba(0,0,0,0.18); text-wrap: balance;">
+                                    <strong style="display:block; margin-bottom: 0.35rem;">Gemini Instructions:</strong>
+                                    <ol style="padding-left: 1.05rem; display:block;">
+                                        <li style="margin: 0.2rem 0;">Go to <a href="https://aistudio.google.com/app/api-keys" target="_blank" style="color:#fff; text-decoration: underline;">aistudio.google.com/app/api-keys</a></li>
+                                        <li style="margin: 0.2rem 0;">Click "Create API Key"</li>
+                                        <li style="margin: 0.2rem 0;">Name it anything</li>
+                                        <li style="margin: 0.2rem 0;">Select a Project → Create Project → Name it → Create</li>
+                                        <li style="margin: 0.2rem 0;">Create the API key</li>
+                                        <li style="margin: 0.2rem 0;">Copy your API key and paste it below</li>
+                                    </ol>
+                                    <div style="position: absolute; right: 100%; top: 50%; transform: translateY(-50%); width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 6px solid rgba(8, 164, 213, 0.98);"></div>
+                                </div>
+                            </span></span>
+                        </label>
+                        <div style="display: flex; gap: 0.5rem; align-items: start;">
+                            <input type="text" class="sensitive-input masked" id="geminiApiKey" placeholder="Enter your Gemini API key" style="flex: 1;" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text">
+                            <button type="button" class="validate-api-btn" id="validateGemini" title="Validate API key">
+                                <span class="validate-icon">✓</span>
+                                <span class="validate-text">Test</span>
+                            </button>
+                        </div>
+                        <div class="validation-feedback" id="geminiValidationFeedback"></div>
+                        <div class="field-error" id="geminiApiKeyError">API key is required</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="geminiModel">
+                            Translation Model
+                            <span class="label-description">AI model for translations</span>
+                        </label>
+                        <select id="geminiModel" required>
+                            <option value="gemini-2.5-flash-lite-preview-09-2025">Gemini 2.5 Flash-Lite</option>
+                            <option value="gemini-2.5-flash-preview-09-2025" selected>Gemini 2.5 Flash</option>
+                            <option value="gemini-2.5-pro">Gemini 2.5 Pro (Slow)</option>
+                        </select>
+                        <div class="field-error" id="geminiModelError">Please select a model</div>
+                        <div style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-secondary);">
+                            <strong style="margin-left: 2px;">Bad/broken or out-of-sync translation?</strong> Quickly triple-click the subtitle to force a re-translation.
+                        </div>
+                        <div style="margin-top: 0.6rem; padding: 0.75rem; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; font-size: 0.875rem; color: var(--text-secondary);">
+                            <strong style="color: var(--warning);">⚡ 2.5 Pro usage is still in Beta.</strong> If you have translation problems, use Flash-Lite.
+                        </div>
+                        <div id="proRateLimitWarning" style="display: none; margin-top: 0.75rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; font-size: 0.875rem; color: var(--text-secondary);">
+                            <strong style="color: #ef4444;">⚠️ Free Tier Limitation:</strong> If using a free API key, Gemini 2.5 Pro may trigger rate limits (HTTP 429). You'll likely only be able to translate one subtitle at a time.
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="display: none;">
+                        <label for="promptStyle">
+                            Prompt Style
+                            <span class="label-description">Choose between strict structure preservation or natural flow adaptation</span>
+                        </label>
+                        <select id="promptStyle">
+                            <option value="natural" disabled title="Temporarily unavailable">Natural - Adapts structure for natural target language flow</option>
+                            <option value="strict">Strict - Preserves exact timing and structure</option>
+                        </select>
+                    </div>
+
+                    <!-- Advanced Settings removed by request -->
+                </div>
+            </div>
+
+            <!-- Source Languages -->
+            <div class="card collapsed" id="sourceCard" data-card="source">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="16" cy="11" r="4" />
+                                    <path d="M10 18c0-2.5 2.7-4 6-4s6 1.5 6 4" />
+                                    <path d="M8 23c-.5-1-1.5-2-3-2M24 23c.5-1 1.5-2 3-2" />
+                                    <path d="M6 26h20" />
+                                </g>
+                            </svg>
+                        </div>
+                        <h2 class="card-title">Source Languages</h2>
+                        <span class="card-badge" id="sourceBadge">0</span>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="source"></button>
+                </div>
+<div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            * Source languages for translations
+                            <span class="label-description">You can select up to 3 source languages, but only 1 is recommended (so you have the same list order when translating). All subtitles from this language will be available for translation in the translation selector AND will be fetched (original subtitles will show up).</span>
+                        </label>
+
+                        <div class="language-search">
+                            <span class="language-search-icon">🔍</span>
+                            <input type="text" id="sourceSearch" placeholder="Search languages..." accesskey="s">
+                        </div>
+
+                        <div id="selectedSourceLanguages" class="selected-languages empty"></div>
+                        <div class="field-error" id="sourceLanguagesError">Please select 1 source language</div>
+
+                        <div id="sourceLanguages" class="language-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Target Languages -->
+            <div class="card collapsed" id="targetCard" data-card="target">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="16" cy="16" r="10" />
+                                    <circle cx="16" cy="16" r="6" />
+                                    <circle cx="16" cy="16" r="2" fill="currentColor" />
+                                    <path d="M16 6v4M16 22v4M6 16h4M22 16h4" />
+                                </g>
+                            </svg>
+                        </div>
+                        <h2 class="card-title">Target Languages</h2>
+                        <span class="card-badge" id="targetBadge">0</span>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="target"></button>
+                </div>
+<div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            * Target languages for subtitles and translations
+                            <span class="label-description">Subtitles in target languages will be fetched AND translation buttons will appear for translating FROM the source language TO these languages.</span>
+                        </label>
+
+                        <div class="language-search">
+                            <span class="language-search-icon">🔍</span>
+                            <input type="text" id="targetSearch" placeholder="Search languages..." accesskey="t">
+                        </div>
+
+                        <div id="selectedTargetLanguages" class="selected-languages empty"></div>
+                        <div class="field-error" id="targetLanguagesError">Please select at least one target language</div>
+
+                        <div class="quick-actions">
+                            <button type="button" class="quick-btn" data-action="select-popular-target">⭐ Popular</button>
+                            <button type="button" class="quick-btn" data-action="select-all-target">✓ All</button>
+                            <button type="button" class="quick-btn" data-action="clear-target">✗ Clear</button>
+                        </div>
+
+                        <div id="targetLanguages" class="language-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Learn Target Languages -->
+            <div class="card collapsed" id="learnTargetsCard" style="display: none;" data-card="learn">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                <defs>
+                                    <linearGradient id="learnAurora" x1="10%" y1="15%" x2="90%" y2="85%">
+                                        <stop offset="0%" stop-color="currentColor" stop-opacity="0.15" />
+                                        <stop offset="45%" stop-color="currentColor" stop-opacity="0.05" />
+                                        <stop offset="100%" stop-color="currentColor" stop-opacity="0.18" />
+                                    </linearGradient>
+                                </defs>
+                                <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M6 12.6c1.5-2 4.8-3 8.2-1.8L16 12.8l1.8-2c3.4-1.2 6.7-0.2 8.2 1.8v11.7c-1.5-2-4.8-3-8.2-1.8L16 24.9l-1.8-2.4c-3.4-1.2-6.7-0.2-8.2 1.8V12.6z" stroke-width="2.2" fill="url(#learnAurora)" />
+                                    <path d="M16 13v11.9" stroke-width="2.2" />
+                                    <path d="M13 21.6l-3 2m9-2l3 2" stroke-width="1.1" opacity="0.5" />
+                                    <path d="M16 5.9l1.1 1.5L16 7.8l-1.1-0.4z" fill="currentColor" />
+                                    <path d="M16 6.9l0.5 1.3 1.3 0.3-1.1 0.8 0.1 1.3L16 9.8l-0.8 0.8 0.1-1.3-1.1-0.8 1.3-0.3z" fill="currentColor" opacity="0.9" />
+                                </g>
+                            </svg>
+                        </div>
+                        <h2 class="card-title">Learn Target Languages</h2>
+                        <span class="card-badge" id="learnBadge">0</span>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="learn"></button>
+                </div>
+<div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            Select Learn Mode Languages
+                            <span class="label-description">Creates "Learn (Language)" entries that pair source + translated lines in WebVTT.</span>
+                        </label>
+
+                        <div class="language-search">
+                            <span class="language-search-icon">🔍</span>
+                            <input type="text" id="learnSearch" placeholder="Search languages...">
+                        </div>
+
+                        <div id="selectedLearnLanguages" class="selected-languages empty"></div>
+                        <div class="field-error" id="learnLanguagesError">Please select at least one learn language</div>
+
+                        <div class="quick-actions">
+                            <button type="button" class="quick-btn" data-action="select-popular-learn">⭐ Popular</button>
+                            <button type="button" class="quick-btn" data-action="select-all-learn">✓ All</button>
+                            <button type="button" class="quick-btn" data-action="clear-learn">✗ Clear</button>
+                        </div>
+
+                        <div id="learnLanguages" class="language-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other Settings -->
+            <div class="card collapsed" data-card="cache">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M6 9h8M18 9h8" />
+                                    <circle cx="15" cy="9" r="2" fill="currentColor" />
+                                    <path d="M6 16h8M18 16h8" />
+                                    <circle cx="15" cy="16" r="2" fill="currentColor" />
+                                    <path d="M6 23h4M14 23h12" />
+                                    <circle cx="11" cy="23" r="2" fill="currentColor" />
+                                </g>
+                            </svg>
+                        </div>
+                        <h2 class="card-title">Other Settings</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="cache"></button>
+                </div>
+<div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="fileTranslationEnabled">
+                            Enable "Translate SRT"
+                            <span class="label-description">Show the "Translate SRT" option in the subtitles list to upload and translate subtitles files directly.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="cacheEnabled" checked>
+                            Enable SubMaker Database
+                            <span class="label-description">Reads and caches translated subtitles from/to our database. Avoids re-translating already-translated subtitles. Reduces API usage and improves performance.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group" id="bypassCacheGroup">
+                        <label>
+                            <input type="checkbox" id="bypassCache">
+                            Bypass SubMaker Database Cache (Force Retranslation)
+                            <span class="label-description">Skips reading our database cache and do not save translated subtitles to it. Translations will be stored in a temporary cache (for 12 hours).</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="learnModeEnabled">
+                            Learn Mode
+                            <span class="label-description">Adds "Learn (Language)" entries that output dual-language WebVTT with source and translated lines for language learning.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group" id="learnOrderGroup" style="display: none;">
+                        <label>
+                            Learn Mode Subtitle Order
+                            <span class="label-description">Choose which language appears at the top and bottom of the screen.</span>
+                        </label>
+                        <div class="option-group" style="display: flex; gap: 0.75rem; margin-top: 0.35rem;">
+                            <label style="background: white; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;">
+                                <input type="radio" name="learnOrder" value="source-top" checked>
+                                Source Top • Target Bottom
+                            </label>
+                            <label style="background: white; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;">
+                                <input type="radio" name="learnOrder" value="target-top">
+                                Target Top • Source Bottom
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="mobileMode">
+                            Mobile Mode (beta)
+                            <span class="label-description">Holds translation requests and sends the final subtitle only when ready. Use this if you're watching on Android/iOS. No partial translations, no loading messages. Might freeze the stream until translation is ready. Flash-lite recommended. Wait 1-3 min, if it doesn't load automatically switch subtitles back and forth to load the translation.</span>
+                        </label>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Advanced Settings -->
+            <div class="card collapsed" data-card="advanced" id="advancedSettingsCard" style="display: none;">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                <defs>
+                                    <linearGradient id="advCore" x1="30%" y1="0%" x2="70%" y2="100%">
+                                        <stop offset="0%" stop-color="currentColor" stop-opacity="0.18" />
+                                        <stop offset="100%" stop-color="currentColor" stop-opacity="0.05" />
+                                    </linearGradient>
+                                </defs>
+                                <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="16" cy="16" r="10.5" stroke-width="2.2" />
+                                    <path d="M16 4.5v2.5M16 25v2.5M7 9.5l2.2 1.3M22.8 21.2l2.2 1.3M7 22.5l2.2-1.3M22.8 10.8l2.2-1.3M4.5 16h2.6M24.9 16h2.6" stroke-width="1.4" />
+                                    <path d="M16 7.2c2.3 1.7 3.8 4.6 3.1 7.8L16 27l-3.1-12c-0.7-3.2 0.8-6.1 3.1-7.8z" stroke-width="1.7" fill="url(#advCore)" />
+                                    <path d="M13.3 15.6c-1.6 0.5-3 1.6-3 3.2 0 1 0.4 1.9 1.2 2.5" stroke-width="1.2" />
+                                    <path d="M18.7 15.6c1.6 0.5 3 1.6 3 3.2 0 1-0.4 1.9-1.2 2.5" stroke-width="1.2" />
+                                    <circle cx="16" cy="13.5" r="1.8" stroke-width="1.5" fill="currentColor" />
+                                    <path d="M16 21.2l-2 2.5 2 1.4 2-1.4z" stroke-width="1.3" />
+                                    <path d="M12 10.2c1-1.2 2.5-2.1 4-2.2" stroke-width="1.2" opacity="0.6" />
+                                    <path d="M20 10.2c-1-1.2-2.5-2.1-4-2.2" stroke-width="1.2" opacity="0.6" />
+                                </g>
+                            </svg>
+                        </div>
+                        <h2 class="card-title">Advanced Settings (EXPERIMENTAL)</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="advanced"></button>
+                </div>
+<div class="card-content">
+                    <div class="info-box" style="margin-bottom: 0.75rem;">
+                        <p style="font-size: 0.95rem; margin: 0;">
+                            <strong>Fine-tune AI behavior:</strong> Override default model and sampling parameters.
+                        </p>
+                    </div>
+                    <div class="highlight-box" style="margin-bottom: 1.25rem;">
+                        <p style="font-size: 0.9rem; margin: 0;">
+                            When any setting is changed from defaults, <strong style="color: var(--warning);">Bypass Cache is automatically enabled</strong> to ensure your experimental translations don't pollute the shared database.
+                        </p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="advancedModel">
+                            Translation Model Override
+                            <span class="label-description">Override the default model. Leave empty to use system default (gemini-2.5-flash-lite-preview-09-2025).</span>
+                        </label>
+                        <select id="advancedModel">
+                            <option value="">Use Default Model</option>
+                        </select>
+                        <div class="model-status" id="modelStatus"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="advancedThinkingBudget">
+                            Thinking Budget (Extended Reasoning)
+                            <span class="label-description">0 = disabled, -1 = dynamic (auto-adjust), or fixed token count (1-32768). Higher values = deeper reasoning but slower.</span>
+                        </label>
+                        <input type="number" id="advancedThinkingBudget" min="-1" max="32768" step="1" value="0" placeholder="0">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="advancedTemperature">
+                            Temperature (Creativity)
+                            <span class="label-description">Controls randomness (0.0-2.0). Lower = more deterministic, Higher = more creative. Default: 0.8</span>
+                        </label>
+                        <input type="number" id="advancedTemperature" min="0" max="2" step="0.1" value="0.8" placeholder="0.8">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="advancedTopP">
+                            Top-P (Nucleus Sampling)
+                            <span class="label-description">Probability threshold (0.0-1.0). Lower = more focused, Higher = more diverse. Default: 0.95</span>
+                        </label>
+                        <input type="number" id="advancedTopP" min="0" max="1" step="0.05" value="0.95" placeholder="0.95">
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="enableBatchContext">
+                            Enable Batch Context (Experimental)
+                            <span class="label-description">Include original surrounding context and previous translations when processing batches. Improves translation coherence but may break outputs and increases token usage. Disabled by default.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group" id="contextSizeGroup" style="display: none;">
+                        <label for="contextSize">
+                            Context Size
+                            <span class="label-description">Number of surrounding entries to include as context (1-10). Default: 3</span>
+                        </label>
+                        <input type="number" id="contextSize" min="1" max="10" step="1" value="3" placeholder="3">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dev Settings (hidden until Ctrl+Alt+D) -->
+            <div class="card collapsed" data-card="dev" id="devSettingsCard" style="display: none;">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <div class="card-icon" aria-hidden="true">
+                            <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 6l-8 10 8 10M20 6l8 10-8 10" />
+                                    <path d="M19 4l-6 24" />
+                                </g>
+                            </svg>
+                        </div>
+                        <h2 class="card-title">Dev</h2>
+                    </div>
+                    <button type="button" class="collapse-btn collapsed" data-collapse="dev"></button>
+                </div>
+<div class="card-content">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="syncSubtitlesEnabled">
+                            Enable "Sync Subtitles"
+                            <span class="label-description">Show the "Sync Subtitles" option in the subtitles list to open the sync page for the current video.</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary" accesskey="enter">
+                    💾 Save Configuration
+                </button>
+                <button type="button" class="btn btn-secondary" id="installBtn" disabled>
+                    🚀 Install in Stremio
+                </button>
+                <button type="button" class="btn btn-secondary" id="copyBtn" disabled>
+                    📋 Copy Install URL
+                </button>
+            </div>
+
+            <!-- Install URL Display -->
+            <div class="install-url-box" id="installUrlBox">
+                <label for="installUrlDisplay">Install URL</label>
+                <input type="text" id="installUrlDisplay" readonly>
+            </div>
+        </form>
+
+        <!-- Full Reset CTA (positioned vertically by JS) -->
+        <div id="resetBarWrapper" class="reset-bar">
+            <div class="reset-text">Any problems? Reset settings to default →</div>
+            <button type="button" id="resetSettingsBtn" class="reset-btn">Reset</button>
+        </div>
+    </div>

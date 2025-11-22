@@ -131,12 +131,15 @@ self.addEventListener('fetch', (event) => {
  * Handle API requests with network-first strategy
  */
 async function handleApiRequest(request) {
+    const isGetRequest = request.method === 'GET';
+
     try {
         // Try to fetch from network
         const response = await fetch(request);
 
         // Cache successful API responses (except session-related)
-        if (response.ok && !request.url.includes('session')) {
+        // Cache API responses only for GET requests; Cache API does not support PUT/POST/DELETE.
+        if (response.ok && isGetRequest && !request.url.includes('session')) {
             const cache = await caches.open(API_CACHE_NAME);
             cache.put(request, response.clone());
         }
@@ -144,9 +147,11 @@ async function handleApiRequest(request) {
         return response;
     } catch (error) {
         // Network failed, try cache
-        const cached = await caches.match(request);
-        if (cached) {
-            return cached;
+        if (isGetRequest) {
+            const cached = await caches.match(request);
+            if (cached) {
+                return cached;
+            }
         }
 
         // No cache available, return error response

@@ -1,0 +1,118 @@
+<!-- Ghost Hint (Easter Egg tooltip) -->
+    <div class="ghost-hint" id="ghostHint" aria-hidden="true">
+        <div class="ghost-cta" id="ghostHintBtn" title="Opens experimental settings">click here</div>
+        <div class="ghost-arrow" aria-hidden="true">⬇</div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="keyboard-hint" id="keyboardHint">
+        Press <span class="kbd">?</span> for keyboard shortcuts
+    </div>
+
+    <!-- Old Instructions Mini-FAB removed; replaced by .help-button (configHelp) -->
+
+    <!-- Main Instructions Modal -->
+    <div class="modal-overlay" id="instructionsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>ℹ️ How to Use SubMaker</h2>
+                <div class="modal-close" id="closeInstructionsBtn">×</div>
+            </div>
+            <div class="modal-content">
+                <h3>🚀 Usage Instructions:</h3>
+                <ol>
+                    <li>Add desired API keys to <strong>"Subtitles Sources"</strong> section.</li>
+                    <li>Add a Gemini API Key to <strong>AI section</strong>.</li>
+                    <li>Select <strong>source languages</strong>.</li>
+                    <li>Select <strong>target languages</strong>.</li>
+                    <li><strong>Install on Stremio</strong>.</li>
+                </ol>
+
+                <h3>🎬 Stremio will:</h3>
+                <p>1. Fetch all Source and Target languages subtitles from sources.<br>
+                2. Create <strong>"Make [Target Language]"</strong> buttons within the subtitles list.<br>
+		3. All "Make" translation lists are in the same order of the Source language list.</p>
+
+                <h3>⚡ When you click a subtitle:</h3>
+                <p>When a subtitle is clicked within the "Make" translation lists, it'll start translation.<br>
+		After 20-30 seconds, reload the same subtitle entry.<br>
+                It'll load <strong>translated</strong>!</p>
+                <div class="highlight-box" style="margin-top: 0.75rem; text-align: left;">
+                    <strong>Quick Tip:</strong> If a translation looks off, broken, or out of sync, quickly triple-click that subtitle in the list to force a fresh re-translation.
+                </div>
+
+                <p style="margin-top: 0.75rem;">
+		<b>PS:</b>
+		Partial translation is delivered in batches so you can start watching almost instantly.<br>
+                Complete translation may take from <strong>30 seconds-5 minutes</strong> depending on movie/episode length.</p>
+
+                <div class="highlight-box">
+                    <p><em>*Only 1 source language recommended:*</em></p>
+                    <p style="color: var(--text-secondary); font-weight: normal; margin-top: 0.5rem;">When the "Make" translation lists are created, they load the subtitles list in the same order of the source language.<br>That means you can test the source language subtitles for the correct sync and only then select the same one on the translation list instead of translating unsync'd subtitles.</p>
+                </div>	
+            </div>
+            <div class="modal-footer">
+                <label class="modal-checkbox">
+                    <input type="checkbox" id="dontShowInstructions">
+                    Don't show this again
+                </label>
+                <button type="button" class="btn btn-primary" id="gotItInstructionsBtn">
+                    Got it!
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Translate SRT Instructions Modal -->
+    <div class="modal-overlay" id="fileTranslationModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>📁 Translate SRT Instructions</h2>
+                <div class="modal-close" id="closeFileTranslationBtn">×</div>
+            </div>
+            <div class="modal-content">
+                <h3>📤 How to Use "Translate SRT":</h3>
+                <ol>
+                    <li>Enable it on the config page before installing.</li>
+                    <li>Click <strong>"Translate SRT"</strong> in the subtitles list when streaming.</li>
+                    <li>Right-click the stream or select the three-dots menu and click <strong>"Download Subtitles"</strong></li>
+                    <li>A webpage will open on your browser.</li>
+                    <li>Upload the .srt file you'd like to translate. It will use your Gemini API key.</li>
+                    <li>When it's done, download the translated subtitles and drag it to Stremio.</li>
+                </ol>
+            </div>
+            <div class="modal-footer">
+                <label class="modal-checkbox">
+                    <input type="checkbox" id="dontShowFileTranslation">
+                    Don't show this again
+                </label>
+                <button type="button" class="btn btn-primary" id="gotItFileTranslationBtn">
+                    Got it!
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reset Confirmation Modal -->
+    <div class="modal-overlay" id="resetConfirmModal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="resetConfirmTitle">
+            <div class="modal-header">
+                <h2 id="resetConfirmTitle">🧹 Reset All Settings</h2>
+                <div class="modal-close" id="closeResetConfirmBtn">×</div>
+            </div>
+            <div class="modal-content">
+                <p><strong>This will reset literally everything for this site:</strong></p>
+                <p>- Local storage, session storage, cached config and tokens</p>
+                <p>- Service worker and all caches</p>
+                <p>- Any site data stored by this app</p>
+                <p style="margin-top: 0.75rem;">The page will reload afterward.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancelResetBtn">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmResetBtn">Reset Everything</button>
+            </div>
+        </div>
+    </div>
