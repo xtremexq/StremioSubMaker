@@ -3,6 +3,27 @@ const DEFAULT_API_KEYS = require('../config/defaultApiKeys');
 const { getSessionManager } = require('./sessionManager');
 const log = require('./logger');
 
+// Language selection limits (configurable via environment)
+const DEFAULT_SOURCE_LANGUAGE_LIMIT = 3;
+const DEFAULT_TARGET_LANGUAGE_LIMIT = 6;
+const DEFAULT_NO_TRANSLATION_LANGUAGE_LIMIT = 9;
+
+function parseLanguageLimit(envVar, fallback, min = 1, max = 50) {
+  const parsed = parseInt(process.env[envVar], 10);
+  if (Number.isFinite(parsed) && parsed >= min) {
+    return Math.min(max, parsed);
+  }
+  return fallback;
+}
+
+function getLanguageSelectionLimits() {
+  return {
+    maxSourceLanguages: parseLanguageLimit('MAX_SOURCE_LANGUAGES', DEFAULT_SOURCE_LANGUAGE_LIMIT),
+    maxTargetLanguages: parseLanguageLimit('MAX_TARGET_LANGUAGES', DEFAULT_TARGET_LANGUAGE_LIMIT),
+    maxNoTranslationLanguages: parseLanguageLimit('MAX_NO_TRANSLATION_LANGUAGES', DEFAULT_NO_TRANSLATION_LANGUAGE_LIMIT)
+  };
+}
+
 /**
  * Feature flag: Override deprecated/old model names with current default
  * Set to false in the future to allow users to select any model they want
@@ -182,6 +203,37 @@ function normalizeConfig(config) {
   mergedConfig.targetLanguages = sanitizeLanguages(mergedConfig.targetLanguages);
   mergedConfig.noTranslationLanguages = sanitizeLanguages(mergedConfig.noTranslationLanguages);
   mergedConfig.learnTargetLanguages = sanitizeLanguages(mergedConfig.learnTargetLanguages);
+
+  // Enforce language selection limits (configurable via env)
+  const { maxSourceLanguages, maxTargetLanguages, maxNoTranslationLanguages } = getLanguageSelectionLimits();
+  if (mergedConfig.sourceLanguages.length > maxSourceLanguages) {
+    mergedConfig.sourceLanguages = mergedConfig.sourceLanguages.slice(0, maxSourceLanguages);
+  }
+
+  const seenTargets = new Set();
+  const trimmedTargets = [];
+  const trimmedLearns = [];
+
+  const pushWithLimit = (code, dest) => {
+    if (!code) return;
+    if (seenTargets.has(code)) {
+      dest.push(code);
+      return;
+    }
+    if (seenTargets.size >= maxTargetLanguages) return;
+    seenTargets.add(code);
+    dest.push(code);
+  };
+
+  (mergedConfig.targetLanguages || []).forEach(code => pushWithLimit(code, trimmedTargets));
+  (mergedConfig.learnTargetLanguages || []).forEach(code => pushWithLimit(code, trimmedLearns));
+
+  mergedConfig.targetLanguages = trimmedTargets;
+  mergedConfig.learnTargetLanguages = trimmedLearns;
+
+  if (mergedConfig.noTranslationLanguages.length > maxNoTranslationLanguages) {
+    mergedConfig.noTranslationLanguages = mergedConfig.noTranslationLanguages.slice(0, maxNoTranslationLanguages);
+  }
 
   // If geminiModel is empty/null, use defaults (respects .env)
   if (!mergedConfig.geminiModel || mergedConfig.geminiModel.trim() === '') {
@@ -444,25 +496,51 @@ function validateConfig(config) {
     return { valid: false, errors };
   }
 
-  // Check Gemini API key
+  const { maxSourceLanguages, maxTargetLanguages, maxNoTranslationLanguages } = getLanguageSelectionLimits();
+
+  if (config.noTranslationMode) {
+    if (!config.noTranslationLanguages || config.noTranslationLanguages.length === 0) {
+      errors.push('At least one no-translation language must be selected');
+    }
+    if (config.noTranslationLanguages && config.noTranslationLanguages.length > maxNoTranslationLanguages) {
+      errors.push(`Maximum of ${maxNoTranslationLanguages} no-translation languages allowed`);
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  }
+
+  // Translation mode validation
   if (!config.geminiApiKey || config.geminiApiKey.trim() === '') {
     errors.push('Gemini API key is required');
   }
 
-  // Check if 1-3 source languages are selected
   if (!config.sourceLanguages || config.sourceLanguages.length === 0) {
     errors.push('At least one source language must be selected');
   }
 
-  if (config.sourceLanguages && config.sourceLanguages.length > 3) {
-    errors.push('Maximum of 3 source languages allowed');
+  if (config.sourceLanguages && config.sourceLanguages.length > maxSourceLanguages) {
+    errors.push(`Maximum of ${maxSourceLanguages} source languages allowed`);
   }
 
   if (!config.targetLanguages || config.targetLanguages.length === 0) {
     errors.push('At least one target language must be selected');
   }
 
-  // Check Gemini model
+  const combinedTargets = new Set([
+    ...(config.targetLanguages || []),
+    ...(config.learnTargetLanguages || [])
+  ]);
+  if (combinedTargets.size > maxTargetLanguages) {
+    errors.push(`Maximum of ${maxTargetLanguages} total target languages allowed (including Learn Mode)`);
+  }
+
+  if (config.noTranslationLanguages && config.noTranslationLanguages.length > maxNoTranslationLanguages) {
+    errors.push(`Maximum of ${maxNoTranslationLanguages} no-translation languages allowed`);
+  }
+
   if (!config.geminiModel || config.geminiModel.trim() === '') {
     errors.push('Gemini model must be selected');
   }
@@ -550,5 +628,6 @@ module.exports = {
   validateConfig,
   buildManifest,
   // Exported for async token resolution paths in routes
-  normalizeConfig
+  normalizeConfig,
+  getLanguageSelectionLimits
 };

@@ -28,6 +28,9 @@
             fetch('/api/session-stats', { cache: 'no-store' })
                 .then(function(res) { return res.ok ? res.json() : null; })
                 .then(function(data) {
+                    if (data && data.limits) {
+                        window.__CONFIG_LIMITS__ = data.limits;
+                    }
                     var query = data && data.version ? ('?v=' + data.version) : ('?v=' + Date.now());
                     loadConfigJs(query);
                     if (data && data.version) {

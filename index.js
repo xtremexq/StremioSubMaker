@@ -15,7 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig } = require('./src/utils/config');
+const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits } = require('./src/utils/config');
 const { srtPairToWebVTT } = require('./src/utils/subtitle');
 const { version } = require('./src/utils/version');
 const { getAllLanguages, getLanguageName } = require('./src/utils/languages');
@@ -89,6 +89,22 @@ const inFlightRequests = new LRUCache({
 const firstClickTracker = new LRUCache({
     max: 1000, // Max 1000 tracked clicks
     ttl: 300000, // 5 minutes
+    updateAgeOnGet: false,
+});
+
+// Configurable rate limits for 3-click cache resets (defaults: 6/15m permanent, 12/15m bypass)
+const CACHE_RESET_WINDOW_MS = Math.max(1, parseInt(process.env.CACHE_RESET_WINDOW_MINUTES, 10) || 15) * 60 * 1000;
+const CACHE_RESET_LIMIT_PERMANENT = (() => {
+    const parsed = parseInt(process.env.CACHE_RESET_LIMIT_TRANSLATION || process.env.CACHE_RESET_LIMIT_PERMANENT, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 6;
+})();
+const CACHE_RESET_LIMIT_BYPASS = (() => {
+    const parsed = parseInt(process.env.CACHE_RESET_LIMIT_BYPASS, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 12;
+})();
+const cacheResetHistory = new LRUCache({
+    max: 5000, // Track up to 5k users/configs per window
+    ttl: CACHE_RESET_WINDOW_MS * 2, // Auto-expire idle counters
     updateAgeOnGet: false,
 });
 
@@ -195,6 +211,51 @@ function isLocalhost(req) {
         hostname.startsWith('10.') ||
         /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)
     );
+}
+
+// Helper: resolve cache type for rate limiting and logging
+function resolveCacheType(config) {
+    const bypass = config && config.bypassCache === true;
+    const bypassCfg = (config && (config.bypassCacheConfig || config.tempCache)) || {};
+    const bypassEnabled = bypass && (bypassCfg.enabled !== false);
+    return bypassEnabled ? 'bypass' : 'permanent';
+}
+
+// Helper: consistent config hash for logging/rate limits
+function getConfigHashSafe(config) {
+    return (config && typeof config.__configHash === 'string' && config.__configHash.length > 0)
+        ? config.__configHash
+        : 'anonymous';
+}
+
+// Rate limit tracker for 3-click cache resets (per user/config + cache type)
+function checkCacheResetRateLimit(config) {
+    const cacheType = resolveCacheType(config);
+    const limit = cacheType === 'bypass' ? CACHE_RESET_LIMIT_BYPASS : CACHE_RESET_LIMIT_PERMANENT;
+
+    // Limit disabled or misconfigured -> allow
+    if (!limit || limit <= 0) {
+        return { blocked: false, cacheType, remaining: Infinity };
+    }
+
+    const now = Date.now();
+    const key = `reset:${cacheType}:${getConfigHashSafe(config)}`;
+    const history = cacheResetHistory.get(key) || [];
+
+    // Sliding window filter
+    const recent = history.filter((ts) => now - ts <= CACHE_RESET_WINDOW_MS);
+
+    // If already at limit, block without counting the new attempt
+    if (recent.length >= limit) {
+        cacheResetHistory.set(key, recent);
+        return { blocked: true, cacheType, remaining: 0, limit };
+    }
+
+    // Record successful reset
+    recent.push(now);
+    cacheResetHistory.set(key, recent);
+
+    return { blocked: false, cacheType, remaining: Math.max(0, limit - recent.length), limit };
 }
 
 /**
@@ -1140,7 +1201,8 @@ app.post('/api/update-session/:token', sessionCreationLimiter, async (req, res) 
 app.get('/api/session-stats', statsIpWhitelist, statsLimiter, async (req, res) => {
     try {
         const stats = await sessionManager.getStats();
-        res.json({ ...stats, version });
+        const limits = getLanguageSelectionLimits();
+        res.json({ ...stats, version, limits });
     } catch (error) {
         log.error(() => '[Session API] Error getting stats:', error);
         res.status(500).json({ error: 'Failed to get session statistics' });
@@ -1543,14 +1605,20 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
                 if (shouldBlock) {
                     log.debug(() => `[PurgeTrigger] 3 rapid loads detected but BLOCKED: Translation in progress for ${sourceFileId}/${targetLang} (user: ${config.__configHash})`);
                 } else {
-                    // Reset the counter immediately to avoid loops
-                    firstClickTracker.set(clickKey, { times: [] });
-                    const hadCache = await hasCachedTranslation(sourceFileId, targetLang, config);
-                    if (hadCache) {
-                        log.debug(() => `[PurgeTrigger] 3 rapid loads detected (<5s) for ${sourceFileId}/${targetLang}. Purging cache and re-triggering translation.`);
-                        await purgeTranslationCache(sourceFileId, targetLang, config);
+                    const rateLimitStatus = checkCacheResetRateLimit(config);
+
+                    if (rateLimitStatus.blocked) {
+                        log.warn(() => `[PurgeTrigger] BLOCKING 3-click reset: Rate limit reached for ${rateLimitStatus.cacheType} cache (${rateLimitStatus.limit}/${Math.round(CACHE_RESET_WINDOW_MS / 60000)}m) on ${sourceFileId}/${targetLang} (user: ${getConfigHashSafe(config)})`);
                     } else {
-                        log.debug(() => `[PurgeTrigger] 3 rapid loads detected but no cached translation found for ${sourceFileId}/${targetLang}. Skipping purge.`);
+                        // Reset the counter immediately to avoid loops
+                        firstClickTracker.set(clickKey, { times: [] });
+                        const hadCache = await hasCachedTranslation(sourceFileId, targetLang, config);
+                        if (hadCache) {
+                            log.debug(() => `[PurgeTrigger] 3 rapid loads detected (<5s) for ${sourceFileId}/${targetLang}. Purging cache and re-triggering translation. Remaining resets this window: ${rateLimitStatus.remaining}`);
+                            await purgeTranslationCache(sourceFileId, targetLang, config);
+                        } else {
+                            log.debug(() => `[PurgeTrigger] 3 rapid loads detected but no cached translation found for ${sourceFileId}/${targetLang}. Skipping purge.`);
+                        }
                     }
                 }
             }
@@ -1695,14 +1763,20 @@ app.get('/addon/:config/learn/:sourceFileId/:targetLang', searchLimiter, validat
                 if (shouldBlock) {
                     log.debug(() => `[LearnPurgeTrigger] 3 rapid loads detected but BLOCKED: Translation in progress for ${sourceFileId}/${targetLang} (user: ${config.__configHash})`);
                 } else {
-                    // Reset the counter immediately to avoid loops
-                    firstClickTracker.set(clickKey, { times: [] });
-                    const hadCache = await hasCachedTranslation(sourceFileId, targetLang, config);
-                    if (hadCache) {
-                        log.debug(() => `[LearnPurgeTrigger] 3 rapid loads detected (<5s) for ${sourceFileId}/${targetLang}. Purging cache and re-triggering translation.`);
-                        await purgeTranslationCache(sourceFileId, targetLang, config);
+                    const rateLimitStatus = checkCacheResetRateLimit(config);
+
+                    if (rateLimitStatus.blocked) {
+                        log.warn(() => `[LearnPurgeTrigger] BLOCKING 3-click reset: Rate limit reached for ${rateLimitStatus.cacheType} cache (${rateLimitStatus.limit}/${Math.round(CACHE_RESET_WINDOW_MS / 60000)}m) on ${sourceFileId}/${targetLang} (user: ${getConfigHashSafe(config)})`);
                     } else {
-                        log.debug(() => `[LearnPurgeTrigger] 3 rapid loads detected but no cached translation found for ${sourceFileId}/${targetLang}. Skipping purge.`);
+                        // Reset the counter immediately to avoid loops
+                        firstClickTracker.set(clickKey, { times: [] });
+                        const hadCache = await hasCachedTranslation(sourceFileId, targetLang, config);
+                        if (hadCache) {
+                            log.debug(() => `[LearnPurgeTrigger] 3 rapid loads detected (<5s) for ${sourceFileId}/${targetLang}. Purging cache and re-triggering translation. Remaining resets this window: ${rateLimitStatus.remaining}`);
+                            await purgeTranslationCache(sourceFileId, targetLang, config);
+                        } else {
+                            log.debug(() => `[LearnPurgeTrigger] 3 rapid loads detected but no cached translation found for ${sourceFileId}/${targetLang}. Skipping purge.`);
+                        }
                     }
                 }
             }

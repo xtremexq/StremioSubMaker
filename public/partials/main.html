@@ -198,21 +198,22 @@
                     <button type="button" class="collapse-btn collapsed" data-collapse="notranslation"></button>
                 </div>
 <div class="card-content">
-                    <div class="form-group">
-                        <label>
-                            Subtitle Languages
-                            <span class="label-description">Select which languages you want to fetch subtitles in.</span>
-                        </label>
+                        <div class="form-group">
+                            <label>
+                                Subtitle Languages
+                                <span class="label-description" id="noTranslationLanguagesDescription">Select which languages you want to fetch subtitles in.</span>
+                            </label>
 
-                        <div class="language-search">
-                            <span class="language-search-icon">🔍</span>
-                            <input type="text" id="noTranslationSearch" placeholder="Search languages...">
-                        </div>
+                            <div class="language-search">
+                                <span class="language-search-icon">🔍</span>
+                                <input type="text" id="noTranslationSearch" placeholder="Search languages...">
+                            </div>
 
-                        <div id="selectedNoTranslationLanguages" class="selected-languages empty"></div>
+                            <div id="selectedNoTranslationLanguages" class="selected-languages empty"></div>
+                            <div class="field-error" id="noTranslationLanguagesError"></div>
 
-                        <div class="quick-actions">
-                            <button type="button" class="quick-btn" data-action="select-popular-notranslation">⭐ Popular</button>
+                            <div class="quick-actions">
+                                <button type="button" class="quick-btn" data-action="select-popular-notranslation">⭐ Popular</button>
                             <button type="button" class="quick-btn" data-action="select-all-notranslation">✓ All</button>
                             <button type="button" class="quick-btn" data-action="clear-notranslation">✗ Clear</button>
                         </div>
@@ -333,7 +334,7 @@
                     <div class="form-group">
                         <label>
                             * Source languages for translations
-                            <span class="label-description">You can select up to 3 source languages, but only 1 is recommended (so you have the same list order when translating). All subtitles from this language will be available for translation in the translation selector AND will be fetched (original subtitles will show up).</span>
+                            <span class="label-description" id="sourceLanguagesDescription">You can select up to 3 source languages, but only 1 is recommended (so you have the same list order when translating). All subtitles from this language will be available for translation in the translation selector AND will be fetched (original subtitles will show up).</span>
                         </label>
 
                         <div class="language-search">
@@ -342,7 +343,7 @@
                         </div>
 
                         <div id="selectedSourceLanguages" class="selected-languages empty"></div>
-                        <div class="field-error" id="sourceLanguagesError">Please select 1 source language</div>
+                        <div class="field-error" id="sourceLanguagesError">Please select at least one source language</div>
 
                         <div id="sourceLanguages" class="language-grid"></div>
                     </div>
@@ -372,7 +373,7 @@
                     <div class="form-group">
                         <label>
                             * Target languages for subtitles and translations
-                            <span class="label-description">Subtitles in target languages will be fetched AND translation buttons will appear for translating FROM the source language TO these languages.</span>
+                            <span class="label-description" id="targetLanguagesDescription">Subtitles in target languages will be fetched AND translation buttons will appear for translating FROM the source language TO these languages. You can select up to 6 total target languages (including Learn Mode).</span>
                         </label>
 
                         <div class="language-search">

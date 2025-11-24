@@ -22,6 +22,26 @@
     // Popular languages for quick selection
     const POPULAR_LANGUAGES = ['eng', 'spa', 'fre', 'ger', 'por', 'pob', 'ita', 'rus', 'jpn', 'kor', 'chi', 'ara'];
 
+    // Language selection limits (defaults, can be overridden by server-provided env values)
+    const DEFAULT_LIMITS = {
+        maxSourceLanguages: 3,
+        maxTargetLanguages: 6,
+        maxNoTranslationLanguages: 9
+    };
+
+    function parseLimit(value, fallback, min = 1, max = 50) {
+        const parsed = parseInt(value, 10);
+        if (Number.isFinite(parsed) && parsed >= min) {
+            return Math.min(parsed, max);
+        }
+        return fallback;
+    }
+
+    const SERVER_LIMITS = (typeof window !== 'undefined' && window.__CONFIG_LIMITS__) ? window.__CONFIG_LIMITS__ : {};
+    const MAX_SOURCE_LANGUAGES = parseLimit(SERVER_LIMITS.maxSourceLanguages, DEFAULT_LIMITS.maxSourceLanguages);
+    const MAX_TARGET_LANGUAGES = parseLimit(SERVER_LIMITS.maxTargetLanguages, DEFAULT_LIMITS.maxTargetLanguages);
+    const MAX_NO_TRANSLATION_LANGUAGES = parseLimit(SERVER_LIMITS.maxNoTranslationLanguages, DEFAULT_LIMITS.maxNoTranslationLanguages);
+
     // Translation prompt presets
     const STRICT_TRANSLATION_PROMPT = `You are a professional subtitles translator. Translate the following subtitles while:
 1. Maintaining perfect SRT format (sequence numbers, timestamps, and text)
@@ -84,7 +104,7 @@ Translate to {target_language}.`;
         return {
             noTranslationMode: false, // If true, skip translation and just fetch subtitles
             noTranslationLanguages: [], // Languages to fetch when in no-translation mode
-            sourceLanguages: ['eng'], // Up to 3 source languages allowed
+            sourceLanguages: ['eng'], // Limited by MAX_SOURCE_LANGUAGES
             targetLanguages: [],
             // Learn mode (dual-language VTT output)
             learnMode: false,
@@ -253,6 +273,8 @@ Translate to {target_language}.`;
         currentConfig.learnTargetLanguages = normalizeLanguageCodes(currentConfig.learnTargetLanguages || []);
         currentConfig.learnPlacement = 'top';
         currentConfig.mobileMode = currentConfig.mobileMode === true;
+        enforceLanguageLimits();
+        updateLanguageLimitCopy();
 
         // Show instructions ASAP (do not block on network/UI work)
         showInstructionsModalIfNeeded();
@@ -291,6 +313,122 @@ Translate to {target_language}.`;
             if (lc.startsWith('___')) return false; // frontend/internal placeholders
             return true;
         });
+    }
+
+    function getCombinedTargetSet() {
+        const targets = Array.isArray(currentConfig?.targetLanguages) ? currentConfig.targetLanguages : [];
+        const learns = Array.isArray(currentConfig?.learnTargetLanguages) ? currentConfig.learnTargetLanguages : [];
+        return new Set([...targets, ...learns]);
+    }
+
+    function getCombinedTargetCount() {
+        return getCombinedTargetSet().size;
+    }
+
+    function canAddTargetLanguage(code) {
+        const combined = getCombinedTargetSet();
+        if (combined.has(code)) {
+            return true; // Already counted, does not consume extra slot
+        }
+        return combined.size < MAX_TARGET_LANGUAGES;
+    }
+
+    function enforceLanguageLimits() {
+        if (!currentConfig) return;
+
+        if (Array.isArray(currentConfig.sourceLanguages) && currentConfig.sourceLanguages.length > MAX_SOURCE_LANGUAGES) {
+            currentConfig.sourceLanguages = currentConfig.sourceLanguages.slice(0, MAX_SOURCE_LANGUAGES);
+        }
+
+        const targets = Array.isArray(currentConfig.targetLanguages) ? currentConfig.targetLanguages : [];
+        const learns = Array.isArray(currentConfig.learnTargetLanguages) ? currentConfig.learnTargetLanguages : [];
+        const combined = new Set();
+        const trimmedTargets = [];
+        const trimmedLearns = [];
+
+        const pushWithLimit = (code, dest) => {
+            if (!code) return;
+            if (combined.has(code)) {
+                dest.push(code);
+                return;
+            }
+            if (combined.size >= MAX_TARGET_LANGUAGES) return;
+            combined.add(code);
+            dest.push(code);
+        };
+
+        targets.forEach(code => pushWithLimit(code, trimmedTargets));
+        learns.forEach(code => pushWithLimit(code, trimmedLearns));
+
+        currentConfig.targetLanguages = trimmedTargets;
+        currentConfig.learnTargetLanguages = trimmedLearns;
+
+        if (Array.isArray(currentConfig.noTranslationLanguages) && currentConfig.noTranslationLanguages.length > MAX_NO_TRANSLATION_LANGUAGES) {
+            currentConfig.noTranslationLanguages = currentConfig.noTranslationLanguages.slice(0, MAX_NO_TRANSLATION_LANGUAGES);
+        }
+    }
+
+    function updateLanguageLimitCopy() {
+        const sourceDesc = document.getElementById('sourceLanguagesDescription');
+        if (sourceDesc) {
+            sourceDesc.innerHTML = `You can select up to ${MAX_SOURCE_LANGUAGES} source language${MAX_SOURCE_LANGUAGES === 1 ? '' : 's'}, but only 1 is recommended (so you have the same list order when translating). All subtitles from this language will be available for translation in the translation selector AND will be fetched (original subtitles will show up).`;
+        }
+
+        const targetDesc = document.getElementById('targetLanguagesDescription');
+        if (targetDesc) {
+            targetDesc.innerHTML = `Subtitles in target languages will be fetched AND translation buttons will appear for translating FROM the source language TO these languages. You can select up to ${MAX_TARGET_LANGUAGES} total target languages (including Learn Mode).`;
+        }
+
+        const sourceError = document.getElementById('sourceLanguagesError');
+        if (sourceError) {
+            sourceError.textContent = 'Please select at least one source language';
+        }
+
+        const noTranslationDesc = document.getElementById('noTranslationLanguagesDescription');
+        if (noTranslationDesc) {
+            noTranslationDesc.textContent = `Select which languages you want to fetch subtitles in (up to ${MAX_NO_TRANSLATION_LANGUAGES}).`;
+        }
+    }
+
+    function buildLimitedTargetSelection(candidates, type) {
+        const otherList = type === 'target'
+            ? (currentConfig.learnTargetLanguages || [])
+            : (currentConfig.targetLanguages || []);
+        const combined = new Set(otherList);
+        const selection = [];
+        let truncated = false;
+
+        candidates.forEach(code => {
+            if (selection.includes(code)) return;
+            if (combined.has(code)) {
+                selection.push(code);
+                return;
+            }
+            if (combined.size >= MAX_TARGET_LANGUAGES) {
+                truncated = true;
+                return;
+            }
+            combined.add(code);
+            selection.push(code);
+        });
+
+        return { selection, truncated };
+    }
+
+    function buildLimitedNoTranslationSelection(candidates) {
+        const selection = [];
+        let truncated = false;
+
+        candidates.forEach(code => {
+            if (selection.includes(code)) return;
+            if (selection.length >= MAX_NO_TRANSLATION_LANGUAGES) {
+                truncated = true;
+                return;
+            }
+            selection.push(code);
+        });
+
+        return { selection, truncated };
     }
 
     // Modal management functions
@@ -756,17 +894,26 @@ Translate to {target_language}.`;
             element.classList.remove('selected');
         } else {
             // Add language
-            // For source languages, only allow up to 3 selections
             if (type === 'source') {
-                if (currentConfig[configKey].length >= 3) {
-                    // Already have 3 source languages, show alert
-                    showAlert('You can only select up to 3 source languages', 'warning');
+                if (currentConfig[configKey].length >= MAX_SOURCE_LANGUAGES) {
+                    showAlert(`You can only select up to ${MAX_SOURCE_LANGUAGES} source languages`, 'warning');
                     return;
                 }
-                // Add this language
+                currentConfig[configKey].push(code);
+            } else if (type === 'target' || type === 'learn') {
+                if (!canAddTargetLanguage(code)) {
+                    showAlert(`You can only select up to ${MAX_TARGET_LANGUAGES} total target languages (including Learn Mode)`, 'warning');
+                    return;
+                }
+                currentConfig[configKey].push(code);
+            } else if (type === 'notranslation') {
+                if (currentConfig[configKey].length >= MAX_NO_TRANSLATION_LANGUAGES) {
+                    showAlert(`You can only select up to ${MAX_NO_TRANSLATION_LANGUAGES} languages in Just Fetch mode`, 'warning');
+                    return;
+                }
                 currentConfig[configKey].push(code);
             } else {
-                // For target and no-translation languages, allow multiple
+                // Fallback: allow multiple selections for any other types
                 currentConfig[configKey].push(code);
             }
             element.classList.add('selected');
@@ -806,6 +953,8 @@ Translate to {target_language}.`;
         // Live validation
         if (type === 'source' || type === 'target' || type === 'learn') {
             validateLanguageSelection(type);
+        } else if (type === 'notranslation') {
+            validateNoTranslationSelection();
         }
 
         languageCodes.forEach(code => {
@@ -1394,25 +1543,79 @@ Translate to {target_language}.`;
         const errorDiv = document.getElementById(errorId);
 
         if (type === 'source') {
-            // Source languages must have 1-3 selections
-            if (currentConfig[configKey].length < 1 || currentConfig[configKey].length > 3) {
-                errorDiv.textContent = 'Please select 1-3 source languages';
-                errorDiv.classList.add('show');
+            // Source languages must have 1..MAX_SOURCE_LANGUAGES selections
+            if (currentConfig[configKey].length < 1 || currentConfig[configKey].length > MAX_SOURCE_LANGUAGES) {
+                if (errorDiv) {
+                    errorDiv.textContent = `Please select 1-${MAX_SOURCE_LANGUAGES} source languages`;
+                    errorDiv.classList.add('show');
+                }
                 return false;
-            } else {
-                errorDiv.classList.remove('show');
-                return true;
             }
+            if (errorDiv) errorDiv.classList.remove('show');
+            return true;
         } else {
             // Target and learn languages must have at least one when applicable
             const requiresSelection = type === 'target' ? true : !!currentConfig.learnMode;
-            if (requiresSelection && currentConfig[configKey].length === 0) {
-                errorDiv.classList.add('show');
+            const combinedCount = getCombinedTargetCount();
+            const learnCount = Array.isArray(currentConfig.learnTargetLanguages) ? currentConfig.learnTargetLanguages.length : 0;
+
+            if (type === 'target') {
+                if (requiresSelection && combinedCount === 0) {
+                    if (errorDiv) errorDiv.classList.add('show');
+                    return false;
+                }
+            } else {
+                if (requiresSelection && learnCount === 0) {
+                    if (errorDiv) errorDiv.classList.add('show');
+                    return false;
+                }
+            }
+            if (combinedCount > MAX_TARGET_LANGUAGES) {
+                if (errorDiv) {
+                    errorDiv.textContent = `Please select up to ${MAX_TARGET_LANGUAGES} target languages (including Learn Mode)`;
+                    errorDiv.classList.add('show');
+                }
                 return false;
             }
-            errorDiv.classList.remove('show');
+            if (errorDiv) errorDiv.classList.remove('show');
             return true;
         }
+    }
+
+    function validateNoTranslationSelection() {
+        const errorDiv = document.getElementById('noTranslationLanguagesError');
+
+        if (!currentConfig.noTranslationMode) {
+            if (errorDiv) {
+                errorDiv.textContent = '';
+                errorDiv.classList.remove('show');
+            }
+            return true;
+        }
+
+        const count = Array.isArray(currentConfig.noTranslationLanguages) ? currentConfig.noTranslationLanguages.length : 0;
+
+        if (count === 0) {
+            if (errorDiv) {
+                errorDiv.textContent = 'Please select at least one language for Just Fetch mode';
+                errorDiv.classList.add('show');
+            }
+            return false;
+        }
+
+        if (count > MAX_NO_TRANSLATION_LANGUAGES) {
+            if (errorDiv) {
+                errorDiv.textContent = `Please select up to ${MAX_NO_TRANSLATION_LANGUAGES} languages for Just Fetch mode`;
+                errorDiv.classList.add('show');
+            }
+            return false;
+        }
+
+        if (errorDiv) {
+            errorDiv.textContent = '';
+            errorDiv.classList.remove('show');
+        }
+        return true;
     }
 
     function validateGeminiApiKey(showNotification = false) {
@@ -1921,6 +2124,8 @@ Translate to {target_language}.`;
 
             updateSelectedChips('notranslation', []);
         }
+
+        validateNoTranslationSelection();
     }
 
     
@@ -2085,11 +2290,11 @@ Translate to {target_language}.`;
         switch (command) {
             case 'select':
                 if (type === 'source') {
-                    // Source languages: Allow up to 3 selections
-                    // For "Popular" or "All", select up to 3 popular/visible languages
+                    // Source languages: respect MAX_SOURCE_LANGUAGES
+                    // For "Popular" or "All", select up to the configured limit
                     const selectedCodes = [];
                     items.forEach(item => {
-                        if (selectedCodes.length >= 3) return; // Limit to 3
+                        if (selectedCodes.length >= MAX_SOURCE_LANGUAGES) return; // Limit to configured value
 
                         const code = item.dataset.code;
                         if (action.includes('popular') && POPULAR_LANGUAGES.includes(code)) {
@@ -2110,29 +2315,47 @@ Translate to {target_language}.`;
                         });
                     }
                 } else {
-                    // Target, learn and no-translation languages: Allow multiple selections
-                    if (action.includes('popular')) {
-                        // Select only popular languages
-                        currentConfig[configKey] = [];
-                        items.forEach(item => {
-                            const code = item.dataset.code;
+                    // Target, learn and no-translation languages
+                    const candidates = [];
+                    items.forEach(item => {
+                        const code = item.dataset.code;
+                        if (action.includes('popular')) {
                             if (POPULAR_LANGUAGES.includes(code)) {
-                                currentConfig[configKey].push(code);
-                                item.classList.add('selected');
-                            } else {
-                                item.classList.remove('selected');
+                                candidates.push(code);
                             }
-                        });
-                    } else {
-                        // Select all visible
-                        currentConfig[configKey] = [];
-                        items.forEach(item => {
-                            const code = item.dataset.code;
-                            if (!currentConfig[configKey].includes(code)) {
-                                currentConfig[configKey].push(code);
-                            }
+                        } else {
+                            candidates.push(code);
+                        }
+                    });
+
+                    let selection = candidates;
+                    let truncated = false;
+                    if (type === 'target' || type === 'learn') {
+                        const result = buildLimitedTargetSelection(candidates, type);
+                        selection = result.selection;
+                        truncated = result.truncated;
+                    } else if (type === 'notranslation') {
+                        const result = buildLimitedNoTranslationSelection(candidates);
+                        selection = result.selection;
+                        truncated = result.truncated;
+                    }
+
+                    currentConfig[configKey] = selection;
+                    const selectionSet = new Set(selection);
+
+                    items.forEach(item => {
+                        if (selectionSet.has(item.dataset.code)) {
                             item.classList.add('selected');
-                        });
+                        } else {
+                            item.classList.remove('selected');
+                        }
+                    });
+
+                    if (truncated) {
+                        const msg = type === 'notranslation'
+                            ? `Only the first ${MAX_NO_TRANSLATION_LANGUAGES} languages were kept for Just Fetch mode.`
+                            : `Only the first ${MAX_TARGET_LANGUAGES} target languages were kept (combined with Learn Mode).`;
+                        showAlert(msg, 'warning');
                     }
                 }
                 break;
@@ -2671,22 +2894,35 @@ Translate to {target_language}.`;
             }
 
             if (!validateLanguageSelection('source')) {
-                errors.push('⚠️ Please select 1-3 source languages');
+                errors.push(`⚠️ Please select 1-${MAX_SOURCE_LANGUAGES} source languages`);
             }
 
             if (!validateLanguageSelection('target')) {
-                errors.push('⚠️ Please select at least one target language');
+                errors.push(`⚠️ Please select between 1 and ${MAX_TARGET_LANGUAGES} target languages (including Learn Mode)`);
             }
 
             if (config.learnMode && !validateLanguageSelection('learn')) {
                 errors.push('⚠️ Please select at least one learn target language (or disable Learn Mode)');
             }
         } else {
-            // In no-translation mode, validate that at least one language is selected
-            
+            // In no-translation mode, validate language count bounds
+            const noTranslationError = document.getElementById('noTranslationLanguagesError');
+
             if (!config.noTranslationLanguages || config.noTranslationLanguages.length === 0) {
                 errors.push('⚠️ Please select at least one language in no-translation mode');
-                
+                if (noTranslationError) {
+                    noTranslationError.textContent = 'Please select at least one language for Just Fetch mode';
+                    noTranslationError.classList.add('show');
+                }
+            } else if (config.noTranslationLanguages.length > MAX_NO_TRANSLATION_LANGUAGES) {
+                errors.push(`⚠️ Please select up to ${MAX_NO_TRANSLATION_LANGUAGES} languages in no-translation mode`);
+                if (noTranslationError) {
+                    noTranslationError.textContent = `Please select up to ${MAX_NO_TRANSLATION_LANGUAGES} languages for Just Fetch mode`;
+                    noTranslationError.classList.add('show');
+                }
+            } else if (noTranslationError) {
+                noTranslationError.textContent = '';
+                noTranslationError.classList.remove('show');
             }
         }
 

@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 
 - Stremio Kai Support: Added detection and logging for Stremio Kai user agents to improve compatibility with the popular anime viewer fork
 
+**Improvements:**
+
+- 3-click cache resets are now rate limited (defaults: 6/15m for permanent cache, 12/15m for bypass cache) and configurable via `CACHE_RESET_LIMIT_TRANSLATION`, `CACHE_RESET_LIMIT_BYPASS`, and `CACHE_RESET_WINDOW_MINUTES`.
+- Config/UI: Source-language selection cap is now configurable via `MAX_SOURCE_LANGUAGES`.
+- Config/UI: Added combined target/learn languages cap (default 6) configurable via `MAX_TARGET_LANGUAGES` to prevent oversized selections.
+- Just Fetch mode: Added a configurable cap on fetched languages (default 9) via `MAX_NO_TRANSLATION_LANGUAGES`, with UI enforcement and server-side validation.
+
 **Bug Fixes:**
 
 - SRT Translation UI: Fixed authentication failure in file upload translation page by using session tokens instead of base64-encoded configs in production environments
