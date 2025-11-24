@@ -5,11 +5,10 @@ All notable changes to this project will be documented in this file.
 ## SubMaker v1.4.1
 
 **Bug Fixes:**
+
+- Min-size guard now allows internal informational subtitles to surface instead of being replaced by generic corruption errors: hidden informational notes are emitted (as >4h cues) to keep addon-generated subtitles above Stremio's minimum-size heuristics while keeping the note off-screen.
 - Provider downloads that return 404 or corrupted ZIPs now surface as user-facing subtitles (SubDL, SubSource, OpenSubtitles, OpenSubtitles V3).
-- Season-pack "episode not found" subtitles are now padded and include detected episode ranges so they bypass min-size rejection and give clearer guidance.
-- Min-size guard now allows internal informational subtitles to surface instead of being replaced by generic corruption errors.
 - Added 25 MB ZIP size caps for SubSource, SubDL, OpenSubtitles, and OpenSubtitles V3; oversized packs return a user-facing subtitle instead of being parsed.
-- Hidden informational notes are now emitted (as >4h cues) to keep addon-generated subtitles above Stremio’s minimum-size heuristics while keeping the note off-screen.
 
 ## SubMaker v1.4.0
 
@@ -35,18 +34,21 @@ All notable changes to this project will be documented in this file.
 - Validation hardened to require at least one configured AI provider, enforce distinct main vs fallback, clamp provider parameters, normalize toggles, and normalize encrypted provider keys on load/save.
 
 **New Files:**
+
 - `src/services/providers/openaiCompatible.js` - Universal provider for OpenAI, XAI/Grok, DeepSeek, Mistral, OpenRouter, and Cloudflare Workers AI
 - `src/services/providers/anthropic.js` - Anthropic/Claude provider with extended thinking support
 - `src/services/providers/deepl.js` - DeepL provider with beta languages and formality control
 - `src/services/translationProviderFactory.js` - Factory pattern with FallbackTranslationProvider class for automatic provider switching
 
 **New Environment Variables:**
+
 - `SINGLE_BATCH_LOG_ENTRY_INTERVAL` - Debug log checkpoint interval for single-batch streaming
 - `SINGLE_BATCH_SRT_REBUILD_STEP_SMALL` - Partial SRT rebuild step when entries ≤ threshold
 - `SINGLE_BATCH_SRT_REBUILD_STEP_LARGE` - Partial SRT rebuild step when entries > threshold
 - `SINGLE_BATCH_SRT_REBUILD_LARGE_THRESHOLD` - Entry threshold to switch rebuild step sizes
 
 **API Endpoints Added:**
+
 - `/api/models/:provider` - Generic model discovery for all non-Gemini providers (OpenAI, Anthropic, DeepL, XAI, DeepSeek, Mistral, OpenRouter, Cloudflare Workers)
 
 **API Enhancements:**
@@ -54,6 +56,7 @@ All notable changes to this project will be documented in this file.
 - `/api/translate-file` now accepts `overrides` parameter for provider-specific settings (prompt, model, parameters)
 
 **File Translation UI:**
+
 - Provider-specific overrides: prompt, model, parameters
 - Advanced settings override panel with input clamping
 - Bypass cache auto-forced when using advanced/multi-provider/single-batch/AI-timestamp modes
