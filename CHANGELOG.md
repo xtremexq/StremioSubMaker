@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.3.6
+
+**New Features:**
+
+- Stremio Kai Support: Added detection and logging for Stremio Kai user agents to improve compatibility with the popular anime viewer fork
+
+**Bug Fixes:**
+
+- SRT Translation UI: Fixed authentication failure in file upload translation page by using session tokens instead of base64-encoded configs in production environments
+- File Translation API: Added support for advanced settings override, allowing UI customizations to be properly applied during translation
+
 ## SubMaker v1.3.5
 
 **Improvements:**
