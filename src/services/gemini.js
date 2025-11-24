@@ -10,7 +10,7 @@ const GEMINI_API_URL = process.env.GEMINI_API_BASE || 'https://generativelanguag
 function normalizeTargetName(name) {
   let n = String(name || '').trim();
   const rules = [
-    [/^Portuguese\s*\(Brazil\)$/i, 'Brazilian Portuguese'],
+    [/^Portuguese\s*\(Brazil(ian)?\)$/i, 'Brazilian Portuguese'],
     [/^Spanish\s*\(Latin America\)$/i, 'Latin American Spanish'],
     [/^Chinese\s*\(Simplified\)$/i, 'Simplified Chinese'],
     [/^Chinese\s*\(Traditional\)$/i, 'Traditional Chinese'],
@@ -46,7 +46,7 @@ class GeminiService {
   constructor(apiKey, model = '', advancedSettings = {}) {
     this.apiKey = apiKey;
     // Fallback to default if model not provided (config.js handles env var override)
-    this.model = model || 'gemini-2.5-flash-lite-preview-09-2025';
+    this.model = model || 'gemini-flash-latest';
     this.baseUrl = GEMINI_API_URL;
 
     // Advanced settings with environment variable fallbacks
@@ -232,6 +232,80 @@ class GeminiService {
   }
 
   /**
+   * Build the user prompt exactly as used for translation (shared between translation and token counting)
+   * @param {string} subtitleContent
+   * @param {string} targetLanguage
+   * @param {string|null} customPrompt
+   * @returns {{userPrompt: string, systemPrompt: string, normalizedTarget: string}}
+   */
+  buildUserPrompt(subtitleContent, targetLanguage, customPrompt = null) {
+    // Normalize target language to a human-readable form
+    const normalizedTarget = normalizeTargetName(targetLanguage);
+
+    // Prepare the prompt
+    let systemPrompt = (customPrompt || DEFAULT_TRANSLATION_PROMPT)
+      .replace('{target_language}', normalizedTarget);
+
+    // Add thinking-specific rules only when thinking is enabled (thinkingBudget !== 0)
+    // When thinking is disabled (thinkingBudget === 0), these rules are unnecessary
+    if (this.thinkingBudget !== 0) {
+      // Find the last "Do NOT" line and add the thinking rules after it
+      const doNotPattern = /(Do NOT include acknowledgements[^\n]+)\n/;
+      if (doNotPattern.test(systemPrompt)) {
+        systemPrompt = systemPrompt.replace(
+          doNotPattern,
+          '$1\nDo NOT overthink. Do NOT overplan.\n'
+        );
+      } else {
+        // Fallback: add before "Output ONLY" if pattern not found
+        systemPrompt = systemPrompt.replace(
+          /\n(Output ONLY)/,
+          '\n\nDo NOT overthink. Do NOT overplan.\n\n$1'
+        );
+      }
+    }
+
+    const userPrompt = `${systemPrompt}\n\nContent to translate:\n\n${subtitleContent}`;
+
+    return { userPrompt, systemPrompt, normalizedTarget };
+  }
+
+  /**
+   * Ask Gemini to count tokens for a translation request (real value from API)
+   * Falls back to null when unavailable so callers can use estimates.
+   */
+  async countTokensForTranslation(subtitleContent, targetLanguage, customPrompt = null) {
+    const { userPrompt } = this.buildUserPrompt(subtitleContent, targetLanguage, customPrompt);
+
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/models/${this.model}:countTokens`,
+        {
+          contents: [{
+            parts: [{ text: userPrompt }]
+          }]
+        },
+        {
+          headers: { 'x-goog-api-key': String(this.apiKey || '').trim() },
+          timeout: 10000,
+          httpAgent,
+          httpsAgent
+        }
+      );
+
+      if (response.data && typeof response.data.totalTokens === 'number') {
+        return response.data.totalTokens;
+      }
+
+      log.warn(() => '[Gemini] Token count response missing totalTokens, falling back to estimate');
+      return null;
+    } catch (error) {
+      logApiError(error, 'Gemini', 'Count tokens', { skipResponseData: true });
+      return null;
+    }
+  }
+
+  /**
    * Translate subtitle content (single API call)
    * @param {string} subtitleContent - Content to translate
    * @param {string} sourceLanguage - Source language name (unused, kept for compatibility)
@@ -242,33 +316,7 @@ class GeminiService {
   async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt = null) {
     return this.retryWithBackoff(async () => {
       try {
-        // Normalize target language to a human-readable form
-        const normalizedTarget = normalizeTargetName(targetLanguage);
-
-        // Prepare the prompt
-        let systemPrompt = (customPrompt || DEFAULT_TRANSLATION_PROMPT)
-          .replace('{target_language}', normalizedTarget);
-
-        // Add thinking-specific rules only when thinking is enabled (thinkingBudget !== 0)
-        // When thinking is disabled (thinkingBudget === 0), these rules are unnecessary
-        if (this.thinkingBudget !== 0) {
-          // Find the last "Do NOT" line and add the thinking rules after it
-          const doNotPattern = /(Do NOT include acknowledgements[^\n]+)\n/;
-          if (doNotPattern.test(systemPrompt)) {
-            systemPrompt = systemPrompt.replace(
-              doNotPattern,
-              '$1\nDo NOT overthink. Do NOT overplan.\n'
-            );
-          } else {
-            // Fallback: add before "Output ONLY" if pattern not found
-            systemPrompt = systemPrompt.replace(
-              /\n(Output ONLY)/,
-              '\n\nDo NOT overthink. Do NOT overplan.\n\n$1'
-            );
-          }
-        }
-
-        const userPrompt = `${systemPrompt}\n\nContent to translate:\n\n${subtitleContent}`;
+        const { userPrompt } = this.buildUserPrompt(subtitleContent, targetLanguage, customPrompt);
 
         // Calculate dynamic output token limit
         const estimatedInputTokens = this.estimateTokenCount(userPrompt);
@@ -427,6 +475,212 @@ class GeminiService {
   }
 
   /**
+   * Stream subtitle translation and yield partial text
+   */
+  async streamTranslateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt = null, onChunk = null) {
+    return this.retryWithBackoff(async () => {
+      try {
+        const { userPrompt } = this.buildUserPrompt(subtitleContent, targetLanguage, customPrompt);
+
+        const estimatedInputTokens = this.estimateTokenCount(userPrompt);
+        const estimatedSubtitleTokens = this.estimateTokenCount(subtitleContent);
+
+        const limits = await this.getModelLimits();
+        const modelOutputCap = typeof limits.outputTokenLimit === 'number' ? limits.outputTokenLimit : this.maxOutputTokens;
+        const safetyMargin = Math.floor(modelOutputCap * 0.05);
+
+        const thinkingReserve = this.thinkingBudget > 0 ? this.thinkingBudget : 0;
+        const availableForOutput = Math.max(1024, Math.min(this.maxOutputTokens, modelOutputCap - safetyMargin - thinkingReserve));
+
+        let estimatedOutputTokens;
+        if (this.thinkingBudget !== 0) {
+          estimatedOutputTokens = availableForOutput;
+        } else {
+          estimatedOutputTokens = Math.floor(Math.min(
+            availableForOutput,
+            Math.max(8192, estimatedSubtitleTokens * 3.5)
+          ));
+        }
+
+        const generationConfig = {
+          temperature: this.temperature,
+          topK: this.topK,
+          topP: this.topP,
+          maxOutputTokens: estimatedOutputTokens + thinkingReserve
+        };
+
+        if (this.thinkingBudget === -1) {
+          generationConfig.thinkingConfig = { thinkingBudget: null };
+        } else if (this.thinkingBudget > 0) {
+          generationConfig.thinkingConfig = { thinkingBudget: this.thinkingBudget };
+        }
+
+        const response = await axios.post(
+          `${this.baseUrl}/models/${this.model}:streamGenerateContent`,
+          {
+            contents: [{
+              parts: [{
+                text: userPrompt
+              }]
+            }],
+            generationConfig
+          },
+          {
+            headers: {
+              'x-goog-api-key': String(this.apiKey || '').trim(),
+              'Accept': 'text/event-stream'
+            },
+            params: { alt: 'sse' },
+            timeout: this.timeout,
+            httpAgent,
+            httpsAgent,
+            responseType: 'stream'
+          }
+        );
+
+        const contentType = (response.headers && (response.headers['content-type'] || response.headers['Content-Type'])) || '';
+
+        return await new Promise((resolve, reject) => {
+          let buffer = '';
+          let aggregated = '';
+          let finishReason = null;
+          let blockReason = null;
+          let safetyRatings = null;
+          let rawStream = '';
+
+          const processPayload = (payloadStr) => {
+            if (!payloadStr || !payloadStr.trim()) return;
+            const cleaned = payloadStr.trim().startsWith('data:')
+              ? payloadStr.trim().slice(5).trim()
+              : payloadStr.trim();
+            if (!cleaned) return;
+            let data;
+            try {
+              data = JSON.parse(cleaned);
+            } catch (_) {
+              return;
+            }
+            // Capture safety metadata so we can classify empty streams
+            if (data.promptFeedback) {
+              blockReason = data.promptFeedback.blockReason || blockReason;
+              if (Array.isArray(data.promptFeedback.safetyRatings) && data.promptFeedback.safetyRatings.length > 0) {
+                safetyRatings = data.promptFeedback.safetyRatings;
+              }
+            }
+
+            const candidate = data?.candidates?.[0];
+            if (candidate && candidate.finishReason) {
+              finishReason = candidate.finishReason;
+            }
+            if (candidate && Array.isArray(candidate.safetyRatings) && candidate.safetyRatings.length > 0) {
+              safetyRatings = candidate.safetyRatings;
+            }
+
+            const parts = candidate?.content?.parts || [];
+            const chunkText = parts.map(p => (p && typeof p.text === 'string') ? p.text : '').join('');
+            if (chunkText) {
+              aggregated += chunkText;
+              const cleanedAgg = this.cleanTranslatedSubtitle(aggregated);
+              if (typeof onChunk === 'function') {
+                try { onChunk(cleanedAgg); } catch (_) {}
+              }
+            }
+          };
+
+          response.data.on('data', (chunk) => {
+            try {
+              const chunkStr = chunk.toString('utf8');
+              rawStream += chunkStr;
+              buffer += chunkStr;
+              const parts = buffer.split(/\r?\n/);
+              buffer = parts.pop();
+              parts.forEach(processPayload);
+            } catch (err) {
+              log.warn(() => ['[Gemini] Stream chunk processing failed:', err.message]);
+            }
+          });
+
+          response.data.on('end', () => {
+            try {
+              if (buffer && buffer.trim()) {
+                processPayload(buffer);
+              }
+
+              if (!aggregated && rawStream.trim()) {
+                try {
+                  const recovered = this.recoverStreamPayload(rawStream);
+                  if (recovered.text) {
+                    aggregated = recovered.text;
+                    finishReason = finishReason || recovered.finishReason;
+                    blockReason = blockReason || recovered.blockReason;
+                    safetyRatings = safetyRatings || recovered.safetyRatings;
+                    log.debug(() => `[Gemini] Stream parsed via fallback (${recovered.payloadCount} payloads, content-type=${contentType || 'unknown'})`);
+                  } else if (contentType && !contentType.includes('text/event-stream')) {
+                    log.warn(() => `[Gemini] Streaming response was '${contentType}' with no text; check API base/alt=sse config`);
+                  }
+                } catch (recoverErr) {
+                  log.warn(() => ['[Gemini] Stream recovery parse failed:', recoverErr.message]);
+                }
+              }
+
+              const cleaned = this.cleanTranslatedSubtitle(aggregated);
+
+              // If Gemini blocked the request, surface a classified error
+              if (!cleaned && (blockReason || safetyRatings)) {
+                const reason = blockReason || 'SAFETY';
+                const err = new Error(`PROHIBITED_CONTENT: ${reason}`);
+                err.translationErrorType = 'PROHIBITED_CONTENT';
+                reject(err);
+                return;
+              }
+
+              // Handle finish reasons like the non-stream path
+              if (finishReason && finishReason !== 'STOP') {
+                if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+                  const err = new Error(finishReason === 'RECITATION'
+                    ? 'RECITATION: Translation blocked due to recitation concerns'
+                    : 'PROHIBITED_CONTENT: SAFETY');
+                  err.translationErrorType = 'PROHIBITED_CONTENT';
+                  reject(err);
+                  return;
+                }
+
+                if (finishReason === 'MAX_TOKENS') {
+                  if (cleaned.length < subtitleContent.length * 0.3) {
+                    const err = new Error('MAX_TOKENS: Translation exceeded maximum token limit with minimal output');
+                    err.translationErrorType = 'MAX_TOKENS';
+                    reject(err);
+                    return;
+                  }
+                  log.warn(() => '[Gemini] MAX_TOKENS reached in stream - continuing with partial translation');
+                } else {
+                  const err = new Error(`Translation stopped with reason: ${finishReason}`);
+                  reject(err);
+                  return;
+                }
+              }
+
+              if (!cleaned) {
+                reject(new Error('No content returned from Gemini stream'));
+                return;
+              }
+
+              resolve(cleaned);
+            } catch (err) {
+              reject(err);
+            }
+          });
+
+          response.data.on('error', (err) => reject(err));
+        });
+
+      } catch (error) {
+        handleTranslationError(error, 'Gemini', { skipResponseData: true });
+      }
+    });
+  }
+
+  /**
    * Clean the translated subtitle text
    */
   cleanTranslatedSubtitle(text) {
@@ -452,6 +706,88 @@ class GeminiService {
     // Conservative: ~3 characters per token + 10% overhead for structure/punctuation
     const approx = Math.ceil(text.length / 3);
     return Math.ceil(approx * 1.1);
+  }
+
+  /**
+   * Recover stream payloads from raw stream text when chunk parsing fails.
+   * Handles SSE (data: ...), JSONL, and concatenated JSON objects.
+   */
+  recoverStreamPayload(rawStream) {
+    const result = {
+      text: '',
+      finishReason: null,
+      blockReason: null,
+      safetyRatings: null,
+      payloadCount: 0
+    };
+
+    if (!rawStream || typeof rawStream !== 'string') {
+      return result;
+    }
+
+    const processPayload = (payloadStr) => {
+      if (!payloadStr) return;
+      let data;
+      try {
+        data = JSON.parse(payloadStr);
+      } catch (_) {
+        return;
+      }
+
+      const candidate = data?.candidates?.[0];
+      if (data?.promptFeedback?.blockReason) {
+        result.blockReason = result.blockReason || data.promptFeedback.blockReason;
+      }
+      if (Array.isArray(data?.promptFeedback?.safetyRatings) && data.promptFeedback.safetyRatings.length > 0) {
+        result.safetyRatings = result.safetyRatings || data.promptFeedback.safetyRatings;
+      }
+      if (candidate) {
+        if (candidate.finishReason && !result.finishReason) {
+          result.finishReason = candidate.finishReason;
+        }
+        if (Array.isArray(candidate.safetyRatings) && candidate.safetyRatings.length > 0 && !result.safetyRatings) {
+          result.safetyRatings = candidate.safetyRatings;
+        }
+        const parts = candidate?.content?.parts || [];
+        const chunkText = parts.map(p => (p && typeof p.text === 'string') ? p.text : '').join('');
+        if (chunkText) {
+          result.text += chunkText;
+        }
+      }
+
+      result.payloadCount += 1;
+    };
+
+    // Strategy 1: split by blank lines (SSE events)
+    const blocks = rawStream.split(/\r?\n\r?\n/);
+    for (const block of blocks) {
+      const cleaned = block.split(/\r?\n/).map(line => line.replace(/^data:\s*/, '').trim()).filter(Boolean).join('');
+      processPayload(cleaned);
+    }
+
+    // Strategy 2: line-by-line (JSONL)
+    if (result.payloadCount === 0) {
+      const lines = rawStream.split(/\r?\n/);
+      for (const line of lines) {
+        const cleaned = line.replace(/^data:\s*/, '').trim();
+        processPayload(cleaned);
+      }
+    }
+
+    // Strategy 3: concatenated JSON objects without delimiters
+    if (result.payloadCount === 0 && rawStream.includes('}{')) {
+      const pieces = rawStream.split(/}\s*(?=\{)/).map((piece, idx, arr) => {
+        if (idx < arr.length - 1) return piece + '}';
+        return piece;
+      });
+      for (let i = 0; i < pieces.length; i++) {
+        let segment = pieces[i];
+        if (segment && segment[0] !== '{') segment = `{${segment}`;
+        processPayload(segment.trim());
+      }
+    }
+
+    return result;
   }
 }
 

@@ -256,23 +256,28 @@ function handleTranslationError(error, serviceName, options = {}) {
   // Mark error as already logged to prevent duplicate logs in downstream handlers
   customError._alreadyLogged = true;
 
+  // Preserve any explicit classification from upstream
+  if (error && error.translationErrorType && !customError.translationErrorType) {
+    customError.translationErrorType = error.translationErrorType;
+  }
+
   // Add translation-specific error flags for all error types
   // These are checked by performTranslation() and used to create user-friendly error messages
-  if (parsed.statusCode === 403) {
+  if (!customError.translationErrorType && parsed.statusCode === 403) {
     customError.translationErrorType = '403';
-  } else if (parsed.statusCode === 429) {
+  } else if (!customError.translationErrorType && parsed.statusCode === 429) {
     customError.translationErrorType = '429';
-  } else if (parsed.statusCode === 503) {
+  } else if (!customError.translationErrorType && parsed.statusCode === 503) {
     customError.translationErrorType = '503';
-  } else if (error.message && (error.message.includes('MAX_TOKENS') || error.message.includes('exceeded maximum token limit'))) {
+  } else if (!customError.translationErrorType && error.message && (error.message.includes('MAX_TOKENS') || error.message.includes('exceeded maximum token limit'))) {
     customError.translationErrorType = 'MAX_TOKENS';
-  } else if (error.message && (error.message.includes('PROHIBITED_CONTENT') || error.message.includes('RECITATION'))) {
+  } else if (!customError.translationErrorType && error.message && (error.message.includes('PROHIBITED_CONTENT') || error.message.includes('RECITATION'))) {
     // PROHIBITED_CONTENT and RECITATION are both safety filter violations
     customError.translationErrorType = 'PROHIBITED_CONTENT';
-  } else if (error.message && (error.message.includes('SAFETY') || error.message.includes('safety filters'))) {
+  } else if (!customError.translationErrorType && error.message && (error.message.includes('SAFETY') || error.message.includes('safety filters'))) {
     // Generic SAFETY error
     customError.translationErrorType = 'PROHIBITED_CONTENT';
-  } else if (error.message && (error.message.includes('invalid') || error.message.includes('corrupted') || error.message.includes('too small'))) {
+  } else if (!customError.translationErrorType && error.message && (error.message.includes('invalid') || error.message.includes('corrupted') || error.message.includes('too small'))) {
     customError.translationErrorType = 'INVALID_SOURCE';
   }
 

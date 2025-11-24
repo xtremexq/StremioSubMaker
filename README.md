@@ -4,7 +4,7 @@
 
 Watch any content in your language!
 
-SubMaker fetches subtitles from multiple sources and allows you to translate them instantly using Google's Gemini AI—all without leaving your player.
+SubMaker fetches subtitles from multiple sources and allows you to translate them instantly using Google's Gemini AI—or alternative providers like DeepL, OpenAI, Anthropic, XAI, DeepSeek, Mistral, OpenRouter, or Cloudflare Workers—all without leaving your player.
 
 No-Translation mode: simply fetch selected languages from OpenSubtitles, SubSource and SubDL.
 
@@ -39,7 +39,7 @@ Check their [FREE Stremio Addons Guide](https://stremio-addons-guide.elfhosted.c
 - 🌍 **197 Languages** - Full ISO-639-2 support including regional variants (PT-BR, etc.)
 - 📥 **3 Subtitle Sources** - OpenSubtitles, SubDL, SubSource, with automatic fallback
 - 🎯 **One-Click Translation** - Translate on-the-fly without ever leaving Stremio
-- 🤖 **Context-Aware AI** - Google Gemini preserves timing, formatting, and natural dialogue flow
+- 🤖 **Context-Aware AI** - Google Gemini by default, plus optional providers (DeepL, OpenAI, Anthropic, XAI, DeepSeek, Mistral, OpenRouter, Cloudflare Workers)
 - ⚡ **Translation Caching** - Permanent subtitles database with dual-layer cache (memory + redis/disk) and deduplication
 - 🔒 **Production-Ready** - Rate limiting, CORS protection, session tokens, HTTPS enforcement
 - 🎨 **Beautiful UI** - Modern configuration interface with live model fetching
@@ -54,7 +54,8 @@ Check their [FREE Stremio Addons Guide](https://stremio-addons-guide.elfhosted.c
 - **Gemini API Key** ([Get one free](https://makersuite.google.com/app/apikey))
 - **OpenSubtitles Account** ([Sign up](https://www.opensubtitles.com/en/newuser))
 - **SubSource API Key** ([Get one free](https://subsource.net/api-docs))
-- **SubDL API Key** ([Get one free](https://subdl.com/panel/api)) 
+- **SubDL API Key** ([Get one free](https://subdl.com/panel/api))
+- *(Optional)* Keys for any alternative translation provider you want to enable (DeepL, OpenAI-compatible keys, Anthropic, XAI, DeepSeek, Mistral, OpenRouter, Cloudflare Workers)
 
 ### Installation
 
@@ -126,7 +127,7 @@ Stremio Player
     ↓
 SubMaker Addon (Express + Stremio SDK)
     ├── Subtitle Fetcher → [OpenSubtitles, SubDL, SubSource]
-    ├── Translation Engine → [Google Gemini AI]
+    ├── Translation Engine → [Google Gemini AI] (with optional provider swap/fallbacks)
     └── Cache Manager → [Memory LRU + Redis/Filesystem]
 
 ```

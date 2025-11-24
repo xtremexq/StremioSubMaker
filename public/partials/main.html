@@ -16,7 +16,8 @@
         <!-- Floating Help Button (Config page) -->
         <button class="help-button mario" id="configHelp" title="Help">?</button>
 
-        <form id="configForm" autocomplete="off" spellcheck="false">
+        <!-- Disable native HTML validation: we run all validation in config.js and hidden inputs (provider advanced sliders) can trip browser validity when collapsed -->
+        <form id="configForm" autocomplete="off" spellcheck="false" novalidate>
             <!-- No Translation Mode Toggle -->
             <div style="margin: 2rem 0; padding: 1.5rem; background: var(--surface-light); border: 2px solid var(--border); border-radius: 12px; display: flex; align-items: center; gap: 1rem;">
                 <span style="font-size: 1.75rem;">⏸️</span>
@@ -74,11 +75,10 @@
                                         <div style="flex: 1;">
                                             <div style="display: flex; align-items: center; gap: 0.5rem;">
                                                 <strong style="margin-bottom: 0.25rem;">V3 (Default)</strong>
-                                                <div class="v3-warning-tooltip" style="position: relative; display: inline-flex; align-items: center;">
-                                                    <span class="warning-icon" style="font-size: 1rem; color: var(--warning); cursor: help; animation: pulse 2s ease-in-out infinite;">⚠️</span>
-                                                    <div class="tooltip-content" style="position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 0.5rem; background: rgba(245, 158, 11, 0.95); color: white; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8rem; white-space: normal; word-break: break-word; max-width: min(260px, calc(100vw - 4rem)); opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+                                                <div class="v3-warning-tooltip">
+                                                    <span class="warning-icon" tabindex="0" aria-label="OpenSubtitles V3 limitations" title="OpenSubtitles V3 limitations">&#9888;</span>
+                                                    <div class="tooltip-bubble" role="tooltip" aria-hidden="true">
                                                         V3 doesn't show all OpenSubtitles results and rate-limiting may apply.
-                                                        <div style="position: absolute; right: 100%; top: 50%; transform: translateY(-50%); width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 5px solid rgba(245, 158, 11, 0.95);"></div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -280,8 +280,8 @@
                             <span class="label-description">AI model for translations</span>
                         </label>
                         <select id="geminiModel" required>
-                            <option value="gemini-2.5-flash-lite-preview-09-2025">Gemini 2.5 Flash-Lite</option>
-                            <option value="gemini-2.5-flash-preview-09-2025" selected>Gemini 2.5 Flash</option>
+                            <option value="gemini-flash-lite-latest">Gemini 2.5 Flash-Lite</option>
+                            <option value="gemini-flash-latest" selected>Gemini 2.5 Flash</option>
                             <option value="gemini-2.5-pro">Gemini 2.5 Pro (Slow)</option>
                         </select>
                         <div class="field-error" id="geminiModelError">Please select a model</div>
@@ -308,6 +308,441 @@
                     </div>
 
                     <!-- Advanced Settings removed by request -->
+                    <div class="form-group" id="multiProvidersGroup" style="display: none; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                        <label style="display:flex; align-items:center; gap:0.5rem;">
+                            <input type="checkbox" id="enableMultiProviders">
+                            Multiple providers (beta)
+                        </label>
+                        <span class="label-description">Enables multiple providers and advanced parameters settings.<br>Must set Main Provider on "Other Settings".</span>
+                    </div>
+
+                    <div id="multiProvidersContainer" style="display: none; background: var(--surface-light); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-top: 0.5rem; flex-direction: column; gap: 1rem;">
+                        <div style="display: grid; gap: 1rem;">
+                            <div class="provider-block" data-provider="openai">
+                                <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                    <label style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                        <input type="checkbox" id="provider-openai-enabled"> OpenAI
+                                    </label>
+                                    <button type="button" class="validate-api-btn" data-provider="openai" title="Fetch models">
+                                        <span class="validate-icon">&#8635;</span>
+                                        <span class="validate-text">Load Models</span>
+                                    </button>
+                                </div>
+                                <div id="provider-openai-fields" class="provider-fields" style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                    <input type="text" id="provider-openai-key" placeholder="OpenAI API key" class="sensitive-input masked">
+                                    <select id="provider-openai-model">
+                                        <option value="">Select model</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="provider-block" data-provider="anthropic">
+                                <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                    <label style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                        <input type="checkbox" id="provider-anthropic-enabled"> Anthropic
+                                    </label>
+                                    <button type="button" class="validate-api-btn" data-provider="anthropic" title="Fetch models">
+                                        <span class="validate-icon">&#8635;</span>
+                                        <span class="validate-text">Load Models</span>
+                                    </button>
+                                </div>
+                                <div id="provider-anthropic-fields" class="provider-fields" style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                    <input type="text" id="provider-anthropic-key" placeholder="Anthropic API key" class="sensitive-input masked">
+                                    <select id="provider-anthropic-model">
+                                        <option value="">Select model</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="provider-block" data-provider="xai">
+                                <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                    <label style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                        <input type="checkbox" id="provider-xai-enabled"> XAI (Grok)
+                                    </label>
+                                    <button type="button" class="validate-api-btn" data-provider="xai" title="Fetch models">
+                                        <span class="validate-icon">&#8635;</span>
+                                        <span class="validate-text">Load Models</span>
+                                    </button>
+                                </div>
+                                <div id="provider-xai-fields" class="provider-fields" style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                    <input type="text" id="provider-xai-key" placeholder="XAI API key" class="sensitive-input masked">
+                                    <select id="provider-xai-model">
+                                        <option value="">Select model</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="provider-block" data-provider="deepseek">
+                                <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                    <label style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                        <input type="checkbox" id="provider-deepseek-enabled"> DeepSeek
+                                    </label>
+                                    <button type="button" class="validate-api-btn" data-provider="deepseek" title="Fetch models">
+                                        <span class="validate-icon">&#8635;</span>
+                                        <span class="validate-text">Load Models</span>
+                                    </button>
+                                </div>
+                                <div id="provider-deepseek-fields" class="provider-fields" style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                    <input type="text" id="provider-deepseek-key" placeholder="DeepSeek API key" class="sensitive-input masked">
+                                    <select id="provider-deepseek-model">
+                                        <option value="">Select model</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="provider-block" data-provider="deepl">
+                                <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                    <label style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                        <input type="checkbox" id="provider-deepl-enabled"> DeepL
+                                    </label>
+                                    <button type="button" class="validate-api-btn" data-provider="deepl" title="Fetch models">
+                                        <span class="validate-icon">&#8635;</span>
+                                        <span class="validate-text">Load Models</span>
+                                    </button>
+                                </div>
+                                <div id="provider-deepl-fields" class="provider-fields" style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                    <input type="text" id="provider-deepl-key" placeholder="DeepL Auth Key" class="sensitive-input masked">
+                                    <select id="provider-deepl-model">
+                                        <option value="">Select model</option>
+                                    </select>
+                                    <span class="label-description">Free keys auto-use api-free.deepl.com. Language codes are auto-mapped from your selections.</span>
+                                </div>
+                            </div>
+
+                            <div class="provider-block" data-provider="mistral">
+                                <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                    <label style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                        <input type="checkbox" id="provider-mistral-enabled"> Mistral
+                                    </label>
+                                    <button type="button" class="validate-api-btn" data-provider="mistral" title="Fetch models">
+                                        <span class="validate-icon">&#8635;</span>
+                                        <span class="validate-text">Load Models</span>
+                                    </button>
+                                </div>
+                                <div id="provider-mistral-fields" class="provider-fields" style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                    <input type="text" id="provider-mistral-key" placeholder="Mistral API key" class="sensitive-input masked">
+                                    <select id="provider-mistral-model">
+                                        <option value="">Select model</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="provider-block" data-provider="cfworkers">
+                                <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                    <label style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                        <input type="checkbox" id="provider-cfworkers-enabled"> Cloudflare Workers AI
+                                    </label>
+                                    <button type="button" class="validate-api-btn" data-provider="cfworkers" title="Fetch models">
+                                        <span class="validate-icon">&#8635;</span>
+                                        <span class="validate-text">Load Models</span>
+                                    </button>
+                                </div>
+                                <div id="provider-cfworkers-fields" class="provider-fields" style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                    <input type="text" id="provider-cfworkers-key" placeholder="ACCOUNT_ID|TOKEN" class="sensitive-input">
+                                    <select id="provider-cfworkers-model">
+                                        <option value="">Select model</option>
+                                    </select>
+                                    <span class="label-description">Use ACCOUNT|TOKEN to set account ID explicitly.</span>
+                                </div>
+                            </div>
+
+                            <div class="provider-block" data-provider="openrouter">
+                                <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                    <label style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                        <input type="checkbox" id="provider-openrouter-enabled"> OpenRouter
+                                    </label>
+                                    <button type="button" class="validate-api-btn" data-provider="openrouter" title="Fetch models">
+                                        <span class="validate-icon">&#8635;</span>
+                                        <span class="validate-text">Load Models</span>
+                                    </button>
+                                </div>
+                                <div id="provider-openrouter-fields" class="provider-fields" style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                    <input type="text" id="provider-openrouter-key" placeholder="OpenRouter API key" class="sensitive-input masked">
+                                    <select id="provider-openrouter-model">
+                                        <option value="">Select model</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card collapsed" id="providerAdvancedCard" data-card="provider-advanced" style="display: none; margin-top: 1rem;">
+                        <div class="card-header">
+                            <div class="card-title-group">
+                                <div class="card-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                        <g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="16" cy="16" r="10.5" />
+                                            <path d="M16 5v4M16 23v4M5 16h4M23 16h4" />
+                                            <path d="M11 21l10-10M21 21 11 11" opacity="0.75" />
+                                        </g>
+                                    </svg>
+                                </div>
+                                <h2 class="card-title">Advanced Parameters</h2>
+                            </div>
+                            <button type="button" class="collapse-btn collapsed" data-collapse="provider-advanced"></button>
+                        </div>
+                        <div class="card-content">
+                            <div class="info-box" style="margin-bottom: 0.5rem;">
+                                <p style="margin: 0;">Fine-tune generation settings for every enabled provider. These apply in multi-provider mode only.</p>
+                            </div>
+
+                            <div id="providerAdvancedEmpty" class="highlight-box" style="display: none; margin-bottom: 0.75rem;">
+                                <p style="margin: 0;">Enable a provider above to unlock its parameters.</p>
+                            </div>
+
+                            <div id="providerAdvancedContainer" style="display: flex; flex-direction: column; gap: 1rem;">
+                                <div class="provider-advanced-block" data-provider="openai" style="display: none; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-light);">
+                                    <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem; margin-bottom: 0.5rem;">
+                                        <strong>OpenAI Parameters</strong>
+                                        <span class="label-description">Applies to OpenAI and compatible endpoints</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openai-temperature">Temperature</label>
+                                            <input type="number" id="provider-openai-temperature" min="0" max="2" step="0.05" value="0.4">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openai-reasoning">Reasoning effort</label>
+                                            <select id="provider-openai-reasoning">
+                                                <option value="">None (default - for non-reasoning models)</option>
+                                                <option value="low">Low (faster)</option>
+                                                <option value="medium" selected>Medium (balanced)</option>
+                                                <option value="high">High (deeper reasoning)</option>
+                                            </select>
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openai-topP">Top-P</label>
+                                            <input type="number" id="provider-openai-topP" min="0" max="1" step="0.01" value="0.95">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openai-maxTokens">Max output tokens</label>
+                                            <input type="number" id="provider-openai-maxTokens" min="1" max="200000" step="1" value="32768">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openai-timeout">Request timeout (s)</label>
+                                            <input type="number" id="provider-openai-timeout" min="5" max="600" step="5" value="60">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openai-retries">Max retries</label>
+                                            <input type="number" id="provider-openai-retries" min="0" max="5" step="1" value="2">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="provider-advanced-block" data-provider="anthropic" style="display: none; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-light);">
+                                    <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem; margin-bottom: 0.5rem;">
+                                        <strong>Anthropic Parameters</strong>
+                                        <span class="label-description">Claude / Anthropic API tuning</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-anthropic-temperature">Temperature</label>
+                                            <input type="number" id="provider-anthropic-temperature" min="0" max="2" step="0.05" value="0.4">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-anthropic-topP">Top-P</label>
+                                            <input type="number" id="provider-anthropic-topP" min="0" max="1" step="0.01" value="0.95">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-anthropic-maxTokens">Max output tokens</label>
+                                            <input type="number" id="provider-anthropic-maxTokens" min="1" max="200000" step="1" value="32768">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-anthropic-timeout">Request timeout (s)</label>
+                                            <input type="number" id="provider-anthropic-timeout" min="5" max="600" step="5" value="60">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-anthropic-retries">Max retries</label>
+                                            <input type="number" id="provider-anthropic-retries" min="0" max="5" step="1" value="2">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-anthropic-thinking">Thinking budget (tokens)</label>
+                                            <input type="number" id="provider-anthropic-thinking" min="0" max="200000" step="256" value="0">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="provider-advanced-block" data-provider="xai" style="display: none; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-light);">
+                                    <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem; margin-bottom: 0.5rem;">
+                                        <strong>XAI (Grok) Parameters</strong>
+                                        <span class="label-description">Grok API tuning</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-xai-temperature">Temperature</label>
+                                            <input type="number" id="provider-xai-temperature" min="0" max="2" step="0.05" value="0.4">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-xai-topP">Top-P</label>
+                                            <input type="number" id="provider-xai-topP" min="0" max="1" step="0.01" value="0.95">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-xai-maxTokens">Max output tokens</label>
+                                            <input type="number" id="provider-xai-maxTokens" min="1" max="200000" step="1" value="32768">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-xai-timeout">Request timeout (s)</label>
+                                            <input type="number" id="provider-xai-timeout" min="5" max="600" step="5" value="60">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-xai-retries">Max retries</label>
+                                            <input type="number" id="provider-xai-retries" min="0" max="5" step="1" value="2">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="provider-advanced-block" data-provider="deepseek" style="display: none; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-light);">
+                                    <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem; margin-bottom: 0.5rem;">
+                                        <strong>DeepSeek Parameters</strong>
+                                        <span class="label-description">DeepSeek chat endpoints</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-deepseek-temperature">Temperature</label>
+                                            <input type="number" id="provider-deepseek-temperature" min="0" max="2" step="0.05" value="0.4">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-deepseek-topP">Top-P</label>
+                                            <input type="number" id="provider-deepseek-topP" min="0" max="1" step="0.01" value="0.95">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-deepseek-maxTokens">Max output tokens</label>
+                                            <input type="number" id="provider-deepseek-maxTokens" min="1" max="200000" step="1" value="32768">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-deepseek-timeout">Request timeout (s)</label>
+                                            <input type="number" id="provider-deepseek-timeout" min="5" max="600" step="5" value="60">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-deepseek-retries">Max retries</label>
+                                            <input type="number" id="provider-deepseek-retries" min="0" max="5" step="1" value="2">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="provider-advanced-block" data-provider="deepl" style="display: none; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-light);">
+                                    <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem; margin-bottom: 0.5rem;">
+                                        <strong>DeepL Parameters</strong>
+                                        <span class="label-description">Formality & formatting controls</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-deepl-formality">Formality</label>
+                                            <select id="provider-deepl-formality">
+                                                <option value="default">Default</option>
+                                                <option value="more">More formal</option>
+                                                <option value="less">Less formal</option>
+                                            </select>
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-deepl-timeout">Request timeout (s)</label>
+                                            <input type="number" id="provider-deepl-timeout" min="5" max="600" step="5" value="60">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-deepl-retries">Max retries</label>
+                                            <input type="number" id="provider-deepl-retries" min="0" max="5" step="1" value="2">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-deepl-preserveFormatting">Preserve formatting</label>
+                                            <label style="display:flex; align-items:center; gap:0.5rem; padding:0.35rem 0;">
+                                                <input type="checkbox" id="provider-deepl-preserveFormatting" checked>
+                                                <span class="label-description" style="margin:0;">Keep line breaks, casing, and tags intact</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="label-description" style="margin-top:0.35rem;">Beta languages auto-enable quality_optimized and disable latency_optimized.</div>
+                                </div>
+
+                                <div class="provider-advanced-block" data-provider="mistral" style="display: none; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-light);">
+                                    <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem; margin-bottom: 0.5rem;">
+                                        <strong>Mistral Parameters</strong>
+                                        <span class="label-description">Mistral API tuning</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-mistral-temperature">Temperature</label>
+                                            <input type="number" id="provider-mistral-temperature" min="0" max="2" step="0.05" value="0.4">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-mistral-topP">Top-P</label>
+                                            <input type="number" id="provider-mistral-topP" min="0" max="1" step="0.01" value="0.95">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-mistral-maxTokens">Max output tokens</label>
+                                            <input type="number" id="provider-mistral-maxTokens" min="1" max="200000" step="1" value="32768">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-mistral-timeout">Request timeout (s)</label>
+                                            <input type="number" id="provider-mistral-timeout" min="5" max="600" step="5" value="60">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-mistral-retries">Max retries</label>
+                                            <input type="number" id="provider-mistral-retries" min="0" max="5" step="1" value="2">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="provider-advanced-block" data-provider="cfworkers" style="display: none; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-light);">
+                                    <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem; margin-bottom: 0.5rem;">
+                                        <strong>Cloudflare Workers AI Parameters</strong>
+                                        <span class="label-description">Use ACCOUNT_ID|TOKEN format</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-cfworkers-temperature">Temperature</label>
+                                            <input type="number" id="provider-cfworkers-temperature" min="0" max="2" step="0.05" value="0.4">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-cfworkers-topP">Top-P</label>
+                                            <input type="number" id="provider-cfworkers-topP" min="0" max="1" step="0.01" value="0.9">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-cfworkers-maxTokens">Max output tokens</label>
+                                            <input type="number" id="provider-cfworkers-maxTokens" min="1" max="200000" step="1" value="32768">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-cfworkers-timeout">Request timeout (s)</label>
+                                            <input type="number" id="provider-cfworkers-timeout" min="5" max="600" step="5" value="60">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-cfworkers-retries">Max retries</label>
+                                            <input type="number" id="provider-cfworkers-retries" min="0" max="5" step="1" value="2">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="provider-advanced-block" data-provider="openrouter" style="display: none; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-light);">
+                                    <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem; margin-bottom: 0.5rem;">
+                                        <strong>OpenRouter Parameters</strong>
+                                        <span class="label-description">OpenRouter routing</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openrouter-temperature">Temperature</label>
+                                            <input type="number" id="provider-openrouter-temperature" min="0" max="2" step="0.05" value="0.4">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openrouter-topP">Top-P</label>
+                                            <input type="number" id="provider-openrouter-topP" min="0" max="1" step="0.01" value="0.95">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openrouter-maxTokens">Max output tokens</label>
+                                            <input type="number" id="provider-openrouter-maxTokens" min="1" max="200000" step="1" value="32768">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openrouter-timeout">Request timeout (s)</label>
+                                            <input type="number" id="provider-openrouter-timeout" min="5" max="600" step="5" value="60">
+                                        </div>
+                                        <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                                            <label for="provider-openrouter-retries">Max retries</label>
+                                            <input type="number" id="provider-openrouter-retries" min="0" max="5" step="1" value="2">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -469,6 +904,43 @@
                     <button type="button" class="collapse-btn collapsed" data-collapse="cache"></button>
                 </div>
 <div class="card-content">
+                    <div class="form-group" id="mainProviderGroup" style="display: none;">
+                        <label for="mainProviderSelect">
+                            Main Provider
+                            <span class="label-description">Choose which enabled AI provider to use when multiple are configured.</span>
+                        </label>
+                        <select id="mainProviderSelect">
+                            <option value="gemini">Gemini</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="secondaryProviderGroup" style="display: none;">
+                        <label style="display: flex; align-items: flex-start; gap: 0.5rem;">
+                            <input type="checkbox" id="enableSecondaryProvider" style="margin-top: 0.3rem;">
+                            <div>
+                                Secondary Provider
+                                <span class="label-description">If the main provider errors (429/503/prohibited/other), retry the failed batch with this provider, then continue with the main provider.</span>
+                            </div>
+                        </label>
+                        <div id="secondaryProviderSelectRow" style="margin-top: 0.5rem; display: none;">
+                            <label for="secondaryProviderSelect">
+                                Fallback Provider
+                                <span class="label-description">Used only when the main provider returns an error. Falls back seamlessly.</span>
+                            </label>
+                            <select id="secondaryProviderSelect" disabled>
+                                <option value="">Select provider</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="sendTimestampsToAI">
+                            AI Timestamps Mode
+                            <span class="label-description">Recommended if you have translation sync problems. Our main translation workflow removes timestamps and sends the subtitles numbered to the AI, then reconstructs the SRT with the original timestamps. "AI Timestamps Mode" sends the subtitles WITH timecodes and trusts the AI to return correct timestamps. Added for future-proofing the addon.</span>
+                        </label>
+                    </div>
+
                     <div class="form-group">
                         <label>
                             <input type="checkbox" id="fileTranslationEnabled">
@@ -521,8 +993,24 @@
                     <div class="form-group">
                         <label>
                             <input type="checkbox" id="mobileMode">
-                            Mobile Mode (beta)
-                            <span class="label-description">Holds translation requests and sends the final subtitle only when ready. Use this if you're watching on Android/iOS. No partial translations, no loading messages. Might freeze the stream until translation is ready. Flash-lite recommended. Wait 1-3 min, if it doesn't load automatically switch subtitles back and forth to load the translation.</span>
+                            Mobile Mode (fix/workaround)
+                            <span class="label-description">Stremio makes only 1 request for subtitles and caches it, so subtitles in Android can't be partially delivered. Mobile Mode holds translation requests and sends the final subtitle only when ready. Use this if you're watching on Android/iOS. No partial translations, no loading messages. Might freeze the stream until translation is ready. Flash-lite recommended. Wait 1-3 min, if it doesn't load automatically switch subtitles back and forth to load the translation.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="singleBatchMode">
+                            Single-Batch Translation Mode
+                            <span class="label-description">Translates the whole subtitle in one go (still auto-splits into 2 or 3 chunks at 50k+/100k+ tokens) as opposed to multiple requests to the AI. Still streams partial outputs while processing (through token streaming) and works with "AI Timestamps Mode". Better translations. Might cause MAX_OUTPUT errors.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="betaMode">
+                            Beta Mode
+                            <span class="label-description">Unlocks experimental features like Multiple Providers and Advanced Settings.</span>
                         </label>
                     </div>
 
@@ -573,7 +1061,7 @@
                     <div class="form-group">
                         <label for="advancedModel">
                             Translation Model Override
-                            <span class="label-description">Override the default model. Leave empty to use system default (gemini-2.5-flash-lite-preview-09-2025).</span>
+                            <span class="label-description">Override the default model. Leave empty to use system default (gemini-flash-latest).</span>
                         </label>
                         <select id="advancedModel">
                             <option value="">Use Default Model</option>
@@ -620,6 +1108,7 @@
                         </label>
                         <input type="number" id="contextSize" min="1" max="10" step="1" value="3" placeholder="3">
                     </div>
+
                 </div>
             </div>
 

@@ -136,18 +136,6 @@
             border-color: var(--border);
         }
 
-        /* Dark/True Dark overrides for ghost hint color */
-        [data-theme="dark"] .ghost-hint .ghost-cta,
-        [data-theme="true-dark"] .ghost-hint .ghost-cta {
-            color: #ffffff;
-            mix-blend-mode: screen;
-        }
-        [data-theme="dark"] .ghost-hint .ghost-arrow,
-        [data-theme="true-dark"] .ghost-hint .ghost-arrow {
-            color: #ffffff;
-            mix-blend-mode: screen;
-        }
-
         /* Fix radio button label backgrounds in dark mode */
         /* Unselected options should be darker */
         [data-theme="dark"] label:has(input[type="radio"]:not(:checked))[style*="background: white"] {
@@ -1428,72 +1416,6 @@
             color: var(--text-secondary);
         }
 
-        /* Ghost Hint (Easter Egg) — minimal, delicate */
-        .ghost-hint {
-            position: fixed;
-            left: 50%; /* JS will reposition near heart */
-            top: 60%;
-            transform: translateX(-50%) translateY(6px);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.05rem; /* closer to the arrow */
-            opacity: 0;
-            pointer-events: none; /* only inner CTA is clickable */
-            z-index: 1200;
-            transition: opacity 0.45s ease, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        .ghost-hint.show {
-            opacity: 0.75; /* much more visible */
-            transform: translateX(-50%) translateY(0);
-        }
-
-        .ghost-hint .ghost-cta {
-            pointer-events: auto;
-            background: transparent;
-            border: none;
-            color: #000000; /* light mode: black for readability */
-            mix-blend-mode: normal;
-            padding: 0.05rem 0.25rem; /* even tighter */
-            border-radius: 6px;
-            font-size: 12px; /* +2px bigger */
-            line-height: 1; /* reduce vertical footprint */
-            font-family: 'Tiny5', 'Silkscreen', 'VT323', 'Press Start 2P', 'Courier New', monospace; /* retro, less wide */
-            font-weight: 400; /* lighter to reduce blur */
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-            text-rendering: optimizeLegibility;
-            letter-spacing: 0; /* reduce wide spacing for retro font */
-            text-transform: none;
-            cursor: pointer;
-            user-select: none;
-            transition: transform 0.15s ease, opacity 0.2s ease;
-            animation: ghostFloat 3.2s ease-in-out infinite;
-        }
-
-        .ghost-hint .ghost-cta:hover {
-            transform: translateY(-1px);
-            opacity: 0.6;
-        }
-
-        .ghost-hint .ghost-arrow {
-            font-size: 0.95rem;
-            line-height: 1;
-            color: #000000; /* light mode: black */
-            animation: arrowPulse 1.6s ease-in-out infinite;
-        }
-
-        @keyframes ghostFloat {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-2px); }
-        }
-
-        @keyframes arrowPulse {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(2px); }
-        }
-
         label:has(#fileTranslationEnabled:disabled) {
             opacity: 0.6;
             cursor: not-allowed;
@@ -2354,16 +2276,107 @@
         }
         [data-theme="true-dark"] .help-button.mario::before { background: #2b2044; box-shadow: calc(100% - 12px) 0 0 #2b2044; }
 
-@keyframes pulse {
-                                            0%, 100% { transform: scale(1); opacity: 1; }
-                                            50% { transform: scale(1.2); opacity: 0.8; }
-                                        }
-                                        .v3-warning-tooltip:hover .tooltip-content,
-                                        .warning-icon:hover + .tooltip-content {
-                                            opacity: 1 !important;
-                                            pointer-events: auto !important;
-                                        }
-                                        .tooltip-content:hover {
-                                            opacity: 1 !important;
-                                            pointer-events: auto !important;
-                                        }
+/* V3 Warning Tooltip - Responsive Design */
+        .v3-warning-tooltip {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .v3-warning-tooltip .warning-icon {
+            font-size: 1rem;
+            color: var(--warning);
+            cursor: help;
+            animation: warningPulse 2s ease-in-out infinite;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .v3-warning-tooltip .tooltip-bubble {
+            position: absolute;
+            background: rgba(245, 158, 11, 0.96);
+            color: white;
+            padding: 0.625rem 0.875rem;
+            border-radius: 8px;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            line-height: 1.4;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            opacity: 0;
+            visibility: hidden;
+            display: none;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 10000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+
+            /* Mobile-first: show below the icon */
+            top: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%) translateY(-4px);
+            max-width: min(280px, calc(100vw - 32px));
+        }
+
+        /* Arrow pointing up (for mobile bottom position) */
+        .v3-warning-tooltip .tooltip-bubble::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 6px solid rgba(245, 158, 11, 0.96);
+        }
+
+        /* Show tooltip on hover/focus */
+        .v3-warning-tooltip:hover .tooltip-bubble,
+        .v3-warning-tooltip .warning-icon:focus + .tooltip-bubble {
+            display: block;
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* Desktop: show to the right if enough space */
+        @media (min-width: 769px) {
+            .v3-warning-tooltip .tooltip-bubble {
+                top: 50%;
+                left: calc(100% + 10px);
+                transform: translateY(-50%) translateX(-4px);
+                max-width: min(260px, calc(100vw - 40px));
+            }
+
+            .v3-warning-tooltip .tooltip-bubble::before {
+                bottom: auto;
+                left: auto;
+                right: 100%;
+                top: 50%;
+                transform: translateY(-50%);
+                border: none;
+                border-top: 6px solid transparent;
+                border-bottom: 6px solid transparent;
+                border-right: 6px solid rgba(245, 158, 11, 0.96);
+            }
+
+            .v3-warning-tooltip:hover .tooltip-bubble,
+            .v3-warning-tooltip .warning-icon:focus + .tooltip-bubble {
+                transform: translateY(-50%) translateX(0);
+            }
+        }
+
+        /* Animation for warning icon */
+        @keyframes warningPulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.15);
+                opacity: 0.85;
+            }
+        }

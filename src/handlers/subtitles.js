@@ -2,8 +2,8 @@
 const OpenSubtitlesV3Service = require('../services/opensubtitles-v3');
 const SubDLService = require('../services/subdl');
 const SubSourceService = require('../services/subsource');
-const GeminiService = require('../services/gemini');
 const TranslationEngine = require('../services/translationEngine');
+const { createTranslationProvider } = require('../services/translationProviderFactory');
 const AniDBService = require('../services/anidb');
 const KitsuService = require('../services/kitsu');
 const { parseSRT, toSRT, parseStremioId } = require('../utils/subtitle');
@@ -72,7 +72,7 @@ const inFlightSearches = new LRUCache({
 // Environment variable configuration:
 // - SUBTITLE_SEARCH_CACHE_MAX: Maximum number of cached searches (default: 15000)
 // - SUBTITLE_SEARCH_CACHE_TTL_MS: Time-to-live in milliseconds (default: 600000 = 10 minutes)
-const SUBTITLE_SEARCH_CACHE_MAX = parseInt(process.env.SUBTITLE_SEARCH_CACHE_MAX) || 15000;
+const SUBTITLE_SEARCH_CACHE_MAX = parseInt(process.env.SUBTITLE_SEARCH_CACHE_MAX) || 5000;
 const SUBTITLE_SEARCH_CACHE_TTL_MS = parseInt(process.env.SUBTITLE_SEARCH_CACHE_TTL_MS) || (10 * 60 * 1000); // 10 minutes
 
 const subtitleSearchResultsCache = new LRUCache({
@@ -111,6 +111,12 @@ const cacheMetrics = {
   filesEvicted: 0,
   lastReset: Date.now()
 };
+
+// Single-batch streaming throttles (streaming providers)
+const SINGLE_BATCH_LOG_ENTRY_INTERVAL = Math.max(1, parseInt(process.env.SINGLE_BATCH_LOG_ENTRY_INTERVAL, 10) || 100);
+const SINGLE_BATCH_SRT_REBUILD_STEP_SMALL = Math.max(1, parseInt(process.env.SINGLE_BATCH_SRT_REBUILD_STEP_SMALL, 10) || 150);
+const SINGLE_BATCH_SRT_REBUILD_STEP_LARGE = Math.max(1, parseInt(process.env.SINGLE_BATCH_SRT_REBUILD_STEP_LARGE, 10) || 250);
+const SINGLE_BATCH_SRT_REBUILD_LARGE_THRESHOLD = Math.max(1, parseInt(process.env.SINGLE_BATCH_SRT_REBUILD_LARGE_THRESHOLD, 10) || 600);
 
 /**
  * Create a single-cue loading subtitle that explains partial loading
@@ -322,6 +328,12 @@ function createTranslationErrorSubtitle(errorType, errorMessage) {
     errorTitle = 'Translation Failed: Invalid Source File';
     errorExplanation = 'The source subtitle file appears corrupted or invalid.\nIt may be too small or have formatting issues.';
     retryAdvice = '(CORRUPT_SOURCE) Please retry or try a different subtitle from the list.';
+  } else if (errorType === 'MULTI_PROVIDER') {
+    // Combined provider failure should be surfaced as a single-entry error for clarity
+    const explanation = errorMessage || 'Both the main and secondary providers failed to translate this batch.';
+    return `1
+00:00:00,000 --> 04:00:00,000
+${explanation}`;
   } else if (errorType === 'other') {
     // Generic error - still provide helpful message with actual error
     errorTitle = 'Translation Failed: Unexpected Error';
@@ -2667,17 +2679,20 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
     // Get language names for better translation context
     const targetLangName = getLanguageName(targetLanguage) || targetLanguage;
 
-    // Initialize Gemini service with advanced settings
-    const gemini = new GeminiService(
-      config.geminiApiKey,
-      config.geminiModel,
-      config.advancedSettings || {}
-    );
+    // Initialize translation provider (Gemini default, others when enabled)
+    const { provider, providerName, model, fallbackProviderName } = createTranslationProvider(config);
+    const effectiveModel = model || config.geminiModel;
+    log.debug(() => `[Translation] Using provider=${providerName} model=${effectiveModel}`);
 
     // Initialize new Translation Engine (structure-first approach)
     // Pass model to enable model-specific batch size optimization
     // Pass advancedSettings to enable optional features (like batch context)
-    const translationEngine = new TranslationEngine(gemini, config.geminiModel, config.advancedSettings || {});
+    const translationEngine = new TranslationEngine(
+      provider,
+      effectiveModel,
+      config.advancedSettings || {},
+      { singleBatchMode: config.singleBatchMode === true, providerName, fallbackProviderName }
+    );
 
     log.debug(() => '[Translation] Using unified translation engine');
 
@@ -2685,6 +2700,15 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
     // Strategy: 1st batch â†’ save, then next 3 â†’ save, then next 5 â†’ save, then every 5
     let translatedContent;
     let lastSavedBatch = 0;
+    let lastStreamSequence = 0;
+    let lastStreamEntries = 0;
+    let lastStreamSavedAt = 0;
+    let lastLoggedEntries = 0;
+    let nextPartialRebuildAt = null;
+    const STREAM_SAVE_MIN_STEP = 10;
+    const STREAM_SAVE_DEBOUNCE_MS = 4000;
+    const streamingProviderMode = translationEngine.enableStreaming === true;
+    const logIntervalEntries = Math.max(1, SINGLE_BATCH_LOG_ENTRY_INTERVAL);
 
     const shouldSavePartial = (currentBatch) => {
       if (currentBatch === 1) return true; // 1st batch: immediate feedback
@@ -2694,23 +2718,95 @@ async function performTranslation(sourceFileId, targetLanguage, config, cacheKey
       return false;
     };
 
+    const computeRebuildStep = (totalEntries) => {
+      const threshold = SINGLE_BATCH_SRT_REBUILD_LARGE_THRESHOLD;
+      const step = totalEntries > threshold ? SINGLE_BATCH_SRT_REBUILD_STEP_LARGE : SINGLE_BATCH_SRT_REBUILD_STEP_SMALL;
+      return Math.max(1, step);
+    };
+
+    const shouldRebuildPartial = (completedEntries, totalEntries, isStreaming = false) => {
+      const throttle = streamingProviderMode && (config.singleBatchMode === true || isStreaming);
+      if (!throttle) return true;
+      const total = totalEntries || 0;
+      const step = computeRebuildStep(total);
+      if (nextPartialRebuildAt === null) {
+        nextPartialRebuildAt = Math.min(step, total || step);
+      }
+      const reached = completedEntries >= nextPartialRebuildAt || (total > 0 && completedEntries >= total);
+      if (!reached) return false;
+
+      // Advance to the next checkpoint to prevent duplicate rebuilds at the same count
+      while (nextPartialRebuildAt <= completedEntries) {
+        nextPartialRebuildAt += step;
+      }
+      if (total > 0 && nextPartialRebuildAt > total) {
+        nextPartialRebuildAt = total;
+      }
+      return true;
+    };
+
+    const shouldLogProgress = (completedEntries, totalEntries, isStreaming = false) => {
+      const throttle = streamingProviderMode && (config.singleBatchMode === true || isStreaming);
+      if (!throttle) return true;
+      if (!Number.isFinite(completedEntries)) return false;
+      if (completedEntries <= lastLoggedEntries) return false;
+      const hitInterval = completedEntries - lastLoggedEntries >= logIntervalEntries;
+      const atEnd = totalEntries && completedEntries >= totalEntries;
+      if (hitInterval || atEnd) {
+        lastLoggedEntries = completedEntries;
+        return true;
+      }
+      return false;
+    };
+
     try {
       translatedContent = await translationEngine.translateSubtitle(
         sourceContent,
         targetLangName,
         config.translationPrompt,
         async (progress) => {
-          // Smart partial delivery: save at strategic points to reduce Redis I/O
-          if (progress.partialSRT && shouldSavePartial(progress.currentBatch) && progress.currentBatch > lastSavedBatch) {
-            lastSavedBatch = progress.currentBatch;
+          const persistPartial = async (partialText, logThisProgress) => {
+            const partialSrt = buildPartialSrtWithTail(partialText);
+            if (!partialSrt || partialSrt.length === 0) return false;
+            await saveToPartialCacheAsync(cacheKey, {
+              content: partialSrt,
+              expiresAt: Date.now() + 60 * 60 * 1000
+            });
+            if (logThisProgress) {
+              log.debug(() => `[Translation] Saved partial: batch ${progress.currentBatch}/${progress.totalBatches}, ${progress.completedEntries}/${progress.totalEntries} entries${progress.streaming ? ' (streaming)' : ''}`);
+            }
+            return true;
+          };
 
-            const partialSrt = buildPartialSrtWithTail(progress.partialSRT);
-            if (partialSrt && partialSrt.length > 0) {
-              await saveToPartialCacheAsync(cacheKey, {
-                content: partialSrt,
-                expiresAt: Date.now() + 60 * 60 * 1000
-              });
-              log.debug(() => `[Translation] Saved partial: batch ${progress.currentBatch}/${progress.totalBatches}, ${progress.completedEntries}/${progress.totalEntries} entries`);
+          // Smart partial delivery: save at strategic points to reduce Redis I/O
+          if (progress.partialSRT) {
+            const isStreaming = progress.streaming === true;
+            const completed = progress.completedEntries || 0;
+            const total = progress.totalEntries || 0;
+            const logThisProgress = shouldLogProgress(completed, total, isStreaming);
+            const allowRebuild = shouldRebuildPartial(completed, total, isStreaming);
+            const throttleLogging = streamingProviderMode && (config.singleBatchMode === true || isStreaming);
+            let didPersist = false;
+
+            if (isStreaming) {
+              const now = Date.now();
+              const seq = progress.streamSequence || 0;
+              const enoughDelta = completed - lastStreamEntries >= STREAM_SAVE_MIN_STEP;
+              const timeElapsed = now - lastStreamSavedAt >= STREAM_SAVE_DEBOUNCE_MS;
+              const shouldSaveStream = seq > lastStreamSequence && (enoughDelta || timeElapsed || completed === progress.totalEntries) && allowRebuild;
+              if (shouldSaveStream) {
+                lastStreamSequence = seq;
+                if (completed > 0) lastStreamEntries = completed;
+                lastStreamSavedAt = now;
+                didPersist = await persistPartial(progress.partialSRT, !throttleLogging || logThisProgress);
+              }
+            } else if (shouldSavePartial(progress.currentBatch) && progress.currentBatch > lastSavedBatch && allowRebuild) {
+              lastSavedBatch = progress.currentBatch;
+              didPersist = await persistPartial(progress.partialSRT, !throttleLogging || logThisProgress);
+            }
+
+            if (logThisProgress && throttleLogging && !didPersist) {
+              log.debug(() => `[Translation] Gemini streaming progress: batch ${progress.currentBatch}/${progress.totalBatches}, ${completed}/${total} entries${progress.streaming ? ' (streaming)' : ''} (partial save skipped by throttle)`);
             }
           }
         }

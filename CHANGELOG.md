@@ -2,22 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
-## SubMaker v1.3.6
+## SubMaker v1.4.0
 
 **New Features:**
 
-- Stremio Kai Support: Added detection and logging for Stremio Kai user agents to improve compatibility with the popular anime viewer fork
+- AI timestamps mode (toggle in Advanced Settings): trust the active translation provider to return/repair timestamps per batch, stream partial SRTs with AI timecodes where supported (Gemini), and rebuild partials safely while throttling with new `SINGLE_BATCH_*` env controls.
+- Single-batch Translation Mode with streaming partials to Stremio, token-aware chunking, and new `SINGLE_BATCH_*` env knobs to throttle streaming rebuild/log cadence.
+- Beta Mode added to config page - enabling it creates a "Multiple Providers" option on "AI Translation API Keys" section and shows "Advanced Configs" section for changing Gemini parameters.
+- Multi-provider translation pipeline: oOpenAI, Anthropic, XAI/Grok, DeepSeek, DeepL, Mistral, OpenRouter, and Cloudflare Workers AI providers with per-provider keys/model pickers and server-side model discovery with a new parallel translation workflow.
+- Secondary provider fallback option added to config page (BETA).
+- Main Gemini translation workflow now supports Streaming (much faster partials and batch translations). Also implemented to other providers.
+
+**Translation Engine & Providers:**
+
+- Gemini defaults now use `gemini-flash-latest` with SSE streaming support, real token counting, smarter output token budgets, batch headers, and timestamp-aware prompts; cache keys now include prompt variants and AI-timestamp mode.
+- Automatic batch-level fallback to the secondary provider on MAX_TOKENS/PROHIBITED_CONTENT/HTTP errors, preserved translation error types (incl. `MULTI_PROVIDER`), and mismatch correction that keeps AI-returned timecodes when requested.
+- Token-aware splitting tightened (soft caps per chunk, recursive halving, single-batch dynamic splits), streaming partial persistence throttled/logged to cut Redis I/O, and subtitle search cache reduced to 5k entries to lower memory use.
+
+**Configuration & UI:**
+
+- Config page rebuilt with a multi-provider card (main/fallback selectors), per-provider advanced parameter editors (temperature/top-P/max tokens/timeouts/retries, Anthropic thinking, DeepL formality/formatting), encrypted storage of provider keys, and manifest/README copy updated to reflect non-Gemini providers.
+- File translation UI/API now accept provider-specific prompt/model/parameter overrides plus sanitized advanced settings; bypass cache is auto-forced when using advanced, multi-provider, single-batch, or AI-timestamp modes to keep shared caches clean.
+- Validation hardened to require at least one configured AI provider, enforce distinct main vs fallback, clamp provider parameters, normalize toggles, and normalize encrypted provider keys on load/save.
+
+**New Files:**
+- `src/services/providers/openaiCompatible.js` - Universal provider for OpenAI, XAI/Grok, DeepSeek, Mistral, OpenRouter, and Cloudflare Workers AI
+- `src/services/providers/anthropic.js` - Anthropic/Claude provider with extended thinking support
+- `src/services/providers/deepl.js` - DeepL provider with beta languages and formality control
+- `src/services/translationProviderFactory.js` - Factory pattern with FallbackTranslationProvider class for automatic provider switching
+
+**New Environment Variables:**
+- `SINGLE_BATCH_LOG_ENTRY_INTERVAL` - Debug log checkpoint interval for single-batch streaming
+- `SINGLE_BATCH_SRT_REBUILD_STEP_SMALL` - Partial SRT rebuild step when entries ≤ threshold
+- `SINGLE_BATCH_SRT_REBUILD_STEP_LARGE` - Partial SRT rebuild step when entries > threshold
+- `SINGLE_BATCH_SRT_REBUILD_LARGE_THRESHOLD` - Entry threshold to switch rebuild step sizes
+
+**API Endpoints Added:**
+- `/api/models/:provider` - Generic model discovery for all non-Gemini providers (OpenAI, Anthropic, DeepL, XAI, DeepSeek, Mistral, OpenRouter, Cloudflare Workers)
+
+**API Enhancements:**
+- `/api/gemini-models` now accepts `configStr` for fetching models using saved session token
+- `/api/translate-file` now accepts `overrides` parameter for provider-specific settings (prompt, model, parameters)
+
+**File Translation UI:**
+- Provider-specific overrides: prompt, model, parameters
+- Advanced settings override panel with input clamping
+- Bypass cache auto-forced when using advanced/multi-provider/single-batch/AI-timestamp modes
+- Multiple bug fixes
+
+**Other Bug Fixes:**
+
+- **Fixed critical cross-user configuration contamination bug**: Added aggressive cache prevention headers (`Cache-Control`, `Pragma`, `Expires`) to `/api/get-session/:token` endpoint and implemented client-side cache-busting with timestamp query parameters. This bug was causing users to randomly see other users' language settings (e.g., Croatian, Hebrew, Polish) due to HTTP caching by browsers, proxies, or CDNs.
+- Translation error classification retains upstream flags (429/503/MAX_TOKENS/PROHIBITED_CONTENT/INVALID_SOURCE) so user messaging and fallback routing stay accurate.
+- Various minor bug fixes.
+
+## SubMaker v1.3.6 (unreleased)
 
 **Improvements:**
 
-- 3-click cache resets are now rate limited (defaults: 6/15m for permanent cache, 12/15m for bypass cache) and configurable via `CACHE_RESET_LIMIT_TRANSLATION`, `CACHE_RESET_LIMIT_BYPASS`, and `CACHE_RESET_WINDOW_MINUTES`.
+- 3-click cache resets are now rate limited based on time (defaults: 6/15m for permanent cache, 12/15m for bypass cache) and configurable via `CACHE_RESET_LIMIT_TRANSLATION`, `CACHE_RESET_LIMIT_BYPASS`, and `CACHE_RESET_WINDOW_MINUTES`.
 - Config/UI: Source-language selection cap is now configurable via `MAX_SOURCE_LANGUAGES`.
 - Config/UI: Added combined target/learn languages cap (default 6) configurable via `MAX_TARGET_LANGUAGES` to prevent oversized selections.
 - Just Fetch mode: Added a configurable cap on fetched languages (default 9) via `MAX_NO_TRANSLATION_LANGUAGES`, with UI enforcement and server-side validation.
+- Config/UI: Updated Gemini model options to use `gemini-flash-latest` and `gemini-flash-lite-latest` for the Flash defaults.
+- Translation engine: Each batch prompt now carries an explicit `BATCH X/Y` header so the model knows which chunk it is translating.
+- Advanced settings: New “Send timestamps to AI” toggle sends timecodes to Gemini and trusts the model to return corrected timestamps per batch using the default translation prompt.
 
 **Bug Fixes:**
 
-- SRT Translation UI: Fixed authentication failure in file upload translation page by using session tokens instead of base64-encoded configs in production environments
+- SRT Translation UI: Fixed authentication failure in file upload translation page using session tokens configs
 - File Translation API: Added support for advanced settings override, allowing UI customizations to be properly applied during translation
 
 ## SubMaker v1.3.5

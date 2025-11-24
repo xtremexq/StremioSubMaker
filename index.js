@@ -15,7 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits } = require('./src/utils/config');
+const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits, getDefaultProviderParameters, mergeProviderParameters } = require('./src/utils/config');
 const { srtPairToWebVTT } = require('./src/utils/subtitle');
 const { version } = require('./src/utils/version');
 const { getAllLanguages, getLanguageName } = require('./src/utils/languages');
@@ -23,6 +23,7 @@ const { generateCacheKeys } = require('./src/utils/cacheKeys');
 const { getCached: getDownloadCached, saveCached: saveDownloadCached, getCacheStats: getDownloadCacheStats } = require('./src/utils/downloadCache');
 const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, createSessionTokenErrorSubtitle, createOpenSubtitlesAuthErrorSubtitle, createOpenSubtitlesQuotaExceededSubtitle, readFromPartialCache, hasCachedTranslation, purgeTranslationCache, translationStatus, inFlightTranslations, canUserStartTranslation } = require('./src/handlers/subtitles');
 const GeminiService = require('./src/services/gemini');
+const { createProviderInstance, createTranslationProvider, resolveCfWorkersCredentials } = require('./src/services/translationProviderFactory');
 const { translateInParallel } = require('./src/utils/parallelTranslation');
 const syncCache = require('./src/utils/syncCache');
 const { generateSubtitleSyncPage } = require('./src/utils/syncPageGenerator');
@@ -504,6 +505,7 @@ app.use((req, res, next) => {
         '/',
         '/configure',
         '/file-upload',
+        '/subtitle-sync',
         '/api/languages',
         '/api/test-opensubtitles',
         '/api/gemini-models',
@@ -515,9 +517,15 @@ app.use((req, res, next) => {
         '/api/validate-subdl',
         '/api/validate-opensubtitles',
         '/api/translate-file',
-        '/addon/:config/translate-selector/',
-        '/addon/:config/file-translate/'
+        '/api/save-synced-subtitle'
     ];
+
+    const isAddonBrowserPage =
+        req.path.startsWith('/addon/') && (
+            req.path.includes('/translate-selector/') ||
+            req.path.includes('/file-translate/') ||
+            req.path.includes('/sync-subtitles/')
+        );
 
     // Allow static files and browser-accessible routes
     const isBrowserAllowed =
@@ -525,7 +533,8 @@ app.use((req, res, next) => {
         req.path.endsWith('.css') ||
         req.path.endsWith('.js') ||
         req.path.endsWith('.html') ||
-        browserAllowedRoutes.some(route => req.path === route || req.path.startsWith(route));
+        browserAllowedRoutes.some(route => req.path === route || req.path.startsWith(route)) ||
+        isAddonBrowserPage;
 
     if (isBrowserAllowed) {
         return cors()(req, res, next);
@@ -761,13 +770,26 @@ app.get('/api/test-opensubtitles', async (req, res) => {
 // API endpoint to fetch Gemini models
 app.post('/api/gemini-models', async (req, res) => {
     try {
-        const { apiKey } = req.body || {};
+        const { apiKey, configStr } = req.body || {};
+        let resolvedConfig = null;
 
-        if (!apiKey) {
+        let geminiApiKey = apiKey;
+
+        // Allow fetching models using the user's saved config (session token)
+        if (!geminiApiKey && configStr) {
+            resolvedConfig = await resolveConfigAsync(configStr, req);
+            geminiApiKey = resolvedConfig?.geminiApiKey || process.env.GEMINI_API_KEY;
+        }
+
+        if (!geminiApiKey) {
             return res.status(400).json({ error: 'API key is required' });
         }
 
-        const gemini = new GeminiService(String(apiKey).trim());
+        const gemini = new GeminiService(
+            String(geminiApiKey).trim(),
+            resolvedConfig?.geminiModel || '',
+            resolvedConfig?.advancedSettings || {}
+        );
         const models = await gemini.getAvailableModels({ silent: true });
 
         // Filter to only show models containing "pro" or "flash" (case-insensitive)
@@ -780,6 +802,105 @@ app.post('/api/gemini-models', async (req, res) => {
     } catch (error) {
         log.error(() => '[API] Error fetching Gemini models:', error);
         // Surface upstream error details if available for easier debugging in UI
+        const message = error?.response?.data?.error || error?.response?.data?.message || error.message || 'Failed to fetch models';
+        res.status(500).json({ error: message });
+    }
+});
+
+// Generic model discovery endpoint for alternative providers
+app.post('/api/models/:provider', async (req, res) => {
+    try {
+        const providerKey = String(req.params.provider || '').toLowerCase();
+        const { apiKey, configStr } = req.body || {};
+        const providerDefaults = getDefaultProviderParameters();
+        let resolvedConfig = null;
+
+        // Allow using the user's saved config (session token) instead of passing API keys in the request body
+        const getProviderConfigFromSession = async () => {
+            if (!configStr) return null;
+            resolvedConfig = resolvedConfig || await resolveConfigAsync(configStr, req);
+
+            if (providerKey === 'gemini') {
+                return {
+                    apiKey: resolvedConfig?.geminiApiKey || process.env.GEMINI_API_KEY,
+                    model: resolvedConfig?.geminiModel || '',
+                    params: resolvedConfig?.advancedSettings || {}
+                };
+            }
+
+            const providers = resolvedConfig?.providers || {};
+            const matchKey = Object.keys(providers).find(k => String(k).toLowerCase() === providerKey);
+            const providerCfg = matchKey ? providers[matchKey] : null;
+            if (!providerCfg) return null;
+
+            const mergedParams = mergeProviderParameters(providerDefaults, resolvedConfig?.providerParameters || {});
+            const params = mergedParams?.[providerKey] || mergedParams?.[matchKey] || {};
+
+            return {
+                apiKey: providerCfg.apiKey,
+                model: providerCfg.model || '',
+                params
+            };
+        };
+
+        const sessionProvider = await getProviderConfigFromSession();
+
+        let providerApiKey = apiKey || sessionProvider?.apiKey;
+        let providerModel = sessionProvider?.model || '';
+        let providerParams = sessionProvider?.params || {};
+
+        if (providerKey === 'gemini') {
+            providerApiKey = providerApiKey || process.env.GEMINI_API_KEY;
+            if (!providerApiKey) {
+                return res.status(400).json({ error: 'API key is required' });
+            }
+
+            const gemini = new GeminiService(
+                String(providerApiKey || '').trim(),
+                providerModel,
+                providerParams
+            );
+            const models = await gemini.getAvailableModels({ silent: true });
+            return res.json(models);
+        }
+
+        if (!providerApiKey) {
+            return res.status(400).json({ error: 'API key is required' });
+        }
+
+        if (providerKey === 'cfworkers') {
+            const creds = resolveCfWorkersCredentials(providerApiKey);
+            if (!creds.token) {
+                return res.status(400).json({ error: 'Cloudflare Workers AI token is required' });
+            }
+            if (!creds.accountId) {
+                return res.status(400).json({
+                    error: 'Cloudflare Workers AI account ID is required. Provide API key as ACCOUNT_ID|TOKEN.'
+                });
+            }
+            providerApiKey = `${creds.accountId}|${creds.token}`;
+        }
+
+        const provider = createProviderInstance(
+            providerKey,
+            {
+                apiKey: providerApiKey,
+                model: providerModel
+            },
+            providerParams
+        );
+
+        if (!provider || typeof provider.getAvailableModels !== 'function') {
+            const unsupportedMessage = providerKey === 'cfworkers'
+                ? 'Cloudflare Workers AI is missing credentials. Use ACCOUNT_ID|TOKEN.'
+                : 'Unsupported provider';
+            return res.status(400).json({ error: unsupportedMessage });
+        }
+
+        const models = await provider.getAvailableModels();
+        res.json(models);
+    } catch (error) {
+        log.error(() => ['[API] Error fetching provider models:', error]);
         const message = error?.response?.data?.error || error?.response?.data?.message || error.message || 'Failed to fetch models';
         res.status(500).json({ error: message });
     }
@@ -1217,6 +1338,12 @@ app.get('/api/get-session/:token', async (req, res) => {
             return res.status(400).json({ error: 'Invalid session token format' });
         }
 
+        // CRITICAL: Set aggressive cache prevention headers to avoid cross-user config contamination
+        // Without these headers, browsers/proxies can cache User A's config and serve it to User B
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+
         // getSession now automatically falls back to storage if not in cache
         const cfg = await sessionManager.getSession(token);
 
@@ -1236,7 +1363,7 @@ app.get('/api/get-session/:token', async (req, res) => {
 // API endpoint to translate uploaded subtitle file
 app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTranslationBodySchema, 'body'), async (req, res) => {
     try {
-        const { content, targetLanguage, configStr, advancedSettings } = req.body;
+        const { content, targetLanguage, configStr, advancedSettings, overrides } = req.body;
 
         if (!content) {
             return res.status(400).send('Subtitle content is required');
@@ -1254,19 +1381,113 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
 
         // Parse config
         const config = await resolveConfigAsync(configStr, req);
+        const providerDefaults = getDefaultProviderParameters();
+        const activeProvider = (config.multiProviderEnabled === true && config.mainProvider)
+            ? String(config.mainProvider).toLowerCase()
+            : 'gemini';
 
-        // Merge advanced settings if provided (allows overriding settings in file upload UI)
-        if (advancedSettings) {
+        // Apply advanced settings overrides (Gemini-focused, kept for backward compatibility)
+        const sanitizeAdvancedSettings = (incoming = {}) => {
+            const parsed = {};
+            const clampNumber = (value, min, max) => {
+                const num = typeof value === 'number' ? value : parseFloat(value);
+                if (!Number.isFinite(num)) return null;
+                if (min !== undefined && num < min) return min;
+                if (max !== undefined && num > max) return max;
+                return num;
+            };
+
+            const thinking = clampNumber(incoming.thinkingBudget, -1, 200000);
+            if (thinking !== null) parsed.thinkingBudget = thinking;
+
+            const temperature = clampNumber(incoming.temperature, 0, 2);
+            if (temperature !== null) parsed.temperature = temperature;
+
+            const topP = clampNumber(incoming.topP, 0, 1);
+            if (topP !== null) parsed.topP = topP;
+
+            const topK = clampNumber(incoming.topK, 1, 100);
+            if (topK !== null) parsed.topK = topK;
+
+            const maxTokens = clampNumber(incoming.maxOutputTokens, 1, 200000);
+            if (maxTokens !== null) parsed.maxOutputTokens = maxTokens;
+
+            const timeout = clampNumber(incoming.translationTimeout, 5, 600);
+            if (timeout !== null) parsed.translationTimeout = timeout;
+
+            const maxRetries = clampNumber(incoming.maxRetries, 0, 5);
+            if (maxRetries !== null) parsed.maxRetries = Math.max(0, Math.min(5, parseInt(maxRetries, 10)));
+
+            return Object.keys(parsed).length ? parsed : null;
+        };
+
+        const parsedAdvanced = sanitizeAdvancedSettings(advancedSettings);
+        if (parsedAdvanced) {
             config.advancedSettings = {
                 ...config.advancedSettings,
-                ...advancedSettings
+                ...parsedAdvanced
             };
-            // Also update top-level fields if they're in advanced settings
-            if (advancedSettings.geminiModel) {
-                config.geminiModel = advancedSettings.geminiModel;
+        }
+        if (advancedSettings && typeof advancedSettings.geminiModel === 'string' && advancedSettings.geminiModel.trim()) {
+            config.geminiModel = advancedSettings.geminiModel.trim();
+        }
+        if (advancedSettings && typeof advancedSettings.translationPrompt === 'string') {
+            const prompt = advancedSettings.translationPrompt.trim();
+            if (prompt) {
+                config.translationPrompt = prompt;
             }
-            if (advancedSettings.translationPrompt !== undefined) {
-                config.translationPrompt = advancedSettings.translationPrompt;
+        }
+
+        // Apply provider-aware overrides (model/parameters/prompt) from the upload page
+        if (overrides && typeof overrides === 'object') {
+            // Prompt override
+            if (typeof overrides.translationPrompt === 'string') {
+                const promptOverride = overrides.translationPrompt.trim();
+                if (promptOverride) {
+                    config.translationPrompt = promptOverride;
+                }
+            }
+
+            // Model override for the active provider
+            if (typeof overrides.providerModel === 'string' && overrides.providerModel.trim()) {
+                const modelOverride = overrides.providerModel.trim();
+                if (activeProvider === 'gemini') {
+                    config.geminiModel = modelOverride;
+                } else {
+                    config.providers = config.providers || {};
+                    const current = config.providers[activeProvider] || {};
+                    config.providers[activeProvider] = {
+                        ...current,
+                        model: modelOverride
+                    };
+                }
+            }
+
+            // Advanced settings override (still Gemini-focused; optional)
+            const overrideAdvanced = sanitizeAdvancedSettings(overrides.advancedSettings);
+            if (overrideAdvanced) {
+                config.advancedSettings = {
+                    ...config.advancedSettings,
+                    ...overrideAdvanced
+                };
+            }
+
+            // Provider parameter overrides (temperature, timeout, etc.) - scoped to active provider
+            if (overrides.providerParameters && typeof overrides.providerParameters === 'object') {
+                const scopedParams = {};
+                Object.keys(overrides.providerParameters).forEach(key => {
+                    if (String(key).toLowerCase() === activeProvider) {
+                        scopedParams[key] = overrides.providerParameters[key];
+                    }
+                });
+
+                if (Object.keys(scopedParams).length > 0) {
+                    const merged = mergeProviderParameters(
+                        providerDefaults,
+                        { ...(config.providerParameters || {}), ...scopedParams }
+                    );
+                    config.providerParameters = merged;
+                }
             }
         }
 
@@ -1311,16 +1532,33 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
             workingContent = content;
         }
 
-        // Initialize Gemini service with advanced settings
-        const gemini = new GeminiService(
-          config.geminiApiKey,
-          config.geminiModel,
-          config.advancedSettings || {}
-        );
+        // Initialize translation provider (Gemini by default, alternative providers when enabled)
+        const { provider: translationProvider, providerName, model, fallbackProviderName } = createTranslationProvider(config);
+        if (!translationProvider || typeof translationProvider.translateSubtitle !== 'function') {
+            throw new Error('Translation provider is not configured correctly');
+        }
+        const effectiveModel = model || config.geminiModel;
+        log.debug(() => `[File Translation API] Using provider=${providerName} model=${effectiveModel}`);
 
-        // Estimate token count
-        const estimatedTokens = gemini.estimateTokenCount(workingContent);
-        log.debug(() => `[File Translation API] Estimated tokens: ${estimatedTokens}`);
+        // Estimate token count (prefer real count when the provider supports it)
+        let tokenCount = null;
+        if (typeof translationProvider.countTokensForTranslation === 'function') {
+            try {
+                tokenCount = await translationProvider.countTokensForTranslation(
+                    workingContent,
+                    targetLangName,
+                    config.translationPrompt
+                );
+            } catch (err) {
+                log.debug(() => ['[File Translation API] Token count request failed, using estimate:', err.message]);
+            }
+        }
+
+        const estimatedTokens = tokenCount
+            || (typeof translationProvider.estimateTokenCount === 'function'
+                ? translationProvider.estimateTokenCount(workingContent)
+                : Math.ceil(String(workingContent || '').length / 3));
+        log.debug(() => `[File Translation API] Estimated tokens: ${estimatedTokens}${tokenCount ? ' (actual)' : ''}`);
 
         // Use parallel translation for large files (>threshold tokens)
         // Parallel translation provides:
@@ -1342,7 +1580,7 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
             // Parallel translation with context preservation
             translatedContent = await translateInParallel(
                 workingContent,
-                gemini,
+                translationProvider,
                 targetLangName,
                 {
                     customPrompt: config.translationPrompt,
@@ -1358,7 +1596,7 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
             log.debug(() => `[File Translation API] Using single-call translation (${estimatedTokens} tokens)`);
 
             // Single API call for smaller files
-            translatedContent = await gemini.translateSubtitle(
+            translatedContent = await translationProvider.translateSubtitle(
                 workingContent,
                 'detected source language',
                 targetLangName,
@@ -2524,9 +2762,69 @@ function escapeHtml(text) {
     return text;
 }
 
+// Sanitize config for client-side usage on the file translation page
+function buildFileTranslationClientConfig(config) {
+    const defaults = getDefaultProviderParameters();
+    const mergedParams = mergeProviderParameters(defaults, config?.providerParameters || {});
+
+    const safeProviders = {};
+    if (config?.providers && typeof config.providers === 'object') {
+        Object.keys(config.providers).forEach(key => {
+            const cfg = config.providers[key] || {};
+            const clone = { ...cfg };
+            delete clone.apiKey;
+            safeProviders[key] = clone;
+        });
+    }
+
+    return {
+        targetLanguages: Array.isArray(config?.targetLanguages) ? config.targetLanguages : [],
+        advancedSettings: config?.advancedSettings || {},
+        translationPrompt: config?.translationPrompt || '',
+        multiProviderEnabled: config?.multiProviderEnabled === true,
+        mainProvider: config?.mainProvider || '',
+        secondaryProviderEnabled: config?.secondaryProviderEnabled === true,
+        secondaryProvider: config?.secondaryProvider || '',
+        geminiModel: config?.geminiModel || '',
+        providers: safeProviders,
+        providerParameters: mergedParams,
+        fileTranslationEnabled: config?.fileTranslationEnabled !== false
+    };
+}
+
+// Build provider summary (main/fallback + merged parameters) for UI display
+function buildProviderSummary(config) {
+    const defaults = getDefaultProviderParameters();
+    const mergedParams = mergeProviderParameters(defaults, config?.providerParameters || {});
+    const multiEnabled = config?.multiProviderEnabled === true;
+    const normalizeProvider = (key) => String(key || '').toLowerCase();
+    const mainProvider = normalizeProvider(multiEnabled ? config?.mainProvider || 'gemini' : 'gemini');
+    const secondaryEnabled = multiEnabled && config?.secondaryProviderEnabled === true;
+    const secondaryProvider = secondaryEnabled ? normalizeProvider(config?.secondaryProvider) : '';
+
+    const getModel = (key) => {
+        if (!key) return '';
+        const providers = config?.providers || {};
+        if (key === 'gemini') return config?.geminiModel || '';
+        const matchKey = Object.keys(providers).find(k => String(k).toLowerCase() === key);
+        return matchKey ? providers[matchKey]?.model || '' : '';
+    };
+
+    return {
+        mainProvider,
+        mainModel: getModel(mainProvider),
+        secondaryProvider: secondaryProvider || null,
+        secondaryModel: getModel(secondaryProvider),
+        providerParameters: mergedParams
+    };
+}
+
 // Generate HTML page for file translation
 function generateFileTranslationPage(videoId, configStr, config) {
-    const targetLangs = config.targetLanguages.map(lang => {
+    const clientConfig = buildFileTranslationClientConfig(config);
+    const providerSummary = buildProviderSummary(config);
+
+    const targetLangs = clientConfig.targetLanguages.map(lang => {
         const langName = getLanguageName(lang) || lang;
         return { code: lang, name: langName };
     });
@@ -3767,6 +4065,13 @@ function generateFileTranslationPage(videoId, configStr, config) {
         <button class="help-button mario" id="showInstructions" title="Show Instructions">?</button>
 
         <div class="card">
+            <div class="provider-banner">
+                <div class="provider-pill" id="providerPill">
+                    <span class="dot"></span>
+                    <span>Using Configured Provider</span>
+                </div>
+                <div class="label-description" id="providerDetails">Using your saved SubMaker AI settings.</div>
+            </div>
             <form id="translationForm">
                 <div class="form-group">
                     <label for="fileInput">
@@ -3823,7 +4128,7 @@ function generateFileTranslationPage(videoId, configStr, config) {
                                     <span class="label-description">Override the default model for this translation only.</span>
                                 </label>
                                 <select id="advancedModel">
-                                    <option value="">Use Default Model (${config.geminiModel || 'gemini-2.5-flash-lite-preview-09-2025'})</option>
+                                    <option value="">Use Configured Model (from your config)</option>
                                 </select>
                                 <div class="model-status" id="modelStatus"></div>
                             </div>
@@ -3836,7 +4141,7 @@ function generateFileTranslationPage(videoId, configStr, config) {
                                 <textarea id="customPrompt" placeholder="Example: Translate the following subtitles to {target_language}..."></textarea>
                             </div>
 
-                            <div class="form-group">
+                            <div class="form-group" id="thinkingBudgetGroup">
                                 <label for="advancedThinkingBudget">
                                     Thinking Budget (Extended Reasoning)
                                     <span class="label-description">0 = disabled, -1 = dynamic (auto-adjust), or fixed token count (1-32768).</span>
@@ -3860,7 +4165,7 @@ function generateFileTranslationPage(videoId, configStr, config) {
                                 <input type="number" id="advancedTopP" min="0" max="1" step="0.05" value="0.95" placeholder="0.95">
                             </div>
 
-                            <div class="form-group">
+                            <div class="form-group" id="topKGroup">
                                 <label for="advancedTopK">
                                     Top-K (Token Selection)
                                     <span class="label-description">Number of top tokens to consider (1-100). Default: 40</span>
@@ -3879,12 +4184,18 @@ function generateFileTranslationPage(videoId, configStr, config) {
                             <div class="form-group">
                                 <label for="advancedTimeout">
                                     Translation Timeout (seconds)
-                                    <span class="label-description">Maximum time to wait for translation (60-1200). Default: 600</span>
+                                    <span class="label-description">Maximum time to wait for translation (60-600). Default: 600</span>
                                 </label>
-                                <input type="number" id="advancedTimeout" min="60" max="1200" step="30" value="600" placeholder="600">
+                                <input type="number" id="advancedTimeout" min="60" max="600" step="30" value="600" placeholder="600">
                             </div>
 
-                            
+                            <div class="form-group">
+                                <label for="advancedMaxRetries">
+                                    Max Retries
+                                    <span class="label-description">Number of retry attempts for this translation (0-5). Default: 2</span>
+                                </label>
+                                <input type="number" id="advancedMaxRetries" min="0" max="5" step="1" value="2" placeholder="2">
+                            </div>
 
                             <button type="button" class="btn btn-secondary" id="resetDefaultsBtn">
                                 🔄 Reset to Defaults
@@ -3920,7 +4231,12 @@ function generateFileTranslationPage(videoId, configStr, config) {
         </div>
     </div>
 
-    <script>
+        <script>
+        const clientConfig = ${JSON.stringify(clientConfig)};
+        const providerInfo = ${JSON.stringify(providerSummary)};
+        const configToken = ${JSON.stringify(configStr)};
+        const providerDefaults = ${JSON.stringify(getDefaultProviderParameters())};
+
         const form = document.getElementById('translationForm');
         const fileInput = document.getElementById('fileInput');
         const fileName = document.getElementById('fileName');
@@ -3931,31 +4247,13 @@ function generateFileTranslationPage(videoId, configStr, config) {
         const error = document.getElementById('error');
         const downloadLink = document.getElementById('downloadLink');
         const showAllLanguagesCheckbox = document.getElementById('showAllLanguages');
+        const providerPill = document.getElementById('providerPill');
+        const providerDetails = document.getElementById('providerDetails');
 
         // Language lists
         const configuredLanguages = \`<option value="">Choose a language...</option>${languageOptions}\`;
         const allLanguagesList = \`<option value="">Choose a language...</option>${allLanguageOptions}\`;
-
-        // Language toggle functionality
-        showAllLanguagesCheckbox.addEventListener('change', function() {
-            const currentValue = targetLang.value; // Save current selection
-
-            if (this.checked) {
-                // Switch to all languages
-                targetLang.innerHTML = allLanguagesList;
-            } else {
-                // Switch back to configured languages
-                targetLang.innerHTML = configuredLanguages;
-            }
-
-            // Restore selection if it exists in the new list
-            if (currentValue) {
-                const optionExists = Array.from(targetLang.options).some(opt => opt.value === currentValue);
-                if (optionExists) {
-                    targetLang.value = currentValue;
-                }
-            }
-        });
+        const hasConfiguredLanguages = Array.isArray(clientConfig.targetLanguages) && clientConfig.targetLanguages.length > 0;
 
         // Advanced settings elements
         const advancedSettings = document.getElementById('advancedSettings');
@@ -3968,77 +4266,163 @@ function generateFileTranslationPage(videoId, configStr, config) {
         const advancedTopK = document.getElementById('advancedTopK');
         const advancedMaxTokens = document.getElementById('advancedMaxTokens');
         const advancedTimeout = document.getElementById('advancedTimeout');
-        
+        const advancedMaxRetries = document.getElementById('advancedMaxRetries');
+        const topKGroup = document.getElementById('topKGroup');
+        const thinkingBudgetGroup = document.getElementById('thinkingBudgetGroup');
+
         const resetDefaultsBtn = document.getElementById('resetDefaultsBtn');
         const translateAnotherBtn = document.getElementById('translateAnotherBtn');
         const modelStatus = document.getElementById('modelStatus');
+
+        const activeProviderKey = (providerInfo.mainProvider || 'gemini').toLowerCase();
+        const fallbackProviderKey = providerInfo.secondaryProvider ? providerInfo.secondaryProvider.toLowerCase() : '';
+        const providerParams = (providerInfo.providerParameters && providerInfo.providerParameters[activeProviderKey]) || providerDefaults[activeProviderKey] || {};
+        const baseAdvancedSettings = clientConfig.advancedSettings || {};
+
+        const defaultValues = {
+            thinkingBudget: providerParams.thinkingBudget ?? baseAdvancedSettings.thinkingBudget ?? 0,
+            temperature: providerParams.temperature ?? baseAdvancedSettings.temperature ?? 0.8,
+            topP: providerParams.topP ?? baseAdvancedSettings.topP ?? 0.95,
+            topK: baseAdvancedSettings.topK ?? 40,
+            maxTokens: providerParams.maxOutputTokens ?? baseAdvancedSettings.maxOutputTokens ?? 65536,
+            timeout: providerParams.translationTimeout ?? baseAdvancedSettings.translationTimeout ?? 600,
+            maxRetries: providerParams.maxRetries ?? baseAdvancedSettings.maxRetries ?? 2
+        };
+
+        const supportsTopK = activeProviderKey === 'gemini';
+        const supportsThinking = activeProviderKey === 'gemini' || activeProviderKey === 'anthropic';
+        let modelsFetched = false;
+
+        function formatProviderName(key) {
+            const normalized = String(key || '').toLowerCase();
+            const map = {
+                gemini: 'Gemini',
+                openai: 'OpenAI',
+                xai: 'xAI (Grok)',
+                deepseek: 'DeepSeek',
+                mistral: 'Mistral',
+                cfworkers: 'Cloudflare Workers AI',
+                openrouter: 'OpenRouter',
+                anthropic: 'Anthropic'
+            };
+            return map[normalized] || (normalized ? normalized.toUpperCase() : 'Unknown');
+        }
+
+        function setLanguageOptions(useAll) {
+            const currentValue = targetLang.value;
+            targetLang.innerHTML = useAll ? allLanguagesList : configuredLanguages;
+
+            if (currentValue) {
+                const optionExists = Array.from(targetLang.options).some(opt => opt.value === currentValue);
+                if (optionExists) {
+                    targetLang.value = currentValue;
+                }
+            }
+        }
+
+        // Apply initial language list
+        setLanguageOptions(!hasConfiguredLanguages);
+        if (!hasConfiguredLanguages) {
+            showAllLanguagesCheckbox.checked = true;
+            showAllLanguagesCheckbox.disabled = true;
+        }
+
+        // Language toggle functionality
+        showAllLanguagesCheckbox.addEventListener('change', function() {
+            setLanguageOptions(this.checked);
+        });
 
         // Advanced settings toggle
         advancedSettingsHeader.addEventListener('click', () => {
             advancedSettings.classList.toggle('expanded');
         });
 
-        // Default values for reset
-        const defaults = {
-            thinkingBudget: 0,
-            temperature: 0.8,
-            topP: 0.95,
-            topK: 40,
-            maxTokens: 65536,
-            timeout: 600
-        };
+        function updateProviderBanner() {
+            const pillText = providerPill.querySelectorAll('span')[1];
+            const mainLabel = formatProviderName(activeProviderKey);
+            const fallbackLabel = fallbackProviderKey ? formatProviderName(fallbackProviderKey) : '';
+            if (pillText) {
+                pillText.textContent = fallbackLabel ? (mainLabel + ' (fallback: ' + fallbackLabel + ')') : mainLabel;
+            }
+
+            const mainModel = providerInfo.mainModel || 'configured default';
+            const fallbackModel = providerInfo.secondaryModel || '';
+            if (fallbackLabel) {
+                providerDetails.textContent = 'Primary ' + mainLabel + ' (' + mainModel + ') with fallback ' + fallbackLabel + (fallbackModel ? ' (' + fallbackModel + ')' : '') + '.';
+            } else {
+                providerDetails.textContent = 'Using ' + mainLabel + ' (' + mainModel + ') from your saved SubMaker config.';
+            }
+        }
+
+        function applyDefaults() {
+            if (advancedThinkingBudget) {
+                advancedThinkingBudget.value = defaultValues.thinkingBudget;
+                thinkingBudgetGroup.style.display = supportsThinking ? '' : 'none';
+            }
+            if (advancedTemperature) advancedTemperature.value = defaultValues.temperature;
+            if (advancedTopP) advancedTopP.value = defaultValues.topP;
+            if (advancedTopK) {
+                advancedTopK.value = defaultValues.topK;
+                topKGroup.style.display = supportsTopK ? '' : 'none';
+            }
+            if (advancedMaxTokens) advancedMaxTokens.value = defaultValues.maxTokens;
+            if (advancedTimeout) advancedTimeout.value = defaultValues.timeout;
+            if (advancedMaxRetries) advancedMaxRetries.value = defaultValues.maxRetries;
+            if (advancedModel) {
+                if (!modelsFetched || advancedModel.options.length === 0) {
+                    advancedModel.innerHTML = '<option value="">Use Configured Model (' + (providerInfo.mainModel || 'config default') + ')</option>';
+                } else {
+                    advancedModel.value = '';
+                }
+            }
+            if (customPrompt) customPrompt.value = '';
+        }
+
+        updateProviderBanner();
+        applyDefaults();
 
         // Reset to defaults
         resetDefaultsBtn.addEventListener('click', () => {
-            advancedModel.value = '';
-            customPrompt.value = '';
-            advancedThinkingBudget.value = defaults.thinkingBudget;
-            advancedTemperature.value = defaults.temperature;
-            advancedTopP.value = defaults.topP;
-            advancedTopK.value = defaults.topK;
-            advancedMaxTokens.value = defaults.maxTokens;
-            advancedTimeout.value = defaults.timeout;
+            applyDefaults();
         });
 
         // Translate another one button
         translateAnotherBtn.addEventListener('click', () => {
-            // Hide result
             result.classList.remove('active');
-            // Show form
             form.style.display = 'block';
-            // Clear file input
             fileInput.value = '';
             fileName.textContent = '';
             fileName.classList.remove('active');
-            // Scroll to top
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
 
-        // Fetch models from API
+        // Fetch models from API using stored config
         async function fetchModels() {
-            const geminiApiKey = '${config.geminiApiKey || ''}';
-
-            if (!geminiApiKey || geminiApiKey.length < 10) {
+            if (!configToken) {
                 return;
             }
 
             modelStatus.innerHTML = '<div class="spinner-small"></div> Fetching models...';
             modelStatus.className = 'model-status fetching';
 
+            const endpoint = activeProviderKey === 'gemini'
+                ? '/api/gemini-models'
+                : '/api/models/' + activeProviderKey;
+
             try {
-                const response = await fetch('/api/gemini-models', {
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ apiKey: geminiApiKey })
+                    body: JSON.stringify({ configStr: configToken })
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to fetch models');
+                    throw new Error((await response.text()) || 'Failed to fetch models');
                 }
 
                 const models = await response.json();
 
-                modelStatus.innerHTML = '✓ Models loaded!';
+                modelStatus.innerHTML = 'Models loaded!';
                 modelStatus.className = 'model-status success';
 
                 setTimeout(() => {
@@ -4046,19 +4430,18 @@ function generateFileTranslationPage(videoId, configStr, config) {
                     modelStatus.className = 'model-status';
                 }, 3000);
 
-                // Populate model dropdown
-                advancedModel.innerHTML = '<option value="">Use Default Model (${config.geminiModel || 'gemini-2.5-flash-lite-preview-09-2025'})</option>';
+                advancedModel.innerHTML = '<option value="">Use Configured Model (' + (providerInfo.mainModel || 'config default') + ')</option>';
 
                 models.forEach(model => {
                     const option = document.createElement('option');
-                    option.value = model.name;
-                    option.textContent = model.displayName || model.name;
+                    option.value = model.name || model.id;
+                    option.textContent = model.displayName || model.name || model.id;
                     advancedModel.appendChild(option);
                 });
 
-            } catch (error) {
-                console.error('Failed to fetch models:', error);
-                modelStatus.innerHTML = '✗ Failed to fetch models';
+            } catch (err) {
+                console.error('Failed to fetch models:', err);
+                modelStatus.innerHTML = 'Failed to fetch models';
                 modelStatus.className = 'model-status error';
 
                 setTimeout(() => {
@@ -4069,7 +4452,6 @@ function generateFileTranslationPage(videoId, configStr, config) {
         }
 
         // Auto-fetch models when advanced settings are opened
-        let modelsFetched = false;
         advancedSettingsHeader.addEventListener('click', () => {
             if (!modelsFetched && advancedSettings.classList.contains('expanded')) {
                 modelsFetched = true;
@@ -4084,7 +4466,6 @@ function generateFileTranslationPage(videoId, configStr, config) {
         const gotItBtn = document.getElementById('gotItBtn');
         const dontShowAgainCheckbox = document.getElementById('dontShowInstructions');
 
-        // Function to close modal with checkbox check
         function closeInstructionsModal() {
             if (dontShowAgainCheckbox && dontShowAgainCheckbox.checked) {
                 localStorage.setItem('submaker_file_upload_dont_show_instructions', 'true');
@@ -4092,7 +4473,6 @@ function generateFileTranslationPage(videoId, configStr, config) {
             instructionsOverlay.classList.remove('show');
         }
 
-        // Show modal on first visit
         const dontShowInstructions = localStorage.getItem('submaker_file_upload_dont_show_instructions');
         if (!dontShowInstructions) {
             setTimeout(() => {
@@ -4100,25 +4480,19 @@ function generateFileTranslationPage(videoId, configStr, config) {
             }, 500);
         }
 
-        // Show instructions button click
         showInstructionsBtn.addEventListener('click', () => {
             instructionsOverlay.classList.add('show');
         });
 
-        // Close instructions button click
         closeInstructionsBtn.addEventListener('click', closeInstructionsModal);
-
-        // Got it button click
         gotItBtn.addEventListener('click', closeInstructionsModal);
 
-        // Close modal when clicking outside
         instructionsOverlay.addEventListener('click', (e) => {
             if (e.target === instructionsOverlay) {
                 closeInstructionsModal();
             }
         });
 
-        // Close modal with Escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && instructionsOverlay.classList.contains('show')) {
                 closeInstructionsModal();
@@ -4129,7 +4503,7 @@ function generateFileTranslationPage(videoId, configStr, config) {
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 const file = e.target.files[0];
-                fileName.textContent = '📄 ' + file.name;
+                fileName.textContent = 'File: ' + file.name;
                 fileName.classList.add('active');
             } else {
                 fileName.textContent = '';
@@ -4179,81 +4553,72 @@ function generateFileTranslationPage(videoId, configStr, config) {
                 return;
             }
 
-            // Hide previous results/errors
+            if (!configToken) {
+                showError('Missing configuration token. Open this page again from Stremio or the configure page.');
+                return;
+            }
+
             result.classList.remove('active');
             error.classList.remove('active');
             form.style.display = 'none';
             progress.classList.add('active');
 
             try {
-                // Read file content
                 const fileContent = await file.text();
 
-                // Build config with advanced settings
-                const baseConfig = ${JSON.stringify(config)};
-
-                // Get the original config string (session token) from the URL
-                const urlParams = new URLSearchParams(window.location.search);
-                const originalConfigStr = urlParams.get('config') || '';
-
-                // Apply advanced settings if any are changed from defaults
-                const selectedModel = advancedModel.value;
-                const selectedPrompt = customPrompt.value.trim();
-                const thinkingBudget = parseInt(advancedThinkingBudget.value);
+                const selectedModel = advancedModel && advancedModel.value ? advancedModel.value.trim() : '';
+                const selectedPrompt = customPrompt && customPrompt.value ? customPrompt.value.trim() : '';
+                const thinkingBudget = parseInt(advancedThinkingBudget.value, 10);
                 const temperature = parseFloat(advancedTemperature.value);
                 const topP = parseFloat(advancedTopP.value);
-                const topK = parseInt(advancedTopK.value);
-                const maxTokens = parseInt(advancedMaxTokens.value);
-                const timeout = parseInt(advancedTimeout.value);
+                const topK = parseInt(advancedTopK.value, 10);
+                const maxTokens = parseInt(advancedMaxTokens.value, 10);
+                const timeout = parseInt(advancedTimeout.value, 10);
+                const maxRetries = parseInt(advancedMaxRetries.value, 10);
 
-                // Create modified config with advanced settings
-                const modifiedConfig = { ...baseConfig };
-
-                // Override model if selected
-                if (selectedModel) {
-                    modifiedConfig.geminiModel = selectedModel;
+                const providerOverrides = {};
+                if (Number.isFinite(temperature)) providerOverrides.temperature = temperature;
+                if (Number.isFinite(topP)) providerOverrides.topP = topP;
+                if (Number.isFinite(maxTokens)) providerOverrides.maxOutputTokens = maxTokens;
+                if (Number.isFinite(timeout)) providerOverrides.translationTimeout = timeout;
+                if (Number.isFinite(maxRetries)) providerOverrides.maxRetries = maxRetries;
+                if (supportsThinking && Number.isFinite(thinkingBudget)) {
+                    providerOverrides.thinkingBudget = thinkingBudget;
                 }
 
-                // Override prompt if provided
-                if (selectedPrompt) {
-                    modifiedConfig.translationPrompt = selectedPrompt;
-                }
-
-                // Apply advanced settings
-                modifiedConfig.advancedSettings = {
-                    ...baseConfig.advancedSettings,
-                    geminiModel: selectedModel || '',
+                const advancedOverrides = {
+                    geminiModel: activeProviderKey === 'gemini' ? (selectedModel || clientConfig.geminiModel || '') : '',
                     thinkingBudget: thinkingBudget,
                     temperature: temperature,
                     topP: topP,
-                    topK: topK,
+                    topK: supportsTopK ? topK : undefined,
                     maxOutputTokens: maxTokens,
-                    translationTimeout: timeout
+                    translationTimeout: timeout,
+                    maxRetries: maxRetries
                 };
 
-                // Use original session token if available, otherwise fall back to base64 (for localhost)
-                let configStr;
-                if (originalConfigStr && /^[a-f0-9]{32}$/.test(originalConfigStr)) {
-                    // Use session token and include advanced settings separately
-                    configStr = originalConfigStr;
-                    // Note: We'll need to modify the API to accept advanced settings
-                } else {
-                    // Fallback: Serialize config (proper UTF-8 to base64 encoding) for localhost
-                    configStr = btoa(unescape(encodeURIComponent(JSON.stringify(modifiedConfig))));
+                const overrides = {};
+                if (selectedPrompt) overrides.translationPrompt = selectedPrompt;
+                if (selectedModel) overrides.providerModel = selectedModel;
+                if (Object.keys(providerOverrides).length > 0) {
+                    overrides.providerParameters = { [activeProviderKey]: providerOverrides };
                 }
+                overrides.advancedSettings = advancedOverrides;
 
-                // Send to translation API
+                const payload = {
+                    content: fileContent,
+                    targetLanguage: targetLang.value,
+                    configStr: configToken,
+                    advancedSettings: advancedOverrides,
+                    overrides
+                };
+
                 const response = await fetch('/api/translate-file', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        content: fileContent,
-                        targetLanguage: targetLang.value,
-                        configStr: configStr,
-                        advancedSettings: modifiedConfig.advancedSettings
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (!response.ok) {
@@ -4262,17 +4627,11 @@ function generateFileTranslationPage(videoId, configStr, config) {
 
                 const translatedContent = await response.text();
 
-                // Get file extension
-                // Output is always SRT after translation
-                const downloadExt = 'srt';
-
-                // Create download link
                 const blob = new Blob([translatedContent], { type: 'text/plain;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
                 downloadLink.href = url;
-                downloadLink.download = 'translated_' + targetLang.value + '.' + downloadExt;
+                downloadLink.download = 'translated_' + targetLang.value + '.srt';
 
-                // Show result
                 progress.classList.remove('active');
                 result.classList.add('active');
 
@@ -4280,28 +4639,27 @@ function generateFileTranslationPage(videoId, configStr, config) {
                 console.error('Translation error:', err);
                 progress.classList.remove('active');
                 form.style.display = 'block';
-                showError(err.message);
+                showError(err.message || 'Translation failed');
             }
         });
 
         function showError(message) {
-            error.textContent = '⚠️ ' + message;
+            error.textContent = 'Warning: ' + message;
             error.classList.add('active');
+            error.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
-        // Theme switching functionality
+        // Theme switching functionality (unchanged)
         (function() {
             const html = document.documentElement;
             const themeToggle = document.getElementById('themeToggle');
 
-            // Check for saved theme preference or default to system preference
             function getPreferredTheme() {
                 const savedTheme = localStorage.getItem('theme');
                 if (savedTheme) {
                     return savedTheme;
                 }
 
-                // Check system preference
                 if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                     return 'dark';
                 }
@@ -4309,17 +4667,14 @@ function generateFileTranslationPage(videoId, configStr, config) {
                 return 'light';
             }
 
-            // Apply theme
             function setTheme(theme) {
                 html.setAttribute('data-theme', theme);
                 localStorage.setItem('theme', theme);
             }
 
-            // Initialize theme on page load
             const initialTheme = getPreferredTheme();
             setTheme(initialTheme);
 
-            // Toggle theme on button click
             function spawnCoin(x, y) {
                 try {
                     const c = document.createElement('div');
@@ -4343,10 +4698,8 @@ function generateFileTranslationPage(videoId, configStr, config) {
                 });
             }
 
-            // Listen for system theme changes
             if (window.matchMedia) {
                 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
-                    // Only auto-switch if user hasn't manually set a preference
                     if (!localStorage.getItem('theme')) {
                         setTheme(e.matches ? 'dark' : 'light');
                     }

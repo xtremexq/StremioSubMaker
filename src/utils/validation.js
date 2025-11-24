@@ -46,6 +46,27 @@ const configStringSchema = Joi.string()
   .max(10000) // 10KB max for config
   .required();
 
+// Validate provider parameter overrides for translation
+const providerParameterSchema = Joi.object({
+  temperature: Joi.number().min(0).max(2).optional(),
+  topP: Joi.number().min(0).max(1).optional(),
+  maxOutputTokens: Joi.number().min(1).max(200000).optional(),
+  translationTimeout: Joi.number().min(5).max(600).optional(),
+  maxRetries: Joi.number().integer().min(0).max(5).optional(),
+  thinkingBudget: Joi.number().min(0).max(200000).optional(),
+  modelType: Joi.string().max(100).optional(),
+  formality: Joi.string().max(50).optional(),
+  preserveFormatting: Joi.boolean().optional()
+}).unknown(true);
+
+// Validate translation overrides payload (optional provider/model/prompt tweaks)
+const translationOverridesSchema = Joi.object({
+  translationPrompt: Joi.string().max(8000).allow('').optional(),
+  providerModel: Joi.string().max(300).allow('').optional(),
+  providerParameters: Joi.object().pattern(/.*/, providerParameterSchema).optional(),
+  advancedSettings: Joi.object().unknown(true).optional()
+}).optional();
+
 /**
  * Validate request parameters
  * @param {Object} data - Data to validate
@@ -123,6 +144,7 @@ const fileTranslationBodySchema = Joi.object({
   targetLanguage: looseLanguageSchema,
   configStr: configStringSchema,
   advancedSettings: Joi.object().unknown(true).optional(), // Allow advanced settings override
+  overrides: translationOverridesSchema
 });
 
 module.exports = {

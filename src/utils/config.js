@@ -24,6 +24,124 @@ function getLanguageSelectionLimits() {
   };
 }
 
+const PROVIDER_PARAMETER_DEFAULTS = {
+  openai: {
+    temperature: 0.4,
+    topP: 0.95,
+    maxOutputTokens: 32768,
+    translationTimeout: 60,
+    maxRetries: 2,
+    reasoningEffort: undefined // undefined = omit from API request (default behavior)
+  },
+  anthropic: {
+    temperature: 0.4,
+    topP: 0.95,
+    maxOutputTokens: 32768,
+    translationTimeout: 60,
+    maxRetries: 2,
+    thinkingBudget: 0
+  },
+  xai: {
+    temperature: 0.4,
+    topP: 0.95,
+    maxOutputTokens: 32768,
+    translationTimeout: 60,
+    maxRetries: 2
+  },
+  deepseek: {
+    temperature: 0.4,
+    topP: 0.95,
+    maxOutputTokens: 32768,
+    translationTimeout: 60,
+    maxRetries: 2
+  },
+  deepl: {
+    temperature: 0, // Not used by DeepL, kept for UI consistency
+    topP: 1,
+    maxOutputTokens: 32768,
+    translationTimeout: 60,
+    maxRetries: 2,
+    modelType: 'quality_optimized',
+    formality: 'default',
+    preserveFormatting: true
+  },
+  mistral: {
+    temperature: 0.4,
+    topP: 0.95,
+    maxOutputTokens: 32768,
+    translationTimeout: 60,
+    maxRetries: 2
+  },
+  cfworkers: {
+    temperature: 0.4,
+    topP: 0.9,
+    maxOutputTokens: 32768,
+    translationTimeout: 60,
+    maxRetries: 2
+  },
+  openrouter: {
+    temperature: 0.4,
+    topP: 0.95,
+    maxOutputTokens: 32768,
+    translationTimeout: 60,
+    maxRetries: 2
+  }
+};
+
+function sanitizeProviderNumber(value, fallback, min, max) {
+  const parsed = typeof value === 'number' ? value : parseFloat(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  if (min !== undefined && parsed < min) return min;
+  if (max !== undefined && parsed > max) return max;
+  return parsed;
+}
+
+function sanitizeReasoningEffort(value, fallback) {
+  // Allow empty string to explicitly disable reasoning effort
+  if (value === '' || value === null || value === undefined) {
+    return undefined;
+  }
+  const allowed = ['low', 'medium', 'high'];
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return allowed.includes(normalized) ? normalized : fallback;
+}
+
+function mergeProviderParameters(defaults, incoming) {
+  const merged = {};
+  const incomingParams = incoming || {};
+  Object.keys(defaults || {}).forEach(key => {
+    const matchKey = Object.keys(incomingParams).find(k => String(k).toLowerCase() === String(key).toLowerCase());
+    const raw = matchKey ? incomingParams[matchKey] : {};
+    const base = defaults[key] || {};
+    merged[key] = {
+      temperature: sanitizeProviderNumber(raw?.temperature, base.temperature, 0, 2),
+      topP: sanitizeProviderNumber(raw?.topP, base.topP, 0, 1),
+      maxOutputTokens: Math.max(1, sanitizeProviderNumber(raw?.maxOutputTokens, base.maxOutputTokens, 1, 200000)),
+      translationTimeout: Math.max(5, sanitizeProviderNumber(raw?.translationTimeout, base.translationTimeout, 5, 600)),
+      maxRetries: Math.max(0, Math.min(5, parseInt(raw?.maxRetries) || base.maxRetries || 0)),
+      reasoningEffort: sanitizeReasoningEffort(raw?.reasoningEffort, base.reasoningEffort),
+      thinkingBudget: Math.max(
+        0,
+        Math.min(200000, parseInt(raw?.thinkingBudget) || parseInt(base.thinkingBudget) || 0)
+      ),
+      formality: typeof raw?.formality === 'string'
+        ? raw.formality
+        : (typeof base.formality === 'string' ? base.formality : 'default'),
+      modelType: typeof raw?.modelType === 'string'
+        ? raw.modelType
+        : (typeof base.modelType === 'string' ? base.modelType : ''),
+      preserveFormatting: raw?.preserveFormatting !== undefined
+        ? raw.preserveFormatting === true
+        : base.preserveFormatting === true
+    };
+  });
+  return merged;
+}
+
+function getDefaultProviderParameters() {
+  return JSON.parse(JSON.stringify(PROVIDER_PARAMETER_DEFAULTS));
+}
+
 /**
  * Feature flag: Override deprecated/old model names with current default
  * Set to false in the future to allow users to select any model they want
@@ -36,7 +154,6 @@ const OVERRIDE_DEPRECATED_MODELS = true;
  * This prevents old saved configs from using outdated or experimental models
  */
 const DEPRECATED_MODEL_NAMES = [
-  'gemini-flash-latest',
   'gemini-2.0-flash-exp',
   'gemini-2.5-flash-lite-09-2025', // Old name before preview version
   'gemini-2.5-flash-latest',
@@ -166,7 +283,7 @@ function normalizeConfig(config) {
   }
 
   // Determine the model to use (from config or default)
-  const configModel = config.geminiModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash-preview-09-2025';
+  const configModel = config.geminiModel || process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
   // Get model-specific defaults based on the selected model
   const defaults = getDefaultConfig(configModel);
@@ -183,6 +300,19 @@ function normalizeConfig(config) {
       ...defaults.translationCache,
       ...(config.translationCache || {})
     },
+    providers: Object.keys(defaults.providers).reduce((acc, key) => {
+      const incoming = config.providers || {};
+      const matchKey = Object.keys(incoming).find(k => k.toLowerCase() === key.toLowerCase());
+      acc[key] = {
+        ...defaults.providers[key],
+        ...(matchKey ? incoming[matchKey] : {})
+      };
+      return acc;
+    }, {}),
+    providerParameters: mergeProviderParameters(
+      defaults.providerParameters,
+      config.providerParameters || {}
+    ),
     // Deep merge bypass cache settings (support old tempCache name for backward compatibility)
     bypassCacheConfig: {
       ...defaults.bypassCacheConfig,
@@ -231,6 +361,18 @@ function normalizeConfig(config) {
   mergedConfig.targetLanguages = trimmedTargets;
   mergedConfig.learnTargetLanguages = trimmedLearns;
 
+  // Normalize key toggles early so downstream logic always sees booleans
+  mergedConfig.fileTranslationEnabled = mergedConfig.fileTranslationEnabled === true;
+  mergedConfig.syncSubtitlesEnabled = mergedConfig.syncSubtitlesEnabled === true;
+  mergedConfig.singleBatchMode = mergedConfig.singleBatchMode === true;
+  mergedConfig.multiProviderEnabled = mergedConfig.multiProviderEnabled === true;
+  const advSettings = mergedConfig.advancedSettings || {};
+  mergedConfig.advancedSettings = {
+    ...advSettings,
+    enabled: advSettings.enabled === true,
+    sendTimestampsToAI: advSettings.sendTimestampsToAI === true
+  };
+
   if (mergedConfig.noTranslationLanguages.length > maxNoTranslationLanguages) {
     mergedConfig.noTranslationLanguages = mergedConfig.noTranslationLanguages.slice(0, maxNoTranslationLanguages);
   }
@@ -248,16 +390,9 @@ function normalizeConfig(config) {
   }
 
   // Apply advanced settings model override if enabled
-  if (mergedConfig.advancedSettings?.enabled && mergedConfig.advancedSettings?.geminiModel) {
+  if (mergedConfig.advancedSettings.enabled && mergedConfig.advancedSettings?.geminiModel) {
     log.debug(() => `[Config] Advanced settings enabled: Overriding model '${mergedConfig.geminiModel}' with '${mergedConfig.advancedSettings.geminiModel}'`);
     mergedConfig.geminiModel = mergedConfig.advancedSettings.geminiModel;
-  }
-
-  // Force bypass cache when advanced settings are enabled
-  // This ensures experimental translations don't pollute the shared database
-  if (mergedConfig.advancedSettings?.enabled) {
-    log.debug(() => '[Config] Advanced settings enabled: Forcing bypass cache');
-    mergedConfig.bypassCache = true;
   }
 
   // Enforce permanent disk caching regardless of client config
@@ -272,6 +407,99 @@ function normalizeConfig(config) {
 
   // Normalize bypass flag
   mergedConfig.bypassCache = mergedConfig.bypassCache === true;
+
+  // Normalize multi-provider settings
+  mergedConfig.multiProviderEnabled = mergedConfig.multiProviderEnabled === true;
+  mergedConfig.mainProvider = mergedConfig.multiProviderEnabled ? (mergedConfig.mainProvider || 'gemini') : 'gemini';
+  mergedConfig.mainProvider = String(mergedConfig.mainProvider || 'gemini').toLowerCase();
+  mergedConfig.secondaryProviderEnabled = mergedConfig.multiProviderEnabled && mergedConfig.secondaryProviderEnabled === true;
+  mergedConfig.secondaryProvider = mergedConfig.secondaryProviderEnabled ? String(mergedConfig.secondaryProvider || '').toLowerCase() : '';
+  const resolveProviderKey = (key) => {
+    const lower = String(key || '').toLowerCase();
+    const match = Object.keys(mergedConfig.providers || {}).find(k => String(k).toLowerCase() === lower);
+    return match || key;
+  };
+  const providerIsConfigured = (key) => {
+    const resolved = resolveProviderKey(key);
+    const cfg = mergedConfig.providers?.[resolved] || {};
+    return !!(cfg.enabled && cfg.apiKey && cfg.model);
+  };
+  const firstConfiguredProvider = () => {
+    const entry = Object.entries(mergedConfig.providers || {}).find(([, cfg]) => cfg && cfg.enabled && cfg.apiKey && cfg.model);
+    return entry ? String(entry[0]).toLowerCase() : null;
+  };
+  if (mergedConfig.providers && typeof mergedConfig.providers === 'object') {
+    for (const [key, value] of Object.entries(mergedConfig.providers)) {
+      mergedConfig.providers[key] = {
+        enabled: value?.enabled === true,
+        apiKey: typeof value?.apiKey === 'string' ? value.apiKey : '',
+        model: typeof value?.model === 'string' ? value.model : ''
+      };
+    }
+  }
+
+  if (mergedConfig.multiProviderEnabled) {
+    const mainKey = mergedConfig.mainProvider || 'gemini';
+    const geminiConfigured = !!(mergedConfig.geminiApiKey && mergedConfig.geminiModel);
+    const mainConfigured = mainKey === 'gemini' ? geminiConfigured : providerIsConfigured(mainKey);
+    if (!mainConfigured) {
+      const fallbackProvider = firstConfiguredProvider();
+      if (fallbackProvider) {
+        log.warn(() => `[Config] Main provider '${mainKey}' is not fully configured, switching to '${fallbackProvider}'`);
+        mergedConfig.mainProvider = fallbackProvider;
+      } else if (geminiConfigured) {
+        log.warn(() => `[Config] Main provider '${mainKey}' is not fully configured, falling back to Gemini`);
+        mergedConfig.mainProvider = 'gemini';
+      } else {
+        log.warn(() => `[Config] No configured AI providers found; translations will fail until an API key is set`);
+      }
+    }
+  } else {
+    mergedConfig.mainProvider = 'gemini';
+  }
+
+  if (mergedConfig.secondaryProviderEnabled) {
+    if (!mergedConfig.secondaryProvider || mergedConfig.secondaryProvider === mergedConfig.mainProvider) {
+      log.warn(() => '[Config] Secondary provider not set or matches main provider; disabling fallback');
+      mergedConfig.secondaryProviderEnabled = false;
+      mergedConfig.secondaryProvider = '';
+    } else if (mergedConfig.secondaryProvider === 'gemini') {
+      if (!mergedConfig.geminiApiKey || !mergedConfig.geminiModel) {
+        log.warn(() => '[Config] Secondary provider Gemini is missing API key/model; disabling fallback');
+        mergedConfig.secondaryProviderEnabled = false;
+        mergedConfig.secondaryProvider = '';
+      }
+    } else {
+      const fallbackKey = Object.keys(mergedConfig.providers || {}).find(k => k.toLowerCase() === mergedConfig.secondaryProvider) || mergedConfig.secondaryProvider;
+      const fallbackCfg = mergedConfig.providers?.[fallbackKey] || {};
+      const validFallback = fallbackCfg.enabled && fallbackCfg.apiKey && fallbackCfg.model;
+      if (!validFallback) {
+        log.warn(() => `[Config] Secondary provider '${mergedConfig.secondaryProvider}' is not fully configured; disabling fallback`);
+        mergedConfig.secondaryProviderEnabled = false;
+        mergedConfig.secondaryProvider = '';
+      }
+    }
+  }
+
+  // Only keep multi-provider mode enabled when a non-Gemini main OR a fallback is active
+  const hasActiveMultiProvider = mergedConfig.multiProviderEnabled && (
+    mergedConfig.mainProvider !== 'gemini' || mergedConfig.secondaryProviderEnabled
+  );
+  if (!hasActiveMultiProvider) {
+    mergedConfig.multiProviderEnabled = false;
+    mergedConfig.secondaryProviderEnabled = false;
+    mergedConfig.secondaryProvider = '';
+  }
+
+  // Force bypass cache when experimental/one-off modes are enabled to avoid polluting shared cache
+  const bypassReasons = [];
+  if (mergedConfig.advancedSettings.enabled) bypassReasons.push('advanced-settings');
+  if (mergedConfig.singleBatchMode) bypassReasons.push('single-batch');
+  if (hasActiveMultiProvider) bypassReasons.push('multi-provider');
+  if (bypassReasons.length > 0) {
+    log.debug(() => `[Config] Forcing bypass cache (${bypassReasons.join(', ')})`);
+    mergedConfig.bypassCache = true;
+  }
 
   // Ensure bypass cache config mirrors bypass flag and clamp duration to max 12h
   mergedConfig.bypassCacheConfig = mergedConfig.bypassCacheConfig || {};
@@ -289,7 +517,7 @@ function normalizeConfig(config) {
   const thinkingDisplay = mergedConfig.advancedSettings.thinkingBudget === -1 ? 'dynamic' :
                          mergedConfig.advancedSettings.thinkingBudget === 0 ? 'disabled' :
                          mergedConfig.advancedSettings.thinkingBudget;
-  log.debug(() => `[Config] Gemini API config: model=${mergedConfig.geminiModel}, temperature=${mergedConfig.advancedSettings.temperature}, topK=${mergedConfig.advancedSettings.topK}, topP=${mergedConfig.advancedSettings.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${mergedConfig.advancedSettings.maxOutputTokens}, timeout=${mergedConfig.advancedSettings.translationTimeout}s, maxRetries=${mergedConfig.advancedSettings.maxRetries}`);
+  log.debug(() => `[Config] Gemini API config: model=${mergedConfig.geminiModel}, temperature=${mergedConfig.advancedSettings.temperature}, topK=${mergedConfig.advancedSettings.topK}, topP=${mergedConfig.advancedSettings.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${mergedConfig.advancedSettings.maxOutputTokens}, timeout=${mergedConfig.advancedSettings.translationTimeout}s, maxRetries=${mergedConfig.advancedSettings.maxRetries}, sendTimestampsToAI=${mergedConfig.advancedSettings.sendTimestampsToAI ? 'enabled' : 'disabled'}`);
 
   // Guardrail: if OpenSubtitles Auth is selected without credentials, fall back to V3 to avoid runtime auth errors
   const openSubConfig = mergedConfig.subtitleProviders?.opensubtitles;
@@ -297,7 +525,13 @@ function normalizeConfig(config) {
     const normalizeCredential = (value) => {
       if (value === undefined || value === null) return '';
       // Accept non-string values but always coerce to string to prevent trim() type errors
-      return String(value).trim();
+      const normalized = String(value).trim();
+      // Extra safeguard: reject values that look like failed JSON serialization
+      if (normalized === '[object Object]' || normalized === '[object Array]') {
+        log.warn(() => `[Config] OpenSubtitles credential appears to be a serialized object, clearing it`);
+        return '';
+      }
+      return normalized;
     };
     openSubConfig.username = normalizeCredential(openSubConfig.username);
     openSubConfig.password = normalizeCredential(openSubConfig.password);
@@ -305,9 +539,13 @@ function normalizeConfig(config) {
     const missingCreds = !openSubConfig.username || !openSubConfig.password;
     if (wantsAuth && missingCreds) {
       log.warn(() => '[Config] OpenSubtitles Auth selected without credentials; switching to V3 (no login required).');
+      // Preserve the username/password fields even when switching to V3 so they're not lost
       mergedConfig.subtitleProviders.opensubtitles = {
         ...openSubConfig,
-        implementationType: 'v3'
+        implementationType: 'v3',
+        // Keep username/password in config even when using V3, so user can switch back to Auth without re-entering
+        username: openSubConfig.username,
+        password: openSubConfig.password
       };
     }
   }
@@ -335,6 +573,9 @@ function migrateOldConfig(oldConfig) {
     }
   };
 
+  // Backfill new provider parameters with defaults
+  newConfig.providerParameters = { ...defaults.providerParameters };
+
   // Remove old field
   delete newConfig.opensubtitlesApiKey;
 
@@ -361,6 +602,14 @@ function encodeConfig(config) {
  * Each model has its own optimal settings for thinking and temperature
  */
 const MODEL_SPECIFIC_DEFAULTS = {
+  'gemini-flash-lite-latest': {
+    thinkingBudget: 0,      // No thinking for lite model
+    temperature: 0.8        // Higher temperature for creativity
+  },
+  'gemini-flash-latest': {
+    thinkingBudget: -1,     // Dynamic thinking for flash model
+    temperature: 0.5        // Lower temperature for consistency
+  },
   'gemini-2.5-flash-lite-preview-09-2025': {
     thinkingBudget: 0,      // No thinking for lite model
     temperature: 0.8        // Higher temperature for creativity
@@ -394,7 +643,7 @@ function getModelSpecificDefaults(modelName) {
  */
 function getDefaultConfig(modelName = null) {
   // Determine the model to use for defaults
-  const effectiveModel = modelName || process.env.GEMINI_MODEL || 'gemini-2.5-flash-preview-09-2025';
+  const effectiveModel = modelName || process.env.GEMINI_MODEL || 'gemini-flash-latest';
   const modelDefaults = getModelSpecificDefaults(effectiveModel);
 
   // Read advanced settings from environment variables with fallback to model-specific defaults
@@ -403,6 +652,8 @@ function getDefaultConfig(modelName = null) {
     chunkSize: 12000,
     translationTimeout: parseInt(process.env.GEMINI_TRANSLATION_TIMEOUT) || 600, // seconds
     maxRetries: process.env.GEMINI_MAX_RETRIES !== undefined ? parseInt(process.env.GEMINI_MAX_RETRIES) : 3,
+    // When enabled, trust the AI to return timestamps for each batch instead of reusing originals
+    sendTimestampsToAI: process.env.SEND_TIMESTAMPS_TO_AI === 'true',
     // Extended thinking (priority: .env > model-specific > global default)
     thinkingBudget: process.env.GEMINI_THINKING_BUDGET !== undefined
       ? parseInt(process.env.GEMINI_THINKING_BUDGET)
@@ -440,6 +691,21 @@ function getDefaultConfig(modelName = null) {
     geminiApiKey: '',
     // Use effective model (from parameter, env variable, or default)
     geminiModel: effectiveModel,
+    multiProviderEnabled: false,
+    mainProvider: 'gemini',
+    secondaryProviderEnabled: false,
+    secondaryProvider: '',
+    providers: {
+      openai: { enabled: false, apiKey: '', model: '' },
+      anthropic: { enabled: false, apiKey: '', model: '' },
+      xai: { enabled: false, apiKey: '', model: '' },
+      deepseek: { enabled: false, apiKey: '', model: '' },
+      deepl: { enabled: false, apiKey: '', model: '' },
+      mistral: { enabled: false, apiKey: '', model: '' },
+      cfworkers: { enabled: false, apiKey: '', model: '' },
+      openrouter: { enabled: false, apiKey: '', model: '' }
+    },
+    providerParameters: getDefaultProviderParameters(),
     translationPrompt: DEFAULT_TRANSLATION_PROMPT,
     subtitleProviders: {
       opensubtitles: {
@@ -473,6 +739,7 @@ function getDefaultConfig(modelName = null) {
     fileTranslationEnabled: false, // enable file upload translation feature
     syncSubtitlesEnabled: false, // enable 'Sync Subtitles' action in subtitles list
     mobileMode: false, // Hold translation responses until full translation is ready (Android cache workaround)
+    singleBatchMode: false, // Translate whole file at once (streaming partials)
     // Minimum size for a subtitle file to be considered valid (bytes)
     // Prevents attempting to load/translate obviously broken files
     minSubtitleSizeBytes: 200,
@@ -497,6 +764,67 @@ function validateConfig(config) {
   }
 
   const { maxSourceLanguages, maxTargetLanguages, maxNoTranslationLanguages } = getLanguageSelectionLimits();
+  const multiEnabled = config.multiProviderEnabled === true;
+  const mainProvider = String(multiEnabled ? (config.mainProvider || 'gemini') : 'gemini').toLowerCase();
+  const resolveProviderConfig = (key) => {
+    const providers = config.providers || {};
+    if (providers[key]) return providers[key];
+    const match = Object.keys(providers).find(k => String(k).toLowerCase() === String(key).toLowerCase());
+    return match ? providers[match] : null;
+  };
+
+  const geminiConfigured = !!(config.geminiApiKey && config.geminiApiKey.trim() !== '' && config.geminiModel && config.geminiModel.trim() !== '');
+  const providerIsConfigured = (key) => {
+    const cfg = resolveProviderConfig(key);
+    return !!(cfg && cfg.enabled === true && cfg.apiKey && String(cfg.apiKey).trim() !== '' && cfg.model && String(cfg.model).trim() !== '');
+  };
+
+  const configuredProviders = new Set();
+  if (geminiConfigured) configuredProviders.add('gemini');
+  Object.keys(config.providers || {}).forEach(key => {
+    if (providerIsConfigured(key)) {
+      configuredProviders.add(String(key).toLowerCase());
+    }
+  });
+
+  // Main provider must always be fully configured so we have at least one AI provider available
+  if (!mainProvider) {
+    errors.push('Main provider must be selected');
+  } else if (mainProvider === 'gemini') {
+    if (!geminiConfigured) {
+      errors.push('Gemini API key and model are required for the main provider');
+    }
+  } else {
+    if (!providerIsConfigured(mainProvider)) {
+      errors.push(`API key, model, and enabled status are required for main provider '${mainProvider}'`);
+    }
+  }
+
+  // Secondary provider requires a second configured provider and explicit selection
+  if (multiEnabled && config.secondaryProviderEnabled === true) {
+    const secondaryKey = String(config.secondaryProvider || '').toLowerCase();
+    if (!secondaryKey) {
+      errors.push('Secondary provider must be selected when enabled');
+    } else if (secondaryKey === mainProvider) {
+      errors.push('Secondary provider must be different from main provider');
+    } else if (secondaryKey === 'gemini') {
+      if (!geminiConfigured) {
+        errors.push('Gemini API key and model are required for the secondary provider');
+      }
+    } else if (!providerIsConfigured(secondaryKey)) {
+      errors.push(`API key, model, and enabled status are required for secondary provider '${secondaryKey}'`);
+    }
+  }
+
+  // Require at least one configured AI provider overall
+  if (configuredProviders.size === 0) {
+    errors.push('At least one AI provider must be enabled with an API key and model');
+  }
+
+  // When secondary is enabled, ensure we truly have two configured providers (main + fallback)
+  if (multiEnabled && config.secondaryProviderEnabled === true && configuredProviders.size < 2) {
+    errors.push('Secondary Provider requires two configured AI providers with API keys');
+  }
 
   if (config.noTranslationMode) {
     if (!config.noTranslationLanguages || config.noTranslationLanguages.length === 0) {
@@ -510,11 +838,6 @@ function validateConfig(config) {
       valid: errors.length === 0,
       errors
     };
-  }
-
-  // Translation mode validation
-  if (!config.geminiApiKey || config.geminiApiKey.trim() === '') {
-    errors.push('Gemini API key is required');
   }
 
   if (!config.sourceLanguages || config.sourceLanguages.length === 0) {
@@ -539,10 +862,6 @@ function validateConfig(config) {
 
   if (config.noTranslationLanguages && config.noTranslationLanguages.length > maxNoTranslationLanguages) {
     errors.push(`Maximum of ${maxNoTranslationLanguages} no-translation languages allowed`);
-  }
-
-  if (!config.geminiModel || config.geminiModel.trim() === '') {
-    errors.push('Gemini model must be selected');
   }
 
   return {
@@ -580,11 +899,50 @@ function buildManifest(config, baseUrl = '') {
       .map(code => code.toUpperCase())
       .join(', ');
 
-    description = `Fetches subtitles from OpenSubtitles and translates them using Gemini AI.\n\nSource languages: ${sourceLanguageNames}\nTarget languages: ${targetLanguageNames}`;
+    const providerLabel = (() => {
+      if (config.multiProviderEnabled && config.mainProvider && config.mainProvider !== 'gemini') {
+        const key = String(config.mainProvider).toLowerCase();
+        const labels = {
+          openai: 'OpenAI',
+          anthropic: 'Anthropic',
+          xai: 'XAI',
+          deepseek: 'DeepSeek',
+          deepl: 'DeepL',
+          mistral: 'Mistral',
+          cfworkers: 'Cloudflare Workers AI',
+          openrouter: 'OpenRouter'
+        };
+        return labels[key] || key.charAt(0).toUpperCase() + key.slice(1);
+      }
+      return 'Gemini';
+    })();
+
+    description = `Fetches subtitles from OpenSubtitles and translates them using ${providerLabel} AI.\n\nSource languages: ${sourceLanguageNames}\nTarget languages: ${targetLanguageNames}`;
   }
 
   // Check if this is a configured instance (has API key)
-  const isConfigured = config.geminiApiKey && config.geminiApiKey.trim() !== '';
+  const geminiConfigured = config.geminiApiKey && config.geminiApiKey.trim() !== '' &&
+    config.geminiModel && String(config.geminiModel).trim() !== '';
+  const providerIsConfigured = (key) => {
+    const providers = config.providers || {};
+    const matchKey = Object.keys(providers).find(k => String(k).toLowerCase() === String(key).toLowerCase()) || key;
+    const cfg = providers[matchKey];
+    return !!(cfg && cfg.enabled && cfg.apiKey && String(cfg.apiKey).trim() !== '' && cfg.model);
+  };
+  const configuredProviders = new Set();
+  if (geminiConfigured) configuredProviders.add('gemini');
+  Object.keys(config.providers || {}).forEach(key => {
+    if (providerIsConfigured(key)) {
+      configuredProviders.add(String(key).toLowerCase());
+    }
+  });
+  const mainProviderKey = config.multiProviderEnabled
+    ? String(config.mainProvider || 'gemini').toLowerCase()
+    : 'gemini';
+  const mainConfigured = mainProviderKey === 'gemini'
+    ? geminiConfigured
+    : providerIsConfigured(mainProviderKey);
+  let isConfigured = mainConfigured || configuredProviders.size > 0;
 
   // Use local assets when baseUrl is provided
   const logo = baseUrl ? `${baseUrl}/logo.png` : 'https://i.imgur.com/5qJc5Y5.png';
@@ -629,5 +987,7 @@ module.exports = {
   buildManifest,
   // Exported for async token resolution paths in routes
   normalizeConfig,
-  getLanguageSelectionLimits
+  getLanguageSelectionLimits,
+  getDefaultProviderParameters,
+  mergeProviderParameters
 };

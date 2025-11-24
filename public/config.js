@@ -42,6 +42,82 @@
     const MAX_TARGET_LANGUAGES = parseLimit(SERVER_LIMITS.maxTargetLanguages, DEFAULT_LIMITS.maxTargetLanguages);
     const MAX_NO_TRANSLATION_LANGUAGES = parseLimit(SERVER_LIMITS.maxNoTranslationLanguages, DEFAULT_LIMITS.maxNoTranslationLanguages);
 
+    const PROVIDERS = {
+        openai: { label: 'OpenAI' },
+        anthropic: { label: 'Anthropic' },
+        xai: { label: 'XAI (Grok)' },
+        deepseek: { label: 'DeepSeek' },
+        deepl: { label: 'DeepL' },
+        mistral: { label: 'Mistral' },
+        cfworkers: { label: 'Cloudflare Workers AI' },
+        openrouter: { label: 'OpenRouter' },
+        gemini: { label: 'Gemini' }
+    };
+
+    const PROVIDER_PARAMETER_DEFAULTS = {
+        openai: {
+            temperature: 0.4,
+            topP: 0.95,
+            maxOutputTokens: 32768,
+            translationTimeout: 60,
+            maxRetries: 2,
+            reasoningEffort: undefined // undefined = omit from API request (default behavior)
+        },
+        anthropic: {
+            temperature: 0.4,
+            topP: 0.95,
+            maxOutputTokens: 32768,
+            translationTimeout: 60,
+            maxRetries: 2,
+            thinkingBudget: 0
+        },
+        xai: {
+            temperature: 0.4,
+            topP: 0.95,
+            maxOutputTokens: 32768,
+            translationTimeout: 60,
+            maxRetries: 2
+        },
+        deepseek: {
+            temperature: 0.4,
+            topP: 0.95,
+            maxOutputTokens: 32768,
+            translationTimeout: 60,
+            maxRetries: 2
+        },
+        deepl: {
+            temperature: 0,
+            topP: 1,
+            maxOutputTokens: 32768,
+            translationTimeout: 60,
+            maxRetries: 2,
+            modelType: 'quality_optimized',
+            formality: 'default',
+            preserveFormatting: true
+        },
+        mistral: {
+            temperature: 0.4,
+            topP: 0.95,
+            maxOutputTokens: 32768,
+            translationTimeout: 60,
+            maxRetries: 2
+        },
+        cfworkers: {
+            temperature: 0.4,
+            topP: 0.9,
+            maxOutputTokens: 32768,
+            translationTimeout: 60,
+            maxRetries: 2
+        },
+        openrouter: {
+            temperature: 0.4,
+            topP: 0.95,
+            maxOutputTokens: 32768,
+            translationTimeout: 60,
+            maxRetries: 2
+        }
+    };
+
     // Translation prompt presets
     const STRICT_TRANSLATION_PROMPT = `You are a professional subtitles translator. Translate the following subtitles while:
 1. Maintaining perfect SRT format (sequence numbers, timestamps, and text)
@@ -72,6 +148,14 @@ Translate to {target_language}.`;
      * Each model has its own optimal settings for thinking and temperature
      */
     const MODEL_SPECIFIC_DEFAULTS = {
+        'gemini-flash-lite-latest': {
+            thinkingBudget: 0,
+            temperature: 0.7
+        },
+        'gemini-flash-latest': {
+            thinkingBudget: -1,
+            temperature: 0.5
+        },
         'gemini-2.5-flash-lite-preview-09-2025': {
             thinkingBudget: 0,
             temperature: 0.7
@@ -98,7 +182,61 @@ Translate to {target_language}.`;
         };
     }
 
-    function getDefaultConfig(modelName = 'gemini-2.5-flash-preview-09-2025') {
+    function getDefaultProviderParameters() {
+        // Defensive clone to avoid accidental mutation
+        return JSON.parse(JSON.stringify(PROVIDER_PARAMETER_DEFAULTS));
+    }
+
+    function sanitizeNumber(value, fallback, min, max) {
+        const num = typeof value === 'number' ? value : parseFloat(value);
+        if (!Number.isFinite(num)) return fallback;
+        if (min !== undefined && num < min) return min;
+        if (max !== undefined && num > max) return max;
+        return num;
+    }
+
+    function mergeProviderParameters(defaultParams, incomingParams) {
+        const merged = {};
+        const incoming = incomingParams || {};
+        const sanitizeReasoningEffort = (value, fallback) => {
+            // Allow empty string to explicitly disable reasoning effort
+            if (value === '' || value === null || value === undefined) {
+                return undefined;
+            }
+            const allowed = ['low', 'medium', 'high'];
+            const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+            return allowed.includes(normalized) ? normalized : fallback;
+        };
+        Object.keys(defaultParams || {}).forEach(key => {
+            const matchKey = Object.keys(incoming).find(k => String(k).toLowerCase() === String(key).toLowerCase());
+            const raw = matchKey ? incoming[matchKey] : {};
+            const defaults = defaultParams[key] || {};
+            merged[key] = {
+                temperature: sanitizeNumber(raw?.temperature, defaults.temperature, 0, 2),
+                topP: sanitizeNumber(raw?.topP, defaults.topP, 0, 1),
+                maxOutputTokens: sanitizeNumber(raw?.maxOutputTokens, defaults.maxOutputTokens, 1, 200000),
+                translationTimeout: sanitizeNumber(raw?.translationTimeout, defaults.translationTimeout, 5, 600),
+                maxRetries: Math.max(0, Math.min(5, parseInt(raw?.maxRetries) || defaults.maxRetries || 0)),
+                reasoningEffort: sanitizeReasoningEffort(raw?.reasoningEffort, defaults.reasoningEffort),
+                thinkingBudget: Math.max(
+                    0,
+                    Math.min(200000, parseInt(raw?.thinkingBudget) || parseInt(defaults.thinkingBudget) || 0)
+                ),
+                formality: typeof raw?.formality === 'string'
+                    ? raw.formality
+                    : (typeof defaults.formality === 'string' ? defaults.formality : 'default'),
+                modelType: typeof raw?.modelType === 'string'
+                    ? raw.modelType
+                    : (typeof defaults.modelType === 'string' ? defaults.modelType : ''),
+                preserveFormatting: raw?.preserveFormatting !== undefined
+                    ? raw.preserveFormatting === true
+                    : defaults.preserveFormatting === true
+            };
+        });
+        return merged;
+    }
+
+    function getDefaultConfig(modelName = 'gemini-flash-latest') {
         const modelDefaults = getModelSpecificDefaults(modelName);
 
         return {
@@ -113,6 +251,22 @@ Translate to {target_language}.`;
             learnPlacement: 'top',
             geminiApiKey: DEFAULT_API_KEYS.GEMINI,
             geminiModel: modelName,
+            betaModeEnabled: false,
+            multiProviderEnabled: false,
+            mainProvider: 'gemini',
+            secondaryProviderEnabled: false,
+            secondaryProvider: '',
+            providers: {
+                openai: { enabled: false, apiKey: '', model: '' },
+                anthropic: { enabled: false, apiKey: '', model: '' },
+                xai: { enabled: false, apiKey: '', model: '' },
+                deepseek: { enabled: false, apiKey: '', model: '' },
+                deepl: { enabled: false, apiKey: '', model: '' },
+                mistral: { enabled: false, apiKey: '', model: '' },
+                cfworkers: { enabled: false, apiKey: '', model: '' },
+                openrouter: { enabled: false, apiKey: '', model: '' }
+            },
+            providerParameters: getDefaultProviderParameters(),
             promptStyle: 'strict', // 'natural' or 'strict'
             translationPrompt: STRICT_TRANSLATION_PROMPT,
             subtitleProviders: {
@@ -148,6 +302,7 @@ Translate to {target_language}.`;
             fileTranslationEnabled: false, // enable file upload translation feature
             syncSubtitlesEnabled: false, // enable 'Sync Subtitles' action in subtitles list
             mobileMode: false, // On Android: wait for full translation before responding
+            singleBatchMode: false, // Try translating whole file at once
             advancedSettings: {
                 enabled: false, // Auto-set to true if any setting differs from defaults (forces bypass cache)
                 geminiModel: '', // Override model (empty = use default)
@@ -156,9 +311,23 @@ Translate to {target_language}.`;
                 topP: 0.95,
                 topK: 40,
                 enableBatchContext: false, // Include original surrounding context and previous translations
-                contextSize: 3 // Number of surrounding entries to include as context
+                contextSize: 3, // Number of surrounding entries to include as context
+                sendTimestampsToAI: false // Let AI handle timestamps directly
             }
         };
+    }
+
+    function mergeProviders(defaultProviders, incomingProviders) {
+        const merged = {};
+        const incoming = incomingProviders || {};
+        Object.keys(defaultProviders || {}).forEach(key => {
+            const matchKey = Object.keys(incoming).find(k => String(k).toLowerCase() === String(key).toLowerCase());
+            merged[key] = {
+                ...defaultProviders[key],
+                ...(matchKey ? incoming[matchKey] : {})
+            };
+        });
+        return merged;
     }
 
     // State management
@@ -167,8 +336,15 @@ Translate to {target_language}.`;
     let isFirstRun = false;
     let modelsFetchTimeout = null;
     let lastFetchedApiKey = null;
+    const providerModelCache = {
+        deepl: [
+            { name: 'quality_optimized', displayName: 'Quality optimized (default)' },
+            { name: 'latency_optimized', displayName: 'Latency optimized' }
+        ]
+    };
     let instructionsAutoMinimizeTimer = null;
     let instructionsInteracted = false;
+    let betaModeLastState = null;
 
     // localStorage cache keys
     const CACHE_KEY = 'submaker_config_cache';
@@ -218,7 +394,55 @@ Translate to {target_language}.`;
         document.addEventListener('DOMContentLoaded', init);
     }
 
+    function ensureProvidersInState() {
+        if (!currentConfig) {
+            currentConfig = getDefaultConfig();
+        }
+        const defaults = getDefaultConfig().providers;
+        currentConfig.providers = mergeProviders(defaults, currentConfig.providers);
+    }
+
+    function ensureProviderParametersInState() {
+        if (!currentConfig) {
+            currentConfig = getDefaultConfig();
+        }
+        const defaults = getDefaultProviderParameters();
+        currentConfig.providerParameters = mergeProviderParameters(defaults, currentConfig.providerParameters);
+    }
+
+    function isBetaModeEnabled() {
+        const betaToggle = document.getElementById('betaMode');
+        if (betaToggle) {
+            return betaToggle.checked === true;
+        }
+        return currentConfig?.betaModeEnabled === true;
+    }
+
+    function hasActiveMultiProviderState(config) {
+        if (!config || config.multiProviderEnabled !== true || config.betaModeEnabled !== true) return false;
+        const main = String(config.mainProvider || 'gemini').toLowerCase();
+        const secondaryEnabled = config.secondaryProviderEnabled === true;
+        return main !== 'gemini' || secondaryEnabled;
+    }
+
+    function isMultiProviderActiveInForm() {
+        if (!isBetaModeEnabled()) return false;
+        const multiToggle = document.getElementById('enableMultiProviders');
+        const mainSelect = document.getElementById('mainProviderSelect');
+        const secondaryToggle = document.getElementById('enableSecondaryProvider');
+        const multiEnabled = multiToggle ? multiToggle.checked : false;
+        const main = mainSelect ? String(mainSelect.value || 'gemini').toLowerCase() : 'gemini';
+        const secondaryEnabled = secondaryToggle ? secondaryToggle.checked : false;
+        return multiEnabled && (main !== 'gemini' || secondaryEnabled);
+    }
+
     async function init() {
+        // Ensure browser constraint validation doesn't block the custom save flow on hidden/advanced inputs
+        const configForm = document.getElementById('configForm');
+        if (configForm) {
+            configForm.setAttribute('novalidate', 'novalidate');
+        }
+
         // Priority: cached config > URL config > default config
         // This ensures browser cache is respected unless explicitly shared via URL
         // NOTE: loadConfigFromCache is now async due to version validation
@@ -240,7 +464,16 @@ Translate to {target_language}.`;
             // New: If URL param looks like a session token, fetch stored config from server
             if (isValidSessionToken(rawConfigParam)) {
                 try {
-                    const resp = await fetch(`/api/get-session/${rawConfigParam}`, { cache: 'no-store' });
+                    // CRITICAL: Add cache-busting timestamp to prevent cross-user config contamination
+                    // Without this, aggressive browsers/proxies might cache and serve wrong user's config
+                    const cacheBuster = `_cb=${Date.now()}`;
+                    const resp = await fetch(`/api/get-session/${rawConfigParam}?${cacheBuster}`, {
+                        cache: 'no-store',
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache'
+                        }
+                    });
                     if (resp.ok) {
                         const data = await resp.json();
                         if (data && data.config) {
@@ -264,6 +497,20 @@ Translate to {target_language}.`;
                 subdl: { ...(defaults.subtitleProviders?.subdl || {}), enabled: false },
                 subsource: { ...(defaults.subtitleProviders?.subsource || {}), enabled: false }
             };
+        }
+
+        currentConfig.betaModeEnabled = currentConfig.betaModeEnabled === true;
+        ensureProvidersInState();
+        ensureProviderParametersInState();
+        const multiProviderToggleRequested = currentConfig.multiProviderEnabled === true && currentConfig.betaModeEnabled === true;
+        currentConfig.multiProviderEnabled = multiProviderToggleRequested;
+        const requestedMainProvider = currentConfig.mainProvider || 'gemini';
+        const requestedSecondaryProvider = currentConfig.secondaryProvider || '';
+        currentConfig.mainProvider = String(requestedMainProvider || 'gemini').toLowerCase();
+        currentConfig.secondaryProvider = String(requestedSecondaryProvider || '').toLowerCase();
+        currentConfig.secondaryProviderEnabled = multiProviderToggleRequested && currentConfig.secondaryProviderEnabled === true;
+        if (currentConfig.secondaryProviderEnabled && (!currentConfig.secondaryProvider || currentConfig.secondaryProvider === currentConfig.mainProvider)) {
+            currentConfig.secondaryProviderEnabled = false;
         }
 
         // Normalize any legacy PT-BR codes in saved config to canonical 'pob'
@@ -699,9 +946,10 @@ Translate to {target_language}.`;
      * @returns {boolean} - True if any advanced setting is modified
      */
     function areAdvancedSettingsModified() {
+        if (!isBetaModeEnabled()) return false;
         // Get the currently selected base model to determine model-specific defaults
         const geminiModelEl = document.getElementById('geminiModel');
-        const currentBaseModel = geminiModelEl ? geminiModelEl.value : 'gemini-2.5-flash-preview-09-2025';
+        const currentBaseModel = geminiModelEl ? geminiModelEl.value : 'gemini-flash-latest';
         const defaults = getDefaultConfig(currentBaseModel).advancedSettings;
 
         const advModelEl = document.getElementById('advancedModel');
@@ -728,17 +976,21 @@ Translate to {target_language}.`;
     }
 
     /**
-     * Update bypass cache state based on advanced settings
+     * Update bypass cache state based on advanced settings, multi-provider mode, or forced modes (e.g. single-batch)
      */
     function updateBypassCacheForAdvancedSettings() {
         const bypassEl = document.getElementById('bypassCache');
         const cacheEl = document.getElementById('cacheEnabled');
+        const singleBatchEl = document.getElementById('singleBatchMode');
         if (!bypassEl || !cacheEl) return;
 
         const isModified = areAdvancedSettingsModified();
+        const singleBatchEnabled = singleBatchEl ? singleBatchEl.checked === true : false;
+        const multiProvidersActive = isMultiProviderActiveInForm();
+        const forceBypass = isModified || singleBatchEnabled || multiProvidersActive;
 
-        if (isModified) {
-            // Advanced settings are modified: force and lock bypass cache
+        if (forceBypass) {
+            // Advanced settings or single-batch mode enabled: force and lock bypass cache
             // 1) Turn OFF main cache so mutual exclusivity logic can set bypass ON
             cacheEl.checked = false;
             // 2) Refresh mutual exclusivity UI
@@ -1228,6 +1480,95 @@ Translate to {target_language}.`;
         document.getElementById('geminiApiKey').addEventListener('input', validateGeminiApiKey);
         document.getElementById('geminiModel').addEventListener('change', validateGeminiModel);
 
+        const betaToggle = document.getElementById('betaMode');
+        if (betaToggle) {
+            betaToggle.addEventListener('change', (e) => {
+                toggleBetaModeUI(!!e.target.checked);
+            });
+        }
+
+        const multiToggle = document.getElementById('enableMultiProviders');
+        if (multiToggle) {
+            multiToggle.addEventListener('change', (e) => {
+                const enabled = isBetaModeEnabled() && e.target.checked;
+                e.target.checked = enabled;
+                currentConfig.multiProviderEnabled = enabled;
+                toggleMultiProviderUI(enabled);
+                updateMainProviderOptions(currentConfig.mainProvider || 'gemini');
+                updateSecondaryProviderOptions(currentConfig.secondaryProvider || '');
+                toggleProviderAdvancedCard();
+                updateBypassCacheForAdvancedSettings();
+            });
+        }
+
+        const secondaryToggle = document.getElementById('enableSecondaryProvider');
+        if (secondaryToggle) {
+            secondaryToggle.addEventListener('change', (e) => {
+                const enabled = !!e.target.checked;
+                currentConfig.secondaryProviderEnabled = enabled;
+                toggleSecondaryProviderUI(enabled);
+                updateSecondaryProviderOptions(currentConfig.secondaryProvider || '');
+                updateBypassCacheForAdvancedSettings();
+            });
+        }
+
+        getProviderKeys().forEach(key => {
+            const toggle = document.getElementById(`provider-${key}-enabled`);
+            if (toggle) {
+                toggle.addEventListener('change', (e) => {
+                    ensureProvidersInState();
+                    ensureProviderParametersInState();
+                    currentConfig.providers[key].enabled = e.target.checked;
+                    if (e.target.checked && key === 'deepl') {
+                        const modelSelect = document.getElementById('provider-deepl-model');
+                        if (modelSelect && !modelSelect.value && modelSelect.options.length > 1) {
+                            modelSelect.value = modelSelect.options[1].value;
+                            currentConfig.providers[key].model = modelSelect.value;
+                        }
+                    }
+                    toggleProviderFields(key, e.target.checked);
+                    updateMainProviderOptions(currentConfig.mainProvider || 'gemini');
+                    updateSecondaryProviderOptions(currentConfig.secondaryProvider || '');
+                    updateProviderAdvancedVisibility();
+                });
+            }
+            const apiKeyInput = document.getElementById(`provider-${key}-key`);
+            if (apiKeyInput) {
+                apiKeyInput.addEventListener('blur', debounce(() => {
+                    if (document.getElementById(`provider-${key}-enabled`)?.checked) {
+                        fetchProviderModels(key, { silent: true });
+                    }
+                }, 400));
+            }
+            const loadBtn = document.querySelector(`.provider-block[data-provider="${key}"] .validate-api-btn`);
+            if (loadBtn) {
+                loadBtn.addEventListener('click', () => fetchProviderModels(key));
+            }
+            const modelSelect = document.getElementById(`provider-${key}-model`);
+            if (modelSelect) {
+                modelSelect.addEventListener('change', (e) => {
+                    ensureProvidersInState();
+                    currentConfig.providers[key].model = e.target.value;
+                });
+            }
+        });
+
+        const mainProviderSelect = document.getElementById('mainProviderSelect');
+        if (mainProviderSelect) {
+            mainProviderSelect.addEventListener('change', (e) => {
+                currentConfig.mainProvider = e.target.value || 'gemini';
+                updateSecondaryProviderOptions(currentConfig.secondaryProvider || '');
+                updateBypassCacheForAdvancedSettings();
+            });
+        }
+
+        const secondaryProviderSelect = document.getElementById('secondaryProviderSelect');
+        if (secondaryProviderSelect) {
+            secondaryProviderSelect.addEventListener('change', (e) => {
+                currentConfig.secondaryProvider = e.target.value || '';
+            });
+        }
+
         // Update advanced settings when model changes (apply model-specific defaults)
         // When user selects a new model, always reset advanced settings to that model's defaults
         // This overrides any cached values from previous model selections
@@ -1273,6 +1614,7 @@ Translate to {target_language}.`;
         const advThinkingEl = document.getElementById('advancedThinkingBudget');
         const advTempEl = document.getElementById('advancedTemperature');
         const advTopPEl = document.getElementById('advancedTopP');
+        const sendTimestampsEl = document.getElementById('sendTimestampsToAI');
 
         // Fetch models when dropdown is clicked (on-demand fallback)
         if (advModelEl) {
@@ -1285,7 +1627,7 @@ Translate to {target_language}.`;
             });
         }
 
-        [advModelEl, advThinkingEl, advTempEl, advTopPEl].forEach(el => {
+        [advModelEl, advThinkingEl, advTempEl, advTopPEl, sendTimestampsEl].forEach(el => {
             if (el) {
                 el.addEventListener('change', updateBypassCacheForAdvancedSettings);
                 el.addEventListener('input', updateBypassCacheForAdvancedSettings);
@@ -1304,147 +1646,17 @@ Translate to {target_language}.`;
             });
         }
         if (contextSizeEl) {
+            contextSizeEl.addEventListener('change', updateBypassCacheForAdvancedSettings);
+            contextSizeEl.addEventListener('input', updateBypassCacheForAdvancedSettings);
+        }
+        if (sendTimestampsEl) {
+            sendTimestampsEl.addEventListener('change', updateBypassCacheForAdvancedSettings);
+            sendTimestampsEl.addEventListener('input', updateBypassCacheForAdvancedSettings);
+        }
+        if (contextSizeEl) {
             contextSizeEl.addEventListener('input', updateBypassCacheForAdvancedSettings);
             contextSizeEl.addEventListener('change', updateBypassCacheForAdvancedSettings);
         }
-
-        // Secret experimental mode: Click the heart to toggle advanced settings (with fade)
-        const secretHeart = document.getElementById('secretHeart');
-        function openAdvancedWithFade() {
-            const advancedCard = document.getElementById('advancedSettingsCard');
-            if (!advancedCard) return;
-            const computed = window.getComputedStyle(advancedCard);
-            const isHidden = (advancedCard.style.display === 'none') || (computed && computed.display === 'none');
-            if (!isHidden) return;
-            advancedCard.style.opacity = '0';
-            advancedCard.style.display = 'block';
-            advancedCard.style.transition = 'opacity 220ms ease';
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    advancedCard.style.opacity = '1';
-                });
-            });
-        }
-
-        function closeAdvancedWithFade() {
-            const advancedCard = document.getElementById('advancedSettingsCard');
-            if (!advancedCard) return;
-            const computed = window.getComputedStyle(advancedCard);
-            const isHidden = (advancedCard.style.display === 'none') || (computed && computed.display === 'none');
-            if (isHidden) return;
-            advancedCard.style.transition = 'opacity 220ms ease';
-            advancedCard.style.opacity = '0';
-            const end = () => {
-                advancedCard.removeEventListener('transitionend', end);
-                advancedCard.style.display = 'none';
-            };
-            advancedCard.addEventListener('transitionend', end);
-            setTimeout(end, 260); // fallback
-        }
-
-        if (secretHeart) {
-            secretHeart.addEventListener('click', () => {
-                // Block in just-fetch mode
-                if (currentConfig && currentConfig.noTranslationMode === true) {
-                    try { showAlert('⏸️ Experimental settings disabled in Just Fetch mode', 'info'); } catch (_) {}
-                    return;
-                }
-                const advancedCard = document.getElementById('advancedSettingsCard');
-                if (!advancedCard) return;
-                const computed = window.getComputedStyle(advancedCard);
-                const isHidden = (advancedCard.style.display === 'none') || (computed && computed.display === 'none');
-                if (isHidden) {
-                    openAdvancedWithFade();
-                    try { showAlert('🔬 Experimental Mode ON', 'success'); } catch (_) {}
-                    setTimeout(() => {
-                        advancedCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                    }, 300);
-                } else {
-                    closeAdvancedWithFade();
-                    try { showAlert('🔬 Experimental Mode OFF', 'info'); } catch (_) {}
-                }
-            });
-        }
-
-        // Ghost hint: appears near footer when user reaches bottom
-        const ghostHint = document.getElementById('ghostHint');
-        const ghostHintBtn = document.getElementById('ghostHintBtn');
-        const footerEl = document.querySelector('.footer');
-        const advancedCard = document.getElementById('advancedSettingsCard');
-        let ghostTimer = null;
-
-        function positionGhostAtHeart() {
-            if (!ghostHint) return;
-            const heart = document.getElementById('secretHeart');
-            const rect = heart ? heart.getBoundingClientRect() : null;
-            if (rect && rect.width > 0 && rect.height > 0) {
-                const cx = Math.round(rect.left + rect.width / 2); // align to whole pixels
-                const top = Math.max(10, Math.round(rect.top - 36)); // 2px closer to the heart
-                ghostHint.style.left = `${cx}px`;
-                ghostHint.style.top = `${top}px`;
-            } else {
-                // fallback center-bottom area
-                const cx = window.innerWidth / 2;
-                const top = Math.max(10, window.innerHeight - 140);
-                ghostHint.style.left = `${cx}px`;
-                ghostHint.style.top = `${top}px`;
-            }
-        }
-
-        function hideGhost() {
-            if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = null; }
-            if (ghostHint) ghostHint.classList.remove('show');
-        }
-
-        function showGhostSoon() {
-            if (!ghostHint || !footerEl) return;
-            if (advancedCard && advancedCard.style.display !== 'none') return; // don't show if already revealed
-            if (currentConfig && currentConfig.noTranslationMode === true) return; // disabled in Just Fetch mode
-            if (ghostHint.classList.contains('show')) return;
-            if (ghostTimer) return;
-            ghostTimer = setTimeout(() => {
-                ghostTimer = null;
-                positionGhostAtHeart();
-                ghostHint.classList.add('show');
-                // auto-hide after a bit
-                setTimeout(() => hideGhost(), 8000);
-            }, 4000); // show 4s after reaching bottom
-        }
-
-        if (ghostHintBtn) {
-            ghostHintBtn.addEventListener('click', () => {
-                // Block in Just Fetch mode
-                if (currentConfig && currentConfig.noTranslationMode === true) return;
-                // Forward to the heart action and hide hint
-                if (secretHeart) secretHeart.click();
-                hideGhost();
-            });
-        }
-
-        // Reveal on reaching footer
-        if ('IntersectionObserver' in window && footerEl) {
-            const obs = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        positionGhostAtHeart();
-                        showGhostSoon();
-                    } else {
-                        hideGhost();
-                    }
-                });
-            }, { root: null, threshold: 0.15 });
-            obs.observe(footerEl);
-        } else {
-            // Fallback: scroll position check
-            window.addEventListener('scroll', () => {
-                const nearBottom = (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 50);
-                if (nearBottom) { positionGhostAtHeart(); showGhostSoon(); } else { hideGhost(); }
-            });
-        }
-
-        // Keep the hint anchored to the heart while visible
-        window.addEventListener('resize', () => { if (ghostHint && ghostHint.classList.contains('show')) positionGhostAtHeart(); });
-        window.addEventListener('scroll', () => { if (ghostHint && ghostHint.classList.contains('show')) positionGhostAtHeart(); }, { passive: true });
 
         // Note: Modal close buttons are handled by delegated event listeners (lines 188-206)
         // No need to attach individual listeners here
@@ -1513,6 +1725,7 @@ Translate to {target_language}.`;
 
     function handleCacheEnabledToggle(e) {
         updateCacheToggles();
+        updateBypassCacheForAdvancedSettings();
     }
 
     function handleBypassToggle(e) {
@@ -1522,6 +1735,7 @@ Translate to {target_language}.`;
             cacheInput.checked = !e.target.checked;
         }
         updateCacheToggles();
+        updateBypassCacheForAdvancedSettings();
     }
 
     function handleAdvancedSettingsToggle(e) {
@@ -1616,6 +1830,442 @@ Translate to {target_language}.`;
             errorDiv.classList.remove('show');
         }
         return true;
+    }
+
+    function getProviderKeys() {
+        return Object.keys(PROVIDERS).filter(k => k !== 'gemini');
+    }
+
+    function toggleBetaModeUI(enabled, options = {}) {
+        const betaEnabled = enabled === true;
+        const prev = currentConfig.betaModeEnabled === true;
+        currentConfig.betaModeEnabled = betaEnabled;
+
+        const betaToggle = document.getElementById('betaMode');
+        if (betaToggle && betaToggle.checked !== betaEnabled) {
+            betaToggle.checked = betaEnabled;
+        }
+
+        const multiGroup = document.getElementById('multiProvidersGroup');
+        const advancedCard = document.getElementById('advancedSettingsCard');
+        if (multiGroup) multiGroup.style.display = betaEnabled ? '' : 'none';
+        if (advancedCard) advancedCard.style.display = betaEnabled ? '' : 'none';
+
+        if (!betaEnabled) {
+            const prevMulti = currentConfig.multiProviderEnabled === true;
+            const prevSecondaryEnabled = currentConfig.secondaryProviderEnabled === true;
+            const prevSecondary = currentConfig.secondaryProvider || '';
+            const multiToggle = document.getElementById('enableMultiProviders');
+            if (multiToggle) multiToggle.checked = false;
+            toggleMultiProviderUI(false);
+            currentConfig.multiProviderEnabled = prevMulti;
+            currentConfig.secondaryProviderEnabled = prevSecondaryEnabled;
+            currentConfig.secondaryProvider = prevSecondary;
+        } else {
+            const multiToggle = document.getElementById('enableMultiProviders');
+            if (multiToggle && currentConfig.multiProviderEnabled) {
+                multiToggle.checked = true;
+                toggleMultiProviderUI(true);
+            } else {
+                toggleProviderAdvancedCard();
+            }
+        }
+
+        if (!options.silent && prev !== betaEnabled) {
+            try {
+                showAlert(betaEnabled ? '🔬 Experimental Mode ON' : '🔬 Experimental Mode OFF', betaEnabled ? 'success' : 'info');
+            } catch (_) {}
+        }
+
+        updateBypassCacheForAdvancedSettings();
+    }
+
+    function toggleMultiProviderUI(enabled) {
+        const betaEnabled = isBetaModeEnabled();
+        const container = document.getElementById('multiProvidersContainer');
+        const mainGroup = document.getElementById('mainProviderGroup');
+        const secondaryGroup = document.getElementById('secondaryProviderGroup');
+        const shouldShow = betaEnabled && enabled;
+        currentConfig.multiProviderEnabled = enabled === true;
+        if (container) container.style.display = shouldShow ? 'flex' : 'none';
+        if (mainGroup) mainGroup.style.display = shouldShow ? '' : 'none';
+        if (secondaryGroup) secondaryGroup.style.display = shouldShow ? '' : 'none';
+        if (!betaEnabled || !enabled) {
+            if (!enabled) {
+                const selectSecondary = document.getElementById('secondaryProviderSelect');
+                const secondaryToggle = document.getElementById('enableSecondaryProvider');
+                if (secondaryToggle) secondaryToggle.checked = false;
+                if (selectSecondary) {
+                    selectSecondary.value = '';
+                    selectSecondary.disabled = true;
+                }
+                currentConfig.secondaryProviderEnabled = false;
+            }
+            toggleProviderAdvancedCard();
+            return;
+        }
+
+        updateMainProviderOptions(currentConfig.mainProvider || 'gemini');
+        toggleSecondaryProviderUI(currentConfig.secondaryProviderEnabled === true);
+        updateSecondaryProviderOptions(currentConfig.secondaryProvider || '');
+        toggleProviderAdvancedCard();
+    }
+
+    function toggleSecondaryProviderUI(enabled) {
+        const toggle = document.getElementById('enableSecondaryProvider');
+        const selectRow = document.getElementById('secondaryProviderSelectRow');
+        const select = document.getElementById('secondaryProviderSelect');
+        if (selectRow) selectRow.style.display = enabled ? '' : 'none';
+        if (select) select.disabled = !enabled;
+        if (!enabled) {
+            if (toggle) toggle.checked = false;
+            currentConfig.secondaryProviderEnabled = false;
+            currentConfig.secondaryProvider = '';
+        } else {
+            currentConfig.secondaryProviderEnabled = true;
+        }
+    }
+
+    function toggleProviderFields(providerKey, enabled) {
+        const fields = document.getElementById(`provider-${providerKey}-fields`);
+        if (fields) {
+            fields.style.display = enabled ? 'grid' : 'none';
+        }
+    }
+
+    function updateMainProviderOptions(selectedKey = 'gemini') {
+        const select = document.getElementById('mainProviderSelect');
+        if (!select) return;
+        ensureProvidersInState();
+        const opts = ['gemini'];
+        getProviderKeys().forEach(key => {
+            const cfg = currentConfig.providers?.[key];
+            if (cfg && cfg.enabled) opts.push(key);
+        });
+        select.innerHTML = '';
+        opts.forEach(key => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = PROVIDERS[key]?.label || key;
+            select.appendChild(option);
+        });
+        if (opts.includes(selectedKey)) {
+            select.value = selectedKey;
+        } else {
+            select.value = opts[0] || 'gemini';
+        }
+        currentConfig.mainProvider = select.value;
+    }
+
+    function updateSecondaryProviderOptions(selectedKey = '') {
+        const select = document.getElementById('secondaryProviderSelect');
+        const toggle = document.getElementById('enableSecondaryProvider');
+        if (!select || !toggle) return;
+        ensureProvidersInState();
+        const mainKey = currentConfig.mainProvider || 'gemini';
+        const opts = ['gemini'];
+        getProviderKeys().forEach(key => {
+            const cfg = currentConfig.providers?.[key];
+            if (cfg && cfg.enabled && key !== mainKey) opts.push(key);
+        });
+        const filtered = opts.filter(key => key !== mainKey);
+        select.innerHTML = '';
+
+        if (filtered.length === 0) {
+            toggle.disabled = true;
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No fallback providers available';
+            select.appendChild(option);
+            select.disabled = true;
+            toggle.checked = false;
+            currentConfig.secondaryProviderEnabled = false;
+            currentConfig.secondaryProvider = '';
+            toggleSecondaryProviderUI(false);
+            return;
+        }
+
+        toggle.disabled = false;
+        filtered.forEach(key => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = PROVIDERS[key]?.label || key;
+            select.appendChild(option);
+        });
+
+        if (selectedKey && filtered.includes(selectedKey)) {
+            select.value = selectedKey;
+        } else {
+            select.value = filtered[0];
+        }
+
+        currentConfig.secondaryProvider = select.value;
+        select.disabled = !toggle.checked;
+        toggleSecondaryProviderUI(toggle.checked);
+    }
+
+    function toggleProviderAdvancedCard() {
+        const card = document.getElementById('providerAdvancedCard');
+        if (!card) return;
+        const enabled = currentConfig.multiProviderEnabled === true && isBetaModeEnabled();
+        card.style.display = enabled ? '' : 'none';
+        if (enabled) {
+            updateProviderAdvancedVisibility();
+        }
+    }
+
+    function updateProviderAdvancedVisibility() {
+        const blocks = document.querySelectorAll('.provider-advanced-block');
+        const emptyState = document.getElementById('providerAdvancedEmpty');
+        let visibleCount = 0;
+
+        blocks.forEach(block => {
+            const key = block.dataset.provider;
+            const enabled = document.getElementById(`provider-${key}-enabled`)?.checked;
+            const isVisible = enabled === true;
+            block.style.display = isVisible ? 'grid' : 'none';
+            if (isVisible) visibleCount++;
+        });
+
+        if (emptyState) {
+            emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
+        }
+    }
+
+    function applyProviderParametersToForm(params) {
+        const defaults = getDefaultProviderParameters();
+        const merged = mergeProviderParameters(defaults, params || {});
+        currentConfig.providerParameters = merged;
+
+        Object.keys(merged).forEach(key => {
+            const cfg = merged[key] || {};
+            const tempEl = document.getElementById(`provider-${key}-temperature`);
+            const topPEl = document.getElementById(`provider-${key}-topP`);
+            const tokensEl = document.getElementById(`provider-${key}-maxTokens`);
+            const timeoutEl = document.getElementById(`provider-${key}-timeout`);
+            const retriesEl = document.getElementById(`provider-${key}-retries`);
+            const thinkingEl = document.getElementById(`provider-${key}-thinking`);
+            const reasoningEl = document.getElementById(`provider-${key}-reasoning`);
+            const formalityEl = document.getElementById(`provider-${key}-formality`);
+            const modelTypeEl = document.getElementById(`provider-${key}-modelType`);
+            const preserveEl = document.getElementById(`provider-${key}-preserveFormatting`);
+
+            if (tempEl) tempEl.value = cfg.temperature ?? defaults[key]?.temperature ?? '';
+            if (topPEl) topPEl.value = cfg.topP ?? defaults[key]?.topP ?? '';
+            if (tokensEl) tokensEl.value = cfg.maxOutputTokens ?? defaults[key]?.maxOutputTokens ?? '';
+            if (timeoutEl) timeoutEl.value = cfg.translationTimeout ?? defaults[key]?.translationTimeout ?? '';
+            if (retriesEl) retriesEl.value = cfg.maxRetries ?? defaults[key]?.maxRetries ?? '';
+            if (thinkingEl) thinkingEl.value = cfg.thinkingBudget ?? defaults[key]?.thinkingBudget ?? '';
+            if (reasoningEl) reasoningEl.value = cfg.reasoningEffort ?? defaults[key]?.reasoningEffort ?? '';
+            if (formalityEl) formalityEl.value = cfg.formality ?? defaults[key]?.formality ?? 'default';
+            if (modelTypeEl) modelTypeEl.value = cfg.modelType ?? defaults[key]?.modelType ?? '';
+            if (preserveEl) preserveEl.checked = cfg.preserveFormatting ?? defaults[key]?.preserveFormatting ?? false;
+        });
+    }
+
+    function getProviderParametersFromForm() {
+        const defaults = getDefaultProviderParameters();
+        const params = {};
+        Object.keys(defaults).forEach(key => {
+            const tempEl = document.getElementById(`provider-${key}-temperature`);
+            const topPEl = document.getElementById(`provider-${key}-topP`);
+            const tokensEl = document.getElementById(`provider-${key}-maxTokens`);
+            const timeoutEl = document.getElementById(`provider-${key}-timeout`);
+            const retriesEl = document.getElementById(`provider-${key}-retries`);
+            const thinkingEl = document.getElementById(`provider-${key}-thinking`);
+            const reasoningEl = document.getElementById(`provider-${key}-reasoning`);
+            const formalityEl = document.getElementById(`provider-${key}-formality`);
+            const modelTypeEl = document.getElementById(`provider-${key}-modelType`);
+            const preserveEl = document.getElementById(`provider-${key}-preserveFormatting`);
+            const baseDefaults = defaults[key] || {};
+            params[key] = {
+                temperature: sanitizeNumber(tempEl ? tempEl.value : undefined, defaults[key].temperature, 0, 2),
+                topP: sanitizeNumber(topPEl ? topPEl.value : undefined, defaults[key].topP, 0, 1),
+                maxOutputTokens: Math.max(1, Math.min(200000, parseInt(tokensEl ? tokensEl.value : defaults[key].maxOutputTokens) || defaults[key].maxOutputTokens)),
+                translationTimeout: Math.max(5, Math.min(600, parseInt(timeoutEl ? timeoutEl.value : defaults[key].translationTimeout) || defaults[key].translationTimeout)),
+                maxRetries: Math.max(0, Math.min(5, parseInt(retriesEl ? retriesEl.value : defaults[key].maxRetries) || defaults[key].maxRetries)),
+                reasoningEffort: (() => {
+                    const val = reasoningEl ? reasoningEl.value : baseDefaults.reasoningEffort;
+                    // Allow empty string to explicitly disable reasoning effort
+                    if (val === '' || val === null || val === undefined) {
+                        return undefined;
+                    }
+                    const allowed = ['low', 'medium', 'high'];
+                    const normalized = typeof val === 'string' ? val.trim().toLowerCase() : '';
+                    return allowed.includes(normalized) ? normalized : baseDefaults.reasoningEffort;
+                })(),
+                thinkingBudget: Math.max(0, Math.min(200000, parseInt(thinkingEl ? thinkingEl.value : defaults[key].thinkingBudget || 0) || defaults[key].thinkingBudget || 0))
+            };
+            if (formalityEl || baseDefaults.formality !== undefined) {
+                params[key].formality = formalityEl ? formalityEl.value : (baseDefaults.formality ?? 'default');
+            }
+            if (modelTypeEl || baseDefaults.modelType !== undefined) {
+                params[key].modelType = modelTypeEl ? modelTypeEl.value : (baseDefaults.modelType ?? '');
+            }
+            if (preserveEl || baseDefaults.preserveFormatting !== undefined) {
+                params[key].preserveFormatting = preserveEl ? preserveEl.checked : baseDefaults.preserveFormatting === true;
+            }
+        });
+        return params;
+    }
+
+    function populateProviderModels(providerKey, models, selectedModel = '') {
+        const select = document.getElementById(`provider-${providerKey}-model`);
+        if (!select) return;
+        select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select model';
+        select.appendChild(placeholder);
+
+        (models || []).forEach(model => {
+            if (!model || !model.name) return;
+            const opt = document.createElement('option');
+            opt.value = model.name;
+            opt.textContent = model.displayName || model.name;
+            select.appendChild(opt);
+        });
+
+        if (selectedModel) {
+            const exists = Array.from(select.options).some(o => o.value === selectedModel);
+            if (!exists) {
+                const extraOpt = document.createElement('option');
+                extraOpt.value = selectedModel;
+                extraOpt.textContent = `${selectedModel} (saved)`;
+                select.appendChild(extraOpt);
+            }
+            select.value = selectedModel;
+        }
+    }
+
+    function applyProvidersToForm(providers) {
+        ensureProvidersInState();
+        ensureProviderParametersInState();
+        getProviderKeys().forEach(key => {
+            const cfg = providers && (providers[key] || providers[Object.keys(providers).find(k => k.toLowerCase() === key)]);
+            const enabled = cfg?.enabled === true;
+            const toggle = document.getElementById(`provider-${key}-enabled`);
+            const apiKeyInput = document.getElementById(`provider-${key}-key`);
+            if (toggle) toggle.checked = enabled;
+            if (apiKeyInput) apiKeyInput.value = cfg?.apiKey || '';
+            const cachedModels = providerModelCache[key] || [];
+            populateProviderModels(key, cachedModels, cfg?.model || '');
+            toggleProviderFields(key, enabled);
+                currentConfig.providers[key] = {
+                    ...currentConfig.providers[key],
+                    ...(cfg || {})
+                };
+            });
+        updateMainProviderOptions(currentConfig.mainProvider || 'gemini');
+        if (isBetaModeEnabled() && currentConfig.multiProviderEnabled) {
+            const secondaryEnabled = currentConfig.secondaryProviderEnabled === true;
+            if (secondaryEnabled) {
+                const toggle = document.getElementById('enableSecondaryProvider');
+                if (toggle) toggle.checked = true;
+            }
+            toggleSecondaryProviderUI(secondaryEnabled);
+            updateSecondaryProviderOptions(currentConfig.secondaryProvider || '');
+        } else {
+            toggleSecondaryProviderUI(false);
+        }
+        updateProviderAdvancedVisibility();
+    }
+
+    function getProvidersFromForm() {
+        ensureProvidersInState();
+        const providers = {};
+        getProviderKeys().forEach(key => {
+            const toggle = document.getElementById(`provider-${key}-enabled`);
+            const apiKeyInput = document.getElementById(`provider-${key}-key`);
+            const modelSelect = document.getElementById(`provider-${key}-model`);
+            providers[key] = {
+                enabled: toggle ? toggle.checked : false,
+                apiKey: apiKeyInput ? apiKeyInput.value.trim() : '',
+                model: modelSelect ? modelSelect.value : ''
+            };
+        });
+        return providers;
+    }
+
+    function parseCfWorkersKey(rawKey) {
+        const cleaned = typeof rawKey === 'string' ? rawKey.trim() : '';
+        let accountId = '';
+        let token = '';
+
+        if (cleaned) {
+            const delimiter = cleaned.includes('|') ? '|' : (cleaned.includes(':') ? ':' : null);
+            if (delimiter) {
+                const [account, ...rest] = cleaned.split(delimiter);
+                accountId = (account || '').trim();
+                token = rest.join(delimiter).trim();
+            } else {
+                token = cleaned;
+            }
+        }
+
+        return { accountId, token };
+    }
+
+    async function fetchProviderModels(providerKey, options = {}) {
+        const apiKeyInput = document.getElementById(`provider-${providerKey}-key`);
+        if (!apiKeyInput) return;
+        const apiKey = apiKeyInput.value.trim();
+        if (!apiKey) {
+            if (!options.silent) {
+                showAlert(`Add an API key for ${PROVIDERS[providerKey]?.label || providerKey} to load models`, 'warning');
+            }
+            return;
+        }
+        const modelSelect = document.getElementById(`provider-${providerKey}-model`);
+        if (modelSelect) {
+            modelSelect.innerHTML = '<option>Loading...</option>';
+        }
+
+        if (providerKey === 'cfworkers') {
+            const creds = parseCfWorkersKey(apiKey);
+            if (!creds.accountId || !creds.token) {
+                if (modelSelect) {
+                    modelSelect.innerHTML = '<option value="">Add ACCOUNT_ID|TOKEN to load models</option>';
+                }
+                if (!options.silent) {
+                    showAlert('Cloudflare Workers AI key must be in ACCOUNT_ID|TOKEN format', 'error');
+                }
+                return;
+            }
+        }
+        try {
+            const response = await fetch(`/api/models/${providerKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ apiKey })
+            });
+            if (!response.ok) {
+                let errorMessage = response.statusText || 'Failed to fetch models';
+                try {
+                    const cloned = response.clone();
+                    const data = await cloned.json();
+                    errorMessage = data?.error || data?.message || errorMessage;
+                } catch (_) {
+                    try {
+                        const text = await response.text();
+                        if (text) errorMessage = text;
+                    } catch (_) {}
+                }
+                throw new Error(errorMessage);
+            }
+            const data = await response.json();
+            const models = Array.isArray(data) ? data : [];
+            providerModelCache[providerKey] = models;
+            populateProviderModels(providerKey, models, currentConfig.providers?.[providerKey]?.model || '');
+            if (!options.silent) {
+                showAlert(`Loaded ${models.length} models for ${PROVIDERS[providerKey]?.label || providerKey}`, 'success');
+            }
+        } catch (err) {
+            populateProviderModels(providerKey, [], '');
+            if (!options.silent) {
+                showAlert(`Failed to load models for ${PROVIDERS[providerKey]?.label || providerKey}: ${err.message}`, 'error');
+            }
+        }
     }
 
     function validateGeminiApiKey(showNotification = false) {
@@ -1974,32 +2624,75 @@ Translate to {target_language}.`;
         });
     }
 
+    function toggleOtherSettingsVisibilityForNoTranslation(enabled) {
+        const groupsToHide = [
+            document.getElementById('mainProviderGroup'),
+            document.getElementById('secondaryProviderGroup'),
+            document.getElementById('bypassCacheGroup'),
+            document.getElementById('learnOrderGroup'),
+            document.getElementById('learnPlacementGroup')
+        ];
+
+        ['sendTimestampsToAI', 'cacheEnabled', 'learnModeEnabled', 'mobileMode', 'singleBatchMode', 'betaMode'].forEach(id => {
+            const group = document.getElementById(id)?.closest('.form-group');
+            if (group) groupsToHide.push(group);
+        });
+
+        const translateFileGroup = document.getElementById('fileTranslationEnabled')?.closest('.form-group');
+
+        if (enabled) {
+            groupsToHide.forEach(group => {
+                if (!group) return;
+                group.dataset.originalDisplay = group.style.display || '';
+                group.style.display = 'none';
+            });
+            if (translateFileGroup) {
+                translateFileGroup.dataset.originalDisplay = translateFileGroup.style.display || '';
+                translateFileGroup.style.display = '';
+            }
+            return;
+        }
+
+        const hasStoredState = groupsToHide.some(group => group && group.dataset.originalDisplay !== undefined) ||
+            (translateFileGroup && translateFileGroup.dataset.originalDisplay !== undefined);
+        if (!hasStoredState) return;
+
+        groupsToHide.forEach(group => {
+            if (!group) return;
+            const restoreValue = group.dataset.originalDisplay !== undefined ? group.dataset.originalDisplay : '';
+            group.style.display = restoreValue;
+        });
+
+        if (translateFileGroup) {
+            const restoreValue = translateFileGroup.dataset.originalDisplay !== undefined ? translateFileGroup.dataset.originalDisplay : '';
+            translateFileGroup.style.display = restoreValue;
+        }
+    }
+
     function toggleNoTranslationMode(enabled) {
         currentConfig.noTranslationMode = enabled;
         const noTranslationCard = document.getElementById('noTranslationCard');
         const sourceCard = document.getElementById('sourceCard');
         const targetCard = document.getElementById('targetCard');
         const geminiCard = document.getElementById('geminiCard');
-        const secretHeart = document.getElementById('secretHeart');
+        const betaToggle = document.getElementById('betaMode');
         const learnTargetsCard = document.getElementById('learnTargetsCard');
         const learnModeCheckbox = document.getElementById('learnModeEnabled');
         const learnOrderGroup = document.getElementById('learnOrderGroup');
         const learnPlacementGroup = document.getElementById('learnPlacementGroup');
         const learnGrid = document.getElementById('learnLanguages');
+        toggleOtherSettingsVisibilityForNoTranslation(enabled);
 
         if (enabled) {
-            // Disable heart interactions and hide hint
-            if (secretHeart) {
-                secretHeart.style.pointerEvents = 'none';
-                secretHeart.style.opacity = '0.6';
-                secretHeart.setAttribute('aria-disabled', 'true');
-                secretHeart.title = 'Disabled in Just Fetch mode';
-            }
-            try { hideGhost(); } catch (_) {}
-            // Close advanced settings if open
-            try { closeAdvancedWithFade(); } catch (_) {
-                const adv = document.getElementById('advancedSettingsCard');
-                if (adv) adv.style.display = 'none';
+            betaModeLastState = {
+                betaEnabled: isBetaModeEnabled(),
+                multiEnabled: currentConfig.multiProviderEnabled === true,
+                secondaryEnabled: currentConfig.secondaryProviderEnabled === true
+            };
+            toggleBetaModeUI(false, { silent: true });
+            if (betaToggle) {
+                betaToggle.checked = false;
+                betaToggle.disabled = true;
             }
             // Show no-translation card, hide source, target, and gemini cards
             if (noTranslationCard) noTranslationCard.style.display = 'block';
@@ -2080,13 +2773,28 @@ Translate to {target_language}.`;
             updateSelectedChips('target', []);
             updateSelectedChips('learn', []);
         } else {
-            // Re-enable heart interactions
-            if (secretHeart) {
-                secretHeart.style.pointerEvents = 'auto';
-                secretHeart.style.opacity = '';
-                secretHeart.removeAttribute('aria-disabled');
-                secretHeart.title = '';
+            if (betaToggle) {
+                betaToggle.disabled = false;
             }
+            const shouldRestoreBeta = betaModeLastState?.betaEnabled === true;
+            if (shouldRestoreBeta) {
+                toggleBetaModeUI(true, { silent: true });
+                const multiToggle = document.getElementById('enableMultiProviders');
+                if (multiToggle && betaModeLastState?.multiEnabled) {
+                    multiToggle.checked = true;
+                    currentConfig.multiProviderEnabled = true;
+                    toggleMultiProviderUI(true);
+                    if (betaModeLastState?.secondaryEnabled) {
+                        const secondaryToggle = document.getElementById('enableSecondaryProvider');
+                        if (secondaryToggle) secondaryToggle.checked = true;
+                        toggleSecondaryProviderUI(true);
+                        updateSecondaryProviderOptions(currentConfig.secondaryProvider || '');
+                    }
+                }
+            } else {
+                toggleBetaModeUI(isBetaModeEnabled());
+            }
+            betaModeLastState = null;
             // Hide no-translation card, show source, target, and gemini cards
             if (noTranslationCard) noTranslationCard.style.display = 'none';
             if (sourceCard) sourceCard.style.display = 'block';
@@ -2208,8 +2916,8 @@ Translate to {target_language}.`;
 
         // Define hardcoded multi-model options
         const hardcodedModels = [
-            { name: 'gemini-2.5-flash-lite-preview-09-2025', displayName: 'Gemini 2.5 Flash-Lite' },
-            { name: 'gemini-2.5-flash-preview-09-2025', displayName: 'Gemini 2.5 Flash' },
+            { name: 'gemini-flash-lite-latest', displayName: 'Gemini 2.5 Flash-Lite' },
+            { name: 'gemini-flash-latest', displayName: 'Gemini 2.5 Flash' },
             { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro (Slow)' }
         ];
 
@@ -2473,6 +3181,12 @@ Translate to {target_language}.`;
         const newConfig = { ...defaults };
 
         try {
+            // Preserve multi-provider + fallback selections when valid
+            const oldMultiEnabled = oldConfig.multiProviderEnabled === true;
+            const oldSecondaryEnabled = oldMultiEnabled && oldConfig.secondaryProviderEnabled === true;
+            const oldMainProvider = String(oldConfig.mainProvider || 'gemini').toLowerCase();
+            const oldSecondaryProvider = oldSecondaryEnabled ? String(oldConfig.secondaryProvider || '').toLowerCase() : '';
+
             // Preserve Gemini API key
             newConfig.geminiApiKey = (oldConfig.geminiApiKey || '').trim();
 
@@ -2505,6 +3219,25 @@ Translate to {target_language}.`;
                 }
             }
 
+            // Preserve alternative AI providers
+            newConfig.betaModeEnabled = oldConfig.betaModeEnabled === true;
+            newConfig.multiProviderEnabled = oldConfig.multiProviderEnabled === true;
+            newConfig.mainProvider = oldConfig.mainProvider || 'gemini';
+            newConfig.providers = mergeProviders(defaults.providers, oldConfig.providers || {});
+            newConfig.providerParameters = mergeProviderParameters(defaults.providerParameters, oldConfig.providerParameters || {});
+            if (
+                oldSecondaryEnabled &&
+                oldSecondaryProvider &&
+                oldSecondaryProvider !== oldMainProvider &&
+                (
+                    oldSecondaryProvider === 'gemini' ||
+                    (newConfig.providers?.[oldSecondaryProvider] && newConfig.providers[oldSecondaryProvider].enabled !== undefined)
+                )
+            ) {
+                newConfig.secondaryProviderEnabled = true;
+                newConfig.secondaryProvider = oldSecondaryProvider;
+            }
+
             // Preserve languages
             newConfig.sourceLanguages = Array.isArray(oldConfig.sourceLanguages) ? [...oldConfig.sourceLanguages] : defaults.sourceLanguages;
             newConfig.targetLanguages = Array.isArray(oldConfig.targetLanguages) ? [...oldConfig.targetLanguages] : defaults.targetLanguages;
@@ -2520,6 +3253,8 @@ Translate to {target_language}.`;
             newConfig.bypassCache = oldConfig.bypassCache === true;
             // - mobile mode
             newConfig.mobileMode = oldConfig.mobileMode === true;
+            // - single-batch mode
+            newConfig.singleBatchMode = oldConfig.singleBatchMode === true;
 
             // Reset selected model to default (do NOT preserve old) and reset advanced settings to defaults
             newConfig.geminiModel = defaults.geminiModel;
@@ -2603,7 +3338,7 @@ Translate to {target_language}.`;
 
         // Load Gemini model
         const modelSelect = document.getElementById('geminiModel');
-        let modelToUse = currentConfig.geminiModel || 'gemini-2.5-flash-lite-preview-09-2025';
+        let modelToUse = currentConfig.geminiModel || 'gemini-flash-latest';
 
         // Migrate old Pro preview model ID to new stable ID
         if (modelToUse === 'gemini-2.5-pro-preview-05-06') {
@@ -2620,6 +3355,25 @@ Translate to {target_language}.`;
 
         // Load translation prompt (kept for internal use, not displayed in UI)
         const translationPrompt = currentConfig.translationPrompt || NATURAL_TRANSLATION_PROMPT;
+
+        // Load Beta Mode (controls experimental sections visibility)
+        const betaToggle = document.getElementById('betaMode');
+        const betaEnabled = currentConfig.betaModeEnabled === true;
+        if (betaToggle) {
+            betaToggle.checked = betaEnabled;
+        }
+        toggleBetaModeUI(betaEnabled, { silent: true });
+
+        ensureProviderParametersInState();
+        const multiToggle = document.getElementById('enableMultiProviders');
+        if (multiToggle) {
+            const multiEnabled = betaEnabled && currentConfig.multiProviderEnabled === true;
+            multiToggle.checked = multiEnabled;
+            toggleMultiProviderUI(multiEnabled);
+        }
+        applyProvidersToForm(currentConfig.providers || {});
+        applyProviderParametersToForm(currentConfig.providerParameters || {});
+        updateProviderAdvancedVisibility();
 
         // Load subtitle providers
         if (!currentConfig.subtitleProviders) {
@@ -2640,14 +3394,15 @@ Translate to {target_language}.`;
             v3Radio.checked = true;
         }
 
-        // Load user credentials (optional)
+        // toggleProviderConfig will call handleOpenSubtitlesImplChange to set auth fields visibility
+        // IMPORTANT: Call this BEFORE populating credentials so the auth section is visible when values are set
+        toggleProviderConfig('opensubtitlesConfig', opensubtitlesEnabled);
+
+        // Load user credentials (optional) - do this AFTER visibility is set to ensure fields are visible
         document.getElementById('opensubtitlesUsername').value =
             currentConfig.subtitleProviders?.opensubtitles?.username || '';
         document.getElementById('opensubtitlesPassword').value =
             currentConfig.subtitleProviders?.opensubtitles?.password || '';
-
-        // toggleProviderConfig will call handleOpenSubtitlesImplChange to set auth fields visibility
-        toggleProviderConfig('opensubtitlesConfig', opensubtitlesEnabled);
 
         // SubDL
         const subdlEnabled = (isFirstRun ? false : (currentConfig.subtitleProviders?.subdl?.enabled !== false));
@@ -2664,13 +3419,15 @@ Translate to {target_language}.`;
         toggleProviderConfig('subsourceConfig', subsourceEnabled);
 
         // Load file translation setting
-        document.getElementById('fileTranslationEnabled').checked = currentConfig.fileTranslationEnabled !== false;
+        document.getElementById('fileTranslationEnabled').checked = currentConfig.fileTranslationEnabled === true;
 
         // Load Dev: Sync Subtitles setting (if panel exists)
         const syncEl = document.getElementById('syncSubtitlesEnabled');
         if (syncEl) syncEl.checked = currentConfig.syncSubtitlesEnabled === true;
         const mobileModeEl = document.getElementById('mobileMode');
         if (mobileModeEl) mobileModeEl.checked = currentConfig.mobileMode === true;
+        const singleBatchEl = document.getElementById('singleBatchMode');
+        if (singleBatchEl) singleBatchEl.checked = currentConfig.singleBatchMode === true;
 
         // Load translation cache settings
         if (!currentConfig.translationCache) {
@@ -2683,7 +3440,14 @@ Translate to {target_language}.`;
 
         // Load advanced settings
         if (!currentConfig.advancedSettings) {
-            currentConfig.advancedSettings = getDefaultConfig().advancedSettings;
+            currentConfig.advancedSettings = getDefaultConfig(currentConfig.geminiModel || 'gemini-2.5-flash-preview-09-2025').advancedSettings;
+        } else {
+            // Merge with defaults to backfill any new fields
+            const advDefaults = getDefaultConfig(currentConfig.geminiModel || 'gemini-2.5-flash-preview-09-2025').advancedSettings;
+            currentConfig.advancedSettings = {
+                ...advDefaults,
+                ...currentConfig.advancedSettings
+            };
         }
 
         const advModelEl = document.getElementById('advancedModel');
@@ -2713,6 +3477,8 @@ Translate to {target_language}.`;
             }
         }
         if (contextSizeEl) contextSizeEl.value = currentConfig.advancedSettings?.contextSize || 3;
+        const sendTimestampsEl = document.getElementById('sendTimestampsToAI');
+        if (sendTimestampsEl) sendTimestampsEl.checked = currentConfig.advancedSettings?.sendTimestampsToAI === true;
 
         // Check if advanced settings are modified and update bypass cache accordingly
         updateBypassCacheForAdvancedSettings();
@@ -2746,10 +3512,18 @@ Translate to {target_language}.`;
             // If the toggle isn't present, preserve existing value in state
             currentConfig.mobileMode = currentConfig.mobileMode === true;
         }
+        const singleBatchToggle = document.getElementById('singleBatchMode');
+        if (singleBatchToggle) {
+            singleBatchToggle.addEventListener('change', (e) => {
+                currentConfig.singleBatchMode = e.target.checked;
+                updateBypassCacheForAdvancedSettings();
+            });
+        }
     }
 
     async function handleSubmit(e) {
         e.preventDefault();
+        ensureProvidersInState();
 
         // Sync mobile mode state into currentConfig before building payload
         try {
@@ -2761,6 +3535,20 @@ Translate to {target_language}.`;
 
         const promptStyle = document.getElementById('promptStyle').value;
         let translationPrompt = '';
+        const singleBatchEnabled = (function(){
+            const el = document.getElementById('singleBatchMode');
+            if (el) return el.checked;
+            return currentConfig?.singleBatchMode === true;
+        })();
+        const hasActiveMultiProvider = isMultiProviderActiveInForm();
+        const multiProviderToggleChecked = document.getElementById('enableMultiProviders')?.checked === true;
+
+        const isBypassRequested = () => {
+            const advSettingsModified = areAdvancedSettingsModified();
+            const cacheDisabled = !document.getElementById('cacheEnabled').checked;
+            const bypassChecked = document.getElementById('bypassCache')?.checked || false;
+            return advSettingsModified || cacheDisabled || bypassChecked || singleBatchEnabled || hasActiveMultiProvider;
+        };
 
         // Determine the translation prompt based on style
         if (promptStyle === 'strict') {
@@ -2776,15 +3564,22 @@ Translate to {target_language}.`;
             geminiApiKey: document.getElementById('geminiApiKey').value.trim(),
             // Save the selected model from the dropdown
             // Advanced settings can override this if enabled
-            geminiModel: document.getElementById('geminiModel')?.value || 'gemini-2.5-flash-lite-preview-09-2025',
+            geminiModel: document.getElementById('geminiModel')?.value || 'gemini-flash-latest',
             promptStyle: promptStyle,
             translationPrompt: translationPrompt,
+            betaModeEnabled: isBetaModeEnabled(),
             sourceLanguages: currentConfig.sourceLanguages,
             targetLanguages: currentConfig.targetLanguages,
             learnMode: currentConfig.learnMode === true,
             learnTargetLanguages: currentConfig.learnTargetLanguages || [],
             learnOrder: currentConfig.learnOrder || 'source-top',
             learnPlacement: 'top', // Force top-of-screen placement
+            multiProviderEnabled: multiProviderToggleChecked,
+            mainProvider: (document.getElementById('mainProviderSelect')?.value || 'gemini'),
+            secondaryProviderEnabled: document.getElementById('enableSecondaryProvider')?.checked || false,
+            secondaryProvider: (document.getElementById('secondaryProviderSelect')?.value || ''),
+            providers: getProvidersFromForm(),
+            providerParameters: getProviderParametersFromForm(),
             subtitleProviders: {
                 opensubtitles: {
                     enabled: document.getElementById('enableOpenSubtitles').checked,
@@ -2806,28 +3601,13 @@ Translate to {target_language}.`;
                 duration: 0,
                 persistent: true
             },
-            bypassCache: (function() {
-                const advSettingsModified = areAdvancedSettingsModified();
-                const cacheDisabled = !document.getElementById('cacheEnabled').checked;
-                const bypassChecked = document.getElementById('bypassCache')?.checked || false;
-                return advSettingsModified || cacheDisabled || bypassChecked;
-            })(),
+            bypassCache: isBypassRequested(),
             bypassCacheConfig: {
-                enabled: (function() {
-                    const advSettingsModified = areAdvancedSettingsModified();
-                    const cacheDisabled = !document.getElementById('cacheEnabled').checked;
-                    const bypassChecked = document.getElementById('bypassCache')?.checked || false;
-                    return advSettingsModified || cacheDisabled || bypassChecked;
-                })(),
+                enabled: isBypassRequested(),
                 duration: 12
             },
             tempCache: { // Deprecated: kept for backward compatibility
-                enabled: (function() {
-                    const advSettingsModified = areAdvancedSettingsModified();
-                    const cacheDisabled = !document.getElementById('cacheEnabled').checked;
-                    const bypassChecked = document.getElementById('bypassCache')?.checked || false;
-                    return advSettingsModified || cacheDisabled || bypassChecked;
-                })(),
+                enabled: isBypassRequested(),
                 duration: 12
             },
             fileTranslationEnabled: document.getElementById('fileTranslationEnabled').checked,
@@ -2837,6 +3617,7 @@ Translate to {target_language}.`;
                 if (el) return el.checked;
                 return currentConfig?.mobileMode === true;
             })(),
+            singleBatchMode: singleBatchEnabled,
             advancedSettings: {
                 enabled: areAdvancedSettingsModified(), // Auto-detect if any setting differs from defaults
                 geminiModel: (function(){ const el = document.getElementById('advancedModel'); return el ? el.value : ''; })(),
@@ -2845,9 +3626,20 @@ Translate to {target_language}.`;
                 topP: (function(){ const el = document.getElementById('advancedTopP'); return el ? parseFloat(el.value) : 0.95; })(),
                 topK: 40, // Keep default topK
                 enableBatchContext: (function(){ const el = document.getElementById('enableBatchContext'); return el ? el.checked : false; })(),
-                contextSize: (function(){ const el = document.getElementById('contextSize'); return el ? parseInt(el.value) : 3; })()
+                contextSize: (function(){ const el = document.getElementById('contextSize'); return el ? parseInt(el.value) : 3; })(),
+                sendTimestampsToAI: (function(){ const el = document.getElementById('sendTimestampsToAI'); return el ? el.checked : false; })()
             }
         };
+        config.multiProviderEnabled = config.betaModeEnabled && multiProviderToggleChecked;
+        if (!config.multiProviderEnabled) {
+            config.mainProvider = 'gemini';
+            config.secondaryProviderEnabled = false;
+            config.secondaryProvider = '';
+        } else if (!config.secondaryProviderEnabled) {
+            config.secondaryProvider = '';
+        }
+        config.mainProvider = String(config.mainProvider || 'gemini').toLowerCase();
+        config.secondaryProvider = config.secondaryProviderEnabled ? String(config.secondaryProvider || '').toLowerCase() : '';
 
         // Validation with visual feedback - collect all errors
         const errors = [];
@@ -2882,15 +3674,82 @@ Translate to {target_language}.`;
             errors.push('⚠️ OpenSubtitles Auth requires both username and password. Enter credentials or switch to V3 (no login needed).');
         }
 
-        // If not in no-translation mode, validate Gemini API and model
-        
+        // If not in no-translation mode, validate AI provider and languages
         if (!config.noTranslationMode) {
-            if (!validateGeminiApiKey(true)) {
-                errors.push('⚠️ Gemini API key is required');
+            const multiEnabled = config.multiProviderEnabled === true;
+            const mainProvider = config.mainProvider || 'gemini';
+            const providerIsConfigured = (key) => {
+                const cfg = config.providers?.[key];
+                return !!(cfg && cfg.enabled && cfg.apiKey && cfg.apiKey.trim() !== '' && cfg.model);
+            };
+            const geminiConfigured = !!(config.geminiApiKey && config.geminiApiKey.trim() !== '' && config.geminiModel && config.geminiModel.trim() !== '');
+            const configuredProviders = new Set();
+            if (geminiConfigured) configuredProviders.add('gemini');
+            Object.keys(config.providers || {}).forEach(key => {
+                if (providerIsConfigured(key)) {
+                    configuredProviders.add(String(key).toLowerCase());
+                }
+            });
+
+            if (!mainProvider) {
+                errors.push('⚠️ Select a Main Provider');
+            } else if (mainProvider === 'gemini') {
+                if (!validateGeminiApiKey(true)) {
+                    errors.push('⚠️ Gemini API key is required');
+                }
+
+                if (!validateGeminiModel()) {
+                    errors.push('⚠️ Please select a Gemini model');
+                }
+            } else {
+                const providerCfg = config.providers?.[mainProvider];
+                if (!providerCfg || !providerCfg.enabled) {
+                    errors.push(`⚠️ Enable ${PROVIDERS[mainProvider]?.label || mainProvider} to use it as Main Provider`);
+                }
+                if (!providerCfg || !providerCfg.apiKey?.trim()) {
+                    errors.push(`⚠️ API key required for ${PROVIDERS[mainProvider]?.label || mainProvider}`);
+                }
+                if (!providerCfg || !providerCfg.model) {
+                    errors.push(`⚠️ Select a model for ${PROVIDERS[mainProvider]?.label || mainProvider}`);
+                }
             }
 
-            if (!validateGeminiModel()) {
-                errors.push('⚠️ Please select a Gemini model');
+            if (multiEnabled && config.secondaryProviderEnabled) {
+                const secondaryKey = config.secondaryProvider;
+                if (!secondaryKey) {
+                    errors.push('⚠️ Select a Secondary Provider or disable the fallback toggle');
+                } else if (secondaryKey === mainProvider) {
+                    errors.push('⚠️ Secondary Provider must be different from Main Provider');
+                } else if (secondaryKey === 'gemini') {
+                    if (!validateGeminiApiKey(true)) {
+                        errors.push('⚠️ Gemini API key is required when Gemini is the Secondary Provider');
+                    }
+                    if (!validateGeminiModel()) {
+                        errors.push('⚠️ Please select a Gemini model for the Secondary Provider');
+                    }
+                    if (!geminiConfigured) {
+                        errors.push('⚠️ Gemini must have a valid API key and model when selected as Secondary Provider');
+                    }
+                } else {
+                    const secondaryCfg = config.providers?.[secondaryKey];
+                    if (!secondaryCfg || !secondaryCfg.enabled) {
+                        errors.push(`⚠️ Enable ${PROVIDERS[secondaryKey]?.label || secondaryKey} to use it as Secondary Provider`);
+                    }
+                    if (!secondaryCfg || !secondaryCfg.apiKey) {
+                        errors.push(`⚠️ API key required for ${PROVIDERS[secondaryKey]?.label || secondaryKey} (Secondary Provider)`);
+                    }
+                    if (!secondaryCfg || !secondaryCfg.model) {
+                        errors.push(`⚠️ Select a model for ${PROVIDERS[secondaryKey]?.label || secondaryKey} (Secondary Provider)`);
+                    }
+                }
+            }
+
+            if (configuredProviders.size === 0) {
+                errors.push('⚠️ Add at least one AI provider with an API key and enable it');
+            }
+
+            if (config.secondaryProviderEnabled && configuredProviders.size < 2) {
+                errors.push('⚠️ Secondary Provider requires two configured AI API keys (main and fallback)');
             }
 
             if (!validateLanguageSelection('source')) {
@@ -2935,10 +3794,21 @@ Translate to {target_language}.`;
 
             // Focus on first invalid field
             if (!config.noTranslationMode) {
-                if (!validateGeminiApiKey()) {
-                    document.getElementById('geminiApiKey')?.focus();
-                } else if (!validateGeminiModel()) {
-                    document.getElementById('geminiModel')?.focus();
+                const mainProvider = config.mainProvider || 'gemini';
+                if (mainProvider === 'gemini') {
+                    if (!validateGeminiApiKey()) {
+                        document.getElementById('geminiApiKey')?.focus();
+                    } else if (!validateGeminiModel()) {
+                        document.getElementById('geminiModel')?.focus();
+                    }
+                } else {
+                    const keyInput = document.getElementById(`provider-${mainProvider}-key`);
+                    const modelSelect = document.getElementById(`provider-${mainProvider}-model`);
+                    if (keyInput && (!config.providers?.[mainProvider]?.apiKey)) {
+                        keyInput.focus();
+                    } else if (modelSelect) {
+                        modelSelect.focus();
+                    }
                 }
             }
             return;

@@ -260,6 +260,27 @@ function toISO6392(code1) {
 }
 
 /**
+ * Find ISO-639-1 code by matching a human-readable language name
+ * @param {string} name - Language name (e.g., 'English', 'Portuguese (Brazilian)')
+ * @returns {string|null} - ISO-639-1 code or null if not found
+ */
+function findISO6391ByName(name) {
+  if (!name) return null;
+  const normalize = (str) => String(str || '').trim().toLowerCase().replace(/[\s_()-]/g, '');
+  const target = normalize(name);
+  if (!target) return null;
+
+  for (const entry of Object.values(languageMap)) {
+    const candidate = normalize(entry?.name);
+    if (candidate && candidate === target) {
+      return entry.code1 || null;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Get language name from ISO-639-2 code
  * @param {string} code2 - ISO-639-2 code
  * @returns {string|null} - Language name or null if not found
@@ -341,6 +362,7 @@ module.exports = {
   reverseLanguageMap,
   toISO6391,
   toISO6392,
+  findISO6391ByName,
   getLanguageName,
   getDisplayName,
   getAllLanguages,

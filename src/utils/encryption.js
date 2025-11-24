@@ -274,6 +274,15 @@ function encryptUserConfig(config) {
       }
     }
 
+    // Encrypt alternative AI provider API keys
+    if (encrypted.providers && typeof encrypted.providers === 'object') {
+      for (const [key, provider] of Object.entries(encrypted.providers)) {
+        if (provider && provider.apiKey) {
+          encrypted.providers[key].apiKey = encrypt(provider.apiKey);
+        }
+      }
+    }
+
     // Mark as encrypted for future detection
     encrypted._encrypted = true;
 
@@ -349,6 +358,18 @@ function decryptUserConfig(config) {
             decrypt(decrypted.subtitleProviders.subsource.apiKey, true);
           const isString = typeof decrypted.subtitleProviders.subsource.apiKey === 'string';
           log.debug(() => `[Encryption] SubSource key decrypted successfully, type: ${isString ? 'string' : 'NOT_STRING'}`);
+        }
+      }
+    }
+
+    // Decrypt alternative AI provider API keys
+    if (decrypted.providers && typeof decrypted.providers === 'object') {
+      for (const [key, provider] of Object.entries(decrypted.providers)) {
+        if (provider && provider.apiKey) {
+          const isEnc = isEncrypted(provider.apiKey);
+          if (isConfigEncrypted || isEnc) {
+            decrypted.providers[key].apiKey = decrypt(provider.apiKey, true);
+          }
         }
       }
     }
