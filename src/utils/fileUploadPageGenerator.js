@@ -2295,6 +2295,8 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         const PAGE = { configStr: configToken, videoId: ${JSON.stringify(videoId)}, filename: ${JSON.stringify(filename || '')}, videoHash: ${JSON.stringify(config?.videoHash || '')} };
         const uploadQueueLimits = ${JSON.stringify(uploadQueueDefaults)};
         const translationDefaults = ${JSON.stringify(translationWorkflowDefaults)};
+        const MAX_OUTPUT_TOKEN_LIMIT = ${MAX_OUTPUT_TOKEN_LIMIT};
+        const DEFAULT_MAX_OUTPUT_TOKENS = ${DEFAULT_MAX_OUTPUT_TOKENS};
         ${quickNavScript()}
 
         if (window.ComboBox && typeof window.ComboBox.enhanceAll === 'function') {
