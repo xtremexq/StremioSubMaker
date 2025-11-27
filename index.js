@@ -2381,12 +2381,13 @@ async function resolveConfigAsync(configStr, req) {
         log.warn(() => `[Stremio Kai] Session token not found: ${configStr.substring(0, 8)}...`);
     }
 
-    // Session token not found - generate a fresh default config with regeneration metadata
-    log.warn(() => `[ConfigResolver] Session token not found: ${configStr.substring(0, 8)}..., generating default config with error flag`);
+    // Session token not found - return default config with error flag
+    // NOTE: We do NOT create a new session here - that should only happen via /api/get-session?autoRegenerate=true
+    // Creating tokens here would result in multiple tokens being generated during page load
+    log.warn(() => `[ConfigResolver] Session token not found: ${configStr.substring(0, 8)}..., returning default config with error flag`);
 
-    const { config: defaultConfig, token: regeneratedToken } = regenerateDefaultConfig();
+    const defaultConfig = getDefaultConfig();
     defaultConfig.__sessionTokenError = true;
-    defaultConfig.__regeneratedToken = regeneratedToken; // Attach the new token for reinstall links
     defaultConfig.__originalToken = configStr; // Keep track of the failed token
     ensureConfigHash(defaultConfig, configStr);
     resolveConfigCache.set(configStr, defaultConfig);
@@ -2493,12 +2494,19 @@ app.get('/addon/:config/error-subtitle/:errorType.srt', async (req, res) => {
 
         log.debug(() => `[Error Subtitle] Serving error subtitle for: ${errorType}`);
 
-        // Resolve config to get regenerated token metadata (if available)
+        // Resolve config to check if this is a session token error
         const config = await resolveConfigAsync(configStr, req);
-        const regeneratedToken = config.__regeneratedToken || null;
 
         // Build base URL for reinstall links
         const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+        // For session token errors, generate a fresh token for the reinstall link
+        let regeneratedToken = null;
+        if (config.__sessionTokenError === true && errorType === 'session-token-not-found') {
+            const { token } = regenerateDefaultConfig();
+            regeneratedToken = token;
+            log.info(() => `[Error Subtitle] Generated fresh token for error subtitle reinstall link: ${redactToken(token)}`);
+        }
 
         let content;
         switch (errorType) {
