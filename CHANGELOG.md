@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.5 (unreleased)
 
+**Critical Bug Fix - Additional Cross-User Contamination Prevention:**
+
+This release adds defense-in-depth protections against persistent cross-user configuration contamination reported after v1.4.4:
+
+- **Enhanced proxy/CDN cache prevention**: Added `X-Accel-Expires: 0` (nginx), `Vary: Cookie, Authorization, X-Config-Token`, `CDN-Cache-Control: no-store`, and `Cloudflare-CDN-Cache-Control: no-store` headers to `setNoStore()` function to prevent caching by reverse proxies, CDNs, and hosting provider infrastructure
+- **Router cache validation**: Cached routers are now tagged with their config string and validated on retrieval - if a mismatch is detected, the cache is purged and contamination is logged
+- **Enhanced diagnostic logging**: Added IP address, user agent, and config hash logging when routers are created; cached router serves now log target languages and cache age for debugging
+- **Session validation endpoint**: New `/api/validate-session/:token` endpoint allows users to verify their session configuration and check for contamination in real-time
+- **Router metadata tracking**: Routers are tagged with `__configStr`, `__targetLanguages`, and `__createdAt` for contamination detection and debugging
+
+**Impact**: These additional layers address potential contamination from hosting provider infrastructure (elfhosted, etc.) that may cache responses upstream of application-level headers, race conditions in router creation, and provide diagnostic tools for troubleshooting persistent issues.
+
 **Bug Fixes:**
 - OpenSubtitles config migrations now preserve Auth credentials (username/password and implementation) when a new version is detected so saved logins are not cleared on upgrade while still resetting unsafe visual state.
 

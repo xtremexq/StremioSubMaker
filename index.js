@@ -371,6 +371,11 @@ function setNoStore(res) {
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     res.setHeader('Surrogate-Control', 'no-store');
+    // Additional headers for aggressive proxy/CDN cache prevention
+    res.setHeader('X-Accel-Expires', '0'); // Nginx proxy cache
+    res.setHeader('Vary', 'Cookie, Authorization, X-Config-Token'); // Prevent cross-user caching
+    res.setHeader('CDN-Cache-Control', 'no-store'); // Fastly/Cloudflare
+    res.setHeader('Cloudflare-CDN-Cache-Control', 'no-store'); // Cloudflare specific
 }
 
 // Helper: controlled CORS - allow only same-host (http/https) or explicit allowlist
@@ -1819,6 +1824,44 @@ app.get('/api/session-stats', statsLimiter, async (req, res) => {
     } catch (error) {
         log.error(() => '[Session API] Error getting stats:', error);
         res.status(500).json({ error: 'Failed to get session statistics' });
+    }
+});
+
+// API endpoint to validate session and check for contamination
+app.get('/api/validate-session/:token', async (req, res) => {
+    try {
+        setNoStore(res);
+        const { token } = req.params;
+
+        if (!token || !/^[a-f0-9]{32}$/.test(token)) {
+            return res.status(400).json({ error: 'Invalid session token format' });
+        }
+
+        const config = await sessionManager.getSession(token);
+        if (!config) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        // Return diagnostic information
+        const clientIP = req.ip || req.connection?.remoteAddress || 'unknown';
+        const cachedRouter = routerCache.has(token);
+        const cachedConfig = resolveConfigCache.has(token);
+
+        res.json({
+            valid: true,
+            token: redactToken(token),
+            targetLanguages: config.targetLanguages || [],
+            sourceLanguages: config.sourceLanguages || [],
+            hasRouterCache: cachedRouter,
+            hasConfigCache: cachedConfig,
+            clientIP: clientIP,
+            serverTime: new Date().toISOString()
+        });
+
+        log.info(() => `[Session Validation] Token ${redactToken(token)} validated from IP ${clientIP}, targets: ${JSON.stringify(config.targetLanguages || [])}`);
+    } catch (error) {
+        log.error(() => '[Session API] Error validating session:', error);
+        res.status(500).json({ error: 'Failed to validate session' });
     }
 });
 
@@ -4280,6 +4323,13 @@ app.use('/addon/:config', async (req, res, next) => {
         // PERFORMANCE: Check cache FIRST (cheap lookup) before fetching config
         let router = routerCache.get(configStr);
 
+        // CRITICAL FIX: Validate cached router matches requested config to prevent contamination
+        if (router && router.__configStr !== configStr) {
+            log.warn(() => `[Router] CONTAMINATION DETECTED: Cached router has wrong config! Expected: ${redactToken(configStr)}, Got: ${redactToken(router.__configStr || 'unknown')}`);
+            routerCache.delete(configStr);
+            router = null;
+        }
+
         if (!router) {
             // CRITICAL FIX: Deduplicate concurrent router creation to prevent race conditions
             const dedupKey = `router-creation:${configStr}`;
@@ -4310,6 +4360,11 @@ app.use('/addon/:config', async (req, res, next) => {
                 // Log when creating router (helps debug contamination issues)
                 log.info(() => `[Router] Creating router for ${redactToken(configStr)}: targets=${JSON.stringify(config.targetLanguages || [])}, sources=${JSON.stringify(config.sourceLanguages || [])}`);
 
+                // CRITICAL DEBUG: Log request details to trace contamination
+                const clientIP = req.ip || req.connection?.remoteAddress || 'unknown';
+                const userAgent = req.get('user-agent') || 'unknown';
+                log.info(() => `[Router] Request details - IP: ${clientIP}, UA: ${userAgent.substring(0, 50)}, ConfigHash: ${config.__configHash || 'none'}`);
+
                 // CRITICAL: Deep clone to prevent shared references between router closures
                 const freshConfig = deepCloneConfig(config);
 
@@ -4324,13 +4379,22 @@ app.use('/addon/:config', async (req, res, next) => {
                 const builder = createAddonWithConfig(freshConfig, baseUrl);
                 const newRouter = getRouter(builder.getInterface());
 
+                // CRITICAL: Tag router with config string for validation
+                newRouter.__configStr = configStr;
+                newRouter.__targetLanguages = JSON.stringify(freshConfig.targetLanguages || []);
+                newRouter.__createdAt = Date.now();
+
                 // Cache router (unless error config)
                 if (!(freshConfig && freshConfig.__sessionTokenError === true)) {
                     routerCache.set(configStr, newRouter);
+                    log.debug(() => `[Router] Cached router for ${redactToken(configStr)} with targets: ${newRouter.__targetLanguages}`);
                 }
 
                 return newRouter;
             });
+        } else {
+            // Router served from cache - log for debugging
+            log.debug(() => `[Router] Serving cached router for ${redactToken(configStr)}, targets: ${router.__targetLanguages || 'unknown'}, age: ${Date.now() - (router.__createdAt || 0)}ms`);
         }
 
         router(req, res, next);
