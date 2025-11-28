@@ -5,6 +5,7 @@
 
 # Encryption key (IMPORTANT: Keep this secure!)
 .encryption-key
+.instance-id
 keys
 
 # Dependencies
