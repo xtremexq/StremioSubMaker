@@ -559,18 +559,7 @@ class SessionManager extends EventEmitter {
         }
 
         const tokenValidation = ensureTokenMetadata(sessionData, token);
-        if (tokenValidation.status === 'missing_fingerprint') {
-            sessionData.tokenFingerprint = tokenValidation.expectedTokenFingerprint;
-            this.cache.set(token, sessionData);
-            this.dirty = true;
-            Promise.resolve().then(async () => {
-                const adapter = await getStorageAdapter();
-                const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
-                await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
-            }).catch(err => {
-                log.error(() => ['[SessionManager] Failed to persist token fingerprint backfill:', err?.message || String(err)]);
-            });
-        } else if (tokenValidation.status !== 'ok') {
+        if (tokenValidation.status !== 'ok') {
             log.warn(() => `[SessionManager] Token validation failed (${tokenValidation.status}) for ${redactToken(token)} - deleting session`);
             this.deleteSession(token);
             return null;
@@ -705,18 +694,7 @@ class SessionManager extends EventEmitter {
         }
 
         const tokenValidation = ensureTokenMetadata(sessionData, token);
-        if (tokenValidation.status === 'missing_fingerprint') {
-            sessionData.tokenFingerprint = tokenValidation.expectedTokenFingerprint;
-            this.cache.set(token, sessionData);
-            this.dirty = true;
-            Promise.resolve().then(async () => {
-                const adapter = await getStorageAdapter();
-                const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
-                await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
-            }).catch(err => {
-                log.error(() => ['[SessionManager] Failed to persist token fingerprint backfill during update:', err?.message || String(err)]);
-            });
-        } else if (tokenValidation.status !== 'ok') {
+        if (tokenValidation.status !== 'ok') {
             log.warn(() => `[SessionManager] Token validation failed (${tokenValidation.status}) during update for ${redactToken(token)} - deleting session`);
             this.deleteSession(token);
             return false;
@@ -851,15 +829,7 @@ class SessionManager extends EventEmitter {
             }
 
             const tokenValidation = ensureTokenMetadata(stored, token);
-            if (tokenValidation.status === 'missing_fingerprint') {
-                stored.tokenFingerprint = tokenValidation.expectedTokenFingerprint;
-                try {
-                    const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
-                    await adapter.set(token, stored, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
-                } catch (persistErr) {
-                    log.error(() => ['[SessionManager] Failed to persist token fingerprint during storage load:', persistErr?.message || String(persistErr)]);
-                }
-            } else if (tokenValidation.status !== 'ok') {
+            if (tokenValidation.status !== 'ok') {
                 log.warn(() => `[SessionManager] loadSessionFromStorage: token validation failed (${tokenValidation.status}) for ${redactToken(token)} - deleting session`);
                 try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) {}
                 return null;
@@ -1043,15 +1013,7 @@ class SessionManager extends EventEmitter {
                 if (!sessionData) continue;
 
                 const tokenValidation = ensureTokenMetadata(sessionData, token);
-                if (tokenValidation.status === 'missing_fingerprint') {
-                    sessionData.tokenFingerprint = tokenValidation.expectedTokenFingerprint;
-                    try {
-                        const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
-                        await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
-                    } catch (persistErr) {
-                        log.error(() => ['[SessionManager] Failed to persist token fingerprint during preload:', persistErr?.message || String(persistErr)]);
-                    }
-                } else if (tokenValidation.status !== 'ok') {
+                if (tokenValidation.status !== 'ok') {
                     log.warn(() => `[SessionManager] loadFromDisk: token validation failed (${tokenValidation.status}) for ${redactToken(token)} - deleting session`);
                     try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) {}
                     continue;
