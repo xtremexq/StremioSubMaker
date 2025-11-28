@@ -837,19 +837,20 @@ Translate to {target_language}.`;
             // Fall through to show a peek anyway
         }
 
-        const openPeek = () => {
-            if (openModalById('instructionsModal', { peek: true })) {
-                instructionsInteracted = false;
-                if (instructionsAutoMinimizeTimer) clearTimeout(instructionsAutoMinimizeTimer);
-                instructionsAutoMinimizeTimer = setTimeout(() => {
-                    minimizeInstructionsModal({ force: true });
-                }, 2600);
+        const openFull = () => {
+            if (openModalById('instructionsModal')) {
+                instructionsInteracted = true;
+                if (instructionsAutoMinimizeTimer) {
+                    clearTimeout(instructionsAutoMinimizeTimer);
+                    instructionsAutoMinimizeTimer = null;
+                }
+                hideInstructionsFab();
             }
         };
 
         // Prefer to wait for main partial so the modal doesn't pop after footer-only render
         const gate = (window.mainPartialReady || Promise.resolve());
-        gate.then(() => requestAnimationFrame(openPeek)).catch(openPeek);
+        gate.then(() => requestAnimationFrame(openFull)).catch(openFull);
     }
 
     window.closeInstructionsModal = function() {
