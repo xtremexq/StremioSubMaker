@@ -2369,9 +2369,15 @@ async function resolveConfigAsync(configStr, req) {
     const isToken = /^[a-f0-9]{32}$/.test(configStr);
 
     // Fast path: reuse recently resolved configs to avoid log spam on polling endpoints
-    const cachedConfig = resolveConfigCache.get(configStr);
-    if (cachedConfig) {
-        return deepCloneConfig(cachedConfig);
+    // IMPORTANT: Only cache base64 configs. Session tokens must always re-fetch from
+    // storage to avoid serving another user's config from a stale in-memory cache
+    // when instances are behind a load balancer. This was observed as "random language"
+    // swaps because the cached config outlived a session regen/eviction.
+    if (!isToken) {
+        const cachedConfig = resolveConfigCache.get(configStr);
+        if (cachedConfig) {
+            return deepCloneConfig(cachedConfig);
+        }
     }
 
     // Detect Stremio Kai
@@ -2399,7 +2405,6 @@ async function resolveConfigAsync(configStr, req) {
         const normalized = normalizeConfig(cfg);
         // CRITICAL FIX: Deep clone to prevent shared references between concurrent requests
         ensureConfigHash(normalized, configStr);
-        resolveConfigCache.set(configStr, normalized);
         return deepCloneConfig(normalized);
     }
 
@@ -2416,7 +2421,6 @@ async function resolveConfigAsync(configStr, req) {
     defaultConfig.__sessionTokenError = true;
     defaultConfig.__originalToken = configStr; // Keep track of the failed token
     ensureConfigHash(defaultConfig, configStr);
-    resolveConfigCache.set(configStr, defaultConfig);
     return defaultConfig;
 }
 
