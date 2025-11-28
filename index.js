@@ -4437,13 +4437,17 @@ app.get('/addon/:config', (req, res, next) => {
 app.use('/addon/:config', async (req, res, next) => {
     try {
         const configStr = req.params.config;
+        const isSessionToken = /^[a-f0-9]{32}$/.test(configStr);
 
         // CRITICAL: Prevent caching of all addon responses (subtitles, manifests, etc.)
         // This ensures users always get their own config, not cached responses from other users
         setNoStore(res);
 
         // PERFORMANCE: Check cache FIRST (cheap lookup) before fetching config
-        let router = routerCache.get(configStr);
+        // IMPORTANT: Never serve routers from cache for session tokens. If a token is evicted or
+        // regenerated, a stale cached router could leak another user's config. Base64 configs are
+        // deterministic and safe to cache.
+        let router = isSessionToken ? null : routerCache.get(configStr);
 
         // CRITICAL FIX: Validate cached router matches requested config to prevent contamination
         if (router && router.__configStr !== configStr) {
@@ -4456,10 +4460,12 @@ app.use('/addon/:config', async (req, res, next) => {
             // CRITICAL FIX: Deduplicate concurrent router creation to prevent race conditions
             const dedupKey = `router-creation:${configStr}`;
             router = await deduplicate(dedupKey, async () => {
-                // Double-check cache inside deduplication
-                const cachedRouter = routerCache.get(configStr);
-                if (cachedRouter) {
-                    return cachedRouter;
+                // Double-check cache inside deduplication (only for cacheable configs)
+                if (!isSessionToken) {
+                    const cachedRouter = routerCache.get(configStr);
+                    if (cachedRouter) {
+                        return cachedRouter;
+                    }
                 }
 
                 // Cache miss: fetch config (only happens when creating new router)
@@ -4506,8 +4512,8 @@ app.use('/addon/:config', async (req, res, next) => {
                 newRouter.__targetLanguages = JSON.stringify(freshConfig.targetLanguages || []);
                 newRouter.__createdAt = Date.now();
 
-                // Cache router (unless error config)
-                if (!(freshConfig && freshConfig.__sessionTokenError === true)) {
+                // Cache router for base64 configs only (session tokens stay uncached for safety)
+                if (!isSessionToken && !(freshConfig && freshConfig.__sessionTokenError === true)) {
                     routerCache.set(configStr, newRouter);
                     log.debug(() => `[Router] Cached router for ${redactToken(configStr)} with targets: ${newRouter.__targetLanguages}`);
                 }

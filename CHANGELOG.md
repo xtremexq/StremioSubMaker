@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Session manager fingerprints configs and backfills token metadata, deleting mismatched or corrupted sessions from storage to prevent cross-user contamination.
 - Session manager now removes sessions immediately when decryption fails or yields empty configs, ensuring corrupted payloads cannot be reused across users.
 - Session-token config resolutions now always bypass the in-process resolve cache, preventing stale token lookups from leaking other users' language/target settings.
+- Session-token addon routers are no longer served from the router cache; routers are rebuilt per request to eliminate stale token bleed across users.
 - Package version bumped to 1.4.6 so runtime version reporting and cache busting align with the release notes.
 - Redis storage now self-heals legacy double-prefixed keys (e.g., `stremio:stremio:*`) so sessions/configs stay visible whether the prefix includes a colon or not and across multi-instance Redis deployments.
 - Redis key prefixes are now normalized to a canonical colon-suffixed form while still accepting colon/non-colon/custom variants, preventing mixed-prefix splits like `stremiosession:*`.
