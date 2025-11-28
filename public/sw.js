@@ -132,6 +132,10 @@ self.addEventListener('install', (event) => {
                     try {
                         const response = await fetch(assetUrl, { cache: 'no-store' });
                         if (response && response.ok) {
+                            // Skip caching if upstream adds Vary: *
+                            if (responseHasVaryStar(response)) {
+                                return;
+                            }
                             await safeCachePut(cache, assetUrl, response.clone());
                         }
                     } catch (err) {
