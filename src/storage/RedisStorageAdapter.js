@@ -17,6 +17,8 @@ class RedisStorageAdapter extends StorageAdapter {
   constructor(options = {}) {
     super();
 
+    const { canonicalPrefix, variants } = this._normalizeKeyPrefix(options.keyPrefix);
+
     // Check if Redis Sentinel is enabled (disabled by default)
     const sentinelEnabled = process.env.REDIS_SENTINEL_ENABLED === 'true' || options.sentinelEnabled === true;
 
@@ -36,7 +38,7 @@ class RedisStorageAdapter extends StorageAdapter {
         name: sentinelName,
         password: options.password || process.env.REDIS_PASSWORD || undefined,
         db: options.db || process.env.REDIS_DB || 0,
-        keyPrefix: options.keyPrefix || 'stremio:',
+        keyPrefix: canonicalPrefix,
         maxRetriesPerRequest: 3,
         retryStrategy: (times) => {
           const delay = Math.min(times * 50, 2000);
@@ -56,7 +58,7 @@ class RedisStorageAdapter extends StorageAdapter {
         port: options.port || process.env.REDIS_PORT || 6379,
         password: options.password || process.env.REDIS_PASSWORD || undefined,
         db: options.db || process.env.REDIS_DB || 0,
-        keyPrefix: options.keyPrefix || 'stremio:',
+        keyPrefix: canonicalPrefix,
         maxRetriesPerRequest: 3,
         retryStrategy: (times) => {
           const delay = Math.min(times * 50, 2000);
@@ -70,24 +72,31 @@ class RedisStorageAdapter extends StorageAdapter {
     this.migrationClient = null;
     this.initialized = false;
     this.sentinelMode = sentinelEnabled;
-    this.prefixVariants = this._buildPrefixVariants(this.options.keyPrefix || '');
+    this.prefixVariants = variants;
   }
 
   /**
-   * Build a set of prefix variants to interop across deployments (colon vs non-colon, extra variants)
+   * Normalize configured keyPrefix and build variants to interop across deployments
+   * (colon vs non-colon, custom variants, and empty prefix fallback)
    * @private
    */
-  _buildPrefixVariants(primaryPrefix) {
+  _normalizeKeyPrefix(configuredPrefix) {
+    const base = configuredPrefix ?? process.env.REDIS_KEY_PREFIX ?? 'stremio:';
+    const canonicalPrefix = !base || base.endsWith(':') ? base : `${base}:`;
+
     const variants = new Set();
-    const addVariants = (base) => {
-      if (!base) return;
-      const withColon = base.endsWith(':') ? base : `${base}:`;
-      const withoutColon = base.endsWith(':') ? base.slice(0, -1) : base;
+    const addVariants = (prefix) => {
+      if (!prefix) return;
+      const withColon = prefix.endsWith(':') ? prefix : `${prefix}:`;
+      const withoutColon = prefix.endsWith(':') ? prefix.slice(0, -1) : prefix;
       variants.add(withColon);
       variants.add(withoutColon);
     };
 
-    addVariants(primaryPrefix);
+    addVariants(canonicalPrefix);
+    if (configuredPrefix && configuredPrefix !== canonicalPrefix) {
+      addVariants(configuredPrefix);
+    }
 
     if (process.env.REDIS_KEY_PREFIX_VARIANTS) {
       process.env.REDIS_KEY_PREFIX_VARIANTS
@@ -100,7 +109,10 @@ class RedisStorageAdapter extends StorageAdapter {
     // Always include empty prefix as a fallback for deployments that used no prefix
     variants.add('');
 
-    return Array.from(variants);
+    return {
+      canonicalPrefix,
+      variants: Array.from(variants)
+    };
   }
 
   /**
@@ -224,24 +236,8 @@ class RedisStorageAdapter extends StorageAdapter {
     // Only applicable when a non-empty prefix is set
     if (!targetPrefix) return;
 
-    // Collect configured + optional variants so mixed deployments can converge
-    const bases = [targetPrefix];
-    if (process.env.REDIS_KEY_PREFIX_VARIANTS) {
-      bases.push(
-        ...process.env.REDIS_KEY_PREFIX_VARIANTS
-          .split(',')
-          .map(s => s.trim())
-          .filter(Boolean)
-      );
-    }
-
-    const variants = new Set();
-    for (const base of bases) {
-      const withColon = base.endsWith(':') ? base : `${base}:`;
-      const withoutColon = base.endsWith(':') ? base.slice(0, -1) : base;
-      variants.add(withColon);
-      variants.add(withoutColon);
-    }
+    // Use normalized variants (colon/no-colon, env/custom) so mixed deployments converge
+    const variants = new Set(this.prefixVariants.filter(Boolean));
 
     const doublePrefixes = [];
     for (const v of variants) {
@@ -289,17 +285,17 @@ class RedisStorageAdapter extends StorageAdapter {
 
             try {
               const exists = await migrationClient.exists(fixedKey);
-            if (exists) {
-              // The single-prefix key already exists; remove the unusable double-prefixed duplicate to prevent repeated warnings.
-              await migrationClient.del(key);
-              cleaned++;
-            } else {
-              await migrationClient.rename(key, fixedKey);
-              migrated++;
+              if (exists) {
+                // The single-prefix key already exists; remove the unusable double-prefixed duplicate to prevent repeated warnings.
+                await migrationClient.del(key);
+                cleaned++;
+              } else {
+                await migrationClient.rename(key, fixedKey);
+                migrated++;
+              }
+            } catch (err) {
+              log.error(() => [`[RedisStorage] Failed to migrate key ${key} -> ${fixedKey}:`, err.message]);
             }
-          } catch (err) {
-            log.error(() => [`[RedisStorage] Failed to migrate key ${key} -> ${fixedKey}:`, err.message]);
-          }
           }
         } while (cursor !== '0');
       }

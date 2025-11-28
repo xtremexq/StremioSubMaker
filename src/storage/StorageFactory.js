@@ -57,7 +57,7 @@ class StorageFactory {
         port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : undefined,
         password: process.env.REDIS_PASSWORD,
         db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : undefined,
-        keyPrefix: process.env.REDIS_KEY_PREFIX || 'stremio:'
+        keyPrefix: process.env.REDIS_KEY_PREFIX
       });
     } else {
       log.debug(() => 'Initializing Filesystem storage adapter...');
