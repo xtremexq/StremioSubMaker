@@ -77,6 +77,28 @@ async function getStorageAdapter() {
 let pubSubClient = null; // For subscribing to channels
 let publishClient = null; // For publishing messages (normal mode)
 
+function getPrefixVariants() {
+  const configured = process.env.REDIS_KEY_PREFIX || 'stremio';
+  const extra = (process.env.REDIS_KEY_PREFIX_VARIANTS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const bases = [configured, ...extra];
+
+  const variants = new Set();
+  variants.add(''); // no prefix fallback
+
+  for (const base of bases) {
+    const withColon = base.endsWith(':') ? base : `${base}:`;
+    const withoutColon = base.endsWith(':') ? base.slice(0, -1) : base;
+    variants.add(withColon);
+    variants.add(withoutColon);
+  }
+
+  return Array.from(variants).filter(Boolean);
+}
+
 async function getPubSubClient() {
   const storageType = process.env.STORAGE_TYPE || 'filesystem';
   if (storageType !== 'redis') {
@@ -93,7 +115,8 @@ async function getPubSubClient() {
       port: process.env.REDIS_PORT || 6379,
       password: process.env.REDIS_PASSWORD || undefined,
       db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0,
-      keyPrefix: process.env.REDIS_KEY_PREFIX || 'stremio:',
+      // Use raw channels so we can manually subscribe to both prefixed and unprefixed variants
+      keyPrefix: '',
       maxRetriesPerRequest: 3,
       retryStrategy: (times) => {
         const delay = Math.min(times * 50, 2000);
@@ -129,7 +152,8 @@ async function getPublishClient() {
       port: process.env.REDIS_PORT || 6379,
       password: process.env.REDIS_PASSWORD || undefined,
       db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0,
-      keyPrefix: process.env.REDIS_KEY_PREFIX || 'stremio:',
+      // Use raw channels so we can manually publish to both prefixed and unprefixed variants
+      keyPrefix: '',
       maxRetriesPerRequest: 3,
       retryStrategy: (times) => {
         const delay = Math.min(times * 50, 2000);
@@ -281,30 +305,37 @@ class SessionManager extends EventEmitter {
             return;
         }
 
-        // Subscribe to session invalidation channel
-        const invalidationChannel = 'session:invalidate';
+        // Subscribe to session invalidation channel (both prefixed and unprefixed to interop across hosts)
+        const baseChannel = 'session:invalidate';
+        const channels = Array.from(new Set([
+            baseChannel,
+            ...getPrefixVariants().map(p => `${p}${baseChannel}`)
+        ]));
+
+        const channelSet = new Set(channels);
 
         pubSub.on('message', (channel, message) => {
-            if (channel === invalidationChannel) {
-                try {
-                    const data = JSON.parse(message);
-                    const { token, action, instanceId } = data;
+            if (!channelSet.has(channel)) {
+                return;
+            }
+            try {
+                const data = JSON.parse(message);
+                const { token, action, instanceId } = data;
 
-                    // Ignore messages from ourselves to prevent self-invalidation
-                    if (instanceId === this.instanceId) {
-                        log.debug(() => `[SessionManager] Ignoring own invalidation event: ${redactToken(token)} (action: ${action})`);
-                        return;
-                    }
-
-                    if (token && this.cache.has(token)) {
-                        this.cache.delete(token);
-                        this.decryptedCache?.delete(token);
-                        this.emit('sessionInvalidated', { token, action, source: 'pubsub' });
-                        log.debug(() => `[SessionManager] Invalidated cached session from pub/sub: ${redactToken(token)} (action: ${action})`);
-                    }
-                } catch (err) {
-                    log.error(() => ['[SessionManager] Failed to process pub/sub message:', err.message]);
+                // Ignore messages from ourselves to prevent self-invalidation
+                if (instanceId === this.instanceId) {
+                    log.debug(() => `[SessionManager] Ignoring own invalidation event: ${redactToken(token)} (action: ${action})`);
+                    return;
                 }
+
+                if (token && this.cache.has(token)) {
+                    this.cache.delete(token);
+                    this.decryptedCache?.delete(token);
+                    this.emit('sessionInvalidated', { token, action, source: 'pubsub' });
+                    log.debug(() => `[SessionManager] Invalidated cached session from pub/sub: ${redactToken(token)} (action: ${action}) via ${channel}`);
+                }
+            } catch (err) {
+                log.error(() => ['[SessionManager] Failed to process pub/sub message:', err.message]);
             }
         });
 
@@ -312,8 +343,8 @@ class SessionManager extends EventEmitter {
             log.error(() => ['[SessionManager] Pub/Sub error:', err.message]);
         });
 
-        await pubSub.subscribe(invalidationChannel);
-        log.debug(() => `[SessionManager] Subscribed to pub/sub channel: ${invalidationChannel}`);
+        await pubSub.subscribe(...channels);
+        log.debug(() => `[SessionManager] Subscribed to pub/sub channels: ${channels.join(', ')}`);
     }
 
     /**
@@ -337,8 +368,16 @@ class SessionManager extends EventEmitter {
                 instanceId: this.instanceId,
                 timestamp: Date.now()
             });
-            await publisher.publish('session:invalidate', message);
-            log.debug(() => `[SessionManager] Published invalidation event: ${redactToken(token)} (${action})`);
+            const baseChannel = 'session:invalidate';
+            const channels = Array.from(new Set([
+                baseChannel,
+                ...getPrefixVariants().map(p => `${p}${baseChannel}`)
+            ]));
+
+            for (const channel of channels) {
+                await publisher.publish(channel, message);
+            }
+            log.debug(() => `[SessionManager] Published invalidation event: ${redactToken(token)} (${action}) to ${channels.join(', ')}`);
         } catch (err) {
             log.error(() => ['[SessionManager] Failed to publish invalidation event:', err.message]);
             // Don't throw - pub/sub is best-effort

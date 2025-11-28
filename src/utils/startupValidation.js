@@ -66,7 +66,7 @@ class StartupValidator {
 
       log.debug(() => `[Startup Validation] ✓ Redis connection successful (${redisOptions.host}:${redisOptions.port})`);
 
-      // Check for double-prefixed keys
+      // Check for double-prefixed keys (handles both colon and non-colon prefixes)
       const doublePrefixedCount = await this.checkForDoublePrefix(testClient);
       if (doublePrefixedCount > 0) {
         this.warnings.push(`Found ${doublePrefixedCount} double-prefixed keys in Redis. See CHANGELOG for migration instructions.`);
@@ -95,19 +95,51 @@ class StartupValidator {
    */
   async checkForDoublePrefix(client) {
     try {
-      // Scan for stremio:stremio:* pattern (double prefix)
-      const keyPrefix = process.env.REDIS_KEY_PREFIX || 'stremio:';
-      const doublePrefix = `${keyPrefix}${keyPrefix}`;
+      // Support colon/non-colon prefixes and user-provided variants (comma-separated REDIS_KEY_PREFIX_VARIANTS)
+      const configured = process.env.REDIS_KEY_PREFIX || 'stremio';
+      const extra = (process.env.REDIS_KEY_PREFIX_VARIANTS || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
 
-      let cursor = '0';
+      const bases = [configured, ...extra];
+
+      const variants = new Set();
+      for (const base of bases) {
+        const withColon = base.endsWith(':') ? base : `${base}:`;
+        const withoutColon = base.endsWith(':') ? base.slice(0, -1) : base;
+        variants.add(withColon);
+        variants.add(withoutColon);
+      }
+
+      const doublePrefixes = [];
+      for (const v of variants) {
+        for (const u of variants) {
+          if (!v || !u) continue;
+          doublePrefixes.push(`${v}${u}`);
+        }
+      }
+
+      const scanPatterns = Array.from(new Set(doublePrefixes)).map(dp => `${dp}*`);
+      const seenKeys = new Set();
       let count = 0;
-      const scanPattern = `${doublePrefix}*`;
 
-      do {
-        const [newCursor, keys] = await client.scan(cursor, 'MATCH', scanPattern, 'COUNT', 100);
-        cursor = newCursor;
-        count += keys.length;
-      } while (cursor !== '0' && count < 1000); // Limit scan to avoid timeout
+      for (const scanPattern of scanPatterns) {
+        let cursor = '0';
+        do {
+          const [newCursor, keys] = await client.scan(cursor, 'MATCH', scanPattern, 'COUNT', 100);
+          cursor = newCursor;
+          for (const key of keys) {
+            if (seenKeys.has(key)) continue;
+            seenKeys.add(key);
+            count++;
+            if (count >= 1000) {
+              cursor = '0'; // stop scanning to avoid long loops
+              break;
+            }
+          }
+        } while (cursor !== '0' && count < 1000);
+      }
 
       return count;
     } catch (err) {
