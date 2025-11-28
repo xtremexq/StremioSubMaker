@@ -23,7 +23,7 @@ services:
       - REDIS_DB=0
       # Keep prefix identical (including trailing colon) across all pods
       # to share sessions/configs and avoid namespace splits.
-      - REDIS_KEY_PREFIX=stremio:
+      - REDIS_KEY_PREFIX=stremio
 
       # Encryption key file path (persisted in volume)
       - ENCRYPTION_KEY_FILE=/app/keys/.encryption-key

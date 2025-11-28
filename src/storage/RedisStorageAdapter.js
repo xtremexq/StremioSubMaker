@@ -194,13 +194,37 @@ class RedisStorageAdapter extends StorageAdapter {
     const scanPattern = `${doublePrefix}*`;
     let cursor = '0';
     let migrated = 0;
+    let cleaned = 0;
     const MIGRATION_LIMIT = 500; // safety cap
 
-    // Use a raw client without keyPrefix to avoid re-prefixing returned keys
-    const migrationClient = this.client.duplicate({ keyPrefix: '' });
+    // Use a raw client without keyPrefix to avoid re-prefixing returned keys.
+    // Enable lazyConnect so calling .connect() doesn't throw "already connecting/connected".
+    const migrationClient = this.client.duplicate({ keyPrefix: '', lazyConnect: true });
 
     try {
-      await migrationClient.connect();
+      if (migrationClient.status === 'wait') {
+        await migrationClient.connect();
+      } else if (migrationClient.status !== 'ready') {
+        // If ioredis already started connecting, just wait for ready instead of re-connecting.
+        await new Promise((resolve, reject) => {
+          const cleanup = () => {
+            migrationClient.removeListener('ready', onReady);
+            migrationClient.removeListener('error', onError);
+          };
+          const onReady = () => {
+            cleanup();
+            resolve();
+          };
+          const onError = (err) => {
+            cleanup();
+            reject(err);
+          };
+
+          migrationClient.once('ready', onReady);
+          migrationClient.once('error', onError);
+          setTimeout(() => onError(new Error('Redis migration client ready timeout')), 10000);
+        });
+      }
     } catch (err) {
       log.error(() => ['[RedisStorage] Double-prefix migration skipped: could not open raw client:', err.message]);
       return;
@@ -227,20 +251,21 @@ class RedisStorageAdapter extends StorageAdapter {
           try {
             const exists = await migrationClient.exists(fixedKey);
             if (exists) {
-              log.warn(() => `[RedisStorage] Skipping double-prefix migration for ${key} -> ${fixedKey}: target exists`);
-              continue;
+              // The single-prefix key already exists; remove the unusable double-prefixed duplicate to prevent repeated warnings.
+              await migrationClient.del(key);
+              cleaned++;
+            } else {
+              await migrationClient.rename(key, fixedKey);
+              migrated++;
             }
-
-            await migrationClient.rename(key, fixedKey);
-            migrated++;
           } catch (err) {
             log.error(() => [`[RedisStorage] Failed to migrate key ${key} -> ${fixedKey}:`, err.message]);
           }
         }
       } while (cursor !== '0');
 
-      if (migrated > 0) {
-        log.warn(() => `[RedisStorage] Migrated ${migrated} double-prefixed Redis key(s) to single-prefix format`);
+      if (migrated > 0 || cleaned > 0) {
+        log.warn(() => `[RedisStorage] Migrated ${migrated} double-prefixed Redis key(s) and removed ${cleaned} duplicate(s) with existing targets`);
       }
     } catch (err) {
       log.error(() => ['[RedisStorage] Double-prefix migration failed:', err.message]);
