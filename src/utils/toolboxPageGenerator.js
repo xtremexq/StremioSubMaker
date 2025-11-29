@@ -2970,13 +2970,14 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
 
     function isPlaceholderStreamValue(val) {
       const normalized = normalizeStreamValue(val).toLowerCase();
-      return !normalized || normalized === 'stream and refresh';
+      return normalized === 'stream and refresh';
     }
 
     function hasValidStream() {
       if (!PAGE.configStr) return false;
-      if (!normalizeStreamValue(PAGE.videoId)) return false;
-      if (isPlaceholderStreamValue(PAGE.videoId) || isPlaceholderStreamValue(PAGE.filename)) return false;
+      const videoIdNorm = normalizeStreamValue(PAGE.videoId);
+      if (!videoIdNorm) return false;
+      if (isPlaceholderStreamValue(videoIdNorm)) return false;
       return true;
     }
 
