@@ -2229,7 +2229,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             }
         });
 
-// Check for extension on page load (start early like working pages)
+        // Check for extension on page load (start early like working pages)
         setTimeout(pingExtension, 150);
         // Retry every 10 seconds if extension not detected
         setInterval(() => {
@@ -2283,6 +2283,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                         preferAlass: !!preferAlass
                     }
                 }, '*');
+                logSync('Sent sync request (' + mode + ') to extension.', 'info');
 
                 // Timeout after 15 minutes (for Complete mode)
                 timeoutId = setTimeout(() => {
