@@ -21,8 +21,7 @@ class RedisStorageAdapter extends StorageAdapter {
     const {
       canonicalPrefix,
       variants,
-      usedFallbackPrefix,
-      isolationPrefix
+      usedFallbackPrefix
     } = this._normalizeKeyPrefix(options.keyPrefix);
 
     // Prefix/key migration can unintentionally merge data between tenants when
@@ -34,12 +33,7 @@ class RedisStorageAdapter extends StorageAdapter {
     // to pull sessions/configs that were written with the previous
     // isolation-derived default before this fallback was introduced.
     const migrationEnv = process.env.REDIS_PREFIX_MIGRATION;
-    // Enable self-healing by default unless explicitly disabled. For deployments
-    // with an explicit prefix, we still want to recover keys that were written
-    // with the older isolation-derived prefix or double-prefix bug. Keeping this
-    // scoped to session cache prevents unrelated cache mixing.
-    this.prefixMigrationEnabled = migrationEnv === 'true'
-      || (migrationEnv !== 'false' && (usedFallbackPrefix || Boolean(isolationPrefix)));
+    this.prefixMigrationEnabled = migrationEnv === 'true' || (migrationEnv !== 'false' && usedFallbackPrefix);
 
     // Check if Redis Sentinel is enabled (disabled by default)
     const sentinelEnabled = process.env.REDIS_SENTINEL_ENABLED === 'true' || options.sentinelEnabled === true;
@@ -95,7 +89,6 @@ class RedisStorageAdapter extends StorageAdapter {
     this.initialized = false;
     this.sentinelMode = sentinelEnabled;
     this.prefixVariants = variants;
-    this.isolationPrefix = isolationPrefix;
   }
 
   /**
@@ -134,11 +127,6 @@ class RedisStorageAdapter extends StorageAdapter {
     // shared prefix can still read/cleanup previously stored data.
     addVariants('stremio:');
 
-    // Always include the isolation-derived prefix so migrations can recover
-    // keys written before prefix normalization, even when an explicit
-    // REDIS_KEY_PREFIX is configured now.
-    addVariants(isolationPrefix);
-
     // When using the fallback prefix, also include the isolation-derived prefix
     // so migrations can pull keys written before we reverted to the stable
     // default.
@@ -160,8 +148,7 @@ class RedisStorageAdapter extends StorageAdapter {
     return {
       canonicalPrefix,
       variants: Array.from(variants),
-      usedFallbackPrefix,
-      isolationPrefix
+      usedFallbackPrefix
     };
   }
 
