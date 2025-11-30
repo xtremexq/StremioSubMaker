@@ -53,6 +53,7 @@ SubMaker xSync/
 nSync
 nSync/
 .claude/
+.agent/
 dist/
 build/
 .sidedocs/

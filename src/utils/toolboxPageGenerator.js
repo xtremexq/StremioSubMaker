@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { getLanguageName } = require('./languages');
+const { getLanguageName, languageMap } = require('./languages');
 const { deriveVideoHash } = require('./videoHash');
 const { parseStremioId } = require('./subtitle');
 const { version: appVersion } = require('../../package.json');
@@ -29,6 +29,47 @@ function safeJsonSerialize(obj) {
   // This prevents </script> tag injection and other escaping issues
   const doubleEncoded = JSON.stringify(jsonString);
   return `JSON.parse(${doubleEncoded})`;
+}
+
+function buildLanguageLookupMaps() {
+  const byCode = {};
+  const byNameKey = {};
+
+  Object.entries(languageMap).forEach(([code2, entry]) => {
+    if (!entry || !entry.name) return;
+    const normCode2 = code2.toLowerCase();
+    const compactCode2 = normCode2.replace(/[_-]/g, '');
+    [normCode2, compactCode2].forEach(code => {
+      if (code && !byCode[code]) byCode[code] = entry.name;
+    });
+
+    if (entry.code1) {
+      const normCode1 = entry.code1.toLowerCase();
+      const compactCode1 = normCode1.replace(/[_-]/g, '');
+      [normCode1, compactCode1].forEach(code => {
+        if (code && !byCode[code]) byCode[code] = entry.name;
+      });
+    }
+
+    const nameKey = entry.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (nameKey && !byNameKey[nameKey]) {
+      byNameKey[nameKey] = entry.name;
+    }
+  });
+
+  // Helpful aliases for common display variants from providers/Stremio
+  if (byNameKey.spanishlatinamerica) {
+    ['spanishla', 'latamspanish', 'spanishlatam'].forEach(key => {
+      if (!byNameKey[key]) byNameKey[key] = byNameKey.spanishlatinamerica;
+    });
+  }
+  if (byNameKey.portuguesebrazilian) {
+    ['brazilianportuguese', 'portuguesebrazil'].forEach(key => {
+      if (!byNameKey[key]) byNameKey[key] = byNameKey.portuguesebrazilian;
+    });
+  }
+
+  return { byCode, byNameKey };
 }
 
 function buildQuery(params) {
@@ -1308,6 +1349,32 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       let hasBaseline = false;
       let lastSeenTs = 0;
       const MAX_SSE_RETRIES = 5;
+      let lastMetaRequestKey = '';
+
+      function parseVideoId(raw) {
+        const id = (raw || '').toString().trim();
+        if (!id) return null;
+        const parts = id.split(':');
+        if (parts.length >= 3) {
+          const imdbId = parts[0].startsWith('tt') ? parts[0] : null;
+          return { type: 'episode', imdbId, season: Number(parts[1]), episode: Number(parts[2]), id };
+        }
+        if (/^tt\\d+$/.test(id)) return { type: 'movie', imdbId: id, id };
+        return { type: 'movie', id };
+      }
+
+      function formatEpisodeTag(parsed) {
+        if (!parsed || parsed.type !== 'episode') return '';
+        const s = Number.isFinite(parsed.season) ? 'S' + String(parsed.season).padStart(2, '0') : '';
+        const e = Number.isFinite(parsed.episode) ? 'E' + String(parsed.episode).padStart(2, '0') : '';
+        return (s || e) ? (s + e) : '';
+      }
+
+      function cleanName(raw) {
+        if (!raw) return '';
+        const last = raw.split(/[/\\\\]/).pop() || raw;
+        return last.replace(/\\.[^.]+$/, '').replace(/[_\\.]+/g, ' ').replace(/\\s+/g, ' ').trim();
+      }
 
       function buildSignature(payload) {
         if (!payload) return '';
@@ -1323,15 +1390,36 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       lastSig = currentSig;
 
       function describe(payload) {
-        const parts = [];
-        if (payload.videoId) parts.push(payload.videoId);
-        if (payload.filename) parts.push(payload.filename);
-        return parts.join(' - ') || 'New stream detected';
+        const parsed = parseVideoId(payload.videoId);
+        const tag = formatEpisodeTag(parsed);
+        const base = cleanName(payload.filename) || parsed?.imdbId || payload.videoId;
+        return tag ? `${base} ${tag}` : (base || 'New stream detected');
+      }
+
+      async function enhanceMeta(payload) {
+        if (!metaEl || !payload || !payload.videoId) return;
+        const parsed = parseVideoId(payload.videoId);
+        if (!parsed?.imdbId) return;
+        const metaType = parsed.type === 'episode' ? 'series' : 'movie';
+        const tag = formatEpisodeTag(parsed);
+        const requestKey = `${parsed.imdbId}:${metaType}:${tag}`;
+        lastMetaRequestKey = requestKey;
+        try {
+          const resp = await fetch('https://v3-cinemeta.strem.io/meta/' + metaType + '/' + encodeURIComponent(parsed.imdbId) + '.json', { cache: 'force-cache' });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const meta = data && data.meta;
+          const name = meta?.name || meta?.english_name || (meta?.nameTranslated && meta.nameTranslated.en);
+          if (!name || lastMetaRequestKey !== requestKey) return;
+          const label = tag ? `${name} ${tag}` : name;
+          metaEl.textContent = label;
+        } catch (_) { /* ignore */ }
       }
 
       function showToast(payload) {
         titleEl.textContent = 'New stream detected';
         metaEl.textContent = describe(payload);
+        enhanceMeta(payload);
         toast.classList.add('show');
       }
 
@@ -1460,6 +1548,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   const initialVideoSubtitle = escapeHtml(metaDetails.join(' - ') || 'Video ID unavailable');
   const targetLanguages = (Array.isArray((arguments[3] || {}).targetLanguages) ? arguments[3].targetLanguages : [])
     .map(code => ({ code, name: getLanguageName(code) || code }));
+  const languageMaps = buildLanguageLookupMaps();
 
   const config = arguments[3] || {};
   const devMode = config.devMode === true;
@@ -1499,6 +1588,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     filename,
     videoHash,
     targetLanguages,
+    languageMaps,
     providerOptions,
     defaults: {
       singleBatchMode: config.singleBatchMode === true,
@@ -1849,6 +1939,15 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       transition: transform 0.15s ease, box-shadow 0.15s ease;
       box-shadow: 0 8px 18px var(--glow);
       flex-shrink: 0;
+    }
+    button.subtitle-menu-link {
+      border: none;
+    }
+    button.subtitle-menu-link:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
     }
     .subtitle-menu-link:hover { transform: translateY(-1px); box-shadow: 0 10px 20px var(--glow); }
     .subtitle-menu-status {
@@ -2573,6 +2672,10 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         <div class="subtitle-menu-list" id="subtitleMenuSource"></div>
       </div>
       <div class="subtitle-menu-group">
+        <div class="subtitle-menu-group-title">Translation</div>
+        <div class="subtitle-menu-list" id="subtitleMenuTranslation"></div>
+      </div>
+      <div class="subtitle-menu-group">
         <div class="subtitle-menu-group-title">Target & cached</div>
         <div class="subtitle-menu-list" id="subtitleMenuTarget"></div>
       </div>
@@ -2807,6 +2910,44 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     }
     const BOOTSTRAP = ${safeJsonSerialize(bootstrap)};
     const PAGE = { configStr: BOOTSTRAP.configStr, videoId: BOOTSTRAP.videoId, filename: BOOTSTRAP.filename || '', videoHash: BOOTSTRAP.videoHash || '' };
+    const LANGUAGE_NAME_BY_CODE = BOOTSTRAP.languageMaps?.byCode || {};
+    const LANGUAGE_NAME_BY_NAME_KEY = BOOTSTRAP.languageMaps?.byNameKey || {};
+    const normalizeLangKey = (val) => (val || '').toString().trim().toLowerCase().replace(/[^a-z]/g, '');
+    const normalizeNameKey = (val) => (val || '').toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    function lookupLanguageNameByCode(code) {
+      if (!code) return null;
+      const raw = code.toString().trim().toLowerCase();
+      return LANGUAGE_NAME_BY_CODE[raw] || LANGUAGE_NAME_BY_CODE[normalizeLangKey(raw)] || null;
+    }
+    function lookupLanguageName(raw) {
+      if (!raw) return null;
+      const byCode = lookupLanguageNameByCode(raw);
+      if (byCode) return byCode;
+      const key = normalizeNameKey(raw);
+      return key ? (LANGUAGE_NAME_BY_NAME_KEY[key] || null) : null;
+    }
+    function extractLanguageCode(value) {
+      if (!value) return '';
+      const raw = value.toString();
+      const direct = raw.match(/^[a-z]{2,3}(?:-[a-z]{2})?$/i);
+      if (direct) return normalizeLangKey(direct[0]);
+      const translateMatch = raw.match(/_to_([a-z]{2,3}(?:-[a-z]{2})?)/i);
+      if (translateMatch) return normalizeLangKey(translateMatch[1]);
+      const urlMatch = raw.match(/\/([a-z]{2,3}(?:-[a-z]{2})?)\.srt/i);
+      if (urlMatch) return normalizeLangKey(urlMatch[1]);
+      const pathMatch = raw.match(/\/([a-z]{2,3}(?:-[a-z]{2})?)\/[^/]*$/i);
+      if (pathMatch) return normalizeLangKey(pathMatch[1]);
+      return '';
+    }
+    function resolveLanguageInfo(entry) {
+      const rawLabel = (entry?.language || entry?.lang || entry?.langName || '').toString().trim();
+      const code = extractLanguageCode(entry?.languageCode)
+        || extractLanguageCode(rawLabel)
+        || extractLanguageCode(entry?.url)
+        || extractLanguageCode(entry?.id);
+      const friendly = lookupLanguageNameByCode(code) || lookupLanguageName(rawLabel);
+      return { code, name: friendly, rawLabel };
+    }
     function normalizeTargetLangCode(lang) {
       return (lang || '').toString().trim().toLowerCase();
     }
@@ -2862,6 +3003,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       status: document.getElementById('subtitleMenuStatus'),
       body: document.getElementById('subtitleMenuBody'),
       sourceList: document.getElementById('subtitleMenuSource'),
+      translationList: document.getElementById('subtitleMenuTranslation'),
       targetList: document.getElementById('subtitleMenuTarget'),
       refresh: document.getElementById('subtitleMenuRefresh'),
       close: document.getElementById('subtitleMenuClose'),
@@ -2883,6 +3025,259 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       streamSig: null,
       promiseStreamSig: null
     };
+    const translationActions = new Map();
+    let translationRefreshTimer = null;
+
+    function resetTranslationActions() {
+      translationActions.forEach(action => {
+        if (action.timer) clearTimeout(action.timer);
+      });
+      translationActions.clear();
+      if (translationRefreshTimer) {
+        clearTimeout(translationRefreshTimer);
+        translationRefreshTimer = null;
+      }
+    }
+
+    function stopTranslationPoll(action) {
+      if (action && action.timer) {
+        clearTimeout(action.timer);
+        action.timer = null;
+      }
+    }
+
+    function deriveLangKeyForItem(item) {
+      const raw = item?.languageKey || parseTargetLangFromSubtitle(item);
+      return normalizeTargetLangCode(raw || '');
+    }
+
+    function ensureTranslationAction(item) {
+      if (!item || !item.id) return null;
+      if (!translationActions.has(item.id)) {
+        translationActions.set(item.id, {
+          status: 'idle',
+          timer: null,
+          pollAttempts: 0,
+          cachedContent: '',
+          filename: '',
+          downloadUrl: '',
+          langKey: deriveLangKeyForItem(item),
+          lastError: ''
+        });
+      }
+      const action = translationActions.get(item.id);
+      action.langKey = deriveLangKeyForItem(item) || action.langKey || '';
+      action.label = item?.languageLabel || item?.label || action.label || '';
+      action.url = item?.url || action.url || '';
+      return action;
+    }
+
+    function applyTranslationActionState(action) {
+      if (!action || !action.button) return;
+      const button = action.button;
+      const status = action.status || 'idle';
+      button.disabled = status === 'translating';
+      if (status === 'ready') {
+        button.textContent = 'Download';
+        button.title = 'Download translated subtitle';
+      } else if (status === 'translating') {
+        button.textContent = 'Translating...';
+        button.title = 'Translation in progress';
+      } else if (status === 'error') {
+        button.textContent = 'Retry';
+        button.title = action.lastError || 'Translation failed. Retry?';
+        button.disabled = false;
+      } else {
+        button.textContent = 'Translate';
+        button.title = 'Translate this subtitle';
+      }
+    }
+
+    function markTranslationLanguageReady(langKey, info = {}) {
+      const normalized = normalizeTargetLangCode(langKey || '');
+      if (!normalized) return;
+      translationActions.forEach(action => {
+        if (normalizeTargetLangCode(action.langKey) !== normalized) return;
+        stopTranslationPoll(action);
+        action.status = 'ready';
+        action.downloadUrl = info.downloadUrl || action.downloadUrl || action.url;
+        action.cachedContent = info.cachedContent || action.cachedContent || '';
+        action.filename = info.filename || action.filename || '';
+        applyTranslationActionState(action);
+      });
+    }
+
+    function syncTranslationActionsFromInventory(items) {
+      const present = new Set();
+      const readyLangs = new Map();
+      (items || []).forEach(it => {
+        if (it && it.type === 'cached') {
+          const langKey = normalizeTargetLangCode(it.languageKey || parseTargetLangFromSubtitle(it));
+          if (langKey) readyLangs.set(langKey, it.url || '');
+        }
+      });
+
+      (items || []).forEach(it => {
+        if (!it || !it.isTranslation) return;
+        present.add(it.id);
+        const action = ensureTranslationAction(it);
+        if (!action) return;
+        const langKey = normalizeTargetLangCode(action.langKey);
+        if (langKey && readyLangs.has(langKey)) {
+          action.status = 'ready';
+          action.downloadUrl = readyLangs.get(langKey) || action.downloadUrl || it.url;
+          stopTranslationPoll(action);
+          applyTranslationActionState(action);
+        }
+      });
+
+      translationActions.forEach((action, key) => {
+        if (!present.has(key)) {
+          stopTranslationPoll(action);
+          translationActions.delete(key);
+        }
+      });
+    }
+
+    function isTranslationLoadingMessage(text) {
+      const sample = (text || '').toLowerCase();
+      return sample.includes('translation in progress')
+        || sample.includes('translation is happening in the background')
+        || sample.includes('please wait while the selected subtitle is being translated')
+        || sample.includes('click this subtitle again to confirm translation')
+        || sample.includes('reload this subtitle');
+    }
+
+    function parseDownloadFilename(resp, langKey) {
+      try {
+        const header = typeof resp?.headers?.get === 'function' ? resp.headers.get('Content-Disposition') : null;
+        if (header) {
+          const match = /filename[^=]*=\s*\"?([^\";]+)/i.exec(header);
+          if (match && match[1]) return match[1].trim();
+        }
+      } catch (_) {}
+      const lang = normalizeTargetLangCode(langKey || '') || 'subtitle';
+      const hash = (typeof getVideoHash === 'function' ? getVideoHash() : 'video') || 'video';
+      return `${hash}_${lang}_translated.srt`;
+    }
+
+    function triggerSubtitleDownload(content, filename) {
+      if (!content) return;
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename || 'translated.srt';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+    }
+
+    function queueSubtitleMenuRefresh() {
+      if (translationRefreshTimer) return;
+      translationRefreshTimer = setTimeout(() => {
+        translationRefreshTimer = null;
+        if (subtitleMenuState.loading) {
+          queueSubtitleMenuRefresh();
+          return;
+        }
+        fetchSubtitleMenuData({ silent: true, force: true });
+      }, 400);
+    }
+
+    function scheduleTranslationPoll(item, action, delay = 3500) {
+      stopTranslationPoll(action);
+      action.timer = setTimeout(() => requestTranslationStatus(item, { fromPoll: true }), delay);
+    }
+
+    async function requestTranslationStatus(item, options = {}) {
+      const action = ensureTranslationAction(item);
+      if (!action || !action.url) return;
+      if (action.status === 'translating' && options.fromPoll !== true) {
+        // Already polling - ignore manual double-clicks
+        return;
+      }
+      if (options.fromPoll !== true) {
+        action.pollAttempts = 0;
+      }
+      action.status = 'translating';
+      applyTranslationActionState(action);
+
+      try {
+        const resp = await fetch(action.url, { cache: 'no-store' });
+        const text = await resp.text();
+        const loading = resp.status === 202 || isTranslationLoadingMessage(text);
+        if (!resp.ok && resp.status !== 202) {
+          throw new Error('Request failed (' + resp.status + ')');
+        }
+
+        if (loading) {
+          action.pollAttempts = (action.pollAttempts || 0) + 1;
+          setSubtitleMenuStatus('Translation in progress for ' + (action.label || 'subtitle') + '.', 'muted');
+          if (action.pollAttempts >= 24) {
+            action.status = 'error';
+            action.lastError = 'Still processing. Please retry shortly.';
+            stopTranslationPoll(action);
+            applyTranslationActionState(action);
+            return;
+          }
+          scheduleTranslationPoll(item, action);
+          return;
+        }
+
+        action.status = 'ready';
+        action.cachedContent = text;
+        action.filename = parseDownloadFilename(resp, action.langKey);
+        action.pollAttempts = 0;
+        applyTranslationActionState(action);
+        markTranslationLanguageReady(action.langKey, {
+          downloadUrl: action.downloadUrl || action.url,
+          cachedContent: text,
+          filename: action.filename
+        });
+        queueSubtitleMenuRefresh();
+        setSubtitleMenuStatus('Translation ready for ' + (action.label || 'subtitle') + '.', 'muted');
+      } catch (error) {
+        action.status = 'error';
+        action.lastError = error.message || 'Translation failed';
+        stopTranslationPoll(action);
+        applyTranslationActionState(action);
+        setSubtitleMenuStatus('Translation failed: ' + action.lastError, 'error', { persist: true });
+      }
+    }
+
+    async function handleTranslationDownload(item) {
+      const action = ensureTranslationAction(item);
+      if (!action) return;
+      const filename = action.filename || parseDownloadFilename(null, action.langKey);
+      try {
+        if (action.cachedContent) {
+          triggerSubtitleDownload(action.cachedContent, filename);
+          return;
+        }
+        const url = action.downloadUrl || action.url || item.url;
+        if (!url) throw new Error('No download URL available');
+        const resp = await fetch(url, { cache: 'no-store' });
+        const text = await resp.text();
+        action.cachedContent = text;
+        action.filename = parseDownloadFilename(resp, action.langKey) || filename;
+        triggerSubtitleDownload(text, action.filename);
+      } catch (error) {
+        setSubtitleMenuStatus('Download failed: ' + error.message, 'error', { persist: true });
+      }
+    }
+
+    function handleTranslationButtonClick(item) {
+      const action = ensureTranslationAction(item);
+      if (!action) return;
+      if (action.status === 'translating') return;
+      if (action.status === 'ready') {
+        handleTranslationDownload(item);
+        return;
+      }
+      requestTranslationStatus(item, { fromPoll: false });
+    }
 
     function requestExtensionReset(reason) {
       try {
@@ -2994,7 +3389,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       return '/addon/' + encodeURIComponent(PAGE.configStr) + '/subtitles/' + type + '/' + encodeURIComponent(PAGE.videoId || '') + '.json' + suffix;
     }
 
-    function subtitleChipForType(type) {
+    function subtitleChipForType(type, item) {
+      if (item?.isTranslation) return { label: 'Translate', cls: 'target' };
       switch (type) {
         case 'target': return { label: 'Target', cls: 'target' };
         case 'cached': return { label: 'xEmbed', cls: 'cached' };
@@ -3014,31 +3410,36 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     }
 
     function normalizeSubtitleEntry(entry) {
-      const languageLabel = (entry?.language || entry?.lang || entry?.langName || '').toString().trim() || 'Unknown language';
-      const displayLabel = (entry?.title || entry?.name || entry?.label || languageLabel || '').toString().trim() || languageLabel || 'Untitled';
+      const languageInfo = resolveLanguageInfo(entry);
+      const languageLabel = languageInfo.name || languageInfo.rawLabel || 'Unknown language';
+      const displayLabel = (entry?.title || entry?.name || entry?.label || languageInfo.rawLabel || '').toString().trim()
+        || languageLabel
+        || 'Untitled';
       const lower = displayLabel.toLowerCase();
-      const type = lower.startsWith('make ') ? 'target'
+      const isTranslation = lower.startsWith('make ');
+      const type = isTranslation ? 'target'
         : lower.startsWith('learn ') ? 'learn'
         : lower.startsWith('xembed') ? 'cached'
         : lower.startsWith('xsync') ? 'synced'
         : lower.includes('toolbox') ? 'action'
         : 'source';
-      const group = (type === 'target' || type === 'cached' || type === 'learn') ? 'target' : 'source';
+      const group = isTranslation ? 'translation' : ((type === 'cached' || type === 'learn') ? 'target' : 'source');
       return {
         id: entry?.id || displayLabel,
         label: displayLabel,
         languageLabel,
-        languageKey: languageLabel.toLowerCase() || displayLabel.toLowerCase(),
+        languageKey: languageInfo.code || normalizeNameKey(languageLabel) || displayLabel.toLowerCase(),
         url: entry?.url || '#',
         type,
-        group
+        group,
+        isTranslation
       };
     }
 
     function groupSubtitlesByLanguage(items) {
-      const buckets = { source: new Map(), target: new Map() };
+      const buckets = { source: new Map(), target: new Map(), translation: new Map() };
       items.forEach(item => {
-        const bucket = item.group === 'target' ? 'target' : 'source';
+        const bucket = item.group === 'translation' ? 'translation' : (item.group === 'target' ? 'target' : 'source');
         const map = buckets[bucket];
         const key = item.languageKey || item.languageLabel?.toLowerCase() || item.label.toLowerCase();
         const label = item.languageLabel || item.label;
@@ -3057,22 +3458,39 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       const labelEl = document.createElement('div');
       labelEl.className = 'label';
       labelEl.textContent = item.label;
-      const chipData = subtitleChipForType(item.type);
+      const chipData = subtitleChipForType(item.type, item);
       const chip = document.createElement('span');
       chip.className = 'subtitle-menu-chip ' + chipData.cls;
       chip.textContent = chipData.label;
       meta.appendChild(labelEl);
       meta.appendChild(chip);
 
-      const link = document.createElement('a');
-      link.className = 'subtitle-menu-link';
-      link.href = item.url;
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.textContent = 'Download';
+      let actionEl;
+      if (item.isTranslation) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'subtitle-menu-link subtitle-menu-translate';
+        const action = ensureTranslationAction(item);
+        if (action) {
+          action.button = button;
+          applyTranslationActionState(action);
+        } else {
+          button.textContent = 'Translate';
+        }
+        button.addEventListener('click', () => handleTranslationButtonClick(item));
+        actionEl = button;
+      } else {
+        const link = document.createElement('a');
+        link.className = 'subtitle-menu-link';
+        link.href = item.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = 'Download';
+        actionEl = link;
+      }
 
       row.appendChild(meta);
-      row.appendChild(link);
+      row.appendChild(actionEl);
       return row;
     }
 
@@ -3140,7 +3558,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     }
 
     function renderSubtitleMenu(items) {
-      if (!subtitleMenuEls.sourceList || !subtitleMenuEls.targetList) return;
+      if (!subtitleMenuEls.sourceList || !subtitleMenuEls.targetList || !subtitleMenuEls.translationList) return;
       const filtered = (items || []).filter(shouldDisplaySubtitle);
       const grouped = groupSubtitlesByLanguage(filtered);
 
@@ -3151,6 +3569,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       };
 
       renderList(subtitleMenuEls.sourceList, grouped.source);
+      renderList(subtitleMenuEls.translationList, grouped.translation);
       renderList(subtitleMenuEls.targetList, grouped.target);
 
       if (subtitleMenuEls.body) {
@@ -3215,6 +3634,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       subtitleInventory.promise = null;
       subtitleInventory.streamSig = null;
       subtitleInventory.promiseStreamSig = null;
+      resetTranslationActions();
     }
 
     async function loadSubtitleInventory(options = {}) {
@@ -3321,6 +3741,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         const visibleCount = normalized.filter(shouldDisplaySubtitle).length;
         subtitleMenuState.items = normalized;
         subtitleMenuState.lastFetched = fetchedAt || Date.now();
+        syncTranslationActionsFromInventory(normalized);
         hydrateTargetsFromSubtitleInventory(normalized);
         const canShow = shouldShowInitialNotice || shouldShowActiveNotice || !subtitleMenuState.hasFetchedOnce;
         if (visibleCount) {
@@ -3341,6 +3762,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       } catch (err) {
         setSubtitleMenuStatus('Could not load subtitles: ' + err.message, 'error', { persist: true });
         subtitleMenuState.items = [];
+        resetTranslationActions();
         renderSubtitleMenu([]);
         subtitleMenuState.hasFetchedOnce = true;
       } finally {

@@ -7,6 +7,7 @@
 .encryption-key
 .instance-id
 keys
+keys/
 
 # Dependencies
 node_modules/
@@ -17,6 +18,7 @@ data/
 
 # Claude Code
 .claude/
+.agent/
 
 # Extensions
 SubMaker xSync/

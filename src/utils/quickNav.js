@@ -399,8 +399,8 @@ function quickNavScript() {
       let lastSeenTs = 0;
       const MAX_SSE_RETRIES = 5;
       const POLL_INTERVAL_MS = Math.max(300000, Number(opts.pollIntervalMs) || 300000); // 5 minutes
-      const OWNER_TTL_MS = 120000;
-      const OWNER_REFRESH_MS = 45000;
+      const OWNER_TTL_MS = 45000; // quicker failover if the owning tab closes
+      const OWNER_REFRESH_MS = 20000;
       const configSig = (() => {
         try {
           let hash = 0;
@@ -432,16 +432,65 @@ function quickNavScript() {
         return parts.join('::');
       }
 
+      function parseVideoId(raw) {
+        const id = (raw || '').toString().trim();
+        if (!id) return null;
+        const parts = id.split(':');
+        if (parts.length >= 3) {
+          const imdbId = parts[0].startsWith('tt') ? parts[0] : null;
+          return { type: 'episode', imdbId, season: Number(parts[1]), episode: Number(parts[2]), id };
+        }
+        if (/^tt\\d+$/.test(id)) return { type: 'movie', imdbId: id, id };
+        return { type: 'movie', id };
+      }
+
+      function formatEpisodeTag(parsed) {
+        if (!parsed || parsed.type !== 'episode') return '';
+        const s = Number.isFinite(parsed.season) ? 'S' + String(parsed.season).padStart(2, '0') : '';
+        const e = Number.isFinite(parsed.episode) ? 'E' + String(parsed.episode).padStart(2, '0') : '';
+        return (s || e) ? (s + e) : '';
+      }
+
+      function cleanName(raw) {
+        if (!raw) return '';
+        const last = raw.split(/[/\\\\]/).pop() || raw;
+        return last.replace(/\\.[^.]+$/, '').replace(/[_\\.]+/g, ' ').replace(/\\s+/g, ' ').trim();
+      }
+
       function describe(payload) {
-        const parts = [];
-        if (payload.videoId) parts.push(payload.videoId);
-        if (payload.filename) parts.push(payload.filename);
-        return parts.join(' • ') || 'New stream detected';
+        const parsed = parseVideoId(payload.videoId);
+        const tag = formatEpisodeTag(parsed);
+        const base = cleanName(payload.filename) || parsed?.imdbId || payload.videoId;
+        return tag ? `${base} ${tag}` : (base || 'New stream detected');
+      }
+
+      let lastMetaRequestKey = '';
+      async function enhanceMeta(payload) {
+        if (!metaEl || !payload || !payload.videoId) return;
+        const parsed = parseVideoId(payload.videoId);
+        if (!parsed?.imdbId) return;
+        const metaType = parsed.type === 'episode' ? 'series' : 'movie';
+        const tag = formatEpisodeTag(parsed);
+        const requestKey = `${parsed.imdbId}:${metaType}:${tag}`;
+        lastMetaRequestKey = requestKey;
+        try {
+          const resp = await fetch('https://v3-cinemeta.strem.io/meta/' + metaType + '/' + encodeURIComponent(parsed.imdbId) + '.json', { cache: 'force-cache' });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const meta = data && data.meta;
+          const name = meta?.name || meta?.english_name || (meta?.nameTranslated && meta.nameTranslated.en);
+          if (!name || lastMetaRequestKey !== requestKey) return;
+          const label = tag ? `${name} ${tag}` : name;
+          metaEl.textContent = label;
+        } catch (_) { /* ignore */ }
       }
 
       function showToast(payload) {
         if (titleEl) titleEl.textContent = opts.labels?.title || 'New stream detected';
-        if (metaEl) metaEl.textContent = describe(payload);
+        if (metaEl) {
+          metaEl.textContent = describe(payload);
+          enhanceMeta(payload);
+        }
         toast.classList.add('show');
       }
 
@@ -589,6 +638,7 @@ function quickNavScript() {
 
       function startSse() {
         if (!isOwner && channel) return;
+        if (es) return;
         try {
           if (sseRetryTimer) clearTimeout(sseRetryTimer);
           es = new EventSource('/api/stream-activity?config=' + encodeURIComponent(configStr));
@@ -627,14 +677,22 @@ function quickNavScript() {
         }
       }
 
+      function releaseOwner() {
+        if (!isOwner) return;
+        try { localStorage.removeItem(ownerKey); } catch (_) {}
+      }
+
       window.addEventListener('beforeunload', () => {
         try { es?.close(); } catch (_) {}
         if (pollTimer) clearTimeout(pollTimer);
         if (sseRetryTimer) clearTimeout(sseRetryTimer);
         if (ownerLeaseTimer) clearInterval(ownerLeaseTimer);
+        releaseOwner();
       });
+      window.addEventListener('pagehide', releaseOwner);
 
       if (!channel) {
+        // No broadcast channel support: every tab owns its own connection
         startSse();
       }
     };
