@@ -2734,12 +2734,18 @@ app.get('/addon/:config/error-subtitle/:errorType.srt', async (req, res) => {
         // Build base URL for reinstall links
         const baseUrl = `${req.protocol}://${req.get('host')}`;
 
-        // For session token errors, generate a fresh token for the reinstall link
+        // For session token errors, optionally generate a fresh token for the reinstall link
+        // Only do this when explicitly allowed to avoid spawning new sessions during in-app playback.
+        const allowRegenerate = String(req.query.regenerate || req.query.regen || '').toLowerCase() === 'true';
         let regeneratedToken = null;
         if (config.__sessionTokenError === true && errorType === 'session-token-not-found') {
-            const { token } = regenerateDefaultConfig();
-            regeneratedToken = token;
-            log.info(() => `[Error Subtitle] Generated fresh token for error subtitle reinstall link: ${redactToken(token)}`);
+            if (allowRegenerate) {
+                const { token } = await regenerateDefaultConfig();
+                regeneratedToken = token;
+                log.info(() => `[Error Subtitle] Generated fresh token for error subtitle reinstall link: ${redactToken(token)}`);
+            } else {
+                log.debug(() => `[Error Subtitle] Skipping token regeneration for reinstall link (no regenerate flag)`);
+            }
         }
 
         let content;

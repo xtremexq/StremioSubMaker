@@ -13,6 +13,8 @@ const { redactToken } = require('./security');
 
 // Cache decrypted configs briefly to avoid redundant decryption on rapid navigation
 const DECRYPTED_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// Throttle expensive storage SCAN calls to at most once every 5 minutes
+const STORAGE_COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Internal metadata keys injected into the encrypted payload to detect
 // cross-user/session contamination even when the wrapper appears valid.
@@ -387,6 +389,7 @@ class SessionManager extends EventEmitter {
             this.lastStorageCount = 0;
             this.lastEvictionCount = 0;
             this.evictionHistory = []; // Track evictions for spike detection (last 10 cleanups)
+            this.storageCountCache = { value: 0, ts: 0 };
 
             // Ensure data directory exists
             this.ensureDataDir();
@@ -1154,8 +1157,13 @@ class SessionManager extends EventEmitter {
          * Get total number of sessions in storage
          * @returns {Promise<number>} Total session count
          */
-        async getStorageSessionCount() {
+        async getStorageSessionCount(forceRefresh = false) {
             try {
+                const now = Date.now();
+                if (!forceRefresh && (now - this.storageCountCache.ts) < STORAGE_COUNT_CACHE_TTL_MS) {
+                    return this.storageCountCache.value;
+                }
+
                 const adapter = await getStorageAdapter();
                 const keys = await adapter.list(StorageAdapter.CACHE_TYPES.SESSION, '*');
                 // Filter to only valid session tokens (32 hex chars)
@@ -1167,6 +1175,7 @@ class SessionManager extends EventEmitter {
                     log.warn(() => `[SessionManager] ALERT: Storage returned 0 sessions but ${this.cache.size} exist in memory! Check Redis SCAN pattern or connection.`);
                 }
 
+                this.storageCountCache = { value: validKeys.length, ts: now };
                 return validKeys.length;
             } catch (err) {
                 log.error(() => ['[SessionManager] Failed to count storage sessions:', err.message]);
