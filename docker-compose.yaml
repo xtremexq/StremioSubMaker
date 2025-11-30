@@ -57,8 +57,8 @@ services:
     command: >
       sh -c '
       mkdir -p /app/keys;
-      if [ -n "$REDIS_PASSWORD" ]; then
-        echo "$REDIS_PASSWORD" > /app/keys/.redis-password;
+      if [ -n "$$REDIS_PASSWORD" ]; then
+        echo "$$REDIS_PASSWORD" > /app/keys/.redis-password;
         chmod 600 /app/keys/.redis-password;
       else
         if [ ! -f /app/keys/.redis-password ]; then
@@ -67,7 +67,7 @@ services:
           chmod 600 /app/keys/.redis-password;
         fi;
       fi;
-      export REDIS_PASSWORD=$(cat /app/keys/.redis-password);
+      export REDIS_PASSWORD=$$(cat /app/keys/.redis-password);
       redis-server
       --maxmemory 4gb
       --maxmemory-policy noeviction
@@ -79,7 +79,7 @@ services:
       --no-appendfsync-on-rewrite no
       --timeout 300
       --tcp-keepalive 60
-      --requirepass "$REDIS_PASSWORD"
+      --requirepass "$$REDIS_PASSWORD"
       --rename-command FLUSHDB ""
       --rename-command FLUSHALL ""
       --rename-command CONFIG ""
