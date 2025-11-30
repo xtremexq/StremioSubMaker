@@ -2665,7 +2665,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     </section>
   </div>
 
-  <script src="/js/subtitle-menu.js"></script>
+  <script src="/js/subtitle-menu.js?v=${escapeHtml(appVersion || 'dev')}"></script>
   <script src="/js/combobox.js"></script>
   <script>
     ${quickNavScript()}
@@ -4470,7 +4470,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     </div>
   </div>
 
-  <script src="/js/subtitle-menu.js"></script>
+  <script src="/js/subtitle-menu.js?v=${escapeHtml(appVersion || 'dev')}"></script>
   <script src="/js/combobox.js"></script>
   <script>
     const BOOTSTRAP = ${safeJsonSerialize({

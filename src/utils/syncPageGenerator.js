@@ -1793,7 +1793,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         </div>
     </div>
 
-    <script src="/js/subtitle-menu.js"></script>
+    <script src="/js/subtitle-menu.js?v=${escapeHtml(appVersion || 'dev')}"></script>
     <script src="/js/combobox.js"></script>
     <script>
         ${quickNavScript()}
