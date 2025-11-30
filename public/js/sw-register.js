@@ -3,38 +3,12 @@
 
     if (!('serviceWorker' in navigator)) return;
 
-    const BYPASS_PATH_PREFIXES = [
-        '/sub-toolbox',
-        '/embedded-subtitles',
-        '/auto-subtitles',
-        '/subtitle-sync',
-        '/file-upload',
-        '/addon/'
-    ];
-
-    function shouldBypassSw() {
-        const path = window.location.pathname || '';
-        return BYPASS_PATH_PREFIXES.some(prefix => path === prefix || path.startsWith(prefix));
-    }
-
-    // On toolbox/addon pages, unregister any existing SW to avoid Vary:* cache issues and SSE breakage
-    function unregisterIfNeeded() {
-        if (!shouldBypassSw()) return Promise.resolve();
-        return navigator.serviceWorker.getRegistrations()
-            .then(function(regs) {
-                return Promise.all(regs.map(function(reg) { return reg.unregister().catch(function(){}); }));
-            })
-            .catch(function(){});
-    }
-
     window.addEventListener('load', function() {
-        if (shouldBypassSw()) {
-            unregisterIfNeeded();
-            return;
-        }
         // Version-based cache-buster: keeps first load light while updating on new releases
         var versionTag = (window.__APP_VERSION__ || 'dev').toString();
-        navigator.serviceWorker.register('/sw.js?v=' + encodeURIComponent(versionTag), { scope: '/', updateViaCache: 'none' })
+        // Hourly bump ensures changed SW rolls out even if app version stays the same
+        var cacheBust = versionTag + '-h' + Math.floor(Date.now() / 3600000);
+        navigator.serviceWorker.register('/sw.js?v=' + encodeURIComponent(cacheBust), { scope: '/', updateViaCache: 'none' })
             .then(function(reg) {
                 setInterval(function() {
                     reg.update().catch(function(){});
