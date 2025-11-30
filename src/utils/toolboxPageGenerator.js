@@ -174,8 +174,8 @@ function themeToggleStyles() {
       position: fixed;
       top: 2rem;
       right: 2rem;
-      width: 48px;
-      height: 48px;
+      width: var(--theme-toggle-size, 48px);
+      height: var(--theme-toggle-size, 48px);
       background: rgba(255, 255, 255, 0.9);
       border: 2px solid var(--border);
       border-radius: 12px;
@@ -184,7 +184,7 @@ function themeToggleStyles() {
       justify-content: center;
       cursor: pointer;
       transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-      z-index: 9999;
+      z-index: 12050;
       box-shadow: 0 4px 12px var(--shadow);
       user-select: none;
       -webkit-user-select: none;
@@ -453,6 +453,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
   <link rel="icon" type="image/svg+xml" href="/favicon-toolbox.svg">
   <link rel="shortcut icon" href="/favicon-toolbox.svg">
   <link rel="apple-touch-icon" href="/favicon-toolbox.svg">
+  <script src="/js/sw-register.js" defer></script>
   <script>
     (function() {
       var html = document.documentElement;
@@ -1621,6 +1622,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   <link rel="icon" type="image/svg+xml" href="/favicon-toolbox.svg">
   <link rel="shortcut icon" href="/favicon-toolbox.svg">
   <link rel="apple-touch-icon" href="/favicon-toolbox.svg">
+  <script src="/js/sw-register.js" defer></script>
   <link rel="stylesheet" href="/css/combobox.css">
   <script>
     (function() {
@@ -3817,6 +3819,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     <link rel="icon" type="image/svg+xml" href="/favicon-toolbox.svg">
     <link rel="shortcut icon" href="/favicon-toolbox.svg">
     <link rel="apple-touch-icon" href="/favicon-toolbox.svg">
+    <script src="/js/sw-register.js" defer></script>
     <link rel="stylesheet" href="/css/combobox.css">
     <script>
       (function() {
