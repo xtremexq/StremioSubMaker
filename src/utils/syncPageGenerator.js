@@ -1810,7 +1810,9 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             videoHash,
             linkedTitle,
             languageMaps,
-            geminiApiKey: config.geminiApiKey || ''
+            geminiApiKey: config.geminiApiKey || '',
+            sourceLanguages: config.sourceLanguages || [],
+            targetLanguages: config.targetLanguages || []
         })};
         const subtitleMenuTargets = ${JSON.stringify(targetLanguages.map(lang => ({ code: lang, name: getLanguageName(lang) || lang })))};
         let subtitleMenuInstance = null;
@@ -1857,6 +1859,8 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     filename: CONFIG.streamFilename,
                     videoHash: CONFIG.videoHash,
                     targetOptions: subtitleMenuTargets,
+                    sourceLanguages: CONFIG.sourceLanguages || [],
+                    targetLanguages: CONFIG.targetLanguages || [],
                     languageMaps: CONFIG.languageMaps,
                     getVideoHash: () => CONFIG.videoHash || ''
                 });

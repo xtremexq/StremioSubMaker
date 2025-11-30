@@ -1554,11 +1554,12 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   if (episodeTag) metaDetails.push(`Episode: ${episodeTag}`);
   if (filename) metaDetails.push(`File: ${cleanDisplayName(filename)}`);
   const initialVideoSubtitle = escapeHtml(metaDetails.join(' - ') || 'Video ID unavailable');
-  const targetLanguages = (Array.isArray((arguments[3] || {}).targetLanguages) ? arguments[3].targetLanguages : [])
-    .map(code => ({ code, name: getLanguageName(code) || code }));
-  const languageMaps = buildLanguageLookupMaps();
-
   const config = arguments[3] || {};
+  const targetLanguages = (Array.isArray(config.targetLanguages) ? config.targetLanguages : [])
+    .map(code => ({ code, name: getLanguageName(code) || code }));
+  const sourceLanguages = Array.isArray(config.sourceLanguages) ? config.sourceLanguages : [];
+  const targetLanguageCodes = Array.isArray(config.targetLanguages) ? config.targetLanguages : [];
+  const languageMaps = buildLanguageLookupMaps();
   const devMode = config.devMode === true;
   const providerOptions = (() => {
     const options = [];
@@ -1596,6 +1597,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     filename,
     videoHash,
     targetLanguages,
+    sourceLanguages,
+    targetLanguageCodes,
     languageMaps,
     providerOptions,
     defaults: {
@@ -2819,6 +2822,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           filename: PAGE.filename,
           videoHash: PAGE.videoHash,
           targetOptions: state.targetOptions,
+          sourceLanguages: BOOTSTRAP.sourceLanguages || [],
+          targetLanguages: BOOTSTRAP.targetLanguageCodes || [],
           languageMaps: BOOTSTRAP.languageMaps,
           getVideoHash,
           onTargetsHydrated: (merged) => setTargetOptions(mergeTargetOptions(merged || [], []), true)
@@ -4477,6 +4482,8 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
   })};
     const PAGE = { configStr: BOOTSTRAP.configStr, videoId: BOOTSTRAP.videoId, filename: BOOTSTRAP.filename || '', videoHash: BOOTSTRAP.videoHash || '' };
     const SUBTITLE_MENU_TARGETS = ${JSON.stringify(subtitleMenuTargets)};
+    const SUBTITLE_MENU_SOURCES = ${JSON.stringify(config.sourceLanguages || [])};
+    const SUBTITLE_MENU_TARGET_CODES = ${JSON.stringify(config.targetLanguages || [])};
     const SUBTITLE_LANGUAGE_MAPS = ${safeJsonSerialize(languageMaps)};
     let subtitleMenuInstance = null;
 
@@ -4494,6 +4501,8 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
           filename: PAGE.filename,
           videoHash: PAGE.videoHash,
           targetOptions: SUBTITLE_MENU_TARGETS,
+          sourceLanguages: SUBTITLE_MENU_SOURCES,
+          targetLanguages: SUBTITLE_MENU_TARGET_CODES,
           languageMaps: SUBTITLE_LANGUAGE_MAPS,
           getVideoHash: () => PAGE.videoHash || '',
           version: '${appVersion}'

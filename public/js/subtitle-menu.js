@@ -403,28 +403,30 @@
     }
 
     .subtitle-menu-status {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
+      position: relative;
       padding: 12px 16px;
       background: var(--sm-surface);
       border-top: 1px solid var(--sm-border);
       font-size: 13px;
       font-weight: 600;
       color: var(--sm-text);
-      display: none;
+      display: flex;
       align-items: center;
       gap: 10px;
-      animation: sm-slide-up 0.3s ease;
+      min-height: 48px;
       z-index: 20;
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      border-radius: 0 0 20px 20px;
     }
 
     .subtitle-menu-status.show {
       display: flex;
+    }
+
+    .subtitle-menu-status.base {
+      color: var(--sm-text-muted);
+      background: var(--sm-surface-hover);
+      font-weight: 600;
     }
 
     .subtitle-menu-status.error {
@@ -541,6 +543,10 @@
     return merged;
   }
 
+  function normalizeLanguageList(list = []) {
+    return [...new Set((list || []).map(normalizeLangKey).filter(Boolean))];
+  }
+
   function createMarkup(labels) {
     const toggle = document.createElement('button');
     toggle.className = 'subtitle-menu-toggle';
@@ -576,14 +582,14 @@
         <div class="subtitle-menu-group subtitle-menu-group-source">
           <div class="subtitle-menu-group-title">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-            Source languages
+            Source Languages
           </div>
           <div class="subtitle-menu-list" id="subtitleMenuSource"></div>
         </div>
         <div class="subtitle-menu-group subtitle-menu-group-target">
           <div class="subtitle-menu-group-title">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-            Target & cached
+            Target Languages
           </div>
           <div class="subtitle-menu-list" id="subtitleMenuTarget"></div>
         </div>
@@ -715,6 +721,8 @@
       filename: normalizeStreamValue(options.filename),
       videoHash: normalizeStreamValue(options.videoHash),
       targetOptions: options.targetOptions || [],
+      sourceLanguages: normalizeLanguageList(options.sourceLanguages || []),
+      targetLanguages: normalizeLanguageList(options.targetLanguages || (options.targetOptions || []).map(opt => opt.code || opt.lang || opt.value)),
       onTargetsHydrated: typeof options.onTargetsHydrated === 'function' ? options.onTargetsHydrated : null,
       languageMaps: buildLanguageLookup(options.languageMaps || {}),
       getVideoHash: typeof options.getVideoHash === 'function' ? options.getVideoHash : null,
@@ -739,6 +747,18 @@
     };
     const translationActions = new Map();
     let translationRefreshTimer = null;
+    const languageSets = { source: new Set(), target: new Set() };
+
+    function rebuildLanguageSets() {
+      languageSets.source = new Set(normalizeLanguageList(config.sourceLanguages || []));
+      const fallbackTargets = (config.targetOptions || []).map(opt => opt.code || opt.lang || opt.value);
+      const targetList = (config.targetLanguages && config.targetLanguages.length)
+        ? config.targetLanguages
+        : fallbackTargets;
+      languageSets.target = new Set(normalizeLanguageList(targetList));
+    }
+
+    rebuildLanguageSets();
 
     function deriveStreamSignature(stream = {}) {
       const videoId = normalizeStreamValue(stream.videoId !== undefined ? stream.videoId : config.videoId);
@@ -764,7 +784,7 @@
 
     function shouldDisplaySubtitle(item) {
       if (!item) return false;
-      if (item.type === 'action' || item.type === 'learn') return false;
+      if (item.type === 'action') return false;
       const label = (item.label || '').toString().toLowerCase();
       if (label.includes('sub toolbox')) return false;
       return true;
@@ -778,20 +798,28 @@
         || 'Untitled';
       const lower = displayLabel.toLowerCase();
       const isTranslation = lower.startsWith('make ');
+      const isLearn = lower.startsWith('learn ');
+      const isEmbed = lower.startsWith('xembed');
+      const isSync = lower.startsWith('xsync');
+      const isAction = lower.includes('toolbox');
+      const langKey = normalizeLangKey(languageInfo.code || parseTargetLangFromSubtitle(entry) || '');
+      const inTarget = langKey && languageSets.target.has(langKey);
+      const inSource = langKey && languageSets.source.has(langKey);
       const type = isTranslation ? 'target'
-        : lower.startsWith('learn ') ? 'learn'
-          : lower.startsWith('xembed') ? 'cached'
-            : lower.startsWith('xsync') ? 'synced'
-              : lower.includes('toolbox') ? 'action'
-                : 'source';
-      const group = isTranslation ? 'translation'
-        : ((type === 'cached' || type === 'learn' || type === 'synced' || type === 'action') ? 'other'
-          : (type === 'target' ? 'target' : 'source'));
+        : isLearn ? 'learn'
+          : isEmbed ? 'cached'
+            : isSync ? 'synced'
+              : isAction ? 'action'
+                : (inTarget && !inSource ? 'target' : 'source');
+      let group = 'source';
+      if (isTranslation) group = 'translation';
+      else if (isLearn || isEmbed || isSync || isAction) group = 'other';
+      else if (inTarget && !inSource) group = 'target';
       return {
         id: entry?.id || displayLabel,
         label: displayLabel,
         languageLabel,
-        languageKey: languageInfo.code || normalizeNameKey(languageLabel) || displayLabel.toLowerCase(),
+        languageKey: langKey || languageInfo.code || normalizeNameKey(languageLabel) || displayLabel.toLowerCase(),
         url: entry?.url || '#',
         type,
         group,
@@ -942,6 +970,16 @@
       });
     }
 
+    function getBaseStatusMessage() {
+      const parts = [];
+      parts.push(config.version ? 'SubMaker v' + config.version : 'SubMaker');
+      const streamLabel = normalizeStreamValue(config.filename) || normalizeStreamValue(config.videoId);
+      parts.push(streamLabel ? ('Stream: ' + streamLabel) : 'Waiting for linked stream');
+      const hash = (typeof config.getVideoHash === 'function' ? config.getVideoHash() : config.videoHash) || '';
+      if (hash) parts.push('Hash ' + hash);
+      return parts.join(' | ');
+    }
+
     function setSubtitleMenuStatus(els, message, variant = 'muted', options = {}) {
       if (!els.status) return;
       const persist = options.persist === true;
@@ -950,32 +988,20 @@
         subtitleMenuState.statusTimer = null;
       }
 
-      if (!message) {
-        els.status.classList.remove('show');
-        subtitleMenuState.statusTimer = setTimeout(() => {
-          if (!els.status) return;
-          els.status.style.display = 'none';
-          els.status.textContent = '';
-          subtitleMenuState.statusTimer = null;
-        }, 300);
-        return;
-      }
-
-      // Do not hide footer, status overlays it now
-      els.status.textContent = message || '';
-      els.status.className = 'subtitle-menu-status' + (variant === 'error' ? ' error' : '');
+      const isBase = !message;
+      const statusText = isBase ? getBaseStatusMessage() : message;
+      const classes = ['subtitle-menu-status'];
+      if (variant === 'error') classes.push('error');
+      if (isBase) classes.push('base');
+      els.status.textContent = statusText || '';
+      els.status.className = classes.join(' ');
       els.status.style.display = 'flex';
-      requestAnimationFrame(() => els.status?.classList.add('show'));
+      els.status.classList.add('show');
 
-      if (!persist) {
+      if (!isBase && !persist) {
         subtitleMenuState.statusTimer = setTimeout(() => {
-          els.status.classList.remove('show');
-          subtitleMenuState.statusTimer = setTimeout(() => {
-            if (!els.status) return;
-            els.status.style.display = 'none';
-            els.status.textContent = '';
-            subtitleMenuState.statusTimer = null;
-          }, 300);
+          subtitleMenuState.statusTimer = null;
+          setSubtitleMenuStatus(els, '', 'muted', { persist: true });
         }, 3200);
       }
     }
@@ -1013,6 +1039,7 @@
       if (!derived.length) return;
       const merged = mergeTargetOptions(config.targetOptions, derived);
       config.targetOptions = merged;
+      rebuildLanguageSets();
       if (config.onTargetsHydrated) {
         config.onTargetsHydrated(merged);
       }
@@ -1084,6 +1111,7 @@
       const summaryParts = [];
       if (counts.cached) summaryParts.push(counts.cached + ' xEmbed');
       if (counts.synced) summaryParts.push(counts.synced + ' xSync');
+      if (counts.learn) summaryParts.push(counts.learn + ' Learn');
       if (counts.target) summaryParts.push(counts.target + ' target');
       if (counts.source) summaryParts.push(counts.source + ' source');
       pill.textContent = summaryParts.join(' - ') || 'Subtitles';
@@ -1487,6 +1515,9 @@
       config.filename = normalizeStreamValue(payload.filename) || config.filename;
       config.videoHash = normalizeStreamValue(payload.videoHash) || config.videoHash;
       config.targetOptions = Array.isArray(options.targetOptions) ? [...options.targetOptions] : [];
+      config.sourceLanguages = Array.isArray(options.sourceLanguages) ? normalizeLanguageList(options.sourceLanguages) : config.sourceLanguages;
+      config.targetLanguages = Array.isArray(options.targetLanguages) ? normalizeLanguageList(options.targetLanguages) : config.targetLanguages;
+      rebuildLanguageSets();
 
       resetSubtitleInventoryState();
       subtitleMenuState.items = [];
@@ -1495,6 +1526,7 @@
       subtitleMenuState.hasShownInitialNotice = false;
       renderMenuFromState(els);
       updateSubtitleMenuMeta(els);
+      setSubtitleMenuStatus(els, '', 'muted', { persist: true });
       if (config.onTargetsHydrated) {
         config.onTargetsHydrated(config.targetOptions);
       }
@@ -1517,6 +1549,7 @@
       elements.refresh.addEventListener('click', () => fetchSubtitleMenuData(elements, { silent: false, force: true }));
     }
     updateSubtitleMenuMeta(elements);
+    setSubtitleMenuStatus(elements, '', 'muted', { persist: true });
 
     if (hasValidStream()) {
       loadSubtitleInventory({ force: false })

@@ -2471,6 +2471,8 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                     filename: PAGE.filename,
                     videoHash: PAGE.videoHash,
                     targetOptions: subtitleMenuTargets,
+                    sourceLanguages: clientConfig.sourceLanguages || [],
+                    targetLanguages: clientConfig.targetLanguages || [],
                     languageMaps: clientConfig.languageMaps,
                     getVideoHash: () => PAGE.videoHash || ''
                 });
