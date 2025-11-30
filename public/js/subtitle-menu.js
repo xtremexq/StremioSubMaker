@@ -718,7 +718,7 @@
       if (counts.synced) summaryParts.push(counts.synced + ' xSync');
       if (counts.target) summaryParts.push(counts.target + ' target');
       if (counts.source) summaryParts.push(counts.source + ' source');
-      pill.textContent = summaryParts.join(' • ') || 'Subtitles';
+      pill.textContent = summaryParts.join(' - ') || 'Subtitles';
       meta.appendChild(title);
       meta.appendChild(pill);
 
@@ -731,7 +731,7 @@
       count.textContent = langEntry.items.length + ' option' + (langEntry.items.length === 1 ? '' : 's');
       const chevron = document.createElement('span');
       chevron.className = 'subtitle-lang-chevron';
-      chevron.textContent = '›';
+      chevron.textContent = '>';
       right.appendChild(count);
       right.appendChild(chevron);
 

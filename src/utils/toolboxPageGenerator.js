@@ -1199,7 +1199,6 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
     </div>
 
   </div>
-  <script src="/js/subtitle-menu.js"></script>
   <script>
     const TOOLBOX = ${safeJsonSerialize({
       configStr,
@@ -1207,66 +1206,6 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       filename: filename || '',
       videoHash
     })};
-    const subtitleMenuInstanceOpts = {
-      targetOptions: SUBTITLE_MENU_TARGETS,
-      languageMaps: SUBTITLE_LANGUAGE_MAPS
-    };
-
-    function mountSubtitleMenu() {
-      if (!window.SubtitleMenu || typeof window.SubtitleMenu.mount !== 'function') return null;
-      try {
-        return window.SubtitleMenu.mount({
-          configStr: TOOLBOX.configStr,
-          videoId: TOOLBOX.videoId,
-          filename: TOOLBOX.filename,
-          videoHash: TOOLBOX.videoHash,
-          targetOptions: subtitleMenuInstanceOpts.targetOptions,
-          languageMaps: subtitleMenuInstanceOpts.languageMaps,
-          getVideoHash: () => TOOLBOX.videoHash || ''
-        });
-      } catch (err) {
-        console.warn('Subtitle menu init failed', err);
-        return null;
-      }
-    }
-
-    function updateSubtitleMenuStream(payload = {}) {
-      const nextVideoId = (payload.videoId || '').trim();
-      const nextFilename = (payload.filename || '').trim();
-      const nextHash = (payload.videoHash || '').trim();
-      const changed = (nextVideoId && nextVideoId !== TOOLBOX.videoId) ||
-        (nextFilename && nextFilename !== TOOLBOX.filename) ||
-        (nextHash && nextHash !== TOOLBOX.videoHash);
-      if (!changed) return;
-
-      TOOLBOX.videoId = nextVideoId || TOOLBOX.videoId;
-      TOOLBOX.filename = nextFilename || TOOLBOX.filename;
-      TOOLBOX.videoHash = nextHash || TOOLBOX.videoHash;
-
-      if (subtitleMenuInstance && typeof subtitleMenuInstance.updateStream === 'function') {
-        subtitleMenuInstance.updateStream({
-          videoId: TOOLBOX.videoId,
-          filename: TOOLBOX.filename,
-          videoHash: TOOLBOX.videoHash
-        });
-        if (typeof subtitleMenuInstance.prefetch === 'function') {
-          subtitleMenuInstance.prefetch();
-        }
-      }
-    }
-
-    subtitleMenuInstance = mountSubtitleMenu();
-    if (subtitleMenuInstance && typeof subtitleMenuInstance.prefetch === 'function') {
-      subtitleMenuInstance.prefetch();
-    }
-
-    subtitleMenuInstance = mountSubtitleMenu();
-    if (subtitleMenuInstance && typeof subtitleMenuInstance.prefetch === 'function') {
-      subtitleMenuInstance.prefetch();
-    }
-    const SUBTITLE_MENU_TARGETS = ${JSON.stringify(subtitleMenuTargets)};
-    const SUBTITLE_LANGUAGE_MAPS = ${safeJsonSerialize(languageMaps)};
-    let subtitleMenuInstance = null;
 
     function initStreamRefreshButton(opts) {
       const btn = document.getElementById(opts.buttonId);
@@ -1505,7 +1444,6 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
           if (payloadSig === currentSig) return;
           latest = payload;
           showToast(payload);
-          updateSubtitleMenuStream(payload);
           return;
         }
 
@@ -1518,7 +1456,6 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
         lastSig = payloadSig;
         latest = payload;
         showToast(payload);
-        updateSubtitleMenuStream(payload);
       }
 
       updateBtn.addEventListener('click', () => {
