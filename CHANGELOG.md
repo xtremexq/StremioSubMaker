@@ -5,8 +5,8 @@ All notable changes to this project will be documented in this file.
 ## SubMaker v1.4.10
 
 **New Features:**
-- **Embedded Subtitles:** Added a floating "Stream subtitles" quick menu that loads current source/target/xEmbed/xSync links for the active stream.
-- **Sync Page:** Added a live log panel that forwards background logs to the UI with monotonic progress updates.
+- **Subtitles Extracting Page:** Added a floating "Stream subtitles" quick menu that loads current source/target/xEmbed/xSync links for the active stream.
+- **Auto-Sync Page:** Added a live log panel that forwards background logs to the UI with monotonic progress updates.
 
 **Security & Infrastructure:**
 
