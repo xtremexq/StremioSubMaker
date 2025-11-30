@@ -1,0 +1,10 @@
+C:\Users\Enzo\Desktop\SubMaker\StremioSubMaker\native\ffsubsync-wasm\target\wasm32-unknown-unknown\release\deps\num_complex-fb6b90dfd83d3841.d: C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\lib.rs C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\cast.rs C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\pow.rs C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\complex_float.rs
+
+C:\Users\Enzo\Desktop\SubMaker\StremioSubMaker\native\ffsubsync-wasm\target\wasm32-unknown-unknown\release\deps\libnum_complex-fb6b90dfd83d3841.rlib: C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\lib.rs C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\cast.rs C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\pow.rs C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\complex_float.rs
+
+C:\Users\Enzo\Desktop\SubMaker\StremioSubMaker\native\ffsubsync-wasm\target\wasm32-unknown-unknown\release\deps\libnum_complex-fb6b90dfd83d3841.rmeta: C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\lib.rs C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\cast.rs C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\pow.rs C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\complex_float.rs
+
+C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\lib.rs:
+C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\cast.rs:
+C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\pow.rs:
+C:\Users\Enzo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\num-complex-0.4.6\src\complex_float.rs:

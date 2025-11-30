@@ -22,7 +22,7 @@ const { redactToken } = require('./src/utils/security');
 const { getAllLanguages, getLanguageName } = require('./src/utils/languages');
 const { generateCacheKeys } = require('./src/utils/cacheKeys');
 const { getCached: getDownloadCached, saveCached: saveDownloadCached, getCacheStats: getDownloadCacheStats } = require('./src/utils/downloadCache');
-const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, createSessionTokenErrorSubtitle, createOpenSubtitlesAuthErrorSubtitle, createOpenSubtitlesQuotaExceededSubtitle, readFromPartialCache, hasCachedTranslation, purgeTranslationCache, translationStatus, inFlightTranslations, canUserStartTranslation } = require('./src/handlers/subtitles');
+const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, createSessionTokenErrorSubtitle, createOpenSubtitlesAuthErrorSubtitle, createOpenSubtitlesQuotaExceededSubtitle, readFromPartialCache, hasCachedTranslation, purgeTranslationCache, translationStatus, inFlightTranslations, canUserStartTranslation, isSharedTranslationInFlight } = require('./src/handlers/subtitles');
 const GeminiService = require('./src/services/gemini');
 const TranslationEngine = require('./src/services/translationEngine');
 const { createProviderInstance, createTranslationProvider, resolveCfWorkersCredentials } = require('./src/services/translationProviderFactory');
@@ -634,6 +634,11 @@ function isStremioClient(req) {
     const userAgent = (req.headers['user-agent'] || '').toLowerCase();
     return isStremioOrigin(origin) || isStremioUserAgent(userAgent);
 }
+function isLoopbackOrigin(origin) {
+    // Accept loopback hosts (WKWebView on macOS serves addon UI from localhost with random ports)
+    const host = extractHostnameFromOrigin(origin);
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
 function isOriginAllowed(origin, req) {
     if (!origin) return true; // Native apps/curl without Origin header
     const normalizedOrigin = normalizeOrigin(origin);
@@ -743,9 +748,9 @@ function checkCacheResetRateLimit(config, { consume = true } = {}) {
  * @param {string} sourceFileId - The subtitle file ID
  * @param {object} config - The user's config object
  * @param {string} targetLang - The target language
- * @returns {boolean} - True if the 3-click cache reset should be BLOCKED
+ * @returns {Promise<boolean>} - True if the 3-click cache reset should be BLOCKED
  */
-function shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang) {
+async function shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang) {
     try {
         const clickEntry = firstClickTracker.get(clickKey);
 
@@ -756,6 +761,7 @@ function shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang) {
         // Determine which cache type the user is using
         const { cacheKey, bypass, bypassEnabled, userHash, baseKey } = generateCacheKeys(config, sourceFileId, targetLang);
         const configHash = userHash || (config && config.__configHash) || '';
+        const sharedLockKey = (bypassEnabled && configHash) ? cacheKey : baseKey;
 
         // SAFETY CHECK 1: Check if the user is at their concurrency limit
         // If they are, don't allow the 3-click reset because re-translation would fail with rate limit error
@@ -763,6 +769,15 @@ function shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang) {
             log.warn(() => `[SafetyBlock] BLOCKING 3-click reset: User at concurrency limit, re-translation would fail (user: ${configHash || 'anonymous'})`);
             return true;
         }
+
+        // SAFETY CHECK 2: Cross-instance in-flight guard
+        try {
+            const sharedLock = await isSharedTranslationInFlight(sharedLockKey);
+            if (sharedLock && sharedLock.inProgress !== false) {
+                log.warn(() => `[SafetyBlock] BLOCKING ${bypassEnabled ? 'bypass' : 'permanent'} cache reset: Shared translation IN-FLIGHT for ${sharedLockKey}`);
+                return true;
+            }
+        } catch (_) {}
 
         if (bypassEnabled && configHash) {
             // USER IS USING BYPASS CACHE
@@ -1084,6 +1099,11 @@ app.use((req, res, next) => {
         // Allow requests with no origin (Stremio native) or "null" origin (Stremio web/sandboxed contexts)
         if (!origin || origin === 'null') {
             log.debug(() => `[Security] Allowed addon API request: origin=${origin || 'none'}, user-agent=${userAgent}`);
+            return cors()(req, res, next);
+        }
+        // Allow loopback origins (macOS Stremio shells serve UI from localhost with random ports)
+        if (isLoopbackOrigin(origin)) {
+            log.debug(() => `[Security] Allowed addon API request (loopback origin): origin=${origin}, user-agent=${userAgent}`);
             return cors()(req, res, next);
         }
         // Allow requests from known Stremio origins (web app, capacitor, etc.)
@@ -2903,7 +2923,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
 
             if (entry.times.length >= 3) {
                 // SAFETY CHECK: Block cache reset if translation is in progress
-                const shouldBlock = shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang);
+                const shouldBlock = await shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang);
 
                 if (shouldBlock) {
                     log.debug(() => `[PurgeTrigger] 3 rapid loads detected but BLOCKED: Translation in progress for ${sourceFileId}/${targetLang} (user: ${config.__configHash})`);
@@ -2953,7 +2973,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
             log.debug(() => `[Translation] Duplicate request detected for ${sourceFileId} to ${targetLang} - checking for partial results`);
 
             // Generate cache keys using shared utility (single source of truth for cache key scoping)
-            const { cacheKey } = generateCacheKeys(config, sourceFileId, targetLang);
+            const { cacheKey, bypassEnabled, userHash } = generateCacheKeys(config, sourceFileId, targetLang);
 
             // For duplicate requests, check partial cache FIRST (in-flight translations)
             // Both partial cache and bypass cache use the same scoped key (cacheKey)
@@ -2969,14 +2989,27 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
             // Then check bypass cache for user-controlled bypass cache behavior
             const { StorageAdapter } = require('./src/storage');
             const { getStorageAdapter } = require('./src/storage/StorageFactory');
-            const adapter = await getStorageAdapter();
-            const bypassCached = await adapter.get(cacheKey, StorageAdapter.CACHE_TYPES.BYPASS);
-            if (bypassCached && typeof bypassCached.content === 'string' && bypassCached.content.length > 0) {
-                log.debug(() => `[Translation] Found bypass cache result for ${sourceFileId} (${bypassCached.content.length} chars)`);
-                res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-                res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
-                setSubtitleCacheHeaders(res, 'final');
-                return res.send(bypassCached.content);
+            if (bypassEnabled && userHash) {
+                const adapter = await getStorageAdapter();
+                const bypassCached = await adapter.get(cacheKey, StorageAdapter.CACHE_TYPES.BYPASS);
+                const cachedContent = (bypassCached && typeof bypassCached.content === 'string') ? bypassCached.content : null;
+                const cachedHash = bypassCached && bypassCached.configHash;
+
+                if (cachedContent && cachedContent.length > 0) {
+                    if (!cachedHash) {
+                        log.warn(() => `[Translation] Ignoring bypass cache entry without configHash for key=${cacheKey} (legacy entry)`);
+                        try { await adapter.delete(cacheKey, StorageAdapter.CACHE_TYPES.BYPASS); } catch (_) {}
+                    } else if (cachedHash !== userHash) {
+                        log.warn(() => `[Translation] Ignoring bypass cache entry with mismatched configHash (cached=${cachedHash}, current=${userHash}) for key=${cacheKey}`);
+                        try { await adapter.delete(cacheKey, StorageAdapter.CACHE_TYPES.BYPASS); } catch (_) {}
+                    } else {
+                        log.debug(() => `[Translation] Found bypass cache result for ${sourceFileId} (${cachedContent.length} chars)`);
+                        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                        res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
+                        setSubtitleCacheHeaders(res, 'final');
+                        return res.send(cachedContent);
+                    }
+                }
             }
 
             // No partial yet, serve loading message
@@ -3082,7 +3115,7 @@ app.get('/addon/:config/learn/:sourceFileId/:targetLang', normalizeSubtitleForma
 
             if (entry.times.length >= 3) {
                 // SAFETY CHECK: Block cache reset if translation is in progress
-                const shouldBlock = shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang);
+                const shouldBlock = await shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang);
 
                 if (shouldBlock) {
                     log.debug(() => `[LearnPurgeTrigger] 3 rapid loads detected but BLOCKED: Translation in progress for ${sourceFileId}/${targetLang} (user: ${config.__configHash})`);
