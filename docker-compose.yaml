@@ -93,7 +93,7 @@ services:
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$(cat /app/keys/.redis-password)\" ping | grep PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /app/keys/.redis-password)\" ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
