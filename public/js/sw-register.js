@@ -4,8 +4,9 @@
     if (!('serviceWorker' in navigator)) return;
 
     window.addEventListener('load', function() {
-        // Daily cache-buster ensures clients fetch the latest SW when the file changes
-        const cacheBust = Math.floor(Date.now() / 86400000);
+        // Aggressive cache-buster ensures clients always fetch the latest SW immediately
+        // This prevents stale SWs (with Vary:* cache.put) from lingering
+        const cacheBust = Date.now();
         navigator.serviceWorker.register('/sw.js?v=' + cacheBust, { scope: '/', updateViaCache: 'none' })
             .then(function(reg) {
                 setInterval(function() {
