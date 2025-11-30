@@ -3,6 +3,14 @@ const { getLanguageName, buildLanguageLookupMaps } = require('./languages');
 const { quickNavStyles, quickNavScript, renderQuickNav, renderRefreshBadge } = require('./quickNav');
 const { version: appVersion } = require('../../package.json');
 
+function safeLanguageMaps() {
+    try {
+        return buildLanguageLookupMaps();
+    } catch (_) {
+        return { byCode: {}, byNameKey: {} };
+    }
+}
+
 // Security: Enhanced HTML escaping to prevent XSS attacks
 function escapeHtml(text) {
     if (text == null) return '';
@@ -50,7 +58,7 @@ function buildFileTranslationClientConfig(config) {
     return {
         sourceLanguages: Array.isArray(config?.sourceLanguages) ? config.sourceLanguages : [],
         targetLanguages: Array.isArray(config?.targetLanguages) ? config.targetLanguages : [],
-        languageMaps: buildLanguageLookupMaps(),
+        languageMaps: safeLanguageMaps(),
         advancedSettings: config?.advancedSettings || {},
         translationPrompt: config?.translationPrompt || '',
         multiProviderEnabled: config?.multiProviderEnabled === true,

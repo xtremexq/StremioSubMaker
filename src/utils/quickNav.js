@@ -461,7 +461,7 @@ function quickNavScript() {
         const parsed = parseVideoId(payload.videoId);
         const tag = formatEpisodeTag(parsed);
         const base = cleanName(payload.filename) || parsed?.imdbId || payload.videoId;
-        return tag ? \`${base} ${tag}\` : (base || 'New stream detected');
+        return tag ? (base + ' ' + tag) : (base || 'New stream detected');
       }
 
       let lastMetaRequestKey = '';
@@ -471,7 +471,7 @@ function quickNavScript() {
         if (!parsed?.imdbId) return;
         const metaType = parsed.type === 'episode' ? 'series' : 'movie';
         const tag = formatEpisodeTag(parsed);
-        const requestKey = \`${parsed.imdbId}:${metaType}:${tag}\`;
+        const requestKey = parsed.imdbId + ':' + metaType + ':' + tag;
         lastMetaRequestKey = requestKey;
         try {
           const resp = await fetch('https://v3-cinemeta.strem.io/meta/' + metaType + '/' + encodeURIComponent(parsed.imdbId) + '.json', { cache: 'force-cache' });
@@ -480,7 +480,7 @@ function quickNavScript() {
           const meta = data && data.meta;
           const name = meta?.name || meta?.english_name || (meta?.nameTranslated && meta.nameTranslated.en);
           if (!name || lastMetaRequestKey !== requestKey) return;
-          const label = tag ? \`${name} ${tag}\` : name;
+          const label = tag ? (name + ' ' + tag) : name;
           metaEl.textContent = label;
         } catch (_) { /* ignore */ }
       }
