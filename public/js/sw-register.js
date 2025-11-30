@@ -17,12 +17,24 @@
         return BYPASS_PATH_PREFIXES.some(prefix => path === prefix || path.startsWith(prefix));
     }
 
-    // On toolbox/addon pages, unregister any existing SW so users don’t need manual steps
+    // On toolbox/addon pages, unregister any existing SW; reload once to drop controller automatically
     function unregisterIfBypassed() {
         if (!shouldBypassSw()) return;
         navigator.serviceWorker.getRegistrations()
             .then(function(regs) {
-                regs.forEach(function(reg) { reg.unregister().catch(function(){}); });
+                return Promise.all(regs.map(function(reg) { return reg.unregister().catch(function(){}); }));
+            })
+            .then(function() {
+                // Avoid reload loop: only reload once per tab/session
+                var reloadedKey = 'swBypassReloaded';
+                try {
+                    if (!sessionStorage.getItem(reloadedKey)) {
+                        sessionStorage.setItem(reloadedKey, '1');
+                        window.location.reload();
+                    }
+                } catch (_) {
+                    window.location.reload();
+                }
             })
             .catch(function(){});
     }
