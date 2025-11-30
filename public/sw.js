@@ -11,6 +11,9 @@
 // Cache version from build time
 let APP_VERSION = 'unknown';
 
+// Global kill-switch: disable SW and unregister if set to true
+const DISABLE_SERVICE_WORKER = true;
+
 // Fetch version from server on install
 async function getAppVersion() {
     try {
@@ -145,6 +148,18 @@ const ASSET_URLS = [
  */
 self.addEventListener('install', (event) => {
 
+    if (DISABLE_SERVICE_WORKER) {
+        event.waitUntil(
+            (async () => {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+                await self.skipWaiting();
+                await self.registration.unregister();
+            })()
+        );
+        return;
+    }
+
     event.waitUntil(
         getAppVersion().then(version => {
             APP_VERSION = version;
@@ -183,6 +198,18 @@ self.addEventListener('install', (event) => {
  */
 self.addEventListener('activate', (event) => {
 
+    if (DISABLE_SERVICE_WORKER) {
+        event.waitUntil(
+            (async () => {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+                await self.clients.claim();
+                await self.registration.unregister();
+            })()
+        );
+        return;
+    }
+
     event.waitUntil(
         (async () => {
             const currentVersion = await getAppVersion();
@@ -218,6 +245,9 @@ self.addEventListener('activate', (event) => {
  * Fetch event: Handle requests with appropriate caching strategy
  */
 self.addEventListener('fetch', (event) => {
+    if (DISABLE_SERVICE_WORKER) {
+        return;
+    }
     const { request } = event;
     const url = new URL(request.url);
 
