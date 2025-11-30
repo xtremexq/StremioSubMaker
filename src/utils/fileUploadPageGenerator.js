@@ -1,5 +1,5 @@
 const { getDefaultProviderParameters, mergeProviderParameters } = require('./config');
-const { getLanguageName } = require('./languages');
+const { getLanguageName, buildLanguageLookupMaps } = require('./languages');
 const { quickNavStyles, quickNavScript, renderQuickNav, renderRefreshBadge } = require('./quickNav');
 const { version: appVersion } = require('../../package.json');
 
@@ -50,6 +50,7 @@ function buildFileTranslationClientConfig(config) {
     return {
         sourceLanguages: Array.isArray(config?.sourceLanguages) ? config.sourceLanguages : [],
         targetLanguages: Array.isArray(config?.targetLanguages) ? config.targetLanguages : [],
+        languageMaps: buildLanguageLookupMaps(),
         advancedSettings: config?.advancedSettings || {},
         translationPrompt: config?.translationPrompt || '',
         multiProviderEnabled: config?.multiProviderEnabled === true,

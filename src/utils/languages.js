@@ -357,6 +357,51 @@ function getDisplayName(code) {
   return isTranslation ? `Translation ${baseName}` : baseName;
 }
 
+/**
+ * Build lookup maps for language detection by code or normalized name.
+ * Used by the subtitle menu to resolve friendly names from varied inputs.
+ * @returns {{ byCode: Record<string, string>, byNameKey: Record<string, string> }}
+ */
+function buildLanguageLookupMaps() {
+  const byCode = {};
+  const byNameKey = {};
+
+  Object.entries(languageMap).forEach(([code2, entry]) => {
+    if (!entry || !entry.name) return;
+    const normCode2 = code2.toLowerCase();
+    const compactCode2 = normCode2.replace(/[_-]/g, '');
+    [normCode2, compactCode2].forEach(code => {
+      if (code && !byCode[code]) byCode[code] = entry.name;
+    });
+
+    if (entry.code1) {
+      const normCode1 = entry.code1.toLowerCase();
+      const compactCode1 = normCode1.replace(/[_-]/g, '');
+      [normCode1, compactCode1].forEach(code => {
+        if (code && !byCode[code]) byCode[code] = entry.name;
+      });
+    }
+
+    const nameKey = entry.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (nameKey && !byNameKey[nameKey]) {
+      byNameKey[nameKey] = entry.name;
+    }
+  });
+
+  if (byNameKey.spanishlatinamerica) {
+    ['spanishla', 'latamspanish', 'spanishlatam'].forEach(key => {
+      if (!byNameKey[key]) byNameKey[key] = byNameKey.spanishlatinamerica;
+    });
+  }
+  if (byNameKey.portuguesebrazilian) {
+    ['brazilianportuguese', 'portuguesebrazil'].forEach(key => {
+      if (!byNameKey[key]) byNameKey[key] = byNameKey.portuguesebrazilian;
+    });
+  }
+
+  return { byCode, byNameKey };
+}
+
 module.exports = {
   languageMap,
   reverseLanguageMap,
@@ -366,5 +411,6 @@ module.exports = {
   getLanguageName,
   getDisplayName,
   getAllLanguages,
-  getAllLanguagesISO1
+  getAllLanguagesISO1,
+  buildLanguageLookupMaps
 };

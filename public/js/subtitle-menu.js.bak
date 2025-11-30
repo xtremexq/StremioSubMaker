@@ -16,430 +16,209 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-    :root {
-      --sm-primary: #08A4D5;
-      --sm-primary-glow: rgba(8, 164, 213, 0.4);
-      --sm-surface: rgba(255, 255, 255, 0.85);
-      --sm-surface-hover: rgba(255, 255, 255, 0.95);
-      --sm-border: rgba(255, 255, 255, 0.6);
-      --sm-text: #0f172a;
-      --sm-text-muted: #64748b;
-      --sm-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.3);
-      --sm-glass: blur(16px) saturate(180%);
-      --sm-radius: 20px;
-      --sm-font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    [data-theme="dark"], [data-theme="true-dark"] {
-      --sm-surface: rgba(15, 23, 42, 0.85);
-      --sm-surface-hover: rgba(30, 41, 59, 0.9);
-      --sm-border: rgba(255, 255, 255, 0.08);
-      --sm-text: #f1f5f9;
-      --sm-text-muted: #94a3b8;
-      --sm-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
-    }
-
     .subtitle-menu-toggle {
       position: fixed;
-      bottom: 24px;
-      left: 24px;
+      bottom: 1.1rem;
+      left: 1.1rem;
       width: 56px;
       height: 56px;
       display: grid;
       place-items: center;
-      border-radius: 50%;
-      border: 1px solid var(--sm-border);
-      background: var(--sm-surface);
-      backdrop-filter: var(--sm-glass);
-      -webkit-backdrop-filter: var(--sm-glass);
-      box-shadow: var(--sm-shadow);
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: 0 14px 32px var(--shadow);
       cursor: pointer;
       z-index: 12010;
-      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-      color: var(--sm-text);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
-
     .subtitle-menu-toggle:hover {
-      transform: translateY(-4px) scale(1.05);
-      border-color: var(--sm-primary);
-      box-shadow: 0 20px 40px -5px var(--sm-primary-glow);
-      color: var(--sm-primary);
+      transform: translateY(-2px);
+      border-color: var(--primary);
+      box-shadow: 0 16px 36px var(--shadow-color);
     }
-
-    .subtitle-menu-toggle svg {
-      width: 28px;
-      height: 28px;
-      fill: currentColor;
-      transition: transform 0.4s ease;
-    }
-
-    .subtitle-menu-toggle:hover svg {
-      transform: rotate(15deg);
-    }
-
+    .subtitle-menu-toggle svg { width: 26px; height: 26px; fill: #0f172a; }
+    [data-theme="dark"] .subtitle-menu-toggle svg,
+    [data-theme="true-dark"] .subtitle-menu-toggle svg { fill: #E8EAED; }
     .subtitle-menu-toggle.is-loading::after {
       content: '';
       position: absolute;
-      inset: -3px;
-      border-radius: 50%;
-      border: 2px solid transparent;
-      border-top-color: var(--sm-primary);
-      border-right-color: var(--sm-primary);
-      animation: sm-spin 1s linear infinite;
+      top: 8px;
+      right: 8px;
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      animation: spin 0.8s linear infinite;
     }
-
     .subtitle-menu-panel {
       position: fixed;
-      bottom: 96px;
-      left: 24px;
-      width: 380px;
-      max-width: calc(100vw - 48px);
-      max-height: 75vh;
-      background: var(--sm-surface);
-      backdrop-filter: var(--sm-glass);
-      -webkit-backdrop-filter: var(--sm-glass);
-      border: 1px solid var(--sm-border);
-      border-radius: var(--sm-radius);
-      box-shadow: var(--sm-shadow);
-      display: flex;
-      flex-direction: column;
+      bottom: 80px;
+      left: 1.1rem;
+      width: min(360px, calc(100% - 32px));
+      max-height: 72vh;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 18px 42px var(--shadow);
       overflow: hidden;
       z-index: 12005;
-      transform-origin: bottom left;
-      transform: scale(0.9) translateY(20px);
+      transform: translateY(8px);
       opacity: 0;
       pointer-events: none;
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-      font-family: var(--sm-font);
+      transition: opacity 0.2s ease, transform 0.2s ease;
     }
-
     .subtitle-menu-panel.show {
       opacity: 1;
-      transform: scale(1) translateY(0);
+      transform: translateY(0);
       pointer-events: auto;
     }
-
     .subtitle-menu-header {
-      padding: 20px 24px 16px;
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      border-bottom: 1px solid var(--sm-border);
-      background: linear-gradient(to bottom, rgba(255,255,255,0.05), transparent);
+      gap: 10px;
+      padding: 12px 14px;
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.08), rgba(51, 185, 225, 0.06));
+      border-bottom: 1px solid var(--border);
     }
-
-    .subtitle-menu-titles {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
+    .subtitle-menu-titles { display: flex; flex-direction: column; gap: 2px; }
     .subtitle-menu-eyebrow {
       margin: 0;
       font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: var(--sm-primary);
-    }
-
-    .subtitle-menu-header strong {
-      display: block;
-      font-size: 18px;
+      color: var(--muted);
       font-weight: 700;
-      color: var(--sm-text);
-      letter-spacing: -0.02em;
     }
-
-    .subtitle-menu-substatus {
-      margin: 0;
-      font-size: 13px;
-      color: var(--sm-text-muted);
-      font-weight: 500;
-    }
-
-    .subtitle-menu-actions {
-      display: flex;
-      gap: 8px;
-    }
-
+    .subtitle-menu-header strong { display: block; font-size: 16px; color: var(--text-primary); }
+    .subtitle-menu-substatus { margin: 0; font-size: 12px; color: var(--muted); font-weight: 700; }
+    .subtitle-menu-actions { display: flex; align-items: center; gap: 6px; }
     .subtitle-menu-icon-btn {
-      width: 36px;
-      height: 36px;
+      width: 32px;
+      height: 32px;
       display: grid;
       place-items: center;
-      border-radius: 10px;
-      border: 1px solid transparent;
-      background: rgba(125, 125, 125, 0.1);
-      color: var(--sm-text);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface-light);
       cursor: pointer;
-      transition: all 0.2s ease;
-      font-size: 18px;
+      font-weight: 800;
+      color: var(--text-secondary);
+      font-size: 20px;
       line-height: 1;
+      transition: all 0.15s ease;
     }
-
-    .subtitle-menu-icon-btn:hover {
-      background: var(--sm-surface-hover);
-      color: var(--sm-primary);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-
-    .subtitle-menu-body {
-      padding: 16px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      scrollbar-width: thin;
-      scrollbar-color: var(--sm-text-muted) transparent;
-    }
-
-    .subtitle-menu-body::-webkit-scrollbar {
-      width: 6px;
-    }
-    .subtitle-menu-body::-webkit-scrollbar-thumb {
-      background-color: var(--sm-text-muted);
-      border-radius: 3px;
-    }
-
-    .subtitle-menu-group {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .subtitle-menu-group-title {
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--sm-text-muted);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .subtitle-menu-group-title::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--sm-border);
-    }
-
-    .subtitle-menu-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .subtitle-lang-card {
-      border: 1px solid var(--sm-border);
-      border-radius: 16px;
-      background: rgba(125, 125, 125, 0.03);
-      overflow: hidden;
-      transition: all 0.3s ease;
-    }
-
-    .subtitle-lang-card.open {
-      background: var(--sm-surface-hover);
-      border-color: var(--sm-primary);
-      box-shadow: 0 8px 24px -6px var(--sm-primary-glow);
-    }
-
-    .subtitle-lang-header {
-      width: 100%;
-      padding: 14px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      background: none;
-      border: none;
-      cursor: pointer;
-      text-align: left;
-    }
-
-    .subtitle-lang-meta {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .subtitle-lang-label {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--sm-text);
-    }
-
-    .subtitle-lang-pill {
-      font-size: 12px;
-      color: var(--sm-text-muted);
-      font-weight: 500;
-    }
-
-    .subtitle-lang-count {
-      padding: 4px 10px;
-      border-radius: 20px;
-      background: rgba(125, 125, 125, 0.1);
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--sm-text);
-    }
-
-    .subtitle-lang-chevron {
-      color: var(--sm-text-muted);
-      transition: transform 0.3s ease;
-      font-size: 12px;
-    }
-
-    .subtitle-lang-card.open .subtitle-lang-chevron {
-      transform: rotate(90deg);
-      color: var(--sm-primary);
-    }
-
-    .subtitle-lang-menu {
-      display: none;
-      flex-direction: column;
-      gap: 8px;
-      padding: 0 12px 12px;
-      animation: sm-slide-down 0.3s ease;
-    }
-
-    .subtitle-lang-card.open .subtitle-lang-menu {
-      display: flex;
-    }
-
+    .subtitle-menu-icon-btn:hover { background: var(--surface-hover); color: var(--text-primary); border-color: var(--primary); }
+    .subtitle-menu-body { padding: 12px 14px 34px; display: flex; flex-direction: column; gap: 10px; overflow: auto; max-height: calc(72vh - 70px); }
+    .subtitle-menu-group { display: flex; flex-direction: column; gap: 8px; }
+    .subtitle-menu-group-title { font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+    .subtitle-menu-group-title::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--border), transparent); }
+    .subtitle-menu-list { display: flex; flex-direction: column; gap: 8px; }
     .subtitle-menu-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 12px;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
       border-radius: 12px;
-      background: var(--sm-surface);
-      border: 1px solid var(--sm-border);
-      transition: all 0.2s ease;
+      background: var(--surface-light);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
-
-    .subtitle-menu-item:hover {
-      transform: translateX(4px);
-      border-color: var(--sm-primary);
-    }
-
-    .subtitle-menu-item .meta {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      min-width: 0;
-    }
-
-    .subtitle-menu-item .label {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--sm-text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
+    .subtitle-menu-item .meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .subtitle-menu-item .label { font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .subtitle-menu-chip {
       display: inline-flex;
       align-items: center;
-      padding: 2px 8px;
-      border-radius: 6px;
-      font-size: 11px;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 10px;
+      font-size: 12px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.02em;
-    }
-
-    .subtitle-menu-chip.source { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-    .subtitle-menu-chip.target { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-    .subtitle-menu-chip.cached { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-    .subtitle-menu-chip.learn { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
-    .subtitle-menu-chip.synced { background: rgba(236, 72, 153, 0.1); color: #ec4899; }
-
-    .subtitle-menu-link {
-      padding: 8px 16px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, var(--sm-primary), #0ea5e9);
-      color: #fff;
-      font-size: 13px;
-      font-weight: 600;
-      text-decoration: none;
-      border: none;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px rgba(8, 164, 213, 0.3);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      background: var(--surface);
       white-space: nowrap;
     }
-
-    .subtitle-menu-link:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 16px rgba(8, 164, 213, 0.4);
+    .subtitle-menu-chip.source { border-color: var(--primary); color: var(--primary); }
+    .subtitle-menu-chip.target { border-color: var(--secondary); color: var(--secondary); }
+    .subtitle-menu-chip.cached { border-color: var(--muted); color: var(--text-secondary); }
+    .subtitle-menu-chip.learn { border-color: #6366f1; color: #6366f1; }
+    .subtitle-menu-chip.synced { border-color: #10b981; color: #0f9f6e; }
+    .subtitle-menu-link {
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      color: #fff;
+      font-weight: 700;
+      text-decoration: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 8px 18px var(--glow);
+      flex-shrink: 0;
     }
-
-    .subtitle-menu-link:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-      box-shadow: none;
-      background: var(--sm-text-muted);
-    }
-
+    button.subtitle-menu-link { border: none; }
+    button.subtitle-menu-link:disabled { opacity: 0.65; cursor: not-allowed; box-shadow: none; transform: none; }
+    .subtitle-menu-link:hover { transform: translateY(-1px); box-shadow: 0 10px 20px var(--glow); }
     .subtitle-menu-status {
       position: absolute;
-      bottom: 24px;
-      left: 24px;
-      right: 24px;
-      padding: 12px 16px;
-      background: var(--sm-surface);
-      border: 1px solid var(--sm-border);
-      border-radius: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--sm-text);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      transform: translateY(20px);
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-weight: 700;
+      background: var(--surface);
+      box-shadow: 0 12px 28px var(--shadow-color);
       opacity: 0;
       pointer-events: none;
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-      z-index: 10;
+      transform: translateY(6px);
+      z-index: 2;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      display: none;
     }
-
-    .subtitle-menu-status.show {
-      transform: translateY(0);
-      opacity: 1;
+    .subtitle-menu-status.show { opacity: 1; transform: translateY(0); display: block; }
+    .subtitle-menu-status.error { color: var(--danger); border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 12px 28px rgba(239, 68, 68, 0.28); }
+    .subtitle-lang-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-light);
+      overflow: hidden;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
-
-    .subtitle-menu-status.error {
-      border-color: rgba(239, 68, 68, 0.3);
-      color: #ef4444;
-      background: rgba(239, 68, 68, 0.05);
+    .subtitle-lang-card.open { border-color: var(--primary); box-shadow: 0 10px 24px var(--shadow-color); }
+    .subtitle-lang-header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
     }
-
-    @keyframes sm-spin { to { transform: rotate(360deg); } }
-    @keyframes sm-slide-down { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-
-    @media (max-width: 480px) {
-      .subtitle-menu-panel {
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        max-width: 100%;
-        border-radius: 20px 20px 0 0;
-        max-height: 85vh;
-      }
-      .subtitle-menu-toggle {
-        bottom: 16px;
-        left: 16px;
-      }
+    .subtitle-lang-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+    .subtitle-lang-label { font-weight: 800; color: var(--text-primary); }
+    .subtitle-lang-pill { font-size: 12px; color: var(--muted); font-weight: 700; }
+    .subtitle-lang-count {
+      padding: 4px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      font-weight: 800;
     }
+    .subtitle-lang-chevron { color: var(--muted); transition: transform 0.2s ease; }
+    .subtitle-lang-card.open .subtitle-lang-chevron { transform: rotate(90deg); }
+    .subtitle-lang-menu { display: none; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+    .subtitle-lang-card.open .subtitle-lang-menu { display: flex; }
+    .subtitle-lang-menu .subtitle-menu-item { margin-top: 4px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     `;
     document.head.appendChild(style);
   }
@@ -473,8 +252,8 @@
     toggle.id = 'subtitleMenuToggle';
     toggle.title = labels.toggleTitle;
     toggle.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h8v2H6zm10 0h2v2h-2zm-6-4h8v2h-8z"/>
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 4h16a1 1 0 011 1v10a1 1 0 01-1 1H7l-4 4V5a1 1 0 011-1z"></path>
       </svg>
     `;
 
@@ -490,34 +269,21 @@
           <p class="subtitle-menu-substatus" id="subtitleMenuSubstatus">${labels.waiting}</p>
         </div>
         <div class="subtitle-menu-actions">
-          <button type="button" class="subtitle-menu-icon-btn" id="subtitleMenuRefresh" title="${labels.refreshTitle}">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-          </button>
-          <button type="button" class="subtitle-menu-icon-btn" id="subtitleMenuClose" title="${labels.closeTitle}">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
+          <button type="button" class="subtitle-menu-icon-btn" id="subtitleMenuRefresh" title="${labels.refreshTitle}">&#8635;</button>
+          <button type="button" class="subtitle-menu-icon-btn" id="subtitleMenuClose" title="${labels.closeTitle}">&times;</button>
         </div>
       </div>
       <div class="subtitle-menu-body" id="subtitleMenuBody">
         <div class="subtitle-menu-group">
-          <div class="subtitle-menu-group-title">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-            Source languages
-          </div>
+          <div class="subtitle-menu-group-title">Source languages</div>
           <div class="subtitle-menu-list" id="subtitleMenuSource"></div>
         </div>
         <div class="subtitle-menu-group">
-          <div class="subtitle-menu-group-title">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14h6"></path><path d="M2 5h12"></path><path d="M7 2h1"></path><path d="M22 22l-5-10-5 10"></path><path d="M14 18h6"></path></svg>
-            Translation
-          </div>
+          <div class="subtitle-menu-group-title">Translation</div>
           <div class="subtitle-menu-list" id="subtitleMenuTranslation"></div>
         </div>
         <div class="subtitle-menu-group">
-          <div class="subtitle-menu-group-title">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-            Target & cached
-          </div>
+          <div class="subtitle-menu-group-title">Target & cached</div>
           <div class="subtitle-menu-list" id="subtitleMenuTarget"></div>
         </div>
       </div>
@@ -682,10 +448,10 @@
       const isTranslation = lower.startsWith('make ');
       const type = isTranslation ? 'target'
         : lower.startsWith('learn ') ? 'learn'
-          : lower.startsWith('xembed') ? 'cached'
-            : lower.startsWith('xsync') ? 'synced'
-              : lower.includes('toolbox') ? 'action'
-                : 'source';
+        : lower.startsWith('xembed') ? 'cached'
+        : lower.startsWith('xsync') ? 'synced'
+        : lower.includes('toolbox') ? 'action'
+        : 'source';
       const group = isTranslation ? 'translation' : ((type === 'cached' || type === 'learn') ? 'target' : 'source');
       return {
         id: entry?.id || displayLabel,
@@ -826,12 +592,12 @@
           els.status.style.display = 'none';
           els.status.textContent = '';
           subtitleMenuState.statusTimer = null;
-        }, 300);
+        }, 180);
         return;
       }
       els.status.textContent = message || '';
       els.status.className = 'subtitle-menu-status' + (variant === 'error' ? ' error' : '');
-      els.status.style.display = 'flex';
+      els.status.style.display = 'block';
       requestAnimationFrame(() => els.status?.classList.add('show'));
       if (!persist) {
         subtitleMenuState.statusTimer = setTimeout(() => {
@@ -841,7 +607,7 @@
             els.status.style.display = 'none';
             els.status.textContent = '';
             subtitleMenuState.statusTimer = null;
-          }, 300);
+          }, 180);
         }, 3200);
       }
     }
@@ -962,10 +728,10 @@
       right.style.gap = '8px';
       const count = document.createElement('span');
       count.className = 'subtitle-lang-count';
-      count.textContent = langEntry.items.length;
+      count.textContent = langEntry.items.length + ' option' + (langEntry.items.length === 1 ? '' : 's');
       const chevron = document.createElement('span');
       chevron.className = 'subtitle-lang-chevron';
-      chevron.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+      chevron.textContent = '>';
       right.appendChild(count);
       right.appendChild(chevron);
 
@@ -1122,7 +888,7 @@
           const match = /filename[^=]*=\s*\"?([^\\";]+)/i.exec(header);
           if (match && match[1]) return match[1].trim();
         }
-      } catch (_) { }
+      } catch (_) {}
       const lang = normalizeTargetLangCode(langKey || '') || 'subtitle';
       const hash = (config.getVideoHash ? config.getVideoHash() : config.videoHash || 'video') || 'video';
       return (hash || 'video') + '_' + lang + '_translated.srt';
@@ -1333,7 +1099,7 @@
       if (config.onTargetsHydrated) {
         config.onTargetsHydrated(config.targetOptions);
       }
-      loadSubtitleInventory({ force: false }).catch(() => { });
+      loadSubtitleInventory({ force: false }).catch(() => {});
       if (subtitleMenuState.open) {
         fetchSubtitleMenuData(els, { silent: true });
       }
@@ -1358,12 +1124,12 @@
         .then(result => {
           hydrateTargetsFromSubtitleInventory((result && result.items) || []);
         })
-        .catch(() => { });
+        .catch(() => {});
     }
 
     const api = {
       refresh: (opts) => fetchSubtitleMenuData(elements, opts || { silent: false, force: true }),
-      prefetch: () => loadSubtitleInventory({ force: false }).catch(() => { }),
+      prefetch: () => loadSubtitleInventory({ force: false }).catch(() => {}),
       toggle: (open) => toggleSubtitleMenu(elements, open),
       updateStream: (payload) => handleStreamUpdate(payload, elements),
       getTargets: () => config.targetOptions.slice(),

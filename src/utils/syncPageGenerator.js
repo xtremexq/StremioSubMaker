@@ -10,7 +10,7 @@
  */
 
 const axios = require('axios');
-const { getLanguageName, getAllLanguages } = require('./languages');
+const { getLanguageName, getAllLanguages, buildLanguageLookupMaps } = require('./languages');
 const { deriveVideoHash } = require('./videoHash');
 const { parseStremioId } = require('./subtitle');
 const { version: appVersion } = require('../../package.json');
@@ -395,6 +395,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
     const sourceLanguages = config.sourceLanguages || ['eng'];
     // Include source languages in target list so "same language" sync is always available
     const targetLanguages = [...new Set([...(config.targetLanguages || ['spa', 'fra', 'por']), ...sourceLanguages])];
+    const languageMaps = buildLanguageLookupMaps();
 
     let targetLangOptionsHTML = '';
     for (const lang of targetLanguages) {
@@ -1808,7 +1809,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             streamFilename,
             videoHash,
             linkedTitle,
-            languageMaps: config.languageMaps || null,
+            languageMaps,
             geminiApiKey: config.geminiApiKey || ''
         })};
         const subtitleMenuTargets = ${JSON.stringify(targetLanguages.map(lang => ({ code: lang, name: getLanguageName(lang) || lang })))};
