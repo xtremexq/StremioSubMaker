@@ -1,6 +1,7 @@
 const { DEFAULT_TRANSLATION_PROMPT } = require('../services/gemini');
 const DEFAULT_API_KEYS = require('../config/defaultApiKeys');
 const { getSessionManager } = require('./sessionManager');
+const { StorageUnavailableError } = require('../storage/errors');
 const log = require('./logger');
 
 // Language selection limits (configurable via environment)
@@ -241,6 +242,9 @@ async function parseConfig(configStr, options = {}) {
     return getDefaultConfig();
 
   } catch (error) {
+    if (error instanceof StorageUnavailableError) {
+      throw error;
+    }
     log.error(() => ['[Config] Unexpected error during config parsing:', error.message]);
     return getDefaultConfig();
   }

@@ -2307,6 +2307,11 @@ function createSubtitleHandler(config) {
  * @returns {Promise<string>} - Subtitle content
  */
 async function handleSubtitleDownload(fileId, language, config) {
+  if (config?.__sessionTokenError === true) {
+    log.warn(() => '[Download] Blocked download because session token is missing/invalid');
+    return createSessionTokenErrorSubtitle();
+  }
+
   // Normalize OpenSubtitles implementation/creds for downstream error handling and logs
   const openSubCfg = config.subtitleProviders?.opensubtitles || {};
   const openSubsImplementation = typeof openSubCfg.implementationType === 'string'
@@ -2572,6 +2577,11 @@ SubSource API did not respond in time. Try again in a few minutes or pick a diff
 async function handleTranslation(sourceFileId, targetLanguage, config, options = {}) {
   try {
     log.debug(() => `[Translation] Handling translation request for ${sourceFileId} to ${targetLanguage}`);
+
+    if (config?.__sessionTokenError === true) {
+      log.warn(() => '[Translation] Blocked translation because session token is missing/invalid');
+      return createSessionTokenErrorSubtitle();
+    }
 
     const waitForFullTranslation = options.waitForFullTranslation === true;
     const mobileWaitTimeoutMs = waitForFullTranslation ? getMobileWaitTimeoutMs(config) : null;

@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const Redis = require('ioredis');
 const { StorageFactory, StorageAdapter } = require('../storage');
+const { StorageUnavailableError } = require('../storage/errors');
 const log = require('./logger');
 const { shutdownLogger } = require('./logger');
 const { encryptUserConfig, decryptUserConfig } = require('./encryption');
@@ -236,19 +237,44 @@ async function getPubSubClient() {
   }
 
   try {
-    pubSubClient = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: process.env.REDIS_PORT || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0,
-      // Use raw channels so we can manually subscribe to both prefixed and unprefixed variants
-      keyPrefix: '',
-      maxRetriesPerRequest: 3,
-      retryStrategy: (times) => {
-        const delay = Math.min(times * 50, 2000);
-        return delay;
-      }
-    });
+    // Build pub/sub client with the same HA/sentinel/TLS options as the storage adapter
+    // to ensure cross-instance invalidations work in multi-Redis deployments
+    const sentinelEnabled = process.env.REDIS_SENTINEL_ENABLED === 'true';
+    let clientOptions;
+
+    if (sentinelEnabled) {
+      const sentinels = process.env.REDIS_SENTINELS
+        ? process.env.REDIS_SENTINELS.split(',').map(s => {
+            const [host, port] = s.trim().split(':');
+            return { host, port: parseInt(port) || 26379 };
+          })
+        : [{ host: 'localhost', port: 26379 }];
+
+      const sentinelName = process.env.REDIS_SENTINEL_NAME || 'mymaster';
+
+      clientOptions = {
+        sentinels,
+        name: sentinelName,
+        password: process.env.REDIS_PASSWORD || undefined,
+        db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0,
+        keyPrefix: '',
+        maxRetriesPerRequest: 3,
+        retryStrategy: (times) => Math.min(times * 50, 2000),
+        sentinelRetryStrategy: (times) => Math.min(times * 100, 3000)
+      };
+    } else {
+      clientOptions = {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: process.env.REDIS_PORT || 6379,
+        password: process.env.REDIS_PASSWORD || undefined,
+        db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0,
+        keyPrefix: '',
+        maxRetriesPerRequest: 3,
+        retryStrategy: (times) => Math.min(times * 50, 2000)
+      };
+    }
+
+    pubSubClient = new Redis(clientOptions);
 
     // Set up error handlers
     pubSubClient.on('error', (err) => {
@@ -273,19 +299,44 @@ async function getPublishClient() {
   }
 
   try {
-    publishClient = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: process.env.REDIS_PORT || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0,
-      // Use raw channels so we can manually publish to both prefixed and unprefixed variants
-      keyPrefix: '',
-      maxRetriesPerRequest: 3,
-      retryStrategy: (times) => {
-        const delay = Math.min(times * 50, 2000);
-        return delay;
-      }
-    });
+    // Build publish client with the same HA/sentinel/TLS options as the storage adapter
+    // to ensure cross-instance invalidations work in multi-Redis deployments
+    const sentinelEnabled = process.env.REDIS_SENTINEL_ENABLED === 'true';
+    let clientOptions;
+
+    if (sentinelEnabled) {
+      const sentinels = process.env.REDIS_SENTINELS
+        ? process.env.REDIS_SENTINELS.split(',').map(s => {
+            const [host, port] = s.trim().split(':');
+            return { host, port: parseInt(port) || 26379 };
+          })
+        : [{ host: 'localhost', port: 26379 }];
+
+      const sentinelName = process.env.REDIS_SENTINEL_NAME || 'mymaster';
+
+      clientOptions = {
+        sentinels,
+        name: sentinelName,
+        password: process.env.REDIS_PASSWORD || undefined,
+        db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0,
+        keyPrefix: '',
+        maxRetriesPerRequest: 3,
+        retryStrategy: (times) => Math.min(times * 50, 2000),
+        sentinelRetryStrategy: (times) => Math.min(times * 100, 3000)
+      };
+    } else {
+      clientOptions = {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: process.env.REDIS_PORT || 6379,
+        password: process.env.REDIS_PASSWORD || undefined,
+        db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0,
+        keyPrefix: '',
+        maxRetriesPerRequest: 3,
+        retryStrategy: (times) => Math.min(times * 50, 2000)
+      };
+    }
+
+    publishClient = new Redis(clientOptions);
 
     // Set up error handlers
     publishClient.on('error', (err) => {
@@ -314,6 +365,14 @@ class SessionManager extends EventEmitter {
             ? options.maxSessions
             : null;
         this.maxAge = options.maxAge || 90 * 24 * 60 * 60 * 1000; // 90 days (3 months) default
+
+        // TTL Control: Allow disabling Redis TTL expiration via environment variable
+        // When disabled, sessions persist indefinitely in Redis (unless manually deleted)
+        // WARNING: Disabling TTL can lead to unbounded storage growth - only use when you have
+        // alternative cleanup mechanisms (e.g., manual session cleanup, or when sessions are
+        // explicitly deleted by the application)
+        this.redisTtlEnabled = String(process.env.SESSION_REDIS_TTL_ENABLED || 'true').toLowerCase() === 'true';
+
         this.snapshotEnabled = String(process.env.SESSION_SNAPSHOT_ENABLED || '').toLowerCase() === 'true';
         this.persistencePath = options.persistencePath || path.join(process.cwd(), 'data', 'sessions.json');
         this.snapshotPath = process.env.SESSION_SNAPSHOT_PATH || this.persistencePath;
@@ -388,6 +447,19 @@ class SessionManager extends EventEmitter {
     }
 
     /**
+     * Calculate TTL in seconds for Redis persistence
+     * Returns null when TTL is disabled, causing sessions to persist indefinitely
+     * @private
+     * @returns {number|null} TTL in seconds, or null to persist indefinitely
+     */
+    _calculateTtlSeconds() {
+        if (!this.redisTtlEnabled) {
+            return null; // No expiration when TTL is disabled
+        }
+        return Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+    }
+
+    /**
      * Track an async persistence operation so we can await it during shutdown
      * @private
      * @param {Promise} promise - The persistence operation to track
@@ -433,6 +505,16 @@ class SessionManager extends EventEmitter {
         try {
             const storageType = process.env.STORAGE_TYPE || 'redis';
             const sessionPreloadEnabled = process.env.SESSION_PRELOAD === 'true';
+
+            // Log TTL configuration for visibility
+            const ttlSeconds = this._calculateTtlSeconds();
+            if (ttlSeconds === null) {
+                log.warn(() => '[SessionManager] Redis TTL DISABLED: sessions will persist indefinitely (potential unbounded growth)');
+            } else {
+                const ttlDays = Math.floor(ttlSeconds / (24 * 60 * 60));
+                log.warn(() => `[SessionManager] Redis TTL enabled: sessions will expire after ${ttlDays} days of inactivity`);
+            }
+
             log.debug(() => `[SessionManager] Initializing sessions (storage: ${storageType}, preload: ${sessionPreloadEnabled})`);
 
             await this.loadFromDisk();
@@ -520,7 +602,7 @@ class SessionManager extends EventEmitter {
     }
 
     /**
-     * Publish session invalidation event to other instances
+     * Publish session invalidation event to other instances with retry/backoff
      * @private
      */
     async _publishInvalidation(token, action) {
@@ -528,31 +610,65 @@ class SessionManager extends EventEmitter {
             return; // Only in Redis mode
         }
 
-        try {
-            const publisher = await getPublishClient();
-            if (!publisher) {
+        const maxAttempts = 3;
+        let attempt = 0;
+        let lastError = null;
+
+        while (attempt < maxAttempts) {
+            attempt++;
+            try {
+                const publisher = await getPublishClient();
+                if (!publisher) {
+                    log.warn(() => `[SessionManager] Pub/sub publish client unavailable for ${redactToken(token)} (${action})`);
+                    return;
+                }
+
+                const message = JSON.stringify({
+                    token,
+                    action,
+                    instanceId: this.instanceId,
+                    timestamp: Date.now()
+                });
+                const baseChannel = 'session:invalidate';
+                const channels = Array.from(new Set([
+                    baseChannel,
+                    ...getPrefixVariants().map(p => `${p}${baseChannel}`)
+                ]));
+
+                for (const channel of channels) {
+                    await publisher.publish(channel, message);
+                }
+                log.debug(() => `[SessionManager] Published invalidation event: ${redactToken(token)} (${action}) to ${channels.join(', ')}`);
+                return; // Success
+            } catch (err) {
+                lastError = err;
+                const isConnectionError = err?.code && ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT'].includes(err.code);
+
+                if (isConnectionError && attempt < maxAttempts) {
+                    const delay = Math.min(100 * attempt, 500);
+                    log.warn(() => `[SessionManager] Pub/sub publish failed (${err.message}), retrying in ${delay}ms (${attempt}/${maxAttempts})`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+
+                // Log final failure with visible warning for monitoring/alerting
+                log.error(() => [
+                    `[SessionManager] Failed to publish invalidation event for ${redactToken(token)} (${action}) after ${attempt} attempt(s):`,
+                    err.message,
+                    '- Other pods may serve stale cache until next update'
+                ]);
+                // Emit event for metrics/monitoring
+                this.emit('invalidationFailed', { token, action, error: err.message, attempts: attempt });
                 return;
             }
+        }
 
-            const message = JSON.stringify({
-                token,
-                action,
-                instanceId: this.instanceId,
-                timestamp: Date.now()
-            });
-            const baseChannel = 'session:invalidate';
-            const channels = Array.from(new Set([
-                baseChannel,
-                ...getPrefixVariants().map(p => `${p}${baseChannel}`)
-            ]));
-
-            for (const channel of channels) {
-                await publisher.publish(channel, message);
-            }
-            log.debug(() => `[SessionManager] Published invalidation event: ${redactToken(token)} (${action}) to ${channels.join(', ')}`);
-        } catch (err) {
-            log.error(() => ['[SessionManager] Failed to publish invalidation event:', err.message]);
-            // Don't throw - pub/sub is best-effort
+        // This should never be reached due to return in catch, but defensive
+        if (lastError) {
+            log.error(() => [
+                `[SessionManager] Invalidation publish exhausted retries for ${redactToken(token)} (${action}):`,
+                lastError.message
+            ]);
         }
     }
 
@@ -599,7 +715,12 @@ class SessionManager extends EventEmitter {
             const keys = await adapter.list(StorageAdapter.CACHE_TYPES.SESSION, '*');
 
             if (!keys || keys.length === 0) {
-                log.warn(() => `[SessionManager] Snapshot skipped - no sessions in storage${reason ? ` (${reason})` : ''}`);
+                // DIAGNOSTIC: Alert if we have in-memory sessions but storage list returns empty
+                if (this.cache.size > 0) {
+                    log.error(() => `[SessionManager] CRITICAL: Snapshot failed - storage list returned 0 but ${this.cache.size} sessions exist in memory! Redis SCAN may be broken.`);
+                } else {
+                    log.warn(() => `[SessionManager] Snapshot skipped - no sessions in storage${reason ? ` (${reason})` : ''}`);
+                }
                 return;
             }
 
@@ -668,8 +789,9 @@ class SessionManager extends EventEmitter {
 
         try {
             const adapter = await getStorageAdapter();
-            // Set sliding persistence TTL equal to maxAge
-            const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+            // Set sliding persistence TTL equal to maxAge (if TTL is enabled)
+            // When TTL is disabled, sessions persist indefinitely in Redis
+            const ttlSeconds = this._calculateTtlSeconds();
             const persisted = await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
 
             if (!persisted) {
@@ -679,8 +801,16 @@ class SessionManager extends EventEmitter {
                 throw new Error('Failed to persist new session to storage');
             }
         } catch (err) {
+            // CRITICAL: Clear in-memory cache to prevent "ghost" sessions that only exist
+            // in memory on this pod when Redis is down. Without this, the session appears
+            // to work on this instance but vanishes on restart or when other pods try to
+            // access it, causing cross-pod inconsistency and data loss.
+            this.cache.delete(token);
+            this.decryptedCache.delete(token);
+
             log.error(() => ['[SessionManager] Failed to persist new session:', err?.message || String(err)]);
-            // Surface the failure so callers can decide whether to retry or abort
+            // Bubble up StorageUnavailableError so callers can respond with 503 instead of
+            // silently regenerating or returning 500. This prevents data loss during Redis hiccups.
             throw err;
         }
 
@@ -746,7 +876,7 @@ class SessionManager extends EventEmitter {
         // Track this async operation so shutdown can wait for it to complete
         this._trackPersistence(Promise.resolve().then(async () => {
             const adapter = await getStorageAdapter();
-            const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+            const ttlSeconds = this._calculateTtlSeconds();
             await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
             if (needsPersist) {
                 log.debug(() => `[SessionManager] Persisted metadata backfill for ${redactToken(token)} on access`);
@@ -835,7 +965,7 @@ class SessionManager extends EventEmitter {
             this.dirty = true;
             this._trackPersistence(Promise.resolve().then(async () => {
                 const adapter = await getStorageAdapter();
-                const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+                const ttlSeconds = this._calculateTtlSeconds();
                 await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
             }).catch(err => {
                 log.error(() => ['[SessionManager] Failed to persist integrity backfill:', err?.message || String(err)]);
@@ -853,7 +983,7 @@ class SessionManager extends EventEmitter {
 
             this._trackPersistence(Promise.resolve().then(async () => {
                 const adapter = await getStorageAdapter();
-                const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+                const ttlSeconds = this._calculateTtlSeconds();
                 await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
             }).catch(err => {
                 log.error(() => ['[SessionManager] Failed to persist fingerprint backfill:', err?.message || String(err)]);
@@ -906,7 +1036,7 @@ class SessionManager extends EventEmitter {
 
             this._trackPersistence(Promise.resolve().then(async () => {
                 const adapter = await getStorageAdapter();
-                const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+                const ttlSeconds = this._calculateTtlSeconds();
                 await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
             }).catch(err => {
                 log.error(() => ['[SessionManager] Failed to persist token fingerprint backfill during update:', err?.message || String(err)]);
@@ -945,7 +1075,7 @@ class SessionManager extends EventEmitter {
 
         try {
             const adapter = await getStorageAdapter();
-            const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+            const ttlSeconds = this._calculateTtlSeconds();
             const persisted = await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
             if (!persisted) {
                 throw new Error('Failed to persist updated session to storage');
@@ -953,8 +1083,18 @@ class SessionManager extends EventEmitter {
             // Notify other instances to invalidate their cache
             await this._publishInvalidation(token, 'update');
         } catch (err) {
+            // CRITICAL: Clear in-memory cache to prevent serving stale config on this pod
+            // when Redis fails. Without this, the local cache is mutated but other pods
+            // keep the old config, and on restart this pod loses the update, causing
+            // cross-pod config drift and data loss during Redis hiccups.
+            this.cache.delete(token);
+            this.decryptedCache.delete(token);
+
             log.error(() => ['[SessionManager] Failed to persist updated session:', err?.message || String(err)]);
-            return false;
+            // Bubble up StorageUnavailableError so callers can respond with 503 instead of
+            // silently regenerating a new token (which loses the user's existing state).
+            // This prevents data loss during transient Redis outages.
+            throw err;
         }
 
         this.emit('sessionUpdated', { token, source: 'local' });
@@ -1022,6 +1162,13 @@ class SessionManager extends EventEmitter {
             const keys = await adapter.list(StorageAdapter.CACHE_TYPES.SESSION, '*');
             // Filter to only valid session tokens (32 hex chars)
             const validKeys = keys.filter(token => /^[a-f0-9]{32}$/.test(token));
+
+            // DIAGNOSTIC: Warn if list returns zero when we have in-memory sessions
+            // This indicates the SCAN pattern bug or Redis connection issue
+            if (validKeys.length === 0 && this.cache.size > 0) {
+                log.warn(() => `[SessionManager] ALERT: Storage returned 0 sessions but ${this.cache.size} exist in memory! Check Redis SCAN pattern or connection.`);
+            }
+
             return validKeys.length;
         } catch (err) {
             log.error(() => ['[SessionManager] Failed to count storage sessions:', err.message]);
@@ -1086,7 +1233,7 @@ class SessionManager extends EventEmitter {
 
             // Refresh persistent TTL on successful load
             try {
-                const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+                const ttlSeconds = this._calculateTtlSeconds();
                 await adapter.set(token, stored, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
             } catch (e) {
                 log.error(() => ['[SessionManager] Failed to refresh TTL during load from storage:', e?.message || String(e)]);
@@ -1164,7 +1311,7 @@ class SessionManager extends EventEmitter {
                 if (needsPersist) {
                     this.cache.set(token, stored);
                     try {
-                        const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+                        const ttlSeconds = this._calculateTtlSeconds();
                         await adapter.set(token, stored, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
                     } catch (persistErr) {
                         log.error(() => ['[SessionManager] Failed to persist metadata upgrade during storage load:', persistErr?.message || String(persistErr)]);
@@ -1180,6 +1327,10 @@ class SessionManager extends EventEmitter {
                 return null;
             }
         } catch (err) {
+            if (err instanceof StorageUnavailableError) {
+                log.error(() => ['[SessionManager] loadSessionFromStorage: storage unavailable while loading session:', redactToken(token), err?.message || String(err)]);
+                throw err;
+            }
             log.error(() => ['[SessionManager] loadSessionFromStorage: unexpected error while loading from storage:', err?.message || String(err), 'stack:', err?.stack || 'N/A']);
             return null;
         }
@@ -1212,7 +1363,7 @@ class SessionManager extends EventEmitter {
             let saved = 0;
             for (const [token, sessionData] of this.cache.entries()) {
                 // Persist each session independently to avoid multi-instance clobbering
-                const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+                const ttlSeconds = this._calculateTtlSeconds();
                 await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
                 saved++;
             }
@@ -1255,9 +1406,10 @@ class SessionManager extends EventEmitter {
                 const legacy = await adapter.get('sessions', StorageAdapter.CACHE_TYPES.SESSION);
                 if (legacy && legacy.sessions && typeof legacy.sessions === 'object') {
                     let migrated = 0;
+                    const ttlSeconds = this._calculateTtlSeconds();
                     for (const [token, sessionData] of Object.entries(legacy.sessions)) {
                         if (!/^[a-f0-9]{32}$/.test(token)) continue;
-                        const ok = await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION);
+                        const ok = await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
                         if (ok) {
                             migrated++;
                         } else {
@@ -1294,7 +1446,7 @@ class SessionManager extends EventEmitter {
                     log.warn(() => `[SessionManager] loadFromDisk: missing token fingerprint for ${redactToken(token)} - backfilling instead of deleting session`);
                     sessionData.tokenFingerprint = tokenValidation.expectedTokenFingerprint;
                     try {
-                        const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+                        const ttlSeconds = this._calculateTtlSeconds();
                         await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
                     } catch (persistErr) {
                         log.error(() => ['[SessionManager] Failed to persist token fingerprint backfill during preload:', persistErr?.message || String(persistErr)]);
@@ -1390,7 +1542,7 @@ class SessionManager extends EventEmitter {
                 if (!payloadValidation.valid) continue;
 
                 try {
-                    const ttlSeconds = Number.isFinite(this.maxAge) ? Math.floor(this.maxAge / 1000) : null;
+                    const ttlSeconds = this._calculateTtlSeconds();
                     await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
                     restored++;
                 } catch (err) {

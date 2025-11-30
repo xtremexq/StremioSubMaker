@@ -44,6 +44,7 @@ const {
 } = require('./src/utils/validation');
 const { getSessionManager } = require('./src/utils/sessionManager');
 const { runStartupValidation } = require('./src/utils/startupValidation');
+const { StorageUnavailableError } = require('./src/storage/errors');
 
 // Cache-buster path segment for temporary HA cache invalidation
 // Default to current package version so it auto-advances on releases
@@ -95,6 +96,62 @@ const resolveConfigCache = new LRUCache({
     updateAgeOnGet: true
 });
 
+function isStorageUnavailableError(error) {
+    return error instanceof StorageUnavailableError || error?.isStorageUnavailable;
+}
+
+function respondStorageUnavailable(res, error, contextLabel = 'Storage') {
+    if (!res) return false;
+    if (!isStorageUnavailableError(error)) {
+        return false;
+    }
+    log.error(() => [`${contextLabel} temporarily unavailable:`, error?.message || error]);
+    res.status(503).json({ error: 'Session storage temporarily unavailable, please retry.' });
+    return true;
+}
+
+// SECURITY: Strict validation to ensure a string is DEFINITELY NOT a session token
+// This provides defense-in-depth against tokens accidentally being cached
+function isDefinitelyNotToken(str) {
+    if (!str || typeof str !== 'string') {
+        return false; // Invalid input - treat as unsafe
+    }
+    // A string is definitely NOT a token if:
+    // 1. It's not exactly 32 characters, OR
+    // 2. It contains non-hex characters, OR
+    // 3. It contains uppercase letters (tokens are lowercase hex)
+    const is32HexChars = /^[a-f0-9]{32}$/.test(str);
+    return !is32HexChars; // Return true if it's NOT a token pattern
+}
+
+// SECURITY: Validate that a cache entry doesn't contain sensitive session data
+// Returns true if the config is safe to cache, false if it might contain user secrets
+function isSafeToCache(config) {
+    if (!config || typeof config !== 'object') {
+        return false;
+    }
+    // Never cache configs with error flags (these are default/fallback configs)
+    if (config.__sessionTokenError === true) {
+        return false;
+    }
+    // Never cache configs that have an original token reference (sign of failed session)
+    if (config.__originalToken) {
+        return false;
+    }
+    return true;
+}
+
+async function resolveConfigGuarded(configStr, req, res, contextLabel = '[ConfigResolver]') {
+    try {
+        return await resolveConfigAsync(configStr, req);
+    } catch (error) {
+        if (respondStorageUnavailable(res, error, contextLabel)) {
+            return null;
+        }
+        throw error;
+    }
+}
+
 // Centralized helper to invalidate router cache when session configs change
 function invalidateRouterCache(token, reason = '') {
     if (!token) return;
@@ -106,7 +163,75 @@ function invalidateRouterCache(token, reason = '') {
 
 function invalidateResolveConfigCache(token) {
     if (!token) return;
-    resolveConfigCache.delete(token);
+    const removed = resolveConfigCache.delete(token);
+    if (removed) {
+        log.debug(() => `[ResolveConfigCache] Invalidated config for ${redactToken(token)}`);
+    }
+}
+
+// SECURITY: Scan caches for contamination and purge suspicious entries
+// This runs on startup to clean up any stale/contaminated cache entries
+function cleanupCachesOnStartup() {
+    log.info(() => '[Security] Running startup cache cleanup...');
+    let routersPurged = 0;
+    let configsPurged = 0;
+
+    // Clean up router cache
+    for (const [key, router] of routerCache.entries()) {
+        let shouldPurge = false;
+        let reason = '';
+
+        // Purge routers with session token patterns
+        if (/^[a-f0-9]{32}$/.test(key)) {
+            shouldPurge = true;
+            reason = 'session token in router cache';
+        }
+        // Purge routers missing required metadata
+        else if (!router || !router.__configStr || !router.__createdAt) {
+            shouldPurge = true;
+            reason = 'missing metadata';
+        }
+        // Purge routers with mismatched config strings
+        else if (router.__configStr !== key) {
+            shouldPurge = true;
+            reason = 'config string mismatch';
+        }
+
+        if (shouldPurge) {
+            routerCache.delete(key);
+            routersPurged++;
+            log.warn(() => `[Security] Purged contaminated router: ${redactToken(key)} (${reason})`);
+        }
+    }
+
+    // Clean up resolve config cache
+    for (const [key, config] of resolveConfigCache.entries()) {
+        let shouldPurge = false;
+        let reason = '';
+
+        // Purge configs with session token patterns
+        if (/^[a-f0-9]{32}$/.test(key)) {
+            shouldPurge = true;
+            reason = 'session token in config cache';
+        }
+        // Purge configs with error flags
+        else if (config && (config.__sessionTokenError || config.__originalToken)) {
+            shouldPurge = true;
+            reason = 'has error flags';
+        }
+
+        if (shouldPurge) {
+            resolveConfigCache.delete(key);
+            configsPurged++;
+            log.warn(() => `[Security] Purged contaminated config: ${redactToken(key)} (${reason})`);
+        }
+    }
+
+    if (routersPurged > 0 || configsPurged > 0) {
+        log.warn(() => `[Security] Startup cache cleanup complete: purged ${routersPurged} routers, ${configsPurged} configs`);
+    } else {
+        log.info(() => '[Security] Startup cache cleanup complete: no contamination detected');
+    }
 }
 
 // Security: LRU cache for request deduplication to prevent duplicate processing (max 500 entries)
@@ -203,6 +328,10 @@ async function deduplicate(key, fn) {
         // Clean up immediately after completion
         inFlightRequests.delete(key);
     }
+}
+
+function isInvalidSessionConfig(config) {
+    return !!(config && config.__sessionTokenError === true);
 }
 
 // Create Express app
@@ -1244,9 +1373,6 @@ app.get('/api/languages', (req, res) => {
 app.get('/api/stream-activity', async (req, res) => {
     // Prevent caching to avoid leaking stream info across users
     setNoStore(res);
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
 
     const { config: configStr } = req.query || {};
     if (!configStr) {
@@ -1254,7 +1380,7 @@ app.get('/api/stream-activity', async (req, res) => {
     }
 
     try {
-        const resolvedConfig = await resolveConfigAsync(configStr, req);
+        const resolvedConfig = await resolveConfigGuarded(configStr, req, res, '[API] stream-activity config');
         if (resolvedConfig?.__sessionTokenError === true) {
             return res.status(401).json({ error: 'Invalid or expired config' });
         }
@@ -1272,6 +1398,7 @@ app.get('/api/stream-activity', async (req, res) => {
             res.json(latest);
         }
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[API] stream-activity')) return;
         log.error(() => ['[API] stream-activity error:', error.message]);
         res.status(500).json({ error: 'Failed to read stream activity' });
     }
@@ -1320,7 +1447,10 @@ app.post('/api/gemini-models', async (req, res) => {
 
         // Allow fetching models using the user's saved config (session token)
         if (!geminiApiKey && configStr) {
-            resolvedConfig = await resolveConfigAsync(configStr, req);
+            resolvedConfig = await resolveConfigGuarded(configStr, req, res, '[API] gemini-models config');
+            if (isInvalidSessionConfig(resolvedConfig)) {
+                return res.status(401).json({ error: 'Invalid or expired session token' });
+            }
             geminiApiKey = resolvedConfig?.geminiApiKey || process.env.GEMINI_API_KEY;
         }
 
@@ -1364,7 +1494,10 @@ app.post('/api/models/:provider', async (req, res) => {
         // Allow using the user's saved config (session token) instead of passing API keys in the request body
         const getProviderConfigFromSession = async () => {
             if (!configStr) return null;
-            resolvedConfig = resolvedConfig || await resolveConfigAsync(configStr, req);
+            resolvedConfig = resolvedConfig || await resolveConfigGuarded(configStr, req, res, '[API] models config');
+            if (isInvalidSessionConfig(resolvedConfig)) {
+                return { __invalidSession: true };
+            }
 
             if (providerKey === 'gemini') {
                 return {
@@ -1390,6 +1523,10 @@ app.post('/api/models/:provider', async (req, res) => {
         };
 
         const sessionProvider = await getProviderConfigFromSession();
+
+        if (sessionProvider?.__invalidSession === true) {
+            return res.status(401).json({ error: 'Invalid or expired session token' });
+        }
 
         let providerApiKey = apiKey || sessionProvider?.apiKey;
         let providerModel = sessionProvider?.model || '';
@@ -1768,11 +1905,6 @@ app.post('/api/validate-gemini', async (req, res) => {
 // API endpoint to create a session (production mode)
 // Apply rate limiting to prevent session flooding attacks
 app.post('/api/create-session', sessionCreationLimiter, enforceConfigPayloadSize, async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (user-specific session data)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         setNoStore(res); // prevent any caching of session tokens
         const config = req.body;
@@ -1808,6 +1940,11 @@ app.post('/api/create-session', sessionCreationLimiter, enforceConfigPayloadSize
             expiresIn: process.env.SESSION_MAX_AGE || 90 * 24 * 60 * 60 * 1000
         });
     } catch (error) {
+        // Respond with 503 if storage is temporarily unavailable to signal retry-ability
+        // instead of 500 which might cause clients to give up or discard the config
+        if (respondStorageUnavailable(res, error, '[Session API]')) {
+            return;
+        }
         log.error(() => '[Session API] Error creating session:', error);
         res.status(500).json({ error: 'Failed to create session' });
     }
@@ -1816,11 +1953,6 @@ app.post('/api/create-session', sessionCreationLimiter, enforceConfigPayloadSize
 // API endpoint to update an existing session
 // Apply rate limiting to prevent session flooding attacks (update can create new sessions)
 app.post('/api/update-session/:token', sessionCreationLimiter, enforceConfigPayloadSize, async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (user-specific session data)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         setNoStore(res); // prevent any caching of session tokens
         const { token } = req.params;
@@ -1882,6 +2014,13 @@ app.post('/api/update-session/:token', sessionCreationLimiter, enforceConfigPayl
             message: 'Session configuration updated successfully'
         });
     } catch (error) {
+        // CRITICAL: Respond with 503 if storage is temporarily unavailable.
+        // This prevents silently regenerating a new token (which loses the user's existing
+        // state) during transient Redis hiccups. The 503 signals to clients that they should
+        // retry with the same token instead of discarding it.
+        if (respondStorageUnavailable(res, error, '[Session API]')) {
+            return;
+        }
         log.error(() => '[Session API] Error updating session:', error);
         res.status(500).json({ error: 'Failed to update session' });
     }
@@ -1932,6 +2071,7 @@ app.get('/api/validate-session/:token', async (req, res) => {
 
         log.info(() => `[Session Validation] Token ${redactToken(token)} validated from IP ${clientIP}, targets: ${JSON.stringify(config.targetLanguages || [])}`);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Session API] validate-session')) return;
         log.error(() => '[Session API] Error validating session:', error);
         res.status(500).json({ error: 'Failed to validate session' });
     }
@@ -1998,6 +2138,7 @@ app.get('/api/get-session/:token', async (req, res) => {
 
         return res.json({ config: normalized, token, regenerated: false });
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Session API] get-session')) return;
         log.error(() => '[Session API] Error fetching session:', error);
         res.status(500).json({ error: 'Failed to fetch session configuration' });
     }
@@ -2005,11 +2146,6 @@ app.get('/api/get-session/:token', async (req, res) => {
 
 // API endpoint to translate uploaded subtitle file
 app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTranslationBodySchema, 'body'), async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (user-specific config in request body)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         // Prevent caching of user-specific translation results
         setNoStore(res);
@@ -2031,7 +2167,10 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
         log.debug(() => `[File Translation API] Translating to ${targetLanguage}`);
 
         // Parse config
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[API] translate-file config');
+        if (isInvalidSessionConfig(config)) {
+            return res.status(401).send('Invalid or expired session token');
+        }
         const providerDefaults = getDefaultProviderParameters();
         const optionalProviders = new Set(['googletranslate']);
         const normalizeProviderKey = (key) => String(key || '').toLowerCase();
@@ -2402,15 +2541,28 @@ async function resolveConfigAsync(configStr, req) {
     const localhost = isLocalhost(req);
     const isToken = /^[a-f0-9]{32}$/.test(configStr);
 
-    // Fast path: reuse recently resolved configs to avoid log spam on polling endpoints
+    // SECURITY CRITICAL: Fast path cache lookup with TRIPLE-LAYER DEFENSE
     // IMPORTANT: Only cache base64 configs. Session tokens must always re-fetch from
     // storage to avoid serving another user's config from a stale in-memory cache
     // when instances are behind a load balancer. This was observed as "random language"
     // swaps because the cached config outlived a session regen/eviction.
     if (!isToken) {
-        const cachedConfig = resolveConfigCache.get(configStr);
-        if (cachedConfig) {
-            return deepCloneConfig(cachedConfig);
+        // DEFENSE LAYER 1: Verify the cache key is definitely not a token using strict validation
+        if (isDefinitelyNotToken(configStr)) {
+            const cachedConfig = resolveConfigCache.get(configStr);
+            if (cachedConfig) {
+                // DEFENSE LAYER 2: Verify cached config doesn't contain contamination markers
+                if (cachedConfig.__sessionTokenError || cachedConfig.__originalToken) {
+                    log.error(() => `[SECURITY] Cache contamination detected in resolveConfigCache for key ${redactToken(configStr)} - purging entry`);
+                    resolveConfigCache.delete(configStr);
+                } else {
+                    // DEFENSE LAYER 3: Deep clone to prevent shared references
+                    return deepCloneConfig(cachedConfig);
+                }
+            }
+        } else {
+            // SECURITY ALERT: A potential token passed the initial !isToken check
+            log.error(() => `[SECURITY CRITICAL] Potential token ${redactToken(configStr)} passed !isToken check but failed strict validation - REFUSING cache lookup`);
         }
     }
 
@@ -2426,10 +2578,28 @@ async function resolveConfigAsync(configStr, req) {
         const config = await parseConfig(configStr, { isLocalhost: localhost });
         // Attach deterministic config hash derived from normalized payload
         ensureConfigHash(config, configStr);
-        // CRITICAL FIX: Deep clone to prevent shared references
-        resolveConfigCache.set(configStr, config);
+
+        // SECURITY CRITICAL: Triple-check before caching
+        // DEFENSE LAYER 1: Verify key is definitely not a token
+        // DEFENSE LAYER 2: Verify config is safe to cache (no error flags)
+        // DEFENSE LAYER 3: Verify key has reasonable length
+        if (isDefinitelyNotToken(configStr) && isSafeToCache(config) && configStr.length > 0) {
+            // Deep clone before caching to prevent shared references
+            resolveConfigCache.set(configStr, config);
+        } else {
+            // SECURITY ALERT: Prevented unsafe caching
+            if (!isDefinitelyNotToken(configStr)) {
+                log.error(() => `[SECURITY] BLOCKED caching - key ${redactToken(configStr)} failed token validation`);
+            } else if (!isSafeToCache(config)) {
+                log.warn(() => `[SECURITY] BLOCKED caching - config for ${redactToken(configStr)} has error flags`);
+            } else {
+                log.warn(() => `[SECURITY] BLOCKED caching - invalid key length for ${redactToken(configStr)}`);
+            }
+        }
+
         return deepCloneConfig(config);
     }
+
     // Token path: getSession now automatically checks cache first, then storage
     const cfg = await sessionManager.getSession(configStr);
     if (cfg) {
@@ -2437,8 +2607,9 @@ async function resolveConfigAsync(configStr, req) {
             log.debug(() => `[Stremio Kai] Successfully resolved session token for config`);
         }
         const normalized = normalizeConfig(cfg);
-        // CRITICAL FIX: Deep clone to prevent shared references between concurrent requests
+        // CRITICAL: Deep clone to prevent shared references between concurrent requests
         ensureConfigHash(normalized, configStr);
+        // SECURITY: NEVER cache configs retrieved via session tokens
         return deepCloneConfig(normalized);
     }
 
@@ -2455,22 +2626,25 @@ async function resolveConfigAsync(configStr, req) {
     defaultConfig.__sessionTokenError = true;
     defaultConfig.__originalToken = configStr; // Keep track of the failed token
     ensureConfigHash(defaultConfig, configStr);
+    // SECURITY: Do NOT cache error/fallback configs
     return defaultConfig;
 }
 
 // Custom route: Download subtitle (BEFORE SDK router to take precedence)
 app.get('/addon/:config/subtitle/:fileId/:language.srt', searchLimiter, validateRequest(subtitleParamsSchema, 'params'), async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (defense-in-depth)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         // Defense-in-depth: Prevent caching (already set by early middleware, but explicit is safer)
         setNoStore(res);
 
         const { config: configStr, fileId, language } = req.params;
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Download] config');
+        if (isInvalidSessionConfig(config)) {
+            log.warn(() => `[Download] Blocked subtitle download due to invalid session token ${redactToken(configStr)}`);
+            const errorSubtitle = createSessionTokenErrorSubtitle();
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.setHeader('Content-Disposition', 'attachment; filename=\"session-token-not-found.srt\"');
+            return res.status(401).send(errorSubtitle);
+        }
         const configKey = ensureConfigHash(config, configStr);
 
         const langCode = language.replace('.srt', '');
@@ -2538,6 +2712,7 @@ app.get('/addon/:config/subtitle/:fileId/:language.srt', searchLimiter, validate
         res.send(content);
 
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Download]')) return;
         log.error(() => '[Download] Error:', error);
         res.status(404).send('Subtitle not found');
     }
@@ -2545,11 +2720,6 @@ app.get('/addon/:config/subtitle/:fileId/:language.srt', searchLimiter, validate
 
 // Custom route: Serve error subtitles for config errors (BEFORE SDK router to take precedence)
 app.get('/addon/:config/error-subtitle/:errorType.srt', async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (defense-in-depth)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         // Defense-in-depth: Prevent caching (already set by early middleware, but explicit is safer)
         setNoStore(res);
@@ -2559,7 +2729,7 @@ app.get('/addon/:config/error-subtitle/:errorType.srt', async (req, res) => {
         log.debug(() => `[Error Subtitle] Serving error subtitle for: ${errorType}`);
 
         // Resolve config to check if this is a session token error
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Error Subtitle] config');
 
         // Build base URL for reinstall links
         const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -2593,6 +2763,7 @@ app.get('/addon/:config/error-subtitle/:errorType.srt', async (req, res) => {
         res.send(content);
 
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Error Subtitle]')) return;
         log.error(() => '[Error Subtitle] Error:', error);
         res.status(500).send('Error subtitle unavailable');
     }
@@ -2600,17 +2771,16 @@ app.get('/addon/:config/error-subtitle/:errorType.srt', async (req, res) => {
 
 // Custom route: Translation selector page (BEFORE SDK router to take precedence)
 app.get('/addon/:config/translate-selector/:videoId/:targetLang', searchLimiter, validateRequest(translationSelectorParamsSchema, 'params'), async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (defense-in-depth)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         // Defense-in-depth: Prevent caching (already set by early middleware, but explicit is safer)
         setNoStore(res);
 
         const { config: configStr, videoId, targetLang } = req.params;
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Translation Selector] config');
+        if (isInvalidSessionConfig(config)) {
+            log.warn(() => `[Translation Selector] Blocked due to invalid session token ${redactToken(configStr)}`);
+            return res.status(401).send('Invalid or expired session token');
+        }
         const configKey = ensureConfigHash(config, configStr);
 
         // Create deduplication key based on video ID and config
@@ -2637,6 +2807,7 @@ app.get('/addon/:config/translate-selector/:videoId/:targetLang', searchLimiter,
         res.send(html);
 
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Translation Selector]')) return;
         log.error(() => '[Translation Selector] Error:', error);
         res.status(500).send('Failed to load subtitle selector');
     }
@@ -2644,17 +2815,19 @@ app.get('/addon/:config/translate-selector/:videoId/:targetLang', searchLimiter,
 
 // Custom route: Perform translation (BEFORE SDK router to take precedence)
 app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, validateRequest(translationParamsSchema, 'params'), async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (defense-in-depth)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         // Defense-in-depth: Prevent caching (already set by early middleware, but explicit is safer)
         setNoStore(res);
 
         const { config: configStr, sourceFileId, targetLang } = req.params;
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Translation] config');
+        if (isInvalidSessionConfig(config)) {
+            log.warn(() => `[Translation] Blocked translation due to invalid session token ${redactToken(configStr)}`);
+            const errorSubtitle = createSessionTokenErrorSubtitle();
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.setHeader('Content-Disposition', 'attachment; filename=\"session-token-not-found.srt\"');
+            return res.status(401).send(errorSubtitle);
+        }
         const configKey = ensureConfigHash(config, configStr);
         const userAgent = (req.headers['user-agent'] || '').toLowerCase();
         const isAndroid = userAgent.includes('android');
@@ -2712,8 +2885,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
             // Don't keep piling up long-held connections in mobile mode; the first request will deliver the final SRT
             log.debug(() => `[Translation] Mobile mode duplicate request for ${sourceFileId} to ${targetLang} - short-circuiting with 202 while primary request is held`);
             res.status(202);
-            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-            res.setHeader('Pragma', 'no-cache');
+            setNoStore(res);
             res.setHeader('Retry-After', '3');
             return res.send('Translation already in progress; waiting on primary request.');
         } else if (isAlreadyInFlight) {
@@ -2729,8 +2901,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
                 log.debug(() => `[Translation] Found in-flight partial in partial cache for ${sourceFileId} (${partialCached.content.length} chars)`);
                 res.setHeader('Content-Type', 'text/plain; charset=utf-8');
                 res.setHeader('Content-Disposition', `attachment; filename="translating_${targetLang}.srt"`);
-                res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-                res.setHeader('Pragma', 'no-cache');
+                setNoStore(res);
                 return res.send(partialCached.content);
             }
 
@@ -2743,8 +2914,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
                 log.debug(() => `[Translation] Found bypass cache result for ${sourceFileId} (${bypassCached.content.length} chars)`);
                 res.setHeader('Content-Type', 'text/plain; charset=utf-8');
                 res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
-                res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-                res.setHeader('Pragma', 'no-cache');
+                setNoStore(res);
                 return res.send(bypassCached.content);
             }
 
@@ -2753,8 +2923,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
             const loadingMsg = createLoadingSubtitle();
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="translating_${targetLang}.srt"`);
-            res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-            res.setHeader('Pragma', 'no-cache');
+            setNoStore(res);
             return res.send(loadingMsg);
         } else {
             log.debug(() => `[Translation] New request to translate ${sourceFileId} to ${targetLang}`);
@@ -2785,15 +2954,15 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
 
         // Disable caching for loading messages so Stremio can poll for updates
         if (isLoadingMessage) {
-            res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-            res.setHeader('Pragma', 'no-cache');
-            log.debug(() => `[Translation] Set no-cache headers for loading message`);
+            setNoStore(res);
+            log.debug(() => `[Translation] Set no-store headers for loading message`);
         }
 
         res.send(subtitleContent);
         log.debug(() => `[Translation] Response sent successfully for ${sourceFileId}`);
 
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Translation]')) return;
         log.error(() => '[Translation] Error:', error);
         res.status(500).send(`Translation failed: ${error.message}`);
     }
@@ -2801,17 +2970,19 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
 
 // Custom route: Learn Mode (dual-language VTT)
 app.get('/addon/:config/learn/:sourceFileId/:targetLang', searchLimiter, validateRequest(translationParamsSchema, 'params'), async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (defense-in-depth)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         // Defense-in-depth: Prevent caching of learn-mode responses
         setNoStore(res);
 
         const { config: configStr, sourceFileId, targetLang } = req.params;
-        const baseConfig = await resolveConfigAsync(configStr, req);
+        const baseConfig = await resolveConfigGuarded(configStr, req, res, '[Learn] config');
+        if (isInvalidSessionConfig(baseConfig)) {
+            log.warn(() => `[Learn] Blocked request due to invalid session token ${redactToken(configStr)}`);
+            const errorSubtitle = createSessionTokenErrorSubtitle();
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.setHeader('Content-Disposition', 'attachment; filename=\"session-token-not-found.srt\"');
+            return res.status(401).send(errorSubtitle);
+        }
         const configKey = ensureConfigHash(baseConfig, configStr);
 
         // Force bypass cache for Learn Mode translations only (does not affect normal translations)
@@ -2916,28 +3087,29 @@ app.get('/addon/:config/learn/:sourceFileId/:targetLang', searchLimiter, validat
         return res.send(vtt);
 
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Learn]')) return;
         log.error(() => '[Learn] Error:', error);
         res.status(500).send('Failed to build learning subtitles');
     }
 });
 
 // Register file upload page routes (redirect + standalone page)
-registerFileUploadRoutes(app, { log, resolveConfigAsync, computeConfigHash, setNoStore });
+registerFileUploadRoutes(app, { log, resolveConfigGuarded, computeConfigHash, setNoStore, respondStorageUnavailable });
 
 // Custom route: Sub Toolbox homepage (BEFORE SDK router)
 app.get('/addon/:config/sub-toolbox/:videoId', async (req, res) => {
     try {
+        // Ensure the redirect carrying user token never caches
+        setNoStore(res);
+
         const { config: configStr, videoId } = req.params;
         const { filename } = req.query;
         // Validate config to ensure token is valid before redirect
-        await resolveConfigAsync(configStr, req);
+        await resolveConfigGuarded(configStr, req, res, '[Sub Toolbox] config');
         log.debug(() => `[Sub Toolbox] Request for video ${videoId}, filename: ${filename || 'n/a'}`);
-        // Never cache redirects that carry session/config tokens
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
         res.redirect(302, `/sub-toolbox?config=${encodeURIComponent(configStr)}&videoId=${encodeURIComponent(videoId)}&filename=${encodeURIComponent(filename || '')}`);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Sub Toolbox]')) return;
         log.error(() => '[Sub Toolbox] Error:', error);
         res.status(500).send('Failed to load Sub Toolbox');
     }
@@ -2952,20 +3124,18 @@ app.get('/sub-toolbox', async (req, res) => {
             return res.status(400).send('Missing config or videoId');
         }
 
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Sub Toolbox Page] config');
         ensureConfigHash(config, configStr);
 
         log.debug(() => `[Sub Toolbox Page] Loading toolbox for video ${videoId}`);
 
         // Defense-in-depth: prevent caching of page embedding user config/videoId
         setNoStore(res);
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
         const html = generateSubToolboxPage(configStr, videoId, filename, config);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(html);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Sub Toolbox Page]')) return;
         log.error(() => '[Sub Toolbox Page] Error:', error);
         res.status(500).send('Failed to load Sub Toolbox page');
     }
@@ -2973,22 +3143,18 @@ app.get('/sub-toolbox', async (req, res) => {
 
 // Addon route: Embedded subtitles extractor (redirects to standalone page)
 app.get('/addon/:config/embedded-subtitles/:videoId', async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (defense-in-depth)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         setNoStore(res);
 
         const { config: configStr, videoId } = req.params;
         const { filename } = req.query;
-        await resolveConfigAsync(configStr, req);
+        await resolveConfigGuarded(configStr, req, res, '[Embedded Subs Addon] config');
 
         log.debug(() => `[Embedded Subs] Addon redirect for video ${videoId}, filename: ${filename}`);
 
         res.redirect(302, `/embedded-subtitles?config=${encodeURIComponent(configStr)}&videoId=${encodeURIComponent(videoId)}&filename=${encodeURIComponent(filename || '')}`);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Embedded Subs Addon Route]')) return;
         log.error(() => '[Embedded Subs Addon Route] Error:', error);
         res.status(500).send('Failed to load embedded subtitles page');
     }
@@ -3002,19 +3168,17 @@ app.get('/embedded-subtitles', async (req, res) => {
             return res.status(400).send('Missing config or videoId');
         }
 
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Embedded Subs Page] config');
         ensureConfigHash(config, configStr);
         log.debug(() => `[Embedded Subs Page] Loading extractor for video ${videoId}`);
 
         // Defense-in-depth: prevent caching of page embedding user config/videoId
         setNoStore(res);
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
         const html = await generateEmbeddedSubtitlePage(configStr, videoId, filename, config);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(html);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Embedded Subs Page]')) return;
         log.error(() => '[Embedded Subs Page] Error:', error);
         res.status(500).send('Failed to load embedded subtitles page');
     }
@@ -3028,12 +3192,13 @@ app.get('/addon/:config/auto-subtitles/:videoId', async (req, res) => {
 
         const { config: configStr, videoId } = req.params;
         const { filename } = req.query;
-        await resolveConfigAsync(configStr, req);
+        await resolveConfigGuarded(configStr, req, res, '[Auto Subs Addon] config');
 
         log.debug(() => `[Auto Subs] Addon redirect for video ${videoId}, filename: ${filename}`);
 
         res.redirect(302, `/auto-subtitles?config=${encodeURIComponent(configStr)}&videoId=${encodeURIComponent(videoId)}&filename=${encodeURIComponent(filename || '')}`);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Auto Subs Addon Route]')) return;
         log.error(() => '[Auto Subs Addon Route] Error:', error);
         res.status(500).send('Failed to load automatic subtitles page');
     }
@@ -3050,7 +3215,7 @@ app.get('/auto-subtitles', async (req, res) => {
         // Defense-in-depth: prevent caching of page embedding user config/videoId
         setNoStore(res);
 
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Auto Subs Page] config');
         ensureConfigHash(config, configStr);
 
         log.debug(() => `[Auto Subs Page] Loading auto-subtitling tool for video ${videoId}`);
@@ -3064,6 +3229,7 @@ app.get('/auto-subtitles', async (req, res) => {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(html);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Auto Subs Page]')) return;
         log.error(() => '[Auto Subs Page] Error:', error);
         res.status(500).send('Failed to load automatic subtitles page');
     }
@@ -3095,7 +3261,7 @@ app.get('/addon/:config/sync-subtitles/:videoId', async (req, res) => {
 
         const { config: configStr, videoId } = req.params;
         const { filename } = req.query;
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Sync Subtitles] config');
 
         log.debug(() => `[Sync Subtitles] Request for video ${videoId}, filename: ${filename}`);
 
@@ -3103,6 +3269,7 @@ app.get('/addon/:config/sync-subtitles/:videoId', async (req, res) => {
         res.redirect(302, `/subtitle-sync?config=${encodeURIComponent(configStr)}&videoId=${encodeURIComponent(videoId)}&filename=${encodeURIComponent(filename || '')}`);
 
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Sync Subtitles]')) return;
         log.error(() => '[Sync Subtitles] Error:', error);
         res.status(500).send('Failed to load subtitle sync page');
     }
@@ -3120,7 +3287,7 @@ app.get('/subtitle-sync', async (req, res) => {
             return res.status(400).send('Missing config or videoId');
         }
 
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Subtitle Sync Page] config');
         ensureConfigHash(config, configStr);
 
         log.debug(() => `[Subtitle Sync Page] Loading page for video ${videoId}`);
@@ -3138,6 +3305,7 @@ app.get('/subtitle-sync', async (req, res) => {
         res.send(html);
 
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Subtitle Sync Page]')) return;
         log.error(() => '[Subtitle Sync Page] Error:', error);
         res.status(500).send('Failed to load subtitle sync page');
     }
@@ -3145,17 +3313,12 @@ app.get('/subtitle-sync', async (req, res) => {
 
 // API endpoint: Download xSync subtitle
 app.get('/addon/:config/xsync/:videoHash/:lang/:sourceSubId', async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (defense-in-depth)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         // Defense-in-depth: Prevent caching (user-specific synced subtitle)
         setNoStore(res);
 
         const { config: configStr, videoHash, lang, sourceSubId } = req.params;
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[xSync Download] config');
 
         log.debug(() => `[xSync Download] Request for ${videoHash}_${lang}_${sourceSubId}`);
 
@@ -3174,6 +3337,7 @@ app.get('/addon/:config/xsync/:videoHash/:lang/:sourceSubId', async (req, res) =
         res.send(syncedSub.content);
 
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[xSync Download]')) return;
         log.error(() => '[xSync Download] Error:', error);
         res.status(500).send('Failed to download synced subtitle');
     }
@@ -3181,11 +3345,6 @@ app.get('/addon/:config/xsync/:videoHash/:lang/:sourceSubId', async (req, res) =
 
 // API endpoint: Save synced subtitle to cache
 app.post('/api/save-synced-subtitle', userDataWriteLimiter, async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (user-specific config in request body)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         // CRITICAL: Prevent caching to avoid cross-user config contamination (user config in body)
         setNoStore(res);
@@ -3197,7 +3356,7 @@ app.post('/api/save-synced-subtitle', userDataWriteLimiter, async (req, res) => 
         }
 
         // Validate config
-        const config = await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigGuarded(configStr, req, res, '[Save Synced] config');
 
         // Reject writes when session token is missing/invalid to prevent cross-user pollution of shared sync cache
         if (config.__sessionTokenError === true) {
@@ -3217,6 +3376,7 @@ app.post('/api/save-synced-subtitle', userDataWriteLimiter, async (req, res) => 
         res.json({ success: true, message: 'Synced subtitle saved successfully' });
 
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Save Synced]')) return;
         log.error(() => '[Save Synced] Error:', error);
         res.status(500).json({ error: 'Failed to save synced subtitle' });
     }
@@ -3226,7 +3386,7 @@ app.post('/api/save-synced-subtitle', userDataWriteLimiter, async (req, res) => 
 app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId', async (req, res) => {
     try {
         const { config: configStr, videoHash, lang, trackId } = req.params;
-        await resolveConfigAsync(configStr, req);
+        await resolveConfigGuarded(configStr, req, res, '[xEmbed Download] config');
 
         const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
         const safeTrackId = (typeof trackId === 'string' || typeof trackId === 'number') && /^[a-zA-Z0-9._-]{1,120}$/.test(String(trackId)) ? String(trackId) : null;
@@ -3252,6 +3412,7 @@ app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId', async (req, res) =
         res.setHeader('Content-Disposition', `attachment; filename="${safeVideoHash}_${safeLang}_xembed.srt"`);
         res.send(match.content);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[xEmbed Download]')) return;
         log.error(() => '[xEmbed Download] Error:', error);
         res.status(500).send('Failed to download embedded subtitle');
     }
@@ -3261,7 +3422,7 @@ app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId', async (req, res) =
 app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId/original', async (req, res) => {
     try {
         const { config: configStr, videoHash, lang, trackId } = req.params;
-        await resolveConfigAsync(configStr, req);
+        await resolveConfigGuarded(configStr, req, res, '[xEmbed Original] config');
 
         const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
         const safeTrackId = (typeof trackId === 'string' || typeof trackId === 'number') && /^[a-zA-Z0-9._-]{1,120}$/.test(String(trackId)) ? String(trackId) : null;
@@ -3287,6 +3448,7 @@ app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId/original', async (re
         res.setHeader('Content-Disposition', `attachment; filename="${safeVideoHash}_${safeLang}_original.srt"`);
         res.send(match.content);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[xEmbed Original]')) return;
         log.error(() => '[xEmbed Original] Error:', error);
         res.status(500).send('Failed to download original embedded subtitle');
     }
@@ -3314,7 +3476,7 @@ app.post('/api/save-embedded-subtitle', userDataWriteLimiter, async (req, res) =
             return res.status(413).json({ error: 'Embedded subtitle is too large' });
         }
 
-        await resolveConfigAsync(configStr, req);
+        await resolveConfigGuarded(configStr, req, res, '[Save Embedded] config');
 
         if (KEEP_EMBEDDED_ORIGINALS) {
             const saveResult = await embeddedCache.saveOriginalEmbedded(normalizedVideoHash, normalizedTrackId, normalizedLang, subtitleContent, metadata || {});
@@ -3325,6 +3487,7 @@ app.post('/api/save-embedded-subtitle', userDataWriteLimiter, async (req, res) =
         log.debug(() => `[Save Embedded] Discarded original for ${normalizedVideoHash}_${normalizedLang}_${normalizedTrackId} (KEEP_EMBEDDED_ORIGINALS disabled)`);
         return res.json({ success: true, kept: false, message: 'Embedded originals discarded by default (set KEEP_EMBEDDED_ORIGINALS=true to persist).' });
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Save Embedded]')) return;
         log.error(() => '[Save Embedded] Error:', error);
         res.status(500).json({ error: 'Failed to save embedded subtitle' });
     }
@@ -3370,7 +3533,7 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
         const safeTargetLanguage = normalizedTargetLang;
         const safeSourceLanguage = normalizedSourceLang || 'und';
 
-        const baseConfig = await resolveConfigAsync(configStr, req);
+        const baseConfig = await resolveConfigGuarded(configStr, req, res, '[Embedded Translate] config');
         const workingConfig = {
             ...baseConfig,
             advancedSettings: { ...(baseConfig.advancedSettings || {}) }
@@ -3631,6 +3794,7 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
             metadata: saveMeta
         });
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Embedded Translate]')) return;
         log.error(() => ['[Embedded Translate] Error:', error]);
         res.status(500).json({ error: error.message || 'Failed to translate embedded subtitle' });
     }
@@ -4336,9 +4500,7 @@ function generateTranslationSelectorPage(subtitles, videoId, targetLang, configS
 // This is CRITICAL because Stremio SDK uses res.end() not res.json()
 app.use('/addon/:config', (req, res, next) => {
     // CRITICAL: Prevent caching to avoid cross-user config contamination
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
+    setNoStore(res);
 
     const config = req.params.config;
 
@@ -4397,11 +4559,6 @@ app.use('/addon/:config', (req, res, next) => {
 
 // Stremio addon manifest route (AFTER middleware so URLs get replaced)
 app.get('/addon/:config/manifest.json', async (req, res) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         // CRITICAL: Prevent caching to avoid cross-user config contamination
         // Without these headers, proxies/CDNs can cache User A's manifest and serve it to User B
@@ -4409,7 +4566,7 @@ app.get('/addon/:config/manifest.json', async (req, res) => {
         setNoStore(res);
 
         log.debug(() => `[Manifest] Parsing config for manifest request`);
-        const config = await resolveConfigAsync(req.params.config, req);
+        const config = await resolveConfigGuarded(req.params.config, req, res, '[Manifest] config');
         ensureConfigHash(config, req.params.config);
 
         // Construct base URL from request
@@ -4427,6 +4584,7 @@ app.get('/addon/:config/manifest.json', async (req, res) => {
 
         res.json(manifest);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Manifest]')) return;
         log.error(() => ['[Manifest] Error:', error]);
         res.status(500).json({ error: 'Failed to generate manifest' });
     }
@@ -4436,11 +4594,6 @@ app.get('/addon/:config/manifest.json', async (req, res) => {
 // This route handles /addon/:config (with no trailing path) and redirects to configure
 // It must be placed AFTER all specific routes but BEFORE the SDK router
 app.get('/addon/:config', (req, res, next) => {
-    // CRITICAL: Prevent caching to avoid cross-user config contamination (defense-in-depth)
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
     try {
         const { config: configStr } = req.params;
         // Defense-in-depth: Prevent caching (redirect includes session token)
@@ -4470,11 +4623,48 @@ app.use('/addon/:config', async (req, res, next) => {
         // deterministic and safe to cache.
         let router = isSessionToken ? null : routerCache.get(configStr);
 
-        // CRITICAL FIX: Validate cached router matches requested config to prevent contamination
-        if (router && router.__configStr !== configStr) {
-            log.warn(() => `[Router] CONTAMINATION DETECTED: Cached router has wrong config! Expected: ${redactToken(configStr)}, Got: ${redactToken(router.__configStr || 'unknown')}`);
-            routerCache.delete(configStr);
-            router = null;
+        // SECURITY CRITICAL: Multi-layer validation of cached router to prevent contamination
+        if (router) {
+            let contaminationDetected = false;
+            let contaminationReason = '';
+
+            // VALIDATION LAYER 1: Config string must match exactly
+            if (router.__configStr !== configStr) {
+                contaminationDetected = true;
+                contaminationReason = `config mismatch - expected ${redactToken(configStr)}, got ${redactToken(router.__configStr || 'unknown')}`;
+            }
+
+            // VALIDATION LAYER 2: Router must have required metadata
+            if (!contaminationDetected && (!router.__configStr || !router.__createdAt)) {
+                contaminationDetected = true;
+                contaminationReason = 'missing required metadata (__configStr or __createdAt)';
+            }
+
+            // VALIDATION LAYER 3: Detect if cached router is for a session token (should NEVER happen)
+            if (!contaminationDetected && /^[a-f0-9]{32}$/.test(router.__configStr || '')) {
+                contaminationDetected = true;
+                contaminationReason = `cached router has session token pattern: ${redactToken(router.__configStr)}`;
+            }
+
+            // VALIDATION LAYER 4: Check router age - refuse to serve routers older than cache TTL
+            if (!contaminationDetected && router.__createdAt) {
+                const ageMs = Date.now() - router.__createdAt;
+                const maxAgeMs = 1000 * 60 * 60; // 1 hour (matches cache TTL)
+                if (ageMs > maxAgeMs * 1.1) { // Allow 10% grace period
+                    contaminationDetected = true;
+                    contaminationReason = `router age (${Math.round(ageMs / 1000 / 60)}min) exceeds TTL`;
+                }
+            }
+
+            if (contaminationDetected) {
+                log.error(() => `[SECURITY] Router cache CONTAMINATION DETECTED: ${contaminationReason}`);
+                routerCache.delete(configStr);
+                router = null;
+                // Also invalidate the resolve config cache for this key as a safety measure
+                if (!isSessionToken) {
+                    resolveConfigCache.delete(configStr);
+                }
+            }
         }
 
         if (!router) {
@@ -4490,7 +4680,7 @@ app.use('/addon/:config', async (req, res, next) => {
                 }
 
                 // Cache miss: fetch config (only happens when creating new router)
-                const config = await resolveConfigAsync(configStr, req);
+                const config = await resolveConfigGuarded(configStr, req, res, '[Router] config');
 
                 // Defensive validation
                 if (!config || typeof config !== 'object') {
@@ -4528,15 +4718,35 @@ app.use('/addon/:config', async (req, res, next) => {
                 const builder = createAddonWithConfig(freshConfig, baseUrl);
                 const newRouter = getRouter(builder.getInterface());
 
-                // CRITICAL: Tag router with config string for validation
+                // CRITICAL: Tag router with config string and hash for validation
                 newRouter.__configStr = configStr;
                 newRouter.__targetLanguages = JSON.stringify(freshConfig.targetLanguages || []);
                 newRouter.__createdAt = Date.now();
+                newRouter.__configHash = freshConfig.__configHash || 'unknown';
 
-                // Cache router for base64 configs only (session tokens stay uncached for safety)
-                if (!isSessionToken && !(freshConfig && freshConfig.__sessionTokenError === true)) {
+                // SECURITY: Cache router ONLY if all safety checks pass
+                // DEFENSE LAYER 1: Must not be a session token
+                // DEFENSE LAYER 2: Config must not have error flags
+                // DEFENSE LAYER 3: Config string must pass strict validation
+                const safeToCache = !isSessionToken
+                    && !(freshConfig && freshConfig.__sessionTokenError === true)
+                    && isDefinitelyNotToken(configStr)
+                    && isSafeToCache(freshConfig);
+
+                if (safeToCache) {
                     routerCache.set(configStr, newRouter);
-                    log.debug(() => `[Router] Cached router for ${redactToken(configStr)} with targets: ${newRouter.__targetLanguages}`);
+                    log.debug(() => `[Router] Cached router for ${redactToken(configStr)} with targets: ${newRouter.__targetLanguages}, hash: ${newRouter.__configHash}`);
+                } else {
+                    // SECURITY ALERT: Prevented unsafe router caching
+                    if (isSessionToken) {
+                        log.debug(() => `[Router] NOT caching router for session token ${redactToken(configStr)} (expected behavior)`);
+                    } else if (freshConfig && freshConfig.__sessionTokenError) {
+                        log.warn(() => `[SECURITY] NOT caching router for ${redactToken(configStr)} - has error flag`);
+                    } else if (!isDefinitelyNotToken(configStr)) {
+                        log.error(() => `[SECURITY] BLOCKED router caching - ${redactToken(configStr)} failed strict token validation`);
+                    } else {
+                        log.warn(() => `[SECURITY] NOT caching router for ${redactToken(configStr)} - failed safety check`);
+                    }
                 }
 
                 return newRouter;
@@ -4548,6 +4758,7 @@ app.use('/addon/:config', async (req, res, next) => {
 
         router(req, res, next);
     } catch (error) {
+        if (respondStorageUnavailable(res, error, '[Router]')) return;
         log.error(() => ['[Router] Error:', error]);
         next(error);
     }
@@ -4614,6 +4825,13 @@ app.use((error, req, res, next) => {
     } catch (error) {
         log.error(() => ['[Startup] Session manager initialization failed:', error.message]);
         log.warn(() => '[Startup] Continuing startup anyway, but sessions may not be available');
+    }
+
+    // SECURITY: Clean up any contaminated cache entries from previous runs
+    try {
+        cleanupCachesOnStartup();
+    } catch (error) {
+        log.error(() => ['[Startup] Cache cleanup failed:', error.message]);
     }
 
     // Run comprehensive startup validation

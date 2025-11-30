@@ -1,5 +1,6 @@
 const log = require('../utils/logger');
 const StorageAdapter = require('./StorageAdapter');
+const { StorageUnavailableError } = require('./errors');
 const Redis = require('ioredis');
 const crypto = require('crypto');
 const { getIsolationKey } = require('../utils/isolation');
@@ -97,6 +98,78 @@ class RedisStorageAdapter extends StorageAdapter {
     this.initialized = false;
     this.sentinelMode = sentinelEnabled;
     this.prefixVariants = variants;
+  }
+
+  /**
+   * Detect whether an error is likely transient/connection-related
+   * @private
+   */
+  _isTransientRedisError(error = {}) {
+    const code = error?.code;
+    const message = error?.message || '';
+    if (code && ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE', 'NR_CLOSED'].includes(code)) {
+      return true;
+    }
+    if (error?.name === 'MaxRetriesPerRequestError') {
+      return true;
+    }
+    const transientPhrases = [
+      'Connection is closed',
+      'Connection is being closed',
+      'The connection is already closed',
+      'Socket closed unexpectedly',
+      'connect ECONNREFUSED',
+      'connect ETIMEDOUT',
+      'Broken pipe',
+      'Connection reset by peer'
+    ];
+    return transientPhrases.some(fragment => message.includes(fragment));
+  }
+
+  /**
+   * Sleep helper for retry backoff
+   * @private
+   */
+  async _sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Execute a Redis operation with limited retries on transient failures
+   * @private
+   */
+  async _executeWithRetry(operationName, fn) {
+    const maxAttempts = 3;
+    let attempt = 0;
+    let lastError = null;
+
+    while (attempt < maxAttempts) {
+      attempt++;
+      try {
+        return await fn();
+      } catch (err) {
+        lastError = err;
+        const isTransient = this._isTransientRedisError(err);
+
+        if (isTransient && attempt < maxAttempts) {
+          const delay = Math.min(100 * attempt, 750);
+          log.warn(() => `[RedisStorage] ${operationName} transient failure (${err.message || err}), retrying in ${delay}ms (${attempt}/${maxAttempts})`);
+          await this._sleep(delay);
+          continue;
+        }
+
+        if (isTransient) {
+          throw new StorageUnavailableError(`[RedisStorage] ${operationName} failed after ${maxAttempts} attempt(s)`, { operation: operationName, cause: err });
+        }
+
+        throw err;
+      }
+    }
+
+    if (lastError) {
+      log.error(() => [`[RedisStorage] ${operationName} failed after ${maxAttempts} attempt(s):`, lastError?.message || lastError]);
+    }
+    throw new StorageUnavailableError(`[RedisStorage] ${operationName} failed after ${maxAttempts} attempt(s)`, { operation: operationName, cause: lastError });
   }
 
   /**
@@ -496,37 +569,42 @@ class RedisStorageAdapter extends StorageAdapter {
    */
   async get(key, cacheType) {
     if (!this.initialized) {
-      throw new Error('Storage adapter not initialized');
+      throw new StorageUnavailableError('Storage adapter not initialized', { operation: 'get' });
     }
 
     try {
-      const redisKey = this._getKey(key, cacheType);
-      const content = await this.client.get(redisKey);
+      return await this._executeWithRetry(`get ${cacheType}`, async () => {
+        const redisKey = this._getKey(key, cacheType);
+        const content = await this.client.get(redisKey);
 
-      if (!content) {
-        // If the key isn't found under the canonical prefix, try to self-heal
-        // across alternate prefixes (colon/no-colon, fallback/default) so
-        // sessions/configs don't "disappear" after restarts when the prefix
-        // changes. This is intentionally scoped to our known variants to avoid
-        // cross-tenant leakage on shared Redis deployments.
-        const migrated = await this._migrateFromAlternatePrefixes(key, cacheType);
-        if (!migrated) {
-          return null;
+        if (!content) {
+          // If the key isn't found under the canonical prefix, try to self-heal
+          // across alternate prefixes (colon/no-colon, fallback/default) so
+          // sessions/configs don't "disappear" after restarts when the prefix
+          // changes. This is intentionally scoped to our known variants to avoid
+          // cross-tenant leakage on shared Redis deployments.
+          const migrated = await this._migrateFromAlternatePrefixes(key, cacheType);
+          if (!migrated) {
+            return null;
+          }
+          return migrated;
         }
-        return migrated;
-      }
 
-      // Update LRU timestamp
-      const now = Date.now();
-      await this.client.zadd(this._getLruKey(cacheType), now, key);
+        // Update LRU timestamp
+        const now = Date.now();
+        await this.client.zadd(this._getLruKey(cacheType), now, key);
 
-      // Parse JSON if it's a JSON string
-      try {
-        return JSON.parse(content);
-      } catch {
-        return content;
-      }
+        // Parse JSON if it's a JSON string
+        try {
+          return JSON.parse(content);
+        } catch {
+          return content;
+        }
+      });
     } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
       log.error(() => `Redis get error for key ${key}:`, error);
       return null;
     }
@@ -625,74 +703,79 @@ class RedisStorageAdapter extends StorageAdapter {
    */
   async set(key, value, cacheType, ttl = null) {
     if (!this.initialized) {
-      throw new Error('Storage adapter not initialized');
+      throw new StorageUnavailableError('Storage adapter not initialized', { operation: 'set' });
     }
 
     try {
-      const redisKey = this._getKey(key, cacheType);
-      const metaKey = this._getMetadataKey(key, cacheType);
-      const lruKey = this._getLruKey(cacheType);
-      const sizeKey = this._getSizeKey(cacheType);
+      return await this._executeWithRetry(`set ${cacheType}`, async () => {
+        const redisKey = this._getKey(key, cacheType);
+        const metaKey = this._getMetadataKey(key, cacheType);
+        const lruKey = this._getLruKey(cacheType);
+        const sizeKey = this._getSizeKey(cacheType);
 
-      // Serialize value
-      const content = typeof value === 'string' ? value : JSON.stringify(value);
-      const contentSize = Buffer.byteLength(content, 'utf8');
+        // Serialize value
+        const content = typeof value === 'string' ? value : JSON.stringify(value);
+        const contentSize = Buffer.byteLength(content, 'utf8');
 
-      // Check if we need to enforce size limits
-      const sizeLimit = StorageAdapter.SIZE_LIMITS[cacheType];
-      if (sizeLimit) {
-        const currentSize = parseInt(await this.client.get(sizeKey) || '0', 10);
+        // Check if we need to enforce size limits
+        const sizeLimit = StorageAdapter.SIZE_LIMITS[cacheType];
+        if (sizeLimit) {
+          const currentSize = parseInt(await this.client.get(sizeKey) || '0', 10);
 
-        // If adding this entry would exceed the limit, clean up old entries
-        if (currentSize + contentSize > sizeLimit) {
-          await this._enforceLimit(cacheType, contentSize);
+          // If adding this entry would exceed the limit, clean up old entries
+          if (currentSize + contentSize > sizeLimit) {
+            await this._enforceLimit(cacheType, contentSize);
+          }
         }
-      }
 
-      // Get existing entry size/createdAt if updating
-      const existingMeta = await this.client.hgetall(metaKey);
-      const oldSize = existingMeta.size ? parseInt(existingMeta.size, 10) : 0;
-      const preservedCreatedAt = existingMeta.createdAt ? parseInt(existingMeta.createdAt, 10) : null;
+        // Get existing entry size/createdAt if updating
+        const existingMeta = await this.client.hgetall(metaKey);
+        const oldSize = existingMeta.size ? parseInt(existingMeta.size, 10) : 0;
+        const preservedCreatedAt = existingMeta.createdAt ? parseInt(existingMeta.createdAt, 10) : null;
 
-      // Use a pipeline for atomic operations
-      const pipeline = this.client.pipeline();
+        // Use a pipeline for atomic operations
+        const pipeline = this.client.pipeline();
 
-      // Store the content
-      if (ttl !== null) {
-        pipeline.setex(redisKey, ttl, content);
-      } else {
-        pipeline.set(redisKey, content);
-      }
+        // Store the content
+        if (ttl !== null) {
+          pipeline.setex(redisKey, ttl, content);
+        } else {
+          pipeline.set(redisKey, content);
+        }
 
-      // Store metadata
-      const now = Date.now();
-      const expiresAt = ttl ? now + (ttl * 1000) : null;
-      pipeline.hmset(metaKey, {
-        size: contentSize,
-        createdAt: preservedCreatedAt || now,
-        expiresAt: expiresAt || 'null'
+        // Store metadata
+        const now = Date.now();
+        const expiresAt = ttl ? now + (ttl * 1000) : null;
+        pipeline.hmset(metaKey, {
+          size: contentSize,
+          createdAt: preservedCreatedAt || now,
+          expiresAt: expiresAt || 'null'
+        });
+
+        if (ttl !== null) {
+          pipeline.expire(metaKey, ttl);
+        }
+
+        // Update LRU tracking
+        pipeline.zadd(lruKey, now, key);
+
+        // Update total size counter
+        if (sizeLimit) {
+          const sizeDelta = contentSize - oldSize;
+          if (sizeDelta > 0) {
+            pipeline.incrby(sizeKey, sizeDelta);
+          } else if (sizeDelta < 0) {
+            pipeline.decrby(sizeKey, Math.abs(sizeDelta));
+          }
+        }
+
+        await pipeline.exec();
+        return true;
       });
-
-      if (ttl !== null) {
-        pipeline.expire(metaKey, ttl);
-      }
-
-      // Update LRU tracking
-      pipeline.zadd(lruKey, now, key);
-
-      // Update total size counter
-      if (sizeLimit) {
-        const sizeDelta = contentSize - oldSize;
-        if (sizeDelta > 0) {
-          pipeline.incrby(sizeKey, sizeDelta);
-        } else if (sizeDelta < 0) {
-          pipeline.decrby(sizeKey, Math.abs(sizeDelta));
-        }
-      }
-
-      await pipeline.exec();
-      return true;
     } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
       log.error(() => `Redis set error for key ${key}:`, error);
       return false;
     }
@@ -703,32 +786,37 @@ class RedisStorageAdapter extends StorageAdapter {
    */
   async delete(key, cacheType) {
     if (!this.initialized) {
-      throw new Error('Storage adapter not initialized');
+      throw new StorageUnavailableError('Storage adapter not initialized', { operation: 'delete' });
     }
 
     try {
-      const redisKey = this._getKey(key, cacheType);
-      const metaKey = this._getMetadataKey(key, cacheType);
-      const lruKey = this._getLruKey(cacheType);
-      const sizeKey = this._getSizeKey(cacheType);
+      return await this._executeWithRetry(`delete ${cacheType}`, async () => {
+        const redisKey = this._getKey(key, cacheType);
+        const metaKey = this._getMetadataKey(key, cacheType);
+        const lruKey = this._getLruKey(cacheType);
+        const sizeKey = this._getSizeKey(cacheType);
 
-      // Get size before deleting
-      const meta = await this.client.hgetall(metaKey);
-      const size = meta.size ? parseInt(meta.size, 10) : 0;
+        // Get size before deleting
+        const meta = await this.client.hgetall(metaKey);
+        const size = meta.size ? parseInt(meta.size, 10) : 0;
 
-      // Delete using pipeline
-      const pipeline = this.client.pipeline();
-      pipeline.del(redisKey);
-      pipeline.del(metaKey);
-      pipeline.zrem(lruKey, key);
+        // Delete using pipeline
+        const pipeline = this.client.pipeline();
+        pipeline.del(redisKey);
+        pipeline.del(metaKey);
+        pipeline.zrem(lruKey, key);
 
-      if (size > 0) {
-        pipeline.decrby(sizeKey, size);
-      }
+        if (size > 0) {
+          pipeline.decrby(sizeKey, size);
+        }
 
-      await pipeline.exec();
-      return true;
+        await pipeline.exec();
+        return true;
+      });
     } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
       log.error(() => `Redis delete error for key ${key}:`, error);
       return false;
     }
@@ -739,14 +827,19 @@ class RedisStorageAdapter extends StorageAdapter {
    */
   async exists(key, cacheType) {
     if (!this.initialized) {
-      throw new Error('Storage adapter not initialized');
+      throw new StorageUnavailableError('Storage adapter not initialized', { operation: 'exists' });
     }
 
     try {
-      const redisKey = this._getKey(key, cacheType);
-      const exists = await this.client.exists(redisKey);
-      return exists === 1;
+      return await this._executeWithRetry(`exists ${cacheType}`, async () => {
+        const redisKey = this._getKey(key, cacheType);
+        const exists = await this.client.exists(redisKey);
+        return exists === 1;
+      });
     } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
       log.error(() => `Redis exists error for key ${key}:`, error);
       return false;
     }
@@ -757,43 +850,48 @@ class RedisStorageAdapter extends StorageAdapter {
    */
   async list(cacheType, pattern = '*') {
     if (!this.initialized) {
-      throw new Error('Storage adapter not initialized');
+      throw new StorageUnavailableError('Storage adapter not initialized', { operation: 'list' });
     }
 
     try {
-      // Use SCAN for better performance with large datasets
-      const keys = [];
+      return await this._executeWithRetry(`list ${cacheType}`, async () => {
+        // Use SCAN for better performance with large datasets
+        const keys = [];
 
-      // ioredis automatically applies keyPrefix to commands when configured.
-      // Using an already-prefixed pattern here would double-prefix and return
-      // zero results after a restart (making persisted sessions look "missing"
-      // when preloading). Scan using the raw cacheType pattern and strip any
-      // prefix from returned keys for safety.
-      const scanPattern = `${cacheType}:${pattern}`;
-      let cursor = '0';
-
-      do {
-        const result = await this.client.scan(cursor, 'MATCH', scanPattern, 'COUNT', 100);
-        cursor = result[0];
-        const foundKeys = result[1];
-
-        // Strip prefix and cache type from keys. Replies may include the
-        // configured keyPrefix (when SCAN is issued on a client without
-        // automatic prefixing), or they may already be de-prefixed by ioredis
-        // when keyPrefix is enabled. Handle both cases to avoid dropping keys.
+        // CRITICAL FIX: ioredis does NOT apply keyPrefix to SCAN MATCH patterns!
+        // We must include the full prefix in the pattern manually, otherwise
+        // SCAN won't find any keys when keyPrefix is configured.
+        // This bug caused list() to always return zero keys, making cleanup,
+        // snapshots, and preloading fail silently.
         const configuredPrefix = this.options.keyPrefix || '';
-        const prefix = `${configuredPrefix}${cacheType}:`;
-        for (const key of foundKeys) {
-          if (key.endsWith(':meta')) continue; // Skip metadata keys
-          const withoutPrefix = key.startsWith(prefix)
-            ? key.substring(prefix.length)
-            : key.replace(new RegExp(`^${cacheType}:`), '');
-          keys.push(withoutPrefix);
-        }
-      } while (cursor !== '0');
+        const scanPattern = `${configuredPrefix}${cacheType}:${pattern}`;
+        let cursor = '0';
 
-      return keys;
+        do {
+          const result = await this.client.scan(cursor, 'MATCH', scanPattern, 'COUNT', 100);
+          cursor = result[0];
+          const foundKeys = result[1];
+
+          // Strip prefix and cache type from keys. SCAN returns full Redis keys
+          // (not de-prefixed by ioredis), so we need to strip both the configured
+          // prefix and the cache type to get just the session token.
+          const prefix = `${configuredPrefix}${cacheType}:`;
+          for (const key of foundKeys) {
+            if (key.endsWith(':meta')) continue; // Skip metadata keys
+            const withoutPrefix = key.startsWith(prefix)
+              ? key.substring(prefix.length)
+              : key.replace(new RegExp(`^${cacheType}:`), '');
+            keys.push(withoutPrefix);
+          }
+        } while (cursor !== '0');
+
+        log.debug(() => `[RedisStorage] SCAN with pattern ${scanPattern} found ${keys.length} ${cacheType} key(s)`);
+        return keys;
+      });
     } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
       log.error(() => `Redis list error for cache type ${cacheType}:`, error);
       return [];
     }
@@ -804,14 +902,19 @@ class RedisStorageAdapter extends StorageAdapter {
    */
   async size(cacheType) {
     if (!this.initialized) {
-      throw new Error('Storage adapter not initialized');
+      throw new StorageUnavailableError('Storage adapter not initialized', { operation: 'size' });
     }
 
     try {
-      const sizeKey = this._getSizeKey(cacheType);
-      const size = await this.client.get(sizeKey);
-      return size ? parseInt(size, 10) : 0;
+      return await this._executeWithRetry(`size ${cacheType}`, async () => {
+        const sizeKey = this._getSizeKey(cacheType);
+        const size = await this.client.get(sizeKey);
+        return size ? parseInt(size, 10) : 0;
+      });
     } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
       log.error(() => `Redis size error for cache type ${cacheType}:`, error);
       return 0;
     }
@@ -822,23 +925,28 @@ class RedisStorageAdapter extends StorageAdapter {
    */
   async metadata(key, cacheType) {
     if (!this.initialized) {
-      throw new Error('Storage adapter not initialized');
+      throw new StorageUnavailableError('Storage adapter not initialized', { operation: 'metadata' });
     }
 
     try {
-      const metaKey = this._getMetadataKey(key, cacheType);
-      const meta = await this.client.hgetall(metaKey);
+      return await this._executeWithRetry(`metadata ${cacheType}`, async () => {
+        const metaKey = this._getMetadataKey(key, cacheType);
+        const meta = await this.client.hgetall(metaKey);
 
-      if (!meta || Object.keys(meta).length === 0) {
-        return null;
-      }
+        if (!meta || Object.keys(meta).length === 0) {
+          return null;
+        }
 
-      return {
-        size: parseInt(meta.size || '0', 10),
-        createdAt: parseInt(meta.createdAt || '0', 10),
-        expiresAt: meta.expiresAt === 'null' ? null : parseInt(meta.expiresAt, 10)
-      };
+        return {
+          size: parseInt(meta.size || '0', 10),
+          createdAt: parseInt(meta.createdAt || '0', 10),
+          expiresAt: meta.expiresAt === 'null' ? null : parseInt(meta.expiresAt, 10)
+        };
+      });
     } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
       log.error(() => `Redis metadata error for key ${key}:`, error);
       return null;
     }
@@ -897,6 +1005,9 @@ class RedisStorageAdapter extends StorageAdapter {
       log.debug(() => `Enforced ${cacheType} cache limit: deleted ${deleted} entries, freed ${bytesFreed} bytes`);
       return { deleted, bytesFreed };
     } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
       log.error(() => `Redis enforce limit error for cache type ${cacheType}:`, error);
       return { deleted: 0, bytesFreed: 0 };
     }
@@ -907,7 +1018,7 @@ class RedisStorageAdapter extends StorageAdapter {
    */
   async cleanup(cacheType) {
     if (!this.initialized) {
-      throw new Error('Storage adapter not initialized');
+      throw new StorageUnavailableError('Storage adapter not initialized', { operation: 'cleanup' });
     }
 
     try {
@@ -942,6 +1053,9 @@ class RedisStorageAdapter extends StorageAdapter {
 
       return { deleted, bytesFreed };
     } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
       log.error(() => `Redis cleanup error for cache type ${cacheType}:`, error);
       return { deleted: 0, bytesFreed: 0 };
     }
