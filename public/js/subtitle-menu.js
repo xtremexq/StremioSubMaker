@@ -11,6 +11,12 @@
     closeTitle: 'Close subtitle list'
   };
 
+  // Guard: ensure a global config object exists to avoid ReferenceError on hosts that
+  // inject subtitle-menu before setting window.config
+  if (!global.config) {
+    global.config = {};
+  }
+
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
