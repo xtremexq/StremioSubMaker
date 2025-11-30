@@ -513,6 +513,46 @@ function setNoStore(res) {
     res.setHeader('X-Cache-Buster', Date.now().toString());
 }
 
+// Helper: caching policy for subtitle payloads
+// - loading/partial/error responses stay no-store to avoid caching placeholders
+// - final subtitles get a private, short-lived cache so players (Android) don't keep reloading and resetting offsets
+function setSubtitleCacheHeaders(res, mode = 'final') {
+    if (mode === 'loading') {
+        setNoStore(res);
+        return;
+    }
+
+    // Remove no-store style headers if they were set earlier in the pipeline
+    const headersToClear = [
+        'Pragma',
+        'Expires',
+        'Surrogate-Control',
+        'CF-Cache-Status',
+        'Cloudflare-CDN-Cache-Control',
+        'X-Accel-Expires',
+        'X-Cache-Buster'
+    ];
+    headersToClear.forEach((h) => res.removeHeader(h));
+
+    // Allow only private (device) caching; explicitly block shared/CDN caching
+    res.setHeader('Cache-Control', 'private, max-age=86400, s-maxage=0, stale-while-revalidate=300, no-transform');
+    res.setHeader('CDN-Cache-Control', 'private, max-age=0, s-maxage=0, no-store');
+    res.setHeader('Cloudflare-CDN-Cache-Control', 'private, max-age=0, s-maxage=0, no-store');
+    res.setHeader('CF-Cache-Status', 'BYPASS');
+    res.setHeader('Vary', 'Accept-Encoding');
+}
+
+// Normalize subtitle route params to strip optional extensions (e.g., ".srt" or ".vtt") from :targetLang
+// This keeps validation/dedup logic stable while allowing extension-bearing URLs for player MIME detection.
+function normalizeSubtitleFormatParams(req, _res, next) {
+    try {
+        if (req.params && typeof req.params.targetLang === 'string') {
+            req.params.targetLang = req.params.targetLang.replace(/\.(srt|vtt)$/i, '');
+        }
+    } catch (_) {}
+    next();
+}
+
 // Helper: controlled CORS - allow only same-host (http/https) or explicit allowlist
 const normalizeOrigin = (origin) => {
     if (!origin) return '';
@@ -2824,11 +2864,8 @@ app.get('/addon/:config/translate-selector/:videoId/:targetLang', searchLimiter,
 });
 
 // Custom route: Perform translation (BEFORE SDK router to take precedence)
-app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, validateRequest(translationParamsSchema, 'params'), async (req, res) => {
+app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleFormatParams, searchLimiter, validateRequest(translationParamsSchema, 'params'), async (req, res) => {
     try {
-        // Defense-in-depth: Prevent caching (already set by early middleware, but explicit is safer)
-        setNoStore(res);
-
         const { config: configStr, sourceFileId, targetLang } = req.params;
         const config = await resolveConfigGuarded(configStr, req, res, '[Translation] config');
         if (isInvalidSessionConfig(config)) {
@@ -2836,6 +2873,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
             const errorSubtitle = createSessionTokenErrorSubtitle();
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Content-Disposition', 'attachment; filename=\"session-token-not-found.srt\"');
+            setSubtitleCacheHeaders(res, 'loading');
             return res.status(401).send(errorSubtitle);
         }
         const configKey = ensureConfigHash(config, configStr);
@@ -2895,7 +2933,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
             // Don't keep piling up long-held connections in mobile mode; the first request will deliver the final SRT
             log.debug(() => `[Translation] Mobile mode duplicate request for ${sourceFileId} to ${targetLang} - short-circuiting with 202 while primary request is held`);
             res.status(202);
-            setNoStore(res);
+            setSubtitleCacheHeaders(res, 'loading');
             res.setHeader('Retry-After', '3');
             return res.send('Translation already in progress; waiting on primary request.');
         } else if (isAlreadyInFlight) {
@@ -2911,7 +2949,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
                 log.debug(() => `[Translation] Found in-flight partial in partial cache for ${sourceFileId} (${partialCached.content.length} chars)`);
                 res.setHeader('Content-Type', 'text/plain; charset=utf-8');
                 res.setHeader('Content-Disposition', `attachment; filename="translating_${targetLang}.srt"`);
-                setNoStore(res);
+                setSubtitleCacheHeaders(res, 'loading');
                 return res.send(partialCached.content);
             }
 
@@ -2924,7 +2962,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
                 log.debug(() => `[Translation] Found bypass cache result for ${sourceFileId} (${bypassCached.content.length} chars)`);
                 res.setHeader('Content-Type', 'text/plain; charset=utf-8');
                 res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
-                setNoStore(res);
+                setSubtitleCacheHeaders(res, 'final');
                 return res.send(bypassCached.content);
             }
 
@@ -2933,7 +2971,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
             const loadingMsg = createLoadingSubtitle();
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="translating_${targetLang}.srt"`);
-            setNoStore(res);
+            setSubtitleCacheHeaders(res, 'loading');
             return res.send(loadingMsg);
         } else {
             log.debug(() => `[Translation] New request to translate ${sourceFileId} to ${targetLang}`);
@@ -2964,8 +3002,12 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
 
         // Disable caching for loading messages so Stremio can poll for updates
         if (isLoadingMessage) {
-            setNoStore(res);
+            setSubtitleCacheHeaders(res, 'loading');
             log.debug(() => `[Translation] Set no-store headers for loading message`);
+        } else {
+            // Final translations: allow private caching so Android players don't keep reloading and resetting offsets
+            setSubtitleCacheHeaders(res, 'final');
+            log.debug(() => `[Translation] Set private caching headers for final translation`);
         }
 
         res.send(subtitleContent);
@@ -2979,7 +3021,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', searchLimiter, val
 });
 
 // Custom route: Learn Mode (dual-language VTT)
-app.get('/addon/:config/learn/:sourceFileId/:targetLang', searchLimiter, validateRequest(translationParamsSchema, 'params'), async (req, res) => {
+app.get('/addon/:config/learn/:sourceFileId/:targetLang', normalizeSubtitleFormatParams, searchLimiter, validateRequest(translationParamsSchema, 'params'), async (req, res) => {
     try {
         // Defense-in-depth: Prevent caching of learn-mode responses
         setNoStore(res);
@@ -2991,6 +3033,7 @@ app.get('/addon/:config/learn/:sourceFileId/:targetLang', searchLimiter, validat
             const errorSubtitle = createSessionTokenErrorSubtitle();
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             res.setHeader('Content-Disposition', 'attachment; filename=\"session-token-not-found.srt\"');
+            setSubtitleCacheHeaders(res, 'loading');
             return res.status(401).send(errorSubtitle);
         }
         const configKey = ensureConfigHash(baseConfig, configStr);
@@ -3834,7 +3877,7 @@ function generateTranslationSelectorPage(subtitles, videoId, targetLang, configS
 
     const subtitleOptions = subtitles.map(sub => `
         <div class="subtitle-option">
-            <a href="/addon/${encodeURIComponent(configStr)}/translate/${sub.fileId}/${targetLang}" class="subtitle-link">
+            <a href="/addon/${encodeURIComponent(configStr)}/translate/${sub.fileId}/${targetLang}.srt" class="subtitle-link">
                 <div class="subtitle-info">
                     <div class="subtitle-name">${escapeHtml(sub.name)}</div>
                     <div class="subtitle-meta">

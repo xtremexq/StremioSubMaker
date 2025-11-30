@@ -1950,11 +1950,11 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
 
         .mobile-menu-toggle span {
             display: block;
-            width: 18px;
-            height: 2px;
+            width: 8px;
+            height: 8px;
             background: var(--text-primary);
             border-radius: 999px;
-            box-shadow: 0 1px 0 rgba(0,0,0,0.1);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
         }
 
         .mobile-menu-toggle:hover {
@@ -1977,6 +1977,10 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         .mobile-nav-overlay.show {
             opacity: 1;
             pointer-events: auto;
+        }
+
+        @media (max-width: 1100px) {
+            .mobile-menu-toggle { display: inline-flex !important; }
         }
 
         html.no-scroll, body.no-scroll {

@@ -177,11 +177,11 @@ function quickNavStyles() {
 
     .mobile-menu-toggle span {
       display: block;
-      width: 18px;
-      height: 2px;
+      width: 8px;
+      height: 8px;
       background: var(--text-primary);
       border-radius: 999px;
-      box-shadow: 0 1px 0 rgba(0,0,0,0.1);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
     }
 
     .mobile-menu-toggle:hover {
@@ -252,7 +252,7 @@ function quickNavStyles() {
     }
 
     @media (max-width: 1100px) {
-      .mobile-menu-toggle { display: inline-flex; }
+      .mobile-menu-toggle { display: inline-flex !important; }
 
       .quick-nav {
         position: fixed;
@@ -738,6 +738,7 @@ function quickNavScript() {
       const quickNav = document.getElementById('quickNav');
       const mobileMenuToggle = document.getElementById('mobileMenuToggle');
       const mobileNavOverlay = document.getElementById('mobileNavOverlay');
+      const MOBILE_BREAKPOINT = 1100;
 
       const closeMobileNav = () => {
         if (quickNav) quickNav.classList.remove('open');
@@ -767,7 +768,7 @@ function quickNavScript() {
       if (quickNav) {
         quickNav.querySelectorAll('a').forEach(link => {
           link.addEventListener('click', () => {
-            if (window.innerWidth <= 768) closeMobileNav();
+            if (window.innerWidth <= MOBILE_BREAKPOINT) closeMobileNav();
           });
         });
       }
@@ -777,7 +778,7 @@ function quickNavScript() {
       });
 
       window.addEventListener('resize', () => {
-        if (window.innerWidth > 768) closeMobileNav();
+        if (window.innerWidth > MOBILE_BREAKPOINT) closeMobileNav();
       });
     })();
   `;

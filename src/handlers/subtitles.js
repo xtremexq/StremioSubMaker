@@ -2128,7 +2128,7 @@ function createSubtitleHandler(config) {
             const translationEntry = {
               id: `translate_${sourceSub.fileId}_to_${targetLang}`,
               lang: displayName, // Display as "Make Language" in Stremio UI
-              url: `{{ADDON_URL}}/translate/${sourceSub.fileId}/${targetLang}`
+              url: `{{ADDON_URL}}/translate/${sourceSub.fileId}/${targetLang}.srt`
             };
             translationEntries.push(translationEntry);
           }
@@ -2153,7 +2153,7 @@ function createSubtitleHandler(config) {
               learnEntries.push({
                 id: `learn_${sourceSub.fileId}_to_${learnLang}`,
                 lang: displayName,
-                url: `{{ADDON_URL}}/learn/${sourceSub.fileId}/${learnLang}`
+                url: `{{ADDON_URL}}/learn/${sourceSub.fileId}/${learnLang}.vtt`
               });
             }
           }

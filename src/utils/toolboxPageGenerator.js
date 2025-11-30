@@ -703,6 +703,18 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       color: var(--text);
     }
     .status-badge.accent .status-value { color: #032132; }
+    .status-badge .ext-link {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--primary);
+      text-decoration: underline;
+    }
+    .status-badge .ext-link.ready {
+      color: var(--text);
+      text-decoration: none;
+      pointer-events: none;
+      cursor: default;
+    }
     .status-dot {
       width: 12px;
       height: 12px;
@@ -1125,9 +1137,8 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
           <span class="status-dot warn pulse" id="ext-dot"></span>
           <div class="labels">
             <span class="status-label">Extension</span>
-            <span class="status-value" id="ext-value">Checking...</span>
+            <a class="status-value ext-link" id="ext-value" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer">Checking...</a>
           </div>
-          <a class="status-action" id="ext-install-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer" style="display:none;">Install xSync (Chrome/Edge)</a>
         </div>
         <div class="status-badge">
           <span class="status-dot ok"></span>
@@ -1283,11 +1294,10 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       const timeEl = document.getElementById('time-value');
       const extValue = document.getElementById('ext-value');
       const extDot = document.getElementById('ext-dot');
-      const extInstallLink = document.getElementById('ext-install-link');
       let extReady = false;
       let pingTimer = null;
       let pingAttempts = 0;
-      const MAX_PINGS = 6;
+      const MAX_PINGS = 5;
       const EXT_INSTALL_URL = 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en';
       function updateTime() {
         const now = new Date();
@@ -1297,11 +1307,19 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
         extReady = !!ready;
         const toneClass = ready ? 'ok' : (tone || 'bad');
         extDot.className = 'status-dot ' + toneClass;
-        extValue.textContent = text;
-        if (extInstallLink) {
-          const showInstall = !ready && toneClass === 'bad';
-          extInstallLink.style.display = showInstall ? 'inline-flex' : 'none';
-          if (showInstall) extInstallLink.href = EXT_INSTALL_URL;
+        if (extValue) {
+          extValue.textContent = text;
+          if (ready) {
+            extValue.classList.add('ready');
+            extValue.removeAttribute('href');
+            extValue.removeAttribute('target');
+            extValue.removeAttribute('rel');
+          } else {
+            extValue.classList.remove('ready');
+            extValue.setAttribute('href', EXT_INSTALL_URL);
+            extValue.setAttribute('target', '_blank');
+            extValue.setAttribute('rel', 'noopener noreferrer');
+          }
         }
       }
       function pingExtension() {
@@ -1318,7 +1336,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
           }
         };
         sendPing();
-        pingTimer = setInterval(sendPing, 1200);
+        pingTimer = setInterval(sendPing, 2000);
       }
       window.addEventListener('message', event => {
         const msg = event.data;
@@ -1331,10 +1349,6 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       updateTime();
       setInterval(updateTime, 60000);
       setTimeout(pingExtension, 150);
-      setInterval(() => {
-        if (extReady) return;
-        pingExtension();
-      }, 10000);
     })();
 
     // Theme switching functionality
@@ -2029,6 +2043,30 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     .status-labels { display: flex; flex-direction: column; line-height: 1.15; }
     .label-eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
     .status-badge strong { font-size: 14px; }
+    .status-badge .ext-link {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--primary);
+      text-decoration: underline;
+    }
+    .status-badge .ext-link.ready {
+      color: var(--text-primary);
+      text-decoration: none;
+      pointer-events: none;
+      cursor: default;
+    }
+    .status-badge .ext-link {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--primary);
+      text-decoration: underline;
+    }
+    .status-badge .ext-link.ready {
+      color: var(--text-primary);
+      text-decoration: none;
+      pointer-events: none;
+      cursor: default;
+    }
     .hero {
       border-radius: 18px;
       background: radial-gradient(120% 120% at 0% 0%, rgba(8,164,213,0.16), transparent 42%), radial-gradient(120% 120% at 100% 0%, rgba(255,255,255,0.12), transparent 38%), linear-gradient(135deg, var(--surface), var(--surface-2));
@@ -2526,9 +2564,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           <span class="status-dot warn" id="ext-dot"></span>
           <div class="status-labels">
             <span class="label-eyebrow">Extension</span>
-            <strong id="ext-label">Waiting for extension...</strong>
+            <a id="ext-label" class="ext-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer">Waiting for extension...</a>
           </div>
-          <a class="status-action" id="ext-install-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer" style="display:none;">Install xSync (Chrome/Edge)</a>
         </div>
         <div class="status-badge">
           <span class="status-dot ok"></span>
@@ -2909,7 +2946,6 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       extStatus: document.getElementById('ext-status'),
       extDot: document.getElementById('ext-dot'),
       extLabel: document.getElementById('ext-label'),
-      extInstallLink: document.getElementById('ext-install-link'),
       extractLog: document.getElementById('extract-log'),
       translateLog: document.getElementById('translate-log'),
       streamUrl: document.getElementById('stream-url'),
@@ -3141,11 +3177,19 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       state.extensionReady = ready;
       const dotTone = ready ? 'ok' : (tone || 'bad');
       els.extDot.className = 'status-dot ' + dotTone;
-      els.extLabel.textContent = ready ? (text || 'Ready') : (text || 'Extension not detected');
-      if (els.extInstallLink) {
-        const showInstall = !ready && dotTone === 'bad';
-        els.extInstallLink.style.display = showInstall ? 'inline-flex' : 'none';
-        if (showInstall) els.extInstallLink.href = EXT_INSTALL_URL;
+      if (els.extLabel) {
+        els.extLabel.textContent = ready ? (text || 'Ready') : (text || 'Extension not detected');
+        if (ready) {
+          els.extLabel.classList.add('ready');
+          els.extLabel.removeAttribute('href');
+          els.extLabel.removeAttribute('target');
+          els.extLabel.removeAttribute('rel');
+        } else {
+          els.extLabel.classList.remove('ready');
+          els.extLabel.setAttribute('href', EXT_INSTALL_URL);
+          els.extLabel.setAttribute('target', '_blank');
+          els.extLabel.setAttribute('rel', 'noopener noreferrer');
+        }
       }
     }
 
@@ -3621,6 +3665,10 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       }
       if (msg.type === 'SUBMAKER_PONG') {
         pingRetries = 0; // Reset retry counter
+        if (pingTimer) {
+          clearTimeout(pingTimer);
+          pingTimer = null;
+        }
         updateExtensionStatus(true, 'Ready (v' + (msg.version || '-') + ')');
       } else if (msg.type === 'SUBMAKER_EXTRACT_PROGRESS') {
         // Deduplicate consecutive identical progress messages to prevent spam
@@ -3669,23 +3717,27 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     });
 
     let pingRetries = 0;
+    let pingTimer = null;
     const MAX_PING_RETRIES = 5;
 
     function sendPing() {
-      updateExtensionStatus(false, 'Pinging extension...', 'warn');
-      window.postMessage({ type: 'SUBMAKER_PING', source: 'webpage' }, '*');
-
-      // Auto-retry if no response received
-      if (pingRetries < MAX_PING_RETRIES) {
-        pingRetries++;
-        setTimeout(() => {
-          if (!state.extensionReady) {
-            sendPing();
-          }
-        }, 1000); // Retry every 1 second
-      } else if (!state.extensionReady) {
-        updateExtensionStatus(false, 'Extension not detected', 'bad');
+      if (pingTimer) {
+        clearTimeout(pingTimer);
+        pingTimer = null;
       }
+      pingRetries = 0;
+      const tick = () => {
+        if (state.extensionReady) return;
+        pingRetries += 1;
+        updateExtensionStatus(false, 'Pinging extension...', 'warn');
+        window.postMessage({ type: 'SUBMAKER_PING', source: 'webpage' }, '*');
+        if (pingRetries >= MAX_PING_RETRIES && !state.extensionReady) {
+          updateExtensionStatus(false, 'Extension not detected', 'bad');
+          return;
+        }
+        pingTimer = setTimeout(tick, 2000);
+      };
+      tick();
     }
 
     function requestExtraction() {
@@ -4382,9 +4434,8 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
           <span class="status-dot warn pulse" id="ext-dot"></span>
           <div class="status-labels">
             <span class="label-eyebrow">Extension</span>
-            <strong id="ext-label">Waiting for extension...</strong>
+            <a id="ext-label" class="ext-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer">Waiting for extension...</a>
           </div>
-          <a class="status-action" id="ext-install-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer" style="display:none;">Install xSync (Chrome/Edge)</a>
         </div>
         <div class="status-badge">
           <span class="status-dot ok"></span>
@@ -4607,11 +4658,11 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
       const extDot = document.getElementById('ext-dot');
       const extLabel = document.getElementById('ext-label');
       const extStatus = document.getElementById('ext-status');
-      const extInstallLink = document.getElementById('ext-install-link');
       const startBtnLabel = startBtn ? startBtn.textContent : 'Start auto-subtitles';
 
       let extensionReady = false;
       let pingRetries = 0;
+      let pingTimer = null;
       const MAX_PING_RETRIES = 5;
       let autoSubsInFlight = false;
       const EXT_INSTALL_URL = 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en';
@@ -4620,13 +4671,21 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         extensionReady = ready;
         const dotTone = ready ? 'ok' : (tone || 'bad');
         if (extDot) extDot.className = 'status-dot ' + dotTone;
-        if (extLabel) extLabel.textContent = ready ? (text || 'Ready') : (text || 'Extension not detected');
-        if (extStatus) extStatus.title = text || '';
-        if (extInstallLink) {
-          const showInstall = !ready && dotTone === 'bad';
-          extInstallLink.style.display = showInstall ? 'inline-flex' : 'none';
-          if (showInstall) extInstallLink.href = EXT_INSTALL_URL;
+        if (extLabel) {
+          extLabel.textContent = ready ? (text || 'Ready') : (text || 'Extension not detected');
+          if (ready) {
+            extLabel.classList.add('ready');
+            extLabel.removeAttribute('href');
+            extLabel.removeAttribute('target');
+            extLabel.removeAttribute('rel');
+          } else {
+            extLabel.classList.remove('ready');
+            extLabel.setAttribute('href', EXT_INSTALL_URL);
+            extLabel.setAttribute('target', '_blank');
+            extLabel.setAttribute('rel', 'noopener noreferrer');
+          }
         }
+        if (extStatus) extStatus.title = text || '';
       }
 
       function setAutoSubsInFlight(active) {
@@ -4642,24 +4701,32 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         if (msg.source !== 'extension') return;
         if (msg.type === 'SUBMAKER_PONG') {
           pingRetries = 0;
+          if (pingTimer) {
+            clearTimeout(pingTimer);
+            pingTimer = null;
+          }
           updateExtensionStatus(true, 'Ready (v' + (msg.version || '-') + ')');
         }
       });
 
       function sendPing() {
-        updateExtensionStatus(false, 'Pinging extension...', 'warn');
-        window.postMessage({ type: 'SUBMAKER_PING', source: 'webpage' }, '*');
-
-        if (pingRetries < MAX_PING_RETRIES) {
-          pingRetries++;
-          setTimeout(() => {
-            if (!extensionReady) {
-              sendPing();
-            }
-          }, 1000);
-        } else if (!extensionReady) {
-          updateExtensionStatus(false, 'Extension not detected', 'bad');
+        if (pingTimer) {
+          clearTimeout(pingTimer);
+          pingTimer = null;
         }
+        pingRetries = 0;
+        const tick = () => {
+          if (extensionReady) return;
+          pingRetries += 1;
+          updateExtensionStatus(false, 'Pinging extension...', 'warn');
+          window.postMessage({ type: 'SUBMAKER_PING', source: 'webpage' }, '*');
+          if (pingRetries >= MAX_PING_RETRIES && !extensionReady) {
+            updateExtensionStatus(false, 'Extension not detected', 'bad');
+            return;
+          }
+          pingTimer = setTimeout(tick, 2000);
+        };
+        tick();
       }
 
       setTimeout(sendPing, 500);
