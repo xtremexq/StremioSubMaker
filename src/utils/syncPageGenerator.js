@@ -2488,7 +2488,8 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                 strategy: preset.plan?.strategy || (fullScan ? 'full' : 'spread'),
                 fullScan,
                 durationAdjusted,
-                modeGroup: primaryMode
+                modeGroup: primaryMode,
+                primaryMode
             };
 
             if (durationSeconds && plan.windowSeconds && plan.windowSeconds > durationSeconds) {
@@ -2717,7 +2718,9 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     minWindows: plan.minWindows,
                     maxWindows: plan.maxWindows,
                     fullScan: plan.fullScan,
-                    durationAdjusted: plan.durationAdjusted
+                    durationAdjusted: plan.durationAdjusted,
+                    modeGroup: plan.modeGroup || primaryMode,
+                    primaryMode: primaryMode
                 } : null;
                 let timeoutId;
                 STATE.activeMessageId = messageId;
