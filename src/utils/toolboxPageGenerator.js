@@ -4,7 +4,7 @@ const { deriveVideoHash } = require('./videoHash');
 const { parseStremioId } = require('./subtitle');
 const { version: appVersion } = require('../../package.json');
 const { quickNavStyles, quickNavScript, renderQuickNav, renderRefreshBadge } = require('./quickNav');
-const { buildClientBootstrap, loadLocale } = require('./i18n');
+const { buildClientBootstrap, loadLocale, getTranslator } = require('./i18n');
 
 function escapeHtml(value) {
   if (value === undefined || value === null) return '';
@@ -1594,6 +1594,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   const languageMaps = buildLanguageLookupMaps();
   const devMode = config.devMode === true;
   const localeBootstrap = buildClientBootstrap(loadLocale(config?.uiLanguage || 'en'));
+  const t = getTranslator(config?.uiLanguage || 'en');
   const providerOptions = (() => {
     const options = [];
     const providers = config.providers || {};
@@ -2553,7 +2554,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     <button class="close" id="episodeToastDismiss" type="button" aria-label="Dismiss notification">×</button>
     <button class="action" id="episodeToastUpdate" type="button">Update</button>
   </div>
-  ${renderQuickNav(links, 'embeddedSubs', false, devMode)}
+  ${renderQuickNav(links, 'embeddedSubs', false, devMode, t)}
   <div class="page">
     <header class="masthead">
       <div class="page-hero">
@@ -2615,7 +2616,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
               <option value="smart">Smart (multi-strategy)</option>
               <option value="complete">Complete (full file)</option>
             </select>
-            <p class="mode-helper">Smart keeps using the staged extraction flow. Complete downloads the full stream and demuxes everything for maximum coverage.</p>
+            <p class="mode-helper">Smart uses the staged extraction flow (video element + targeted samples). Complete starts the same way and, if needed, fetches and demuxes the full stream for maximum coverage.</p>
             <button id="extract-btn" type="button" class="secondary">Extract Subtitles</button>
           </div>
           <div class="log-header" aria-hidden="true">
@@ -2785,6 +2786,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     const INSTRUCTIONS_ACK = 'ack';
     const INSTRUCTIONS_HIDE = 'hide';
     const EXTRACT_MODE_KEY = 'submaker_embedded_extract_mode';
+    const EXTRACT_WATCHDOG_MS = 5 * 60 * 1000; // keep extraction alive while progress flows
     let subtitleMenuInstance = null;
     let extractWatchdogTimer = null;
     let lastExtensionLabel = '';
@@ -2797,6 +2799,15 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           reason: reason || ''
         }, '*');
       } catch (_) {}
+    }
+
+    function refreshExtractionWatchdog() {
+      if (extractWatchdogTimer) {
+        clearTimeout(extractWatchdogTimer);
+        extractWatchdogTimer = null;
+      }
+      if (!state.extractionInFlight) return;
+      extractWatchdogTimer = setTimeout(handleExtractionTimeout, EXTRACT_WATCHDOG_MS);
     }
 
     function setInstructionLock(active) {
@@ -3219,13 +3230,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
 
     function setExtractionInFlight(active) {
       state.extractionInFlight = !!active;
-      if (extractWatchdogTimer) {
-        clearTimeout(extractWatchdogTimer);
-        extractWatchdogTimer = null;
-      }
-      if (state.extractionInFlight) {
-        extractWatchdogTimer = setTimeout(handleExtractionTimeout, 60000);
-      }
+      refreshExtractionWatchdog();
       if (els.extractBtn) {
         els.extractBtn.disabled = !!active;
         els.extractBtn.textContent = active ? 'Extracting...' : buttonLabels.extract;
@@ -3238,14 +3243,25 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
 
     function applyTranslateDisabled() {
       if (!els.translateBtn) return;
-      const disabled = !state.step2Enabled || state.translationInFlight;
+      const disabled = !state.step2Enabled;
       els.translateBtn.disabled = disabled;
     }
 
     function setTranslationInFlight(active) {
       state.translationInFlight = !!active;
       if (els.translateBtn) {
-        els.translateBtn.textContent = active ? 'Translating...' : buttonLabels.translate;
+        const running = Math.max(0, state.activeTranslations || 0);
+        const queued = Math.max(0, Array.isArray(state.queue) ? state.queue.length : 0);
+        if (state.translationInFlight && (running || queued)) {
+          const parts = [];
+          if (running) parts.push(running + ' running');
+          if (queued) parts.push(queued + ' queued');
+          els.translateBtn.textContent = 'Queue translation (' + parts.join(', ') + ')';
+        } else if (state.translationInFlight) {
+          els.translateBtn.textContent = 'Queue translation';
+        } else {
+          els.translateBtn.textContent = buttonLabels.translate;
+        }
       }
       applyTranslateDisabled();
     }
@@ -3253,7 +3269,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     function handleExtractionTimeout() {
       extractWatchdogTimer = null;
       if (!state.extractionInFlight) return;
-      logExtract('Extension did not respond in time. Resetting extraction; please retry.');
+      const timeoutMinutes = Math.round(EXTRACT_WATCHDOG_MS / 60000);
+      logExtract('No extraction progress for ' + timeoutMinutes + ' minute(s). Resetting extraction; please retry.');
       state.extractMessageId = null;
       state.lastProgressStatus = null;
       resetExtractionState(false);
@@ -3689,7 +3706,6 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     }
 
     function scheduleTranslation(targetLang) {
-      if (state.translationInFlight) return;
       const track = state.tracks.find(t => t.id === state.selectedTrackId);
       if (!track) {
         logTranslate('Select a subtitle in Step 1 outputs first.');
@@ -3800,6 +3816,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         const level = (msg.level || 'info').toUpperCase();
         logExtract('[' + level + '] ' + (msg.text || 'Log event'));
       } else if (msg.type === 'SUBMAKER_EXTRACT_PROGRESS') {
+        refreshExtractionWatchdog();
         // Deduplicate consecutive identical progress messages to prevent spam
         const currentStatus = msg.status || ('Progress ' + msg.progress + '%');
         if (currentStatus !== state.lastProgressStatus) {
@@ -3906,7 +3923,6 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     // Event bindings
     els.extractBtn.onclick = requestExtraction;
     els.translateBtn.onclick = () => {
-      if (state.translationInFlight) return;
       const targetLang = state.selectedTargetLang;
       if (!targetLang) {
         logTranslate('Select a target language.');
@@ -3995,6 +4011,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
   const videoHash = deriveVideoHash(filename, videoId);
   const languageMaps = buildLanguageLookupMaps();
   const localeBootstrap = buildClientBootstrap(loadLocale(config?.uiLanguage || 'en'));
+  const t = getTranslator(config?.uiLanguage || 'en');
   const subtitleMenuTargets = targetLanguages.map(code => ({
     code,
     name: getLanguageName(code) || code
@@ -4542,7 +4559,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     <button class="close" id="episodeToastDismiss" type="button" aria-label="Dismiss notification">×</button>
     <button class="action" id="episodeToastUpdate" type="button">Update</button>
   </div>
-  ${renderQuickNav(links, 'automaticSubs', false, devMode)}
+  ${renderQuickNav(links, 'automaticSubs', false, devMode, t)}
   <div class="wrap">
     <header class="masthead">
       <div class="page-hero">

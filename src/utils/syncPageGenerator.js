@@ -15,7 +15,7 @@ const { deriveVideoHash } = require('./videoHash');
 const { parseStremioId } = require('./subtitle');
 const { version: appVersion } = require('../../package.json');
 const { quickNavStyles, quickNavScript, renderQuickNav, renderRefreshBadge } = require('./quickNav');
-const { buildClientBootstrap, loadLocale } = require('./i18n');
+const { buildClientBootstrap, loadLocale, getTranslator } = require('./i18n');
 
 function escapeHtml(text) {
     if (!text) return '';
@@ -407,6 +407,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
     const devMode = (config || {}).devMode === true;
     const languageMaps = buildLanguageLookupMaps();
     const localeBootstrap = buildClientBootstrap(loadLocale(config?.uiLanguage || 'en'));
+    const t = getTranslator(config?.uiLanguage || 'en');
 
     // Filter out action buttons and xSync entries to show only fetchable subtitles
     // Filter out action buttons (legacy and new Sub Toolbox) so only real subtitles are selectable
@@ -1711,7 +1712,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                 <h3>Sync Methods</h3>
                 <ol>
                     <li><strong>Manual Offset:</strong> Adjust subtitle timing manually with positive/negative milliseconds when you don't want to run autosync.</li>
-                    <li><strong>Fast Fingerprint Pre-pass:</strong> Coarse audio fingerprint pass to lock the big offset before deeper scans (on by default).</li>
+                    <li><strong>Fast Fingerprint Pre-pass:</strong> Coarse ffsubsync fingerprint check to lock the big offset before deeper scans (on by default).</li>
                     <li><strong>ALASS (audio ➜ subtitle):</strong> Fast wasm anchors against the audio; pick Rapid/Balanced/Deep/Complete profiles for coverage.</li>
                     <li><strong>FFSubSync (audio ➜ subtitle):</strong> Drift-aware audio alignment via ffsubsync-wasm; choose a light, balanced, deep, or complete scan.</li>
                     <li><strong>Vosk CTC/DTW (text ➜ audio):</strong> Force-align your subtitle text directly to audio with Vosk logits + DTW, great for broken timings or big offsets.</li>
@@ -1737,7 +1738,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         <button class="close" id="episodeToastDismiss" type="button" aria-label="Dismiss notification">×</button>
         <button class="action" id="episodeToastUpdate" type="button">Update</button>
     </div>
-    ${renderQuickNav(links, 'syncSubtitles', false, devMode)}
+    ${renderQuickNav(links, 'syncSubtitles', false, devMode, t)}
     <div class="page">
         <header class="masthead">
             <div class="page-hero">
@@ -1898,7 +1899,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                         <input type="checkbox" id="useFingerprintPrepass" checked>
                         <span>
                             <strong>Fast fingerprint pre-pass (recommended)</strong><br>
-                            Locks the coarse offset quickly using short audio fingerprints before running the chosen engine. Disable only if the audio is muted, heavily trimmed, or you want to skip the extra hop.
+                            Runs a quick ffsubsync coarse offset pass on the first audio windows before your selected engine. Disable only if the audio is muted, heavily trimmed, or you want to skip the extra hop.
                         </span>
                     </label>
                 </div>
@@ -2525,20 +2526,20 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         function describeSyncPlan(plan) {
             if (!plan) return '';
             if (plan.fullScan) {
-                if (plan.windowSeconds) return `Full runtime (${Math.round(plan.windowSeconds)}s) scan`;
+                if (plan.windowSeconds) return 'Full runtime (' + Math.round(plan.windowSeconds) + 's) scan';
                 return 'Full runtime scan';
             }
             const parts = [];
             if (plan.windowCount && plan.windowSeconds) {
-                parts.push(`${plan.windowCount} x ${Math.round(plan.windowSeconds)}s`);
+                parts.push(String(plan.windowCount) + ' x ' + Math.round(plan.windowSeconds) + 's');
             } else if (plan.windowCount) {
-                parts.push(`${plan.windowCount} windows`);
+                parts.push(String(plan.windowCount) + ' windows');
             }
             if (plan.durationSeconds && plan.coverageSeconds) {
                 const pct = Math.min(100, Math.round((plan.coverageSeconds / plan.durationSeconds) * 100));
-                parts.push(`~${pct}% of detected runtime`);
+                parts.push('~' + pct + '% of detected runtime');
             } else if (plan.coverageTargetPct) {
-                parts.push(`~${Math.round(plan.coverageTargetPct * 100)}% target coverage`);
+                parts.push('~' + Math.round(plan.coverageTargetPct * 100) + '% target coverage');
             }
             if (plan.useFingerprintPrepass) {
                 parts.push('fingerprint pre-pass');

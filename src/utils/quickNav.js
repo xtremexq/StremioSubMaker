@@ -293,8 +293,9 @@ function quickNavStyles() {
   `;
 }
 
-function renderQuickNav(links, activeKey, showRefreshButton = true, devMode = true) {
+function renderQuickNav(links, activeKey, showRefreshButton = true, devMode = true, t = (k, vars, fallback) => fallback || k) {
   const devDisabled = devMode !== true ? ' dev-disabled' : '';
+  const label = (key, fallback, vars) => t(`nav.${key}`, vars || {}, fallback);
   return `
   <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Open menu">
     <span></span>
@@ -304,37 +305,37 @@ function renderQuickNav(links, activeKey, showRefreshButton = true, devMode = tr
   <div class="mobile-nav-overlay" id="mobileNavOverlay"></div>
   <nav class="quick-nav" id="quickNav">
     <div class="quick-nav-links">
-      ${showRefreshButton ? `<button type="button" class="quick-nav-link quick-nav-refresh" id="quickNavRefresh" title="Jump to your latest stream">
+      ${showRefreshButton ? `<button type="button" class="quick-nav-link quick-nav-refresh" id="quickNavRefresh" title="${label('refreshTitle', 'Jump to your latest stream')}">
         <span class="refresh-icon">⟳</span>
-        <span class="refresh-label">Refresh stream</span>
+        <span class="refresh-label">${label('refresh', 'Refresh stream')}</span>
       </button>` : ''}
       <a class="quick-nav-link${activeKey === 'subToolbox' ? ' active' : ''}" href="${links.subToolbox}">
         <span>🧰</span>
-        <span>Sub Toolbox</span>
+        <span>${label('subToolbox', 'Sub Toolbox')}</span>
       </a>
       <a class="quick-nav-link${activeKey === 'translateFiles' ? ' active' : ''}" href="${links.translateFiles}">
         <span>📂</span>
-        <span>Translate files</span>
-        ${activeKey === 'translateFiles' ? '<span class="pill">You are here</span>' : ''}
+        <span>${label('translateFiles', 'Translate files')}</span>
+        ${activeKey === 'translateFiles' ? `<span class="pill">${label('youAreHere', 'You are here')}</span>` : ''}
       </a>
       <a class="quick-nav-link${activeKey === 'embeddedSubs' ? ' active' : ''}${devDisabled}" href="${devMode ? links.embeddedSubs : '#'}">
         <span>🧲</span>
-        <span>Extract Subs</span>
-        ${activeKey === 'embeddedSubs' ? '<span class="pill">You are here</span>' : ''}
+        <span>${label('embeddedSubs', 'Extract Subs')}</span>
+        ${activeKey === 'embeddedSubs' ? `<span class="pill">${label('youAreHere', 'You are here')}</span>` : ''}
       </a>
       <a class="quick-nav-link${activeKey === 'syncSubtitles' ? ' active' : ''}${devDisabled}" href="${devMode ? links.syncSubtitles : '#'}">
         <span>⏱️</span>
-        <span>Sync subtitles</span>
-        ${activeKey === 'syncSubtitles' ? '<span class="pill">You are here</span>' : ''}
+        <span>${label('syncSubtitles', 'Sync subtitles')}</span>
+        ${activeKey === 'syncSubtitles' ? `<span class="pill">${label('youAreHere', 'You are here')}</span>` : ''}
       </a>
       <a class="quick-nav-link${activeKey === 'automaticSubs' ? ' active' : ''}${devDisabled}" href="${devMode ? links.automaticSubs : '#'}">
         <span>🤖</span>
-        <span>Auto subs</span>
-        ${activeKey === 'automaticSubs' ? '<span class="pill">You are here</span>' : ''}
+        <span>${label('automaticSubs', 'Auto subs')}</span>
+        ${activeKey === 'automaticSubs' ? `<span class="pill">${label('youAreHere', 'You are here')}</span>` : ''}
       </a>
       <a class="quick-nav-link${activeKey === 'configure' ? ' active' : ''}" href="${links.configure}">
         <span>🛠️</span>
-        <span>Configure</span>
+        <span>${label('configure', 'Configure')}</span>
       </a>
     </div>
   </nav>

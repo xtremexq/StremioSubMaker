@@ -117,7 +117,85 @@
     },
     "config": {
       "uiLanguageLabel": "Idioma de la interfaz",
-      "uiLanguageDescription": "Aplica a todas las páginas y subtítulos de SubMaker"
+      "uiLanguageDescription": "Aplica a todas las páginas y subtítulos de SubMaker",
+      "heroTitle": "SubMaker",
+      "heroSubtitle": "Traducción de subtítulos con IA",
+      "quickStatsStatus": "Estado",
+      "quickStatsConfigure": "Configurar",
+      "quickStatsToolbox": "Toolbox",
+      "quickStatsLastSave": "Último guardado",
+      "quickActionHelp": "Ayuda",
+      "alerts": {
+        "sessionLost": "Se perdió la sesión de configuración. Vuelve a configurar y guarda para crear una nueva sesión.",
+        "loadLanguagesFailed": "No se pudieron cargar los idiomas: {reason}",
+        "loadLanguagesExhausted": "No se pudieron cargar los idiomas después de {retries} intentos: {reason}. Actualiza la página.",
+        "sourceLimit": "Solo puedes elegir hasta {limit} idiomas de origen",
+        "targetLimit": "Solo puedes elegir hasta {limit} idiomas de destino (incluye Learn Mode)",
+        "noTranslationLimit": "Solo puedes elegir hasta {limit} idiomas en modo Solo obtener",
+        "saveConfigFirst": "Guarda tu configuración antes de abrir Sub Toolbox.",
+        "betaOn": "Modo experimental ACTIVADO",
+        "betaOff": "Modo experimental DESACTIVADO",
+        "missingCfWorkers": "La clave de Cloudflare Workers AI debe tener formato ACCOUNT_ID|TOKEN",
+        "missingProviderKey": "Agrega una clave de API para {provider} para cargar modelos"
+      }
+    },
+    "nav": {
+      "refresh": "Refrescar stream",
+      "refreshTitle": "Ir a tu último stream",
+      "subToolbox": "Sub Toolbox",
+      "translateFiles": "Traducir archivos",
+      "embeddedSubs": "Extraer subs",
+      "syncSubtitles": "Sincronizar subtítulos",
+      "automaticSubs": "Subs automáticos",
+      "configure": "Configurar",
+      "youAreHere": "Estás aquí"
+    },
+    "xsync": {
+      "popup": {
+        "title": "SubMaker xSync",
+        "standingBy": "En espera",
+        "active": "Activos",
+        "total": "Total",
+        "configure": "Configurar",
+        "settings": "Ajustes",
+        "toolbox": "Toolbox",
+        "advanced": "Avanzado",
+        "syncPage": "Página de Sync",
+        "connection": "Conexión",
+        "factoryReset": "Restablecer",
+        "open": "Abrir",
+        "reload": "Recargar",
+        "reset": "Reiniciar",
+        "copyright": "SubMaker xSync © 2025",
+        "resetConfirm": "¿Seguro que quieres reiniciar la extensión? Se borrarán todos los ajustes y datos.",
+        "resetFailed": "No se pudo reiniciar la extensión. Intenta quitarla y reinstalarla."
+      },
+      "options": {
+        "title": "Ajustes de SubMaker xSync",
+        "subtitle": "Opciones y configuración",
+        "status": "Estado",
+        "configure": "Configurar",
+        "toolbox": "Toolbox",
+        "lastSave": "Último guardado",
+        "notCaptured": "No capturado",
+        "notYet": "Aún no",
+        "generalEyebrow": "General",
+        "generalTitle": "Comportamiento global",
+        "autoSync": "Sincronización automática",
+        "autoSyncHint": "Mantén la sincronización automática activa cuando se detecte SubMaker.",
+        "statusRefresh": "Actualización de estado",
+        "statusRefreshHint": "Cada cuánto el popup actualiza las estadísticas.",
+        "themePreference": "Preferencia de tema",
+        "linksEyebrow": "Captura de enlaces",
+        "linksTitle": "URLs de configuración y Toolbox",
+        "linksHint": "Abre las páginas de configuración y toolbox una vez y recordaremos las URLs.",
+        "configureUrl": "URL de configuración",
+        "toolboxUrl": "URL de Toolbox",
+        "syncUrl": "URL de la página de Sync",
+        "saveButton": "Guardar ajustes",
+        "saveSuccess": "Ajustes guardados",
+        "saveError": "No se pudieron guardar los ajustes"
+      }
     }
   }
 }

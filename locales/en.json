@@ -117,7 +117,85 @@
     },
     "config": {
       "uiLanguageLabel": "UI Language",
-      "uiLanguageDescription": "Applies to all SubMaker pages and subtitles"
+      "uiLanguageDescription": "Applies to all SubMaker pages and subtitles",
+      "heroTitle": "SubMaker",
+      "heroSubtitle": "AI-Powered Subtitle Translation",
+      "quickStatsStatus": "Status",
+      "quickStatsConfigure": "Configure",
+      "quickStatsToolbox": "Toolbox",
+      "quickStatsLastSave": "Last Save",
+      "quickActionHelp": "Help",
+      "alerts": {
+        "sessionLost": "Config session was lost. Please reconfigure and save to create a new session.",
+        "loadLanguagesFailed": "Failed to load languages: {reason}",
+        "loadLanguagesExhausted": "Failed to load languages after {retries} attempts: {reason}. Please refresh the page.",
+        "sourceLimit": "You can only select up to {limit} source languages",
+        "targetLimit": "You can only select up to {limit} total target languages (including Learn Mode)",
+        "noTranslationLimit": "You can only select up to {limit} languages in Just Fetch mode",
+        "saveConfigFirst": "Save your config first to open Sub Toolbox.",
+        "betaOn": "Experimental Mode ON",
+        "betaOff": "Experimental Mode OFF",
+        "missingCfWorkers": "Cloudflare Workers AI key must be in ACCOUNT_ID|TOKEN format",
+        "missingProviderKey": "Add an API key for {provider} to load models"
+      }
+    },
+    "nav": {
+      "refresh": "Refresh stream",
+      "refreshTitle": "Jump to your latest stream",
+      "subToolbox": "Sub Toolbox",
+      "translateFiles": "Translate files",
+      "embeddedSubs": "Extract Subs",
+      "syncSubtitles": "Sync subtitles",
+      "automaticSubs": "Auto subs",
+      "configure": "Configure",
+      "youAreHere": "You are here"
+    },
+    "xsync": {
+      "popup": {
+        "title": "SubMaker xSync",
+        "standingBy": "Standing by",
+        "active": "Active",
+        "total": "Total",
+        "configure": "Configure",
+        "settings": "Settings",
+        "toolbox": "Toolbox",
+        "advanced": "Advanced",
+        "syncPage": "Sync Page",
+        "connection": "Connection",
+        "factoryReset": "Factory Reset",
+        "open": "Open",
+        "reload": "Reload",
+        "reset": "Reset",
+        "copyright": "SubMaker xSync © 2025",
+        "resetConfirm": "Are you sure you want to reset the extension? This will clear all settings and data.",
+        "resetFailed": "Failed to reset extension. Please try removing and reinstalling it."
+      },
+      "options": {
+        "title": "SubMaker xSync Settings",
+        "subtitle": "Settings & Configuration",
+        "status": "Status",
+        "configure": "Configure",
+        "toolbox": "Toolbox",
+        "lastSave": "Last Save",
+        "notCaptured": "Not captured",
+        "notYet": "Not yet",
+        "generalEyebrow": "General",
+        "generalTitle": "Global Behaviour",
+        "autoSync": "Auto Sync",
+        "autoSyncHint": "Keep automatic syncing active whenever SubMaker is detected.",
+        "statusRefresh": "Status Refresh",
+        "statusRefreshHint": "How often the popup refreshes job stats.",
+        "themePreference": "Theme Preference",
+        "linksEyebrow": "Link Capture",
+        "linksTitle": "Configure and Toolbox links",
+        "linksHint": "Open the configure and toolbox pages once and we’ll remember the URLs.",
+        "configureUrl": "Configure URL",
+        "toolboxUrl": "Toolbox URL",
+        "syncUrl": "Sync Page URL",
+        "saveButton": "Save Settings",
+        "saveSuccess": "Settings saved",
+        "saveError": "Failed to save settings"
+      }
     }
   }
 }

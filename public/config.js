@@ -59,6 +59,13 @@
     }
     initLocale();
 
+    function tConfig(key, vars = {}, fallback = '') {
+        try {
+            if (typeof window.t === 'function') return window.t(key, vars, fallback || key);
+        } catch (_) {}
+        return fallback || key;
+    }
+
     /**
      * Default API Keys Configuration
      *
@@ -565,6 +572,14 @@ Translate to {target_language}.`;
         if (desc) {
             desc.textContent = translate('config.uiLanguageDescription', 'Applies to all SubMaker pages and subtitles');
         }
+        const heroTitle = document.getElementById('heroTitle');
+        if (heroTitle) {
+            heroTitle.textContent = translate('config.heroTitle', 'SubMaker');
+        }
+        const heroSubtitle = document.getElementById('heroSubtitle');
+        if (heroSubtitle) {
+            heroSubtitle.textContent = translate('config.heroSubtitle', 'AI-Powered Subtitle Translation');
+        }
     }
 
     function isBetaModeEnabled() {
@@ -661,7 +676,7 @@ Translate to {target_language}.`;
                                 try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
 
                                 // Show a warning to the user
-                                showAlert('Config session was lost. Please reconfigure and save to create a new session.', 'warning');
+                                showAlert(tConfig('config.alerts.sessionLost', {}, 'Config session was lost. Please reconfigure and save to create a new session.'), 'warning');
                             } else {
                                 // Normal path - store the original token
                                 try { localStorage.setItem(TOKEN_KEY, rawConfigParam); } catch (_) {}
@@ -720,7 +735,7 @@ Translate to {target_language}.`;
 
         // Kick off language loading without blocking UI/modals
         loadLanguages().catch(err => {
-            try { showAlert('Failed to load languages: ' + err.message, 'error'); } catch (_) {}
+            try { showAlert(tConfig('config.alerts.loadLanguagesFailed', { reason: err.message }, 'Failed to load languages: ' + err.message), 'error'); } catch (_) {}
         });
 
         setupEventListeners();
@@ -1384,7 +1399,7 @@ Translate to {target_language}.`;
         }
 
         // All retries failed
-        showAlert(`Failed to load languages after ${maxRetries} attempts: ${lastError.message}. Please refresh the page.`, 'error');
+        showAlert(tConfig('config.alerts.loadLanguagesExhausted', { retries: maxRetries, reason: lastError.message }, `Failed to load languages after ${maxRetries} attempts: ${lastError.message}. Please refresh the page.`), 'error');
     }
 
     // Normalize/dedupe languages for UI (e.g., merge ptbr/pt-br/pob into one 'pob')
@@ -1475,19 +1490,19 @@ Translate to {target_language}.`;
             // Add language
             if (type === 'source') {
                 if (currentConfig[configKey].length >= MAX_SOURCE_LANGUAGES) {
-                    showAlert(`You can only select up to ${MAX_SOURCE_LANGUAGES} source languages`, 'warning');
+                    showAlert(tConfig('config.alerts.sourceLimit', { limit: MAX_SOURCE_LANGUAGES }, `You can only select up to ${MAX_SOURCE_LANGUAGES} source languages`), 'warning');
                     return;
                 }
                 currentConfig[configKey].push(code);
             } else if (type === 'target' || type === 'learn') {
                 if (!canAddTargetLanguage(code)) {
-                    showAlert(`You can only select up to ${MAX_TARGET_LANGUAGES} total target languages (including Learn Mode)`, 'warning');
+                    showAlert(tConfig('config.alerts.targetLimit', { limit: MAX_TARGET_LANGUAGES }, `You can only select up to ${MAX_TARGET_LANGUAGES} total target languages (including Learn Mode)`), 'warning');
                     return;
                 }
                 currentConfig[configKey].push(code);
             } else if (type === 'notranslation') {
                 if (currentConfig[configKey].length >= MAX_NO_TRANSLATION_LANGUAGES) {
-                    showAlert(`You can only select up to ${MAX_NO_TRANSLATION_LANGUAGES} languages in Just Fetch mode`, 'warning');
+                    showAlert(tConfig('config.alerts.noTranslationLimit', { limit: MAX_NO_TRANSLATION_LANGUAGES }, `You can only select up to ${MAX_NO_TRANSLATION_LANGUAGES} languages in Just Fetch mode`), 'warning');
                     return;
                 }
                 currentConfig[configKey].push(code);
@@ -1758,7 +1773,7 @@ Translate to {target_language}.`;
                 const configRef = toolboxLauncher.dataset.configRef || getActiveConfigRef();
                 const url = buildToolboxUrl(configRef);
                 if (!url) {
-                    showAlert('Save your config first to open Sub Toolbox.', 'warning');
+                    showAlert(tConfig('config.alerts.saveConfigFirst', {}, 'Save your config first to open Sub Toolbox.'), 'warning');
                     return;
                 }
                 window.open(url, '_blank', 'noopener,noreferrer');
@@ -2188,7 +2203,7 @@ Translate to {target_language}.`;
 
         if (!options.silent && prev !== betaEnabled) {
             try {
-                showAlert(betaEnabled ? '🔬 Experimental Mode ON' : '🔬 Experimental Mode OFF', betaEnabled ? 'success' : 'info');
+                showAlert(betaEnabled ? tConfig('config.alerts.betaOn', {}, '🔬 Experimental Mode ON') : tConfig('config.alerts.betaOff', {}, '🔬 Experimental Mode OFF'), betaEnabled ? 'success' : 'info');
             } catch (_) {}
         }
 
@@ -2556,7 +2571,7 @@ Translate to {target_language}.`;
         const apiKey = apiKeyInput.value.trim();
         if (!apiKey) {
             if (!options.silent) {
-                showAlert(`Add an API key for ${PROVIDERS[providerKey]?.label || providerKey} to load models`, 'warning');
+                showAlert(tConfig('config.alerts.missingProviderKey', { provider: PROVIDERS[providerKey]?.label || providerKey }, `Add an API key for ${PROVIDERS[providerKey]?.label || providerKey} to load models`), 'warning');
             }
             return;
         }
@@ -2572,7 +2587,7 @@ Translate to {target_language}.`;
                     modelSelect.innerHTML = '<option value="">Add ACCOUNT_ID|TOKEN to load models</option>';
                 }
                 if (!options.silent) {
-                    showAlert('Cloudflare Workers AI key must be in ACCOUNT_ID|TOKEN format', 'error');
+                    showAlert(tConfig('config.alerts.missingCfWorkers', {}, 'Cloudflare Workers AI key must be in ACCOUNT_ID|TOKEN format'), 'error');
                 }
                 return;
             }

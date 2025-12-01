@@ -2,7 +2,7 @@ const { getDefaultProviderParameters, mergeProviderParameters } = require('./con
 const { getLanguageName, buildLanguageLookupMaps } = require('./languages');
 const { quickNavStyles, quickNavScript, renderQuickNav, renderRefreshBadge } = require('./quickNav');
 const { version: appVersion } = require('../../package.json');
-const { buildClientBootstrap, loadLocale } = require('./i18n');
+const { buildClientBootstrap, loadLocale, getTranslator } = require('./i18n');
 
 function safeLanguageMaps() {
     try {
@@ -126,6 +126,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         automaticSubs: autoSubtitlesLink,
         configure: configureLink
     };
+    const t = getTranslator(config?.uiLanguage || 'en');
     const localeBootstrap = buildClientBootstrap(loadLocale(config?.uiLanguage || 'en'));
     const maxBatchFiles = Math.max(1, Math.min(parseInt(process.env.FILE_UPLOAD_MAX_BATCH_FILES, 10) || 10, 50));
     const maxConcurrency = Math.max(1, Math.min(parseInt(process.env.FILE_UPLOAD_MAX_CONCURRENCY, 10) || 1, 5));
@@ -2122,7 +2123,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         <button class="action" id="episodeToastUpdate" type="button">Update</button>
     </div>
 
-    ${renderQuickNav(navLinks, 'translateFiles', false, devMode)}
+    ${renderQuickNav(navLinks, 'translateFiles', false, devMode, t)}
 
     <div class="container">
         <header class="masthead">
