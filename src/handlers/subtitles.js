@@ -9,7 +9,7 @@ const KitsuService = require('../services/kitsu');
 const { parseSRT, toSRT, parseStremioId, appendHiddenInformationalNote, normalizeImdbId } = require('../utils/subtitle');
 const { getLanguageName, getDisplayName, toISO6391, toISO6392, canonicalSyncLanguageCode } = require('../utils/languages');
 const { getTranslator } = require('../utils/i18n');
-const { deriveVideoHash, deriveLegacyVideoHash } = require('../utils/videoHash');
+const { deriveVideoHash } = require('../utils/videoHash');
 const { LRUCache } = require('lru-cache');
 const syncCache = require('../utils/syncCache');
 const streamActivity = require('../utils/streamActivity');
@@ -2322,10 +2322,9 @@ function createSubtitleHandler(config) {
         || config.fileTranslationEnabled === true
         || config.syncSubtitlesEnabled === true;
 
-      // Always derive video hashes so embedded translations can surface even if toolbox is disabled
+      // Derive a single stable video hash for cache lookups
       const primaryVideoHash = deriveVideoHash(streamFilename || '', id);
-      const legacyVideoHash = deriveLegacyVideoHash(streamFilename || '', id);
-      const videoHashes = [...new Set([primaryVideoHash, legacyVideoHash].filter(Boolean))];
+      const videoHashes = primaryVideoHash ? [primaryVideoHash] : [];
 
       const xSyncEntries = [];
       if (toolboxEnabled && videoHashes.length) {

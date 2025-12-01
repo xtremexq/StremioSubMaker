@@ -13,14 +13,6 @@ function deriveVideoHash(filename, fallbackId = '') {
   return crypto.createHash('md5').update(base).digest('hex').substring(0, 16);
 }
 
-// Legacy helper retained for backwards-compatibility lookups (filename OR id only)
-function deriveLegacyVideoHash(filename, fallbackId = '') {
-  const base = (filename && String(filename).trim()) || (fallbackId && String(fallbackId).trim());
-  if (!base) return '';
-  return crypto.createHash('md5').update(base).digest('hex').substring(0, 16);
-}
-
 module.exports = {
-  deriveVideoHash,
-  deriveLegacyVideoHash
+  deriveVideoHash
 };
