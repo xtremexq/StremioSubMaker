@@ -1452,7 +1452,12 @@
         "resetFailed": "No se pudo restablecer la extensión. Intenta quitarla e instalarla de nuevo.",
         "engineBusy": "Sincronizando ahora",
         "engineIdle": "En espera",
-        "themeAria": "Tema: {theme}"
+        "themeAria": "Tema: {theme}",
+        "iconAlt": "Icono de SubMaker xSync",
+        "logoAlt": "Logo de SubMaker xSync"
+      },
+      "offscreen": {
+        "title": "SubMaker xSync Offscreen"
       },
       "options": {
         "title": "Ajustes de SubMaker xSync",
@@ -1470,6 +1475,8 @@
         "statusRefresh": "Actualización de estado",
         "statusRefreshHint": "Cada cuánto el popup actualiza las estadísticas.",
         "themePreference": "Preferencia de tema",
+        "themeToggleAria": "Cambiar tema",
+        "refreshUnitSeconds": "s",
         "themeLight": "Claro",
         "themeDark": "Oscuro",
         "themeTrueDark": "Oscuro total",
