@@ -121,6 +121,58 @@ function cleanDisplayName(raw) {
     return spaced || withoutExt || lastSegment;
 }
 
+// Language helpers (mirrors subtitle-menu logic to keep naming consistent)
+function normalizeLangKey(val) {
+    return (val || '').toString().trim().toLowerCase().replace(/[^a-z]/g, '');
+}
+
+function normalizeNameKey(val) {
+    return (val || '').toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function lookupLanguageName(languageMaps, raw) {
+    if (!raw) return null;
+    const byCode = languageMaps?.byCode || {};
+    const byNameKey = languageMaps?.byNameKey || {};
+    const normCode = normalizeLangKey(raw);
+    if (byCode[normCode]) return byCode[normCode];
+    const nameKey = normalizeNameKey(raw);
+    return nameKey ? (byNameKey[nameKey] || null) : null;
+}
+
+function extractLanguageCode(value) {
+    if (!value) return '';
+    const raw = value.toString();
+    const direct = raw.match(/^[a-z]{2,3}(?:-[a-z]{2})?$/i);
+    if (direct) return normalizeLangKey(direct[0]);
+    const translateMatch = raw.match(/_to_([a-z]{2,3}(?:-[a-z]{2})?)/i);
+    if (translateMatch) return normalizeLangKey(translateMatch[1]);
+    const urlMatch = raw.match(/\/([a-z]{2,3}(?:-[a-z]{2})?)\.srt/i);
+    if (urlMatch) return normalizeLangKey(urlMatch[1]);
+    const pathMatch = raw.match(/\/([a-z]{2,3}(?:-[a-z]{2})?)\/[^/]*$/i);
+    if (pathMatch) return normalizeLangKey(pathMatch[1]);
+    return '';
+}
+
+function resolveSubtitleLanguage(sub, languageMaps) {
+    const rawLabel = (sub?.language || sub?.lang || sub?.langName || sub?.title || sub?.name || sub?.label || '').toString().trim();
+    const code =
+        extractLanguageCode(sub?.languageCode) ||
+        extractLanguageCode(sub?.lang) ||
+        extractLanguageCode(sub?.language) ||
+        extractLanguageCode(rawLabel) ||
+        extractLanguageCode(sub?.url) ||
+        extractLanguageCode(sub?.id);
+    const friendly = lookupLanguageName(languageMaps, code) || lookupLanguageName(languageMaps, rawLabel);
+    const name = friendly || rawLabel || 'Unknown';
+    const key = normalizeLangKey(code || rawLabel || name || 'unknown');
+    return {
+        code: code || normalizeLangKey(sub?.lang || sub?.language || '') || key,
+        name,
+        key
+    };
+}
+
 async function fetchLinkedTitleServer(videoId) {
     const parsed = parseStremioId(videoId);
     if (!parsed || !parsed.imdbId) return null;
@@ -347,6 +399,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         configure: `/configure?config=${encodeURIComponent(configStr || '')}`
     };
     const devMode = (config || {}).devMode === true;
+    const languageMaps = buildLanguageLookupMaps();
 
     // Filter out action buttons and xSync entries to show only fetchable subtitles
     // Filter out action buttons (legacy and new Sub Toolbox) so only real subtitles are selectable
@@ -360,25 +413,31 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
     });
 
     // Group subtitles by language
-    const subtitlesByLang = {};
+    const subtitlesByLang = new Map();
     for (const sub of fetchableSubtitles) {
-        const langName = sub.lang || 'Unknown';
-        if (!subtitlesByLang[langName]) {
-            subtitlesByLang[langName] = [];
+        const langInfo = resolveSubtitleLanguage(sub, languageMaps);
+        const groupKey = langInfo.key || normalizeLangKey(sub.lang) || 'unknown';
+        const langLabel = langInfo.name || sub.lang || 'Unknown';
+        const langCode = (sub.lang || sub.language || langInfo.code || groupKey || 'unknown').toString();
+
+        if (!subtitlesByLang.has(groupKey)) {
+            subtitlesByLang.set(groupKey, { label: langLabel, code: langCode, items: [] });
         }
-        subtitlesByLang[langName].push(sub);
+        subtitlesByLang.get(groupKey).items.push({ entry: sub, langInfo: { ...langInfo, code: langCode } });
     }
 
     // Generate subtitle options HTML
     let subtitleOptionsHTML = '<option value="" disabled selected>Choose a subtitle</option>';
-    for (const [lang, subs] of Object.entries(subtitlesByLang)) {
+    for (const { label, code, items } of subtitlesByLang.values()) {
+        const langLabel = label || 'Unknown';
         subtitleOptionsHTML += `
-            <optgroup label="${escapeHtml(lang)}">`;
-        for (let i = 0; i < subs.length; i++) {
-            const sub = subs[i];
-            const displayName = `${lang} #${i + 1}`;
+            <optgroup label="${escapeHtml(langLabel)}">`;
+        for (let i = 0; i < items.length; i++) {
+            const sub = items[i].entry;
+            const langCode = items[i].langInfo?.code || code || langLabel || 'unknown';
+            const displayName = `${langLabel} - Subtitle #${i + 1}`;
             subtitleOptionsHTML += `
-                <option value="${escapeHtml(sub.id)}" data-lang="${escapeHtml(lang)}" data-url="${escapeHtml(sub.url)}">${escapeHtml(displayName)}</option>`;
+                <option value="${escapeHtml(sub.id)}" data-lang="${escapeHtml(langCode)}" data-url="${escapeHtml(sub.url)}">${escapeHtml(displayName)}</option>`;
         }
         subtitleOptionsHTML += `
             </optgroup>`;
@@ -395,7 +454,6 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
     const sourceLanguages = config.sourceLanguages || ['eng'];
     // Include source languages in target list so "same language" sync is always available
     const targetLanguages = [...new Set([...(config.targetLanguages || ['spa', 'fra', 'por']), ...sourceLanguages])];
-    const languageMaps = buildLanguageLookupMaps();
 
     let targetLangOptionsHTML = '';
     for (const lang of targetLanguages) {
@@ -1752,7 +1810,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                         <label for="primarySyncMode">Primary Mode:</label>
                         <select id="primarySyncMode">
                             <option value="manual">📝 Manual Offset Adjustment</option>
-                            <option value="alass" disabled>🎯 ALASS (audio ➜ subtitle)</option>
+                            <option value="alass" selected disabled>🎯 ALASS (audio ➜ subtitle)</option>
                             <option value="ffsubsync" disabled>🎛️ FFSubSync (audio ➜ subtitle)</option>
                             <option value="vosk-ctc" disabled>🧭 Vosk CTC/DTW (text ➜ audio)</option>
                             <option value="whisper-alass" disabled>🗣️ Whisper + ALASS (subtitle ➜ subtitle)</option>
@@ -2557,9 +2615,9 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     logSync('Sync engines unlocked (ALASS / FFSubSync / Vosk CTC/DTW / Whisper + ALASS)', 'info');
 
                     if (primaryModeSelect && primaryModeSelect.value === 'manual') {
-                        primaryModeSelect.value = 'whisper-alass';
+                        primaryModeSelect.value = 'alass';
                     }
-                    populateSecondaryOptions(primaryModeSelect?.value || 'whisper-alass');
+                    populateSecondaryOptions(primaryModeSelect?.value || 'alass');
                     refreshSyncPlanPreview();
                     break;
                 }
@@ -2696,7 +2754,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         });
         secondaryModeSelect?.addEventListener('change', refreshSyncPlanPreview);
 
-        populateSecondaryOptions(primaryModeSelect?.value || 'manual');
+        populateSecondaryOptions(primaryModeSelect?.value || 'alass');
         refreshSyncPlanPreview();
 
         // Step 1: Continue button
