@@ -218,8 +218,8 @@
             value: 'es',
             labelKey: 'config.uiLanguages.es.label',
             flagKey: 'config.uiLanguages.es.flag',
-            fallbackLabel: 'Español',
-            fallbackFlag: '🇪🇸'
+            fallbackLabel: 'Spanish',
+            fallbackFlag: 'ES'
         }
     ];
     const KEY_OPTIONAL_PROVIDERS = new Set(['googletranslate']);

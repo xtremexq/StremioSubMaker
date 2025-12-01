@@ -1149,7 +1149,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
           <span class="status-dot warn pulse" id="ext-dot"></span>
           <div class="labels">
             <span class="status-label">${t('toolbox.status.extension', {}, 'Extension')}</span>
-            <a class="status-value ext-link" id="ext-value" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer">${t('toolbox.status.checking', {}, 'Checking...')}</a>
+            <a class="status-value ext-link" id="ext-value" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn" target="_blank" rel="noopener noreferrer">${t('toolbox.status.checking', {}, 'Checking...')}</a>
           </div>
         </div>
         <div class="status-badge">
@@ -1315,7 +1315,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       let pingTimer = null;
       let pingAttempts = 0;
       const MAX_PINGS = 5;
-      const EXT_INSTALL_URL = 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en';
+      const EXT_INSTALL_URL = 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn';
       function updateTime() {
         const now = new Date();
         timeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -2560,11 +2560,11 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   <div id="episodeToast" class="episode-toast" role="status" aria-live="polite">
     <div class="icon">!</div>
     <div class="content">
-      <p class="title" id="episodeToastTitle">New stream detected</p>
-      <p class="meta" id="episodeToastMeta">A different episode is playing in Stremio.</p>
+      <p class="title" id="episodeToastTitle">${t('toolbox.toast.title', {}, 'New stream detected')}</p>
+      <p class="meta" id="episodeToastMeta">${t('toolbox.toast.meta', {}, 'A different episode is playing in Stremio.')}</p>
     </div>
-    <button class="close" id="episodeToastDismiss" type="button" aria-label="Dismiss notification">×</button>
-    <button class="action" id="episodeToastUpdate" type="button">Update</button>
+    <button class="close" id="episodeToastDismiss" type="button" aria-label="${t('toolbox.toast.dismiss', {}, 'Dismiss notification')}">×</button>
+    <button class="action" id="episodeToastUpdate" type="button">${t('toolbox.toast.update', {}, 'Update')}</button>
   </div>
   ${renderQuickNav(links, 'embeddedSubs', false, devMode, t)}
   <div class="page">
@@ -2579,22 +2579,22 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         <div class="status-badge">
           <span class="status-dot ok"></span>
           <div class="status-labels">
-            <span class="label-eyebrow">Addon</span>
-            <strong>v${escapeHtml(appVersion || 'n/a')}</strong>
+            <span class="label-eyebrow">${t('toolbox.status.addon', {}, 'Addon')}</span>
+            <strong>v${escapeHtml(appVersion || t('toolbox.autoSubs.badges.versionFallback', {}, 'n/a'))}</strong>
           </div>
         </div>
         <div class="status-badge" id="ext-status">
           <span class="status-dot warn" id="ext-dot"></span>
           <div class="status-labels">
-            <span class="label-eyebrow">Extension</span>
-            <a id="ext-label" class="ext-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer">Waiting for extension...</a>
+            <span class="label-eyebrow">${t('toolbox.status.extension', {}, 'Extension')}</span>
+            <a id="ext-label" class="ext-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn" target="_blank" rel="noopener noreferrer">${t('toolbox.autoSubs.extension.waiting', {}, 'Waiting for extension...')}</a>
           </div>
         </div>
         <div class="status-badge">
           <span class="status-dot ok"></span>
           <div class="status-labels">
-            <span class="label-eyebrow">Hash</span>
-            <strong>${escapeHtml(videoHash || 'pending')}</strong>
+            <span class="label-eyebrow">${t('toolbox.autoSubs.badges.hash', {}, 'Hash')}</span>
+            <strong>${escapeHtml(videoHash || t('toolbox.autoSubs.badges.pending', {}, 'pending'))}</strong>
           </div>
         </div>
       </div>
@@ -2996,7 +2996,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     subtitleMenuInstance = initSubtitleMenuBridge();
     function forwardMenuNotification(info) {
       if (!subtitleMenuInstance || typeof subtitleMenuInstance.notify !== 'function') return false;
-      const message = (info && info.message) ? info.message : 'New stream detected';
+      const message = (info && info.message) ? info.message : tt('toolbox.toast.title', {}, 'New stream detected');
       const title = (info && info.title) ? info.title + ': ' : '';
       subtitleMenuInstance.notify(title + message, 'muted', { persist: true });
       return true;
@@ -3009,7 +3009,12 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       buttonId: 'quickNavRefresh',
       configStr: PAGE.configStr,
       current: { videoId: PAGE.videoId, filename: PAGE.filename, videoHash: PAGE.videoHash },
-      labels: { loading: 'Refreshing...', empty: 'No stream yet', error: 'Refresh failed', current: 'Already latest' },
+      labels: {
+        loading: tt('toolbox.refresh.loading', {}, 'Refreshing...'),
+        empty: tt('toolbox.refresh.empty', {}, 'No stream yet'),
+        error: tt('toolbox.refresh.error', {}, 'Refresh failed'),
+        current: tt('toolbox.refresh.current', {}, 'Already latest')
+      },
       buildUrl: (payload) => {
         return '/embedded-subtitles?config=' + encodeURIComponent(PAGE.configStr) +
           '&videoId=' + encodeURIComponent(payload.videoId || '') +
@@ -3058,11 +3063,12 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       selectedTrackSummary: document.getElementById('selected-track-summary'),
       modeSelect: document.getElementById('extract-mode')
     };
+    const tr = (key, vars = {}, fallback = '') => window.t ? window.t(key, vars, fallback || key) : (fallback || key);
     const buttonLabels = {
       extract: els.extractBtn?.textContent || 'Extract Subtitles',
       translate: els.translateBtn?.textContent || 'Translate Subtitles'
     };
-    const EXT_INSTALL_URL = 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en';
+    const EXT_INSTALL_URL = 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn';
 
     if (els.extractLog) els.extractLog.innerHTML = '';
     if (els.translateLog) els.translateLog.innerHTML = '';
@@ -3529,16 +3535,16 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       if (!els.selectedTrackSummary) return;
       const track = state.tracks.find(t => t.id === state.selectedTrackId);
       if (!track) {
-        els.selectedTrackSummary.textContent = 'Select a subtitle in Step 1 outputs to unlock this step.';
+        els.selectedTrackSummary.textContent = tr('toolbox.downloads.selectPrompt', {}, 'Select a subtitle in Step 1 outputs to unlock this step.');
         els.selectedTrackSummary.className = 'selected-track-placeholder';
         setStep2Enabled(false);
         return;
       }
       els.selectedTrackSummary.className = 'selected-track-value';
       const parts = [
-        track.label || ('Track ' + track.id),
-        track.language ? ('Lang: ' + track.language) : '',
-        track.codec ? ('Codec: ' + track.codec) : ''
+        track.label || tr('toolbox.downloads.trackLabel', { id: track.id }, 'Track ' + track.id),
+        track.language ? tr('toolbox.downloads.lang', { lang: track.language }, 'Lang: ' + track.language) : '',
+        track.codec ? tr('toolbox.downloads.codec', { codec: track.codec }, 'Codec: ' + track.codec) : ''
       ].filter(Boolean);
       els.selectedTrackSummary.textContent = parts.join(' - ');
     }
@@ -3583,7 +3589,9 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         link.style.marginTop = '8px';
         link.href = item.url;
         link.download = item.filename;
-        link.textContent = item.type === 'original' ? 'Download original' : 'Download translated';
+        link.textContent = item.type === 'original'
+          ? tr('toolbox.downloads.original', {}, 'Download original')
+          : tr('toolbox.downloads.translated', {}, 'Download translated');
         card.appendChild(title);
         card.appendChild(link);
         container.appendChild(card);
@@ -3591,15 +3599,23 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     }
 
     function formatBytes(bytes) {
-      if (!bytes || isNaN(bytes)) return 'unknown size';
-      if (bytes < 1024) return bytes + ' B';
+      const unknown = tr('toolbox.downloads.unknownSize', {}, 'unknown size');
+      if (!bytes || isNaN(bytes)) return unknown;
+      const baseFormatter = new Intl.NumberFormat(document.documentElement.lang || 'en', { maximumFractionDigits: 1, minimumFractionDigits: 0 });
+      if (bytes < 1024) {
+        const value = baseFormatter.format(bytes);
+        return value + ' ' + tr('toolbox.downloads.unitB', {}, 'B');
+      }
       const units = ['KB', 'MB', 'GB'];
       let i = -1;
       do {
         bytes = bytes / 1024;
         i++;
       } while (bytes >= 1024 && i < units.length - 1);
-      return bytes.toFixed(bytes >= 10 ? 0 : 1) + ' ' + units[i];
+      const value = new Intl.NumberFormat(document.documentElement.lang || 'en', { maximumFractionDigits: bytes >= 10 ? 0 : 1, minimumFractionDigits: 0 }).format(bytes);
+      const unitKey = 'unit' + units[i];
+      const unitLabel = tr('toolbox.downloads.' + unitKey, {}, units[i]);
+      return value + ' ' + unitLabel;
     }
 
     function renderExtractedDownloads() {
@@ -3618,26 +3634,26 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         card.className = 'track extract-card' + (state.selectedTrackId === track.id ? ' active' : '');
         const title = document.createElement('div');
         title.style.fontWeight = '700';
-        title.textContent = track.label || ('Track ' + track.id);
+        title.textContent = track.label || tr('toolbox.downloads.trackLabel', { id: track.id }, 'Track ' + track.id);
         const meta = document.createElement('div');
         meta.className = 'track-meta';
-        const pieces = [
-          'Lang: ' + (track.language || 'und'),
-          'Codec: ' + (track.codec || 'subtitle'),
-          'Size: ' + formatBytes(track.byteLength || (track.contentBytes ? track.contentBytes.length : 0))
-        ];
-        meta.textContent = pieces.join(' - ');
+        const langLabel = track.language || 'und';
+        const codecLabel = track.codec || 'subtitle';
+        const sizeLabel = formatBytes(track.byteLength || (track.contentBytes ? track.contentBytes.length : 0));
+        meta.textContent = tr('toolbox.downloads.meta', { lang: langLabel, codec: codecLabel, size: sizeLabel }, 'Lang: ' + langLabel + ' - Codec: ' + codecLabel + ' - Size: ' + sizeLabel);
         const actions = document.createElement('div');
         actions.className = 'track-actions';
         const download = document.createElement('a');
         download.className = 'button secondary';
         download.href = createBlobUrl(track);
         download.download = (getVideoHash() || 'video') + '_' + (track.language || 'und') + '_' + track.id + '_original.' + ext;
-        download.textContent = 'Download';
+        download.textContent = tr('toolbox.downloads.download', {}, 'Download');
         download.addEventListener('click', (ev) => ev.stopPropagation());
         const selectBtn = document.createElement('button');
         selectBtn.type = 'button';
-        selectBtn.textContent = state.selectedTrackId === track.id ? 'Selected' : 'Use for Step 2';
+        selectBtn.textContent = state.selectedTrackId === track.id
+          ? tr('toolbox.downloads.selected', {}, 'Selected')
+          : tr('toolbox.downloads.useForStep2', {}, 'Use for Step 2');
         selectBtn.disabled = state.selectedTrackId === track.id;
         selectBtn.addEventListener('click', (ev) => {
           ev.stopPropagation();
@@ -3659,7 +3675,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         if (entry.status === 'done') {
           const trackRef = entry.trackId || state.selectedTrackId || 'track';
           translated.push({
-            label: 'Translated ' + lang + ' (track ' + trackRef + ')',
+            label: tr('toolbox.downloads.translatedLabel', { lang, track: trackRef }, 'Translated ' + lang + ' (track ' + trackRef + ')'),
             url: '/addon/' + encodeURIComponent(BOOTSTRAP.configStr) + '/xembedded/' + encodeURIComponent(getVideoHash()) + '/' + encodeURIComponent(lang) + '/' + encodeURIComponent(trackRef),
             filename: (getVideoHash() || 'video') + '_' + lang + '_xembed.srt',
             type: 'translated'
@@ -4046,14 +4062,14 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
 function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
   const links = buildToolLinks(configStr, videoId, filename);
   const devMode = config.devMode === true;
+  const t = getTranslator(config?.uiLanguage || 'en');
   const targetLanguages = Array.from(new Set([...(config.targetLanguages || []), ...(config.sourceLanguages || [])]));
   const targetOptions = targetLanguages.length
     ? targetLanguages.map(code => `<option value="${escapeHtml(code)}">${escapeHtml(getLanguageName(code) || code)}</option>`).join('')
-    : `<option value="">Add target languages in Configure</option>`;
+    : `<option value="">${escapeHtml(t('toolbox.autoSubs.options.addTargets', {}, 'Add target languages in Configure'))}</option>`;
   const videoHash = deriveVideoHash(filename, videoId);
   const languageMaps = buildLanguageLookupMaps();
   const localeBootstrap = buildClientBootstrap(loadLocale(config?.uiLanguage || 'en'));
-  const t = getTranslator(config?.uiLanguage || 'en');
   const subtitleMenuTargets = targetLanguages.map(code => ({
     code,
     name: getLanguageName(code) || code
@@ -4066,13 +4082,114 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     streamFilename: filename || ''
   };
 
+  const copy = {
+    meta: {
+      title: t('toolbox.autoSubs.documentTitle', {}, 'Automatic Subtitles - SubMaker')
+    },
+    toast: {
+      title: t('toolbox.toast.title', {}, 'New stream detected'),
+      meta: t('toolbox.toast.meta', {}, 'A different episode is playing in Stremio.'),
+      dismiss: t('toolbox.toast.dismiss', {}, 'Dismiss notification'),
+      update: t('toolbox.toast.update', {}, 'Update')
+    },
+    hero: {
+      title: t('toolbox.autoSubs.heroTitle', {}, 'Automatic Subtitles'),
+      subtitle: t('toolbox.autoSubs.heroSubtitle', {}, 'Generate subtitles with Whisper then translate')
+    },
+    badges: {
+      addon: t('toolbox.status.addon', {}, 'Addon'),
+      extension: t('toolbox.status.extension', {}, 'Extension'),
+      waitingExtension: t('toolbox.autoSubs.extension.waiting', {}, 'Waiting for extension...'),
+      hash: t('toolbox.autoSubs.badges.hash', {}, 'Hash'),
+      versionFallback: t('toolbox.autoSubs.badges.versionFallback', {}, 'n/a'),
+      pending: t('toolbox.autoSubs.badges.pending', {}, 'pending')
+    },
+    sections: {
+      linkAndPrep: t('toolbox.autoSubs.sections.setup', {}, 'Link a stream & prep the model'),
+      runAndReview: t('toolbox.autoSubs.sections.run', {}, 'Run pipeline & review output')
+    },
+    steps: {
+      one: t('toolbox.autoSubs.steps.step1Chip', {}, 'Step 1'),
+      two: t('toolbox.autoSubs.steps.step2Chip', {}, 'Step 2'),
+      three: t('toolbox.autoSubs.steps.step3Chip', {}, 'Step 3'),
+      four: t('toolbox.autoSubs.steps.step4Chip', {}, 'Step 4'),
+      inputTitle: t('toolbox.autoSubs.steps.step1Title', {}, 'Input audio or video'),
+      streamLabel: t('toolbox.autoSubs.steps.streamLabel', {}, 'Stream / file URL'),
+      streamPlaceholder: t('toolbox.autoSubs.steps.streamPlaceholder', {}, 'https://example.com/video.mkv'),
+      streamHelp: t('toolbox.autoSubs.steps.streamNote', {}, 'We\'ll fetch and extract audio; protected/DRM streams won\'t work.'),
+      prefill: t('toolbox.autoSubs.steps.prefill', {}, 'Use provided stream id'),
+      clear: t('toolbox.autoSubs.steps.clear', {}, 'Clear'),
+      langModelTitle: t('toolbox.autoSubs.steps.step2Title', {}, 'Language + model'),
+      sourceLabel: t('toolbox.autoSubs.steps.sourceLabel', {}, 'Source language (optional)'),
+      autoDetect: t('toolbox.autoSubs.steps.autoDetect', {}, 'Auto-detect'),
+      targetLabel: t('toolbox.autoSubs.steps.targetLabel', {}, 'Target language'),
+      modelLabel: t('toolbox.autoSubs.steps.modelLabel', {}, 'Whisper model'),
+      model: {
+        tiny: t('toolbox.autoSubs.steps.modelTiny', {}, 'tiny (fastest)'),
+        small: t('toolbox.autoSubs.steps.modelSmall', {}, 'small'),
+        medium: t('toolbox.autoSubs.steps.modelMedium', {}, 'medium (balanced)'),
+        turbo: t('toolbox.autoSubs.steps.modelTurbo', {}, 'turbo (GPU)')
+      },
+      diarization: t('toolbox.autoSubs.steps.diarization', {}, 'Speaker diarization'),
+      translateOutput: t('toolbox.autoSubs.steps.translateOutput', {}, 'Translate to target languages'),
+      runPipelineTitle: t('toolbox.autoSubs.steps.step3Title', {}, 'Run pipeline'),
+      pipelineDesc: t('toolbox.autoSubs.steps.pipeline', {}, 'We\'ll stitch: fetch -> segment -> transcribe -> align -> translate (optional) -> deliver SRT.'),
+      start: t('toolbox.autoSubs.actions.start', {}, 'Start auto-subtitles'),
+      previewPlan: t('toolbox.autoSubs.actions.preview', {}, 'Preview plan'),
+      progressAria: t('toolbox.autoSubs.actions.progress', {}, 'Progress'),
+      awaiting: t('toolbox.autoSubs.status.awaiting', {}, 'Awaiting input...'),
+      pills: {
+        fetch: t('toolbox.autoSubs.steps.fetchPill', {}, 'Fetch stream'),
+        transcribe: t('toolbox.autoSubs.steps.transcribePill', {}, 'Transcribe'),
+        align: t('toolbox.autoSubs.steps.alignPill', {}, 'Align + timestamps'),
+        translate: t('toolbox.autoSubs.steps.translatePill', {}, 'Translate'),
+        deliver: t('toolbox.autoSubs.steps.deliverPill', {}, 'Ready to deliver')
+      },
+      outputTitle: t('toolbox.autoSubs.steps.step4Title', {}, 'Output'),
+      generated: t('toolbox.autoSubs.steps.generatedSrt', {}, 'Generated SRT'),
+      noOutput: t('toolbox.autoSubs.status.noOutput', {}, 'No output yet.'),
+      downloads: t('toolbox.autoSubs.steps.downloads', {}, 'Downloads'),
+      downloadSrt: t('toolbox.autoSubs.actions.downloadSrt', {}, 'Download SRT'),
+      downloadVtt: t('toolbox.autoSubs.actions.downloadVtt', {}, 'Download VTT'),
+      enableAfter: t('toolbox.autoSubs.steps.downloadsNote', {}, 'We\'ll enable downloads after the pipeline finishes.')
+    },
+    options: {
+      addTargets: t('toolbox.autoSubs.options.addTargets', {}, 'Add target languages in Configure')
+    },
+    simulation: {
+      startLabel: t('toolbox.autoSubs.actions.start', {}, 'Start auto-subtitles'),
+      running: t('toolbox.autoSubs.status.running', {}, 'Running...'),
+      fetching: t('toolbox.autoSubs.status.fetching', {}, 'Fetching stream...'),
+      transcribing: t('toolbox.autoSubs.status.transcribing', {}, 'Transcribing with Whisper ({model})'),
+      aligning: t('toolbox.autoSubs.status.aligning', {}, 'Aligning and cleaning timestamps'),
+      translating: t('toolbox.autoSubs.status.translating', {}, 'Translating to {target}'),
+      skippingTranslation: t('toolbox.autoSubs.status.skipTranslate', {}, 'Skipping translation'),
+      preparing: t('toolbox.autoSubs.status.preparing', {}, 'Preparing downloads'),
+      done: t('toolbox.autoSubs.status.done', {}, 'Done. Ready to download.'),
+      previewPlan: t('toolbox.autoSubs.status.previewPlan', {}, 'Pipeline: fetch -> transcribe -> align -> translate -> deliver.'),
+      sampleSubtitle: t('toolbox.autoSubs.status.sample', {}, '[Sample subtitle generated by Whisper]'),
+      translateFallbackTarget: t('toolbox.autoSubs.status.translateFallbackTarget', {}, 'targets')
+    },
+    refresh: {
+      loading: t('toolbox.refresh.loading', {}, 'Refreshing...'),
+      empty: t('toolbox.refresh.empty', {}, 'No stream yet'),
+      error: t('toolbox.refresh.error', {}, 'Refresh failed'),
+      current: t('toolbox.refresh.current', {}, 'Already latest')
+    },
+    extension: {
+      ready: t('toolbox.status.ready', {}, 'Ready'),
+      notDetected: t('toolbox.autoSubs.extension.notDetected', {}, 'Extension not detected'),
+      readyWithVersion: t('toolbox.autoSubs.extension.readyVersion', {}, 'Ready (v{version})')
+    }
+  };
+
   return `
 <!DOCTYPE html>
 <html lang="${resolveUiLang(config)}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Automatic Subtitles - SubMaker</title>
+  <title>${escapeHtml(copy.meta.title)}</title>
     ${localeBootstrap}
     <link rel="icon" type="image/svg+xml" href="/favicon-toolbox.svg">
     <link rel="shortcut icon" href="/favicon-toolbox.svg">
@@ -4595,91 +4712,91 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
   <div id="episodeToast" class="episode-toast" role="status" aria-live="polite">
     <div class="icon">!</div>
     <div class="content">
-      <p class="title" id="episodeToastTitle">New stream detected</p>
-      <p class="meta" id="episodeToastMeta">A different episode is playing in Stremio.</p>
+      <p class="title" id="episodeToastTitle">${t('toolbox.toast.title', {}, 'New stream detected')}</p>
+      <p class="meta" id="episodeToastMeta">${t('toolbox.toast.meta', {}, 'A different episode is playing in Stremio.')}</p>
     </div>
-    <button class="close" id="episodeToastDismiss" type="button" aria-label="Dismiss notification">×</button>
-    <button class="action" id="episodeToastUpdate" type="button">Update</button>
+    <button class="close" id="episodeToastDismiss" type="button" aria-label="${t('toolbox.toast.dismiss', {}, 'Dismiss notification')}">×</button>
+    <button class="action" id="episodeToastUpdate" type="button">${t('toolbox.toast.update', {}, 'Update')}</button>
   </div>
   ${renderQuickNav(links, 'automaticSubs', false, devMode, t)}
   <div class="wrap">
     <header class="masthead">
       <div class="page-hero">
         <div class="page-icon">🤖</div>
-        <h1 class="page-heading">Automatic Subtitles</h1>
-        <p class="page-subtitle">Generate subtitles with Whisper then translate</p>
+        <h1 class="page-heading">${escapeHtml(copy.hero.title)}</h1>
+        <p class="page-subtitle">${escapeHtml(copy.hero.subtitle)}</p>
       </div>
       <div class="badge-row">
         ${renderRefreshBadge(t)}
         <div class="status-badge">
           <span class="status-dot ok"></span>
           <div class="status-labels">
-            <span class="label-eyebrow">Addon</span>
-            <strong>v${escapeHtml(appVersion || 'n/a')}</strong>
+            <span class="label-eyebrow">${escapeHtml(copy.badges.addon)}</span>
+            <strong>v${escapeHtml(appVersion || copy.badges.versionFallback)}</strong>
           </div>
         </div>
         <div class="status-badge" id="ext-status">
           <span class="status-dot warn pulse" id="ext-dot"></span>
           <div class="status-labels">
-            <span class="label-eyebrow">Extension</span>
-            <a id="ext-label" class="ext-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer">Waiting for extension...</a>
+            <span class="label-eyebrow">${escapeHtml(copy.badges.extension)}</span>
+            <a id="ext-label" class="ext-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn" target="_blank" rel="noopener noreferrer">${escapeHtml(copy.badges.waitingExtension)}</a>
           </div>
         </div>
         <div class="status-badge">
           <span class="status-dot ok"></span>
           <div class="status-labels">
-            <span class="label-eyebrow">Hash</span>
-            <strong>${escapeHtml(videoHash || 'pending')}</strong>
+            <span class="label-eyebrow">${escapeHtml(copy.badges.hash)}</span>
+            <strong>${escapeHtml(videoHash || copy.badges.pending)}</strong>
           </div>
         </div>
       </div>
     </header>
 
     <div class="section section-joined">
-      <h2><span class="section-number">1-2</span> Link a stream & prep the model</h2>
+      <h2><span class="section-number">1-2</span> ${escapeHtml(copy.sections.linkAndPrep)}</h2>
       <div class="joined-grid">
         <div class="step-card">
-          <div class="step-title"><span class="step-chip">Step 1</span><span>Input audio or video</span></div>
-          <label for="streamUrl">Stream / file URL</label>
-          <input type="text" id="streamUrl" placeholder="https://example.com/video.mkv">
-          <small style="color: var(--text-secondary); display:block; margin-top:6px;">We'll fetch and extract audio; protected/DRM streams won't work.</small>
+          <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.one)}</span><span>${escapeHtml(copy.steps.inputTitle)}</span></div>
+          <label for="streamUrl">${escapeHtml(copy.steps.streamLabel)}</label>
+          <input type="text" id="streamUrl" placeholder="${escapeHtml(copy.steps.streamPlaceholder)}">
+          <small style="color: var(--text-secondary); display:block; margin-top:6px;">${escapeHtml(copy.steps.streamHelp)}</small>
           <div class="controls" style="margin-top:12px;">
-            <button class="btn secondary" id="prefillFromVideo">Use provided stream id</button>
-            <button class="btn ghost" id="clearInputs">Clear</button>
+            <button class="btn secondary" id="prefillFromVideo">${escapeHtml(copy.steps.prefill)}</button>
+            <button class="btn ghost" id="clearInputs">${escapeHtml(copy.steps.clear)}</button>
           </div>
         </div>
         <div class="step-card">
-          <div class="step-title"><span class="step-chip">Step 2</span><span>Language + model</span></div>
+          <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.two)}</span><span>${escapeHtml(copy.steps.langModelTitle)}</span></div>
           <div class="row">
             <div>
-              <label for="detectedLang">Source language (optional)</label>
+              <label for="detectedLang">${escapeHtml(copy.steps.sourceLabel)}</label>
               <select id="detectedLang">
-                <option value="">Auto-detect</option>
+                <option value="">${escapeHtml(copy.steps.autoDetect)}</option>
                 ${targetOptions}
               </select>
             </div>
             <div>
-              <label for="targetLang">Target language</label>
+              <label for="targetLang">${escapeHtml(copy.steps.targetLabel)}</label>
               <select id="targetLang">
                 ${targetOptions}
               </select>
             </div>
             <div>
-              <label for="whisperModel">Whisper model</label>
+              <label for="whisperModel">${escapeHtml(copy.steps.modelLabel)}</label>
               <select id="whisperModel">
-                <option value="tiny">tiny (fastest)</option>
-                <option value="small">small</option>
-                <option value="medium" selected>medium (balanced)</option>
-                <option value="turbo">turbo (GPU)</option>
+                <option value="tiny">${escapeHtml(copy.steps.model.tiny)}</option>
+                <option value="small">${escapeHtml(copy.steps.model.small)}</option>
+                <option value="medium" selected>${escapeHtml(copy.steps.model.medium)}</option>
+                <option value="turbo">${escapeHtml(copy.steps.model.turbo)}</option>
               </select>
             </div>
           </div>
           <div class="controls">
             <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
-              <input type="checkbox" id="enableDiarization"> Speaker diarization
+              <input type="checkbox" id="enableDiarization"> ${escapeHtml(copy.steps.diarization)}
             </label>
             <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
-              <input type="checkbox" id="translateOutput" checked> Translate to target languages
+              <input type="checkbox" id="translateOutput" checked> ${escapeHtml(copy.steps.translateOutput)}
             </label>
           </div>
         </div>
@@ -4687,43 +4804,43 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     </div>
 
     <div class="section section-joined">
-      <h2><span class="section-number">3-4</span> Run pipeline & review output</h2>
+      <h2><span class="section-number">3-4</span> ${escapeHtml(copy.sections.runAndReview)}</h2>
       <div class="joined-grid">
         <div class="step-card">
-          <div class="step-title"><span class="step-chip">Step 3</span><span>Run pipeline</span></div>
-          <p style="margin:0 0 8px; color: var(--text-secondary);">We'll stitch: fetch -> segment -> transcribe -> align -> translate (optional) -> deliver SRT.</p>
+          <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.three)}</span><span>${escapeHtml(copy.steps.runPipelineTitle)}</span></div>
+          <p style="margin:0 0 8px; color: var(--text-secondary);">${escapeHtml(copy.steps.pipelineDesc)}</p>
           <div class="controls">
-            <button class="btn" id="startAutoSubs">Start auto-subtitles</button>
-            <button class="btn secondary" id="previewSteps">Preview plan</button>
+            <button class="btn" id="startAutoSubs">${escapeHtml(copy.steps.start)}</button>
+            <button class="btn secondary" id="previewSteps">${escapeHtml(copy.steps.previewPlan)}</button>
           </div>
-          <div class="progress" aria-label="Progress">
+          <div class="progress" aria-label="${escapeHtml(copy.steps.progressAria)}">
             <div class="progress-fill" id="progressFill"></div>
           </div>
-          <div class="status" id="statusText">Awaiting input...</div>
+          <div class="status" id="statusText">${escapeHtml(copy.steps.awaiting)}</div>
           <div class="chips" style="margin-top:10px;">
-            <span class="pill check" id="stepFetch">- Fetch stream</span>
-            <span class="pill" id="stepTranscribe">- Transcribe</span>
-            <span class="pill" id="stepAlign">- Align + timestamps</span>
-            <span class="pill" id="stepTranslate">- Translate</span>
-            <span class="pill" id="stepDeliver">- Ready to deliver</span>
+            <span class="pill check" id="stepFetch">- ${escapeHtml(copy.steps.pills.fetch)}</span>
+            <span class="pill" id="stepTranscribe">- ${escapeHtml(copy.steps.pills.transcribe)}</span>
+            <span class="pill" id="stepAlign">- ${escapeHtml(copy.steps.pills.align)}</span>
+            <span class="pill" id="stepTranslate">- ${escapeHtml(copy.steps.pills.translate)}</span>
+            <span class="pill" id="stepDeliver">- ${escapeHtml(copy.steps.pills.deliver)}</span>
           </div>
         </div>
         <div class="step-card">
-          <div class="step-title"><span class="step-chip">Step 4</span><span>Output</span></div>
+          <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.four)}</span><span>${escapeHtml(copy.steps.outputTitle)}</span></div>
           <div class="row">
             <div>
-              <label>Generated SRT</label>
+              <label>${escapeHtml(copy.steps.generated)}</label>
               <div style="padding:12px; border:1px solid var(--border); border-radius:12px; background: var(--surface-light); min-height:120px;" id="srtPreview">
-                No output yet.
+                ${escapeHtml(copy.steps.noOutput)}
               </div>
             </div>
             <div>
-              <label>Downloads</label>
+              <label>${escapeHtml(copy.steps.downloads)}</label>
               <div class="controls">
-                <button class="btn secondary" disabled id="downloadSrt">Download SRT</button>
-                <button class="btn secondary" disabled id="downloadVtt">Download VTT</button>
+                <button class="btn secondary" disabled id="downloadSrt">${escapeHtml(copy.steps.downloadSrt)}</button>
+                <button class="btn secondary" disabled id="downloadVtt">${escapeHtml(copy.steps.downloadVtt)}</button>
               </div>
-              <p style="margin-top:8px; color: var(--text-secondary);">We'll enable downloads after the pipeline finishes.</p>
+              <p style="margin-top:8px; color: var(--text-secondary);">${escapeHtml(copy.steps.enableAfter)}</p>
             </div>
           </div>
         </div>
@@ -4747,6 +4864,14 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     const SUBTITLE_MENU_TARGET_CODES = ${JSON.stringify(config.targetLanguages || [])};
     const SUBTITLE_LANGUAGE_MAPS = ${safeJsonSerialize(languageMaps)};
     let subtitleMenuInstance = null;
+    const tt = (key, vars = {}, fallback = '') => window.t ? window.t(key, vars, fallback || key) : (fallback || key);
+    const TOAST_TITLE_FALLBACK = ${JSON.stringify(t('toolbox.toast.title', {}, 'New stream detected'))};
+    const REFRESH_LABEL_FALLBACKS = {
+      loading: ${JSON.stringify(t('toolbox.refresh.loading', {}, 'Refreshing...'))},
+      empty: ${JSON.stringify(t('toolbox.refresh.empty', {}, 'No stream yet'))},
+      error: ${JSON.stringify(t('toolbox.refresh.error', {}, 'Refresh failed'))},
+      current: ${JSON.stringify(t('toolbox.refresh.current', {}, 'Already latest'))}
+    };
 
     ${quickNavScript()}
     if (window.ComboBox && typeof window.ComboBox.enhanceAll === 'function') {
@@ -4805,7 +4930,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     }
     function forwardMenuNotification(info) {
       if (!subtitleMenuInstance || typeof subtitleMenuInstance.notify !== 'function') return false;
-      const message = (info && info.message) ? info.message : 'New stream detected';
+      const message = (info && info.message) ? info.message : tt('toolbox.toast.title', {}, TOAST_TITLE_FALLBACK);
       const title = (info && info.title) ? info.title + ': ' : '';
       subtitleMenuInstance.notify(title + message, 'muted', { persist: true });
       return true;
@@ -4814,7 +4939,12 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
       buttonId: 'quickNavRefresh',
       configStr: PAGE.configStr,
       current: { videoId: PAGE.videoId, filename: PAGE.filename, videoHash: PAGE.videoHash },
-      labels: { loading: 'Refreshing...', empty: 'No stream yet', error: 'Refresh failed', current: 'Already latest' },
+      labels: {
+        loading: tt('toolbox.refresh.loading', {}, REFRESH_LABEL_FALLBACKS.loading),
+        empty: tt('toolbox.refresh.empty', {}, REFRESH_LABEL_FALLBACKS.empty),
+        error: tt('toolbox.refresh.error', {}, REFRESH_LABEL_FALLBACKS.error),
+        current: tt('toolbox.refresh.current', {}, REFRESH_LABEL_FALLBACKS.current)
+      },
       buildUrl: (payload) => {
         return '/auto-subtitles?config=' + encodeURIComponent(PAGE.configStr) +
           '&videoId=' + encodeURIComponent(payload.videoId || '') +
@@ -4846,21 +4976,23 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
       const extDot = document.getElementById('ext-dot');
       const extLabel = document.getElementById('ext-label');
       const extStatus = document.getElementById('ext-status');
-      const startBtnLabel = startBtn ? startBtn.textContent : 'Start auto-subtitles';
+      const startBtnLabel = startBtn ? startBtn.textContent : tt('toolbox.autoSubs.steps.start', {}, ${JSON.stringify(copy.steps.start)});
 
       let extensionReady = false;
       let pingRetries = 0;
       let pingTimer = null;
       const MAX_PING_RETRIES = 5;
       let autoSubsInFlight = false;
-      const EXT_INSTALL_URL = 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en';
+      const EXT_INSTALL_URL = (extLabel && extLabel.getAttribute('href')) || 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn';
 
       function updateExtensionStatus(ready, text, tone) {
         extensionReady = ready;
         const dotTone = ready ? 'ok' : (tone || 'bad');
         if (extDot) extDot.className = 'status-dot ' + dotTone;
         if (extLabel) {
-          extLabel.textContent = ready ? (text || 'Ready') : (text || 'Extension not detected');
+          const readyText = text || tt('toolbox.status.ready', {}, 'Ready');
+          const missingText = text || tt('toolbox.autoSubs.extension.notDetected', {}, 'Extension not detected');
+          extLabel.textContent = ready ? readyText : missingText;
           if (ready) {
             extLabel.classList.add('ready');
             extLabel.removeAttribute('href');
@@ -4880,7 +5012,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         autoSubsInFlight = !!active;
         if (startBtn) {
           startBtn.disabled = autoSubsInFlight;
-          startBtn.textContent = autoSubsInFlight ? 'Running...' : startBtnLabel;
+          startBtn.textContent = autoSubsInFlight ? tt('toolbox.autoSubs.status.running', {}, 'Running...') : startBtnLabel;
         }
       }
 
@@ -4893,7 +5025,8 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
             clearTimeout(pingTimer);
             pingTimer = null;
           }
-          updateExtensionStatus(true, 'Ready (v' + (msg.version || '-') + ')');
+          const readyLabel = tt('toolbox.autoSubs.extension.readyWithVersion', { version: msg.version || '-' }, 'Ready (v' + (msg.version || '-') + ')');
+          updateExtensionStatus(true, readyLabel);
         }
       });
 
@@ -4906,11 +5039,11 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         const tick = () => {
           if (extensionReady) return;
           pingRetries += 1;
-          const label = window.t ? window.t('toolbox.status.pinging', {}, 'Pinging extension...') : 'Pinging extension...';
+          const label = tt('toolbox.status.pinging', {}, 'Pinging extension...');
           updateExtensionStatus(false, label, 'warn');
           window.postMessage({ type: 'SUBMAKER_PING', source: 'webpage' }, '*');
           if (pingRetries >= MAX_PING_RETRIES && !extensionReady) {
-            const notDetected = window.t ? window.t('toolbox.logs.extensionMissing', {}, 'Extension not detected') : 'Extension not detected';
+            const notDetected = tt('toolbox.autoSubs.extension.notDetected', {}, 'Extension not detected');
             updateExtensionStatus(false, notDetected, 'bad');
             return;
           }
@@ -4936,20 +5069,21 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         pill.classList.remove('check', 'warn', 'danger');
         pill.classList.add(state);
         const label = pill.textContent.replace(/^(OK|-)\s*/, '');
-        pill.textContent = state === 'check' ? 'OK ' + label : '- ' + label;
+        const okLabel = tt('toolbox.autoSubs.status.ok', {}, 'OK');
+        pill.textContent = state === 'check' ? okLabel + ' ' + label : '- ' + label;
       }
 
       function simulateRun() {
         setAutoSubsInFlight(true);
         resetPills();
-        statusText.textContent = 'Fetching stream...';
+        statusText.textContent = tt('toolbox.autoSubs.status.fetching', {}, 'Fetching stream...');
         progressFill.style.width = '10%';
 
         const steps = [
-          { key: 'transcribe', label: 'Transcribing with Whisper (' + whisperModel.value + ')' },
-          { key: 'align', label: 'Aligning and cleaning timestamps' },
-          { key: 'translate', label: translateOutput.checked ? 'Translating to ' + (targetLang.value || 'targets') : 'Skipping translation' },
-          { key: 'deliver', label: 'Preparing downloads' }
+          { key: 'transcribe', label: tt('toolbox.autoSubs.status.transcribing', { model: whisperModel.value }, 'Transcribing with Whisper (' + whisperModel.value + ')') },
+          { key: 'align', label: tt('toolbox.autoSubs.status.aligning', {}, 'Aligning and cleaning timestamps') },
+          { key: 'translate', label: translateOutput.checked ? tt('toolbox.autoSubs.status.translating', { target: targetLang.value || 'targets' }, 'Translating to ' + (targetLang.value || 'targets')) : tt('toolbox.autoSubs.status.skipTranslate', {}, 'Skipping translation') },
+          { key: 'deliver', label: tt('toolbox.autoSubs.status.preparing', {}, 'Preparing downloads') }
         ];
 
         steps.forEach((step, index) => {
@@ -4959,10 +5093,10 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
             progressFill.style.width = ((index + 2) * 20) + '%';
 
             if (step.key === 'deliver') {
-              srtPreview.textContent = '1\\n00:00:00,000 --> 00:00:02,000\\n[Sample subtitle generated by Whisper]\\n';
+              srtPreview.textContent = tt('toolbox.autoSubs.status.sample', {}, '1\n00:00:00,000 --> 00:00:02,000\n[Sample subtitle generated by Whisper]\n');
               downloadSrt.disabled = false;
               downloadVtt.disabled = false;
-              statusText.textContent = 'Done. Ready to download.';
+              statusText.textContent = tt('toolbox.autoSubs.status.done', {}, 'Done. Ready to download.');
               progressFill.style.width = '100%';
               setAutoSubsInFlight(false);
             }
@@ -4975,7 +5109,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         simulateRun();
       });
       previewBtn?.addEventListener('click', () => {
-        statusText.textContent = 'Pipeline: fetch -> transcribe -> align -> translate -> deliver.';
+        statusText.textContent = tt('toolbox.autoSubs.status.previewPlan', {}, 'Pipeline: fetch -> transcribe -> align -> translate -> deliver.');
       });
 
       prefillFromVideo?.addEventListener('click', () => {
@@ -4992,8 +5126,8 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         streamUrl.value = '';
         resetPills();
         progressFill.style.width = '0%';
-        statusText.textContent = 'Awaiting input...';
-        srtPreview.textContent = 'No output yet.';
+        statusText.textContent = tt('toolbox.autoSubs.status.awaiting', {}, 'Awaiting input...');
+        srtPreview.textContent = tt('toolbox.autoSubs.status.noOutput', {}, 'No output yet.');
         downloadSrt.disabled = true;
         downloadVtt.disabled = true;
         setAutoSubsInFlight(false);

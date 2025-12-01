@@ -138,14 +138,27 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
     const MAX_OUTPUT_TOKEN_LIMIT = 200000;
     const DEFAULT_MAX_OUTPUT_TOKENS = 65536;
 
+    const uiLang = (config?.uiLanguage || 'en').toString().toLowerCase();
+    let languageDisplayNames = null;
+    try {
+        languageDisplayNames = new Intl.DisplayNames([uiLang], { type: 'language' });
+    } catch (_) {}
+    const formatLanguageLabel = (code, fallback) => {
+        if (!code) return fallback || '';
+        const normalized = String(code).replace('_', '-');
+        const localized = languageDisplayNames ? (languageDisplayNames.of(normalized) || languageDisplayNames.of(normalized.split('-')[0])) : '';
+        return localized || fallback || code;
+    };
+
     const targetLangs = clientConfig.targetLanguages.map(lang => {
-        const langName = getLanguageName(lang) || lang;
+        const langName = formatLanguageLabel(lang, getLanguageName(lang) || lang);
         return { code: lang, name: langName };
     });
 
-    const languageOptions = targetLangs.map(lang =>
-        `<option value="${escapeHtml(lang.code)}">${escapeHtml(lang.name)}</option>`
-    ).join('');
+    const languageOptions = targetLangs.map(lang => {
+        const label = formatLanguageLabel(lang.code, lang.name);
+        return `<option value="${escapeHtml(lang.code)}">${escapeHtml(label)}</option>`;
+    }).join('');
 
     // Comprehensive language list for Gemini (no mapping needed)
     const allLanguages = [
@@ -330,9 +343,10 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         { code: 'zu', name: 'Zulu' }
     ];
 
-    const allLanguageOptions = allLanguages.map(lang =>
-        `<option value="${escapeHtml(lang.code)}">${escapeHtml(lang.name)}</option>`
-    ).join('');
+    const allLanguageOptions = allLanguages.map(lang => {
+        const label = formatLanguageLabel(lang.code, lang.name);
+        return `<option value="${escapeHtml(lang.code)}">${escapeHtml(label)}</option>`;
+    }).join('');
 
     const targetPlaceholderText = t('fileUpload.target.placeholder', {}, 'Choose a language...');
     const sourceAutoDetectText = t('fileUpload.source.auto', {}, 'Auto-detect (recommended)');

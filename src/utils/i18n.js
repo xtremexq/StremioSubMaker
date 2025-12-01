@@ -5,6 +5,17 @@ const path = require('path');
 const localeCache = new Map();
 const DEFAULT_LANG = 'en';
 
+function deepFreeze(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  Object.getOwnPropertyNames(obj).forEach((key) => {
+    const value = obj[key];
+    if (value && typeof value === 'object') {
+      deepFreeze(value);
+    }
+  });
+  return Object.freeze(obj);
+}
+
 /**
  * Load locale messages from the locales folder.
  * Falls back to English when the requested locale is missing or invalid.
@@ -32,8 +43,11 @@ function loadLocale(lang) {
 
   const messages = readLocale(safeLang) || readLocale(DEFAULT_LANG) || {};
   const payload = { lang: messages.lang || safeLang, messages: messages.messages || {} };
-  localeCache.set(safeLang, payload);
-  return payload;
+
+  // Freeze to prevent accidental cross-request mutation of cached locale objects
+  const frozen = deepFreeze(payload);
+  localeCache.set(safeLang, frozen);
+  return frozen;
 }
 
 /**

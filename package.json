@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "check:locale-headers": "node scripts/check-locale-headers.js"
   },
   "keywords": [
     "stremio",

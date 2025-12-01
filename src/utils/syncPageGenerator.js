@@ -1864,7 +1864,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     <span class="status-dot warn pulse" id="ext-dot"></span>
                     <div class="status-labels">
                         <span class="label-eyebrow">${escapeHtml(copy.badges.extension)}</span>
-                        <a id="ext-label" class="ext-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en" target="_blank" rel="noopener noreferrer">${escapeHtml(copy.badges.extensionWaiting)}</a>
+                        <a id="ext-label" class="ext-link" href="https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn" target="_blank" rel="noopener noreferrer">${escapeHtml(copy.badges.extensionWaiting)}</a>
                     </div>
                 </div>
                 <div class="status-badge">
@@ -2427,7 +2427,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
 
         // SRT parsing and manipulation functions
         function parseSRT(srtContent) {
-            const lines = srtContent.trim().split('\\n');
+            const lines = srtContent.trim().split(/\\r?\\n/);
             const subtitles = [];
             let current = {};
 
@@ -2449,7 +2449,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     current.start = parseTime(times[0]);
                     current.end = parseTime(times[1]);
                 } else if (current.start !== undefined) {
-                    current.text = (current.text || '') + line + '\\n';
+                    current.text = (current.text || '') + line + '\n';
                 }
             }
 
@@ -2675,10 +2675,10 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                 const newStart = Math.max(0, sub.start + offsetMs);
                 const newEnd = Math.max(newStart, sub.end + offsetMs);
 
-                result += \`\${sub.index}\\n\`;
-                result += \`\${formatTime(newStart)} --> \${formatTime(newEnd)}\\n\`;
+                result += \`\${sub.index}\n\`;
+                result += \`\${formatTime(newStart)} --> \${formatTime(newEnd)}\n\`;
                 result += sub.text;
-                result += '\\n';
+                result += '\n';
             }
 
             return result.trim();
@@ -2693,7 +2693,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         const extDot = document.getElementById('ext-dot');
         const extLabel = document.getElementById('ext-label');
         const extStatus = document.getElementById('ext-status');
-        const EXT_INSTALL_URL = 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn?authuser=0&hl=en';
+        const EXT_INSTALL_URL = 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn';
         const primaryModeSelect = document.getElementById('primarySyncMode');
         const secondaryModeSelect = document.getElementById('secondarySyncMode');
         const secondaryModeGroup = document.getElementById('secondaryModeGroup');

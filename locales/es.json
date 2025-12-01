@@ -1,4 +1,23 @@
 {
+  "_comment_do_not_translate": [
+    "SubMaker",
+    "Sub Toolbox",
+    "Toolbox",
+    "Tool shelf",
+    "Learn Mode",
+    "Learn (Language) entries (\"Learn <Language>\")",
+    "SubMaker xSync",
+    "SubMaker Link",
+    "OpenSubtitles",
+    "SubScene",
+    "SubDL",
+    "SubSource",
+    "Gemini (all model names)",
+    "Stremio",
+    "Addon",
+    "Extension",
+    "Autosync"
+  ],
   "lang": "es",
   "messages": {
     "manifest": {
@@ -59,7 +78,7 @@
         "translationInProgress": "La traducción ya está en curso; esperando la solicitud principal.",
         "translationInvalidContent": "La traducción devolvió contenido no válido",
         "translationFailed": "La traducción falló: {reason}",
-        "learnFailed": "No se pudieron generar los subtítulos de aprendizaje",
+        "learnFailed": "No se pudieron generar los subtítulos de Learn Mode",
         "subToolboxLoadFailed": "No se pudo cargar Sub Toolbox",
         "missingConfigOrVideo": "Falta la configuración o el ID de video",
         "subToolboxPageFailed": "No se pudo cargar la página de Sub Toolbox",
@@ -209,6 +228,105 @@
         "translationError": "Falló {lang}: {reason}",
         "selectTarget": "Selecciona un idioma de destino."
       },
+      "downloads": {
+        "selectPrompt": "Selecciona un subt??tulo en las salidas del Paso 1 para habilitar este paso.",
+        "trackLabel": "Pista {id}",
+        "lang": "Idioma: {lang}",
+        "codec": "C??dec: {codec}",
+        "meta": "Idioma: {lang} - C??dec: {codec} - Tama??o: {size}",
+        "original": "Descargar original",
+        "translated": "Descargar traducido",
+        "unknownSize": "tama??o desconocido",
+        "unitB": "B",
+        "unitKB": "KB",
+        "unitMB": "MB",
+        "unitGB": "GB",
+        "download": "Descargar",
+        "selected": "Seleccionado",
+        "useForStep2": "Usar para el Paso 2",
+        "translatedLabel": "Traducido {lang} (pista {track})"
+      },
+      "autoSubs": {
+        "documentTitle": "Subtítulos automáticos - SubMaker",
+        "heroTitle": "Subtítulos automáticos",
+        "heroSubtitle": "Genera subtítulos con Whisper y luego tradúcelos",
+        "badges": {
+          "hash": "Hash",
+          "versionFallback": "n/a",
+          "pending": "pendiente"
+        },
+        "extension": {
+          "waiting": "Esperando la extensión...",
+          "notDetected": "Extensión no detectada",
+          "ready": "Lista",
+          "readyVersion": "Lista (v{version})",
+          "readyWithVersion": "Lista (v{version})"
+        },
+        "sections": {
+          "setup": "Vincula un stream y prepara el modelo",
+          "run": "Ejecuta la cadena y revisa la salida"
+        },
+        "steps": {
+          "step1Chip": "Paso 1",
+          "step1Title": "Ingresa audio o video",
+          "streamLabel": "URL del stream/archivo",
+          "streamPlaceholder": "https://example.com/video.mkv",
+          "streamNote": "Obtendremos y extraeremos audio; los streams protegidos/DRM no funcionar??n.",
+          "prefill": "Usar id de stream proporcionado",
+          "clear": "Limpiar",
+          "step2Chip": "Paso 2",
+          "step2Title": "Idioma y modelo",
+          "sourceLabel": "Idioma de origen (opcional)",
+          "autoDetect": "Detecci??n autom??tica",
+          "targetLabel": "Idioma de destino",
+          "modelLabel": "Modelo Whisper",
+          "modelTiny": "tiny (más rápido)",
+          "modelSmall": "small",
+          "modelMedium": "medium (equilibrado)",
+          "modelTurbo": "turbo (GPU)",
+          "diarization": "Diarización de hablantes",
+          "translateOutput": "Traducir a los idiomas destino",
+          "step3Chip": "Paso 3",
+          "step3Title": "Ejecutar pipeline",
+          "pipeline": "Uniremos: obtener -> segmentar -> transcribir -> alinear -> traducir (opcional) -> entregar SRT.",
+          "step4Chip": "Paso 4",
+          "step4Title": "Salida",
+          "generatedSrt": "SRT generado",
+          "downloads": "Descargas",
+          "downloadsNote": "Habilitaremos las descargas cuando termine el pipeline.",
+          "fetchPill": "Obtener stream",
+          "transcribePill": "Transcribir",
+          "alignPill": "Alinear + marcas de tiempo",
+          "translatePill": "Traducir",
+          "deliverPill": "Listo para entregar"
+        },
+        "actions": {
+          "start": "Iniciar subtítulos automáticos",
+          "preview": "Previsualizar plan",
+          "progress": "Progreso",
+          "downloadSrt": "Descargar SRT",
+          "downloadVtt": "Descargar VTT"
+        },
+        "options": {
+          "addTargets": "Agregar idiomas destino en Configurar"
+        },
+        "status": {
+          "awaiting": "Esperando entrada...",
+          "running": "Ejecutando...",
+          "ok": "OK",
+          "fetching": "Obteniendo stream...",
+          "transcribing": "Transcribiendo con Whisper ({model})",
+          "aligning": "Alineando y limpiando marcas de tiempo",
+          "translating": "Traduciendo a {target}",
+          "skipTranslate": "Saltando traducción",
+          "preparing": "Preparando descargas",
+          "sample": "1\n00:00:00,000 --> 00:00:02,000\n[Subtítulo de ejemplo generado por Whisper]\n",
+          "done": "Listo. Preparado para descargar.",
+          "previewPlan": "Pipeline: obtener -> transcribir -> alinear -> traducir -> entregar.",
+          "noOutput": "Sin salida aún.",
+          "translateFallbackTarget": "destinos"
+        }
+      },
       "footnote": "La Toolbox está ligada a tu sesión y emisión actual. Mantén esta pestaña abierta durante el streaming para un traspaso fluido."
     },
     "validation": {
@@ -227,7 +345,7 @@
       "sourceMissing": "Debes elegir al menos un idioma de origen",
       "sourceLimit": "Máximo {limit} idiomas de origen",
       "targetMissing": "Debes elegir al menos un idioma de destino",
-      "targetLimit": "Máximo {limit} idiomas de destino (incluye modo Learn)",
+      "targetLimit": "Máximo {limit} idiomas de destino (incluye Learn Mode)",
       "learnTargetMissing": "Learn Mode requiere al menos un idioma de destino",
       "sessionTokenError": "Error de configuración: token de sesión no encontrado o expirado. Reconfigura el addon."
     },
@@ -307,7 +425,7 @@
       "refreshTitle": "Actualizar subtítulos",
       "closeTitle": "Cerrar lista de subtítulos",
       "makeLanguage": "Generar {language}",
-      "learnLanguage": "Aprender {language}",
+      "learnLanguage": "Learn {language}",
       "group": {
         "source": "Idiomas de origen",
         "target": "Idiomas destino",
@@ -362,8 +480,8 @@
       "quickStatsLastSave": "Último guardado",
       "quickActionHelp": "Ayuda",
       "footer": {
-        "love": "Hecho con <span class=\"footer-heart\">\u2764\ufe0f</span> para usuarios de Stremio en todas partes",
-        "thanks": "\u00a1Gracias por usar SubMaker! Tu apoyo ayuda a que el contenido sea accesible para todos."
+        "love": "Hecho con <span class=\"footer-heart\">❤️</span> para usuarios de Stremio en todas partes",
+        "thanks": "¡Gracias por usar SubMaker! Tu apoyo ayuda a que el contenido sea accesible para todos."
       },
       "actions": {
         "openToolbox": "Abrir Sub Toolbox",
@@ -376,43 +494,43 @@
         "keyboardHint": "Presiona <span class=\"kbd\">?</span> para atajos de teclado",
         "shared": {
           "dontShow": "No mostrar de nuevo",
-          "gotIt": "\u00a1Entendido!"
+          "gotIt": "¡Entendido!"
         },
         "instructions": {
           "title": "Cómo usar SubMaker",
           "usageTitle": "Instrucciones de uso:",
-          "step1": "Agrega las API keys deseadas en la secci\u00f3n <strong>\"Fuentes de subt\u00edtulos\"</strong>.",
-          "step2": "Agrega una API Key de Gemini en la secci\u00f3n <strong>IA</strong>.",
+          "step1": "Agrega las API keys deseadas en la sección <strong>\"Fuentes de subtítulos\"</strong>.",
+          "step2": "Agrega una API Key de Gemini en la sección <strong>IA</strong>.",
           "step3": "Elige <strong>idiomas de origen</strong>.",
           "step4": "Elige <strong>idiomas de destino</strong>.",
           "step5": "<strong>Instala en Stremio</strong>.",
-          "stremioTitle": "Stremio har\u00e1:",
-          "stremioBody": "1. Obtener todos los subt\u00edtulos de origen y destino de las fuentes.<br>2. Crear botones <strong>\"Make [Idioma destino]\"</strong> en la lista de subt\u00edtulos.<br>3. Todas las listas \"Make\" siguen el mismo orden del idioma de origen.",
-          "whenTitle": "Cuando haces clic en un subt\u00edtulo:",
-          "whenBody": "Al hacer clic en la lista \"Make\", se iniciar\u00e1 la traducci\u00f3n.<br>Tras 20-30 segundos, recarga la misma entrada.<br>\u00a1Cargar\u00e1 <strong>traducida</strong>!",
-          "quickTip": "<strong>Tip r\u00e1pido:</strong> Si la traducci\u00f3n se ve mal o desincronizada, haz triple clic r\u00e1pido en ese subt\u00edtulo para forzar una retraducci\u00f3n.",
-          "ps": "<b>PD:</b><br>Las traducciones parciales se entregan en lotes para que puedas empezar a ver enseguida.<br>La traducci\u00f3n completa puede tardar de <strong>30 segundos a 5 minutos</strong> seg\u00fan la duraci\u00f3n.",
+          "stremioTitle": "Stremio hará:",
+          "stremioBody": "1. Obtener todos los subtítulos de origen y destino de las fuentes.<br>2. Crear botones <strong>\"Make [Idioma destino]\"</strong> en la lista de subtítulos.<br>3. Todas las listas \"Make\" siguen el mismo orden del idioma de origen.",
+          "whenTitle": "Cuando haces clic en un subtítulo:",
+          "whenBody": "Al hacer clic en la lista \"Make\", se iniciará la traducción.<br>Tras 20-30 segundos, recarga la misma entrada.<br>¡Cargará <strong>traducida</strong>!",
+          "quickTip": "<strong>Tip rápido:</strong> Si la traducción se ve mal o desincronizada, haz triple clic rápido en ese subtítulo para forzar una retraducción.",
+          "ps": "<b>PD:</b><br>Las traducciones parciales se entregan en lotes para que puedas empezar a ver enseguida.<br>La traducción completa puede tardar de <strong>30 segundos a 5 minutos</strong> según la duración.",
           "onlyOneSource": "<em>*Se recomienda solo 1 idioma de origen:*</em>",
-          "onlyOneSourceBody": "Las listas \"Make\" usan el mismo orden que el idioma de origen.<br>As\u00ed puedes probar la sincron\u00eda en el idioma origen y luego elegir el mismo en la lista de traducci\u00f3n sin traducir uno desincronizado."
+          "onlyOneSourceBody": "Las listas \"Make\" usan el mismo orden que el idioma de origen.<br>Así puedes probar la sincronía en el idioma origen y luego elegir el mismo en la lista de traducción sin traducir uno desincronizado."
         },
         "toolbox": {
-          "title": "\ud83e\uddf0 Instrucciones de Sub Toolbox",
-          "beta": "BETA: Llegar\u00e1n nuevas funciones pronto.<br>Por ahora, disfruta traducciones por lotes de SRT con todos tus proveedores y ajustes configurados.",
-          "howTitle": "\ud83d\ude80 C\u00f3mo usar Sub Toolbox:",
-          "step1": "Activa <strong>\"Sub Toolbox\"</strong> en la p\u00e1gina de configuraci\u00f3n antes de instalar.",
-          "step2": "En Stremio, abre la lista de subt\u00edtulos y haz clic en <strong>\"Sub Toolbox\"</strong>.",
+          "title": "🧰 Instrucciones de Sub Toolbox",
+          "beta": "BETA: Llegarán nuevas funciones pronto.<br>Por ahora, disfruta traducciones por lotes de SRT con todos tus proveedores y ajustes configurados.",
+          "howTitle": "🚀 Cómo usar Sub Toolbox:",
+          "step1": "Activa <strong>\"Sub Toolbox\"</strong> en la página de configuración antes de instalar.",
+          "step2": "En Stremio, abre la lista de subtítulos y haz clic en <strong>\"Sub Toolbox\"</strong>.",
           "step3": "Haz clic derecho en el stream/video en Stremio y elige <strong>\"Download Subtitles\"</strong> para abrir el toolbox en tu navegador.",
-          "step4": "Elige una herramienta: Extraer y traducir incrustados, traducir archivos de subt\u00edtulos, sincronizar subt\u00edtulos o subt\u00edtulos autom\u00e1ticos.",
-          "step5": "Cada herramienta usa tu sesi\u00f3n SubMaker y ajustes de proveedores guardados.",
+          "step4": "Elige una herramienta: Extraer y traducir incrustados, traducir archivos de subtítulos, sincronizar subtítulos o subtítulos automáticos.",
+          "step5": "Cada herramienta usa tu sesión SubMaker y ajustes de proveedores guardados.",
           "step6": "Sigue los pasos en pantalla y arrastra el resultado a Stremio si es necesario."
         },
         "reset": {
-          "title": "Restablecer toda la configuraci\u00f3n",
-          "intro": "<strong>Esto reiniciar\u00e1 absolutamente todo de este sitio:</strong>",
-          "item1": "- Almacenamiento local, de sesi\u00f3n, configuraci\u00f3n en cach\u00e9 y tokens",
-          "item2": "- Service worker y todas las cach\u00e9s",
+          "title": "Restablecer toda la configuración",
+          "intro": "<strong>Esto reiniciará absolutamente todo de este sitio:</strong>",
+          "item1": "- Almacenamiento local, de sesión, configuración en caché y tokens",
+          "item2": "- Service worker y todas las cachés",
           "item3": "- Cualquier dato del sitio guardado por esta app",
-          "footer": "La p\u00e1gina se recargar\u00e1 despu\u00e9s.",
+          "footer": "La página se recargará después.",
           "cancel": "Cancelar",
           "confirm": "Restablecer todo"
         }
@@ -468,7 +586,7 @@
         "testCredentials": "Probar credenciales",
         "test": "Probar",
         "targetRequired": "Selecciona al menos un idioma destino",
-        "learnRequired": "Selecciona al menos un idioma de aprendizaje",
+        "learnRequired": "Selecciona al menos un idioma de Learn Mode",
         "geminiKeyRequired": "Se requiere la clave de Gemini",
         "geminiModelRequired": "Selecciona un modelo de Gemini",
         "mainProviderEnable": "Activa {provider} para usarlo como Proveedor principal",
@@ -516,7 +634,7 @@
         "sessionExpiredCreating": "La sesión expiró. Creando una nueva...",
         "sessionNetworkError": "Error de red al actualizar la sesión. Creando una nueva...",
         "sessionUpdateFailed": "Error al actualizar la sesión. Creando una nueva...",
-        "targetsTrimmed": "Solo se conservaron los primeros {limit} idiomas de destino (incluyendo Learn Mode)."
+        "targetsTrimmed": "Solo se conservaron los primeros {limit} idiomas de destino (incluido Learn Mode)."
       },
       "providers": {
         "subsource": {
@@ -613,7 +731,7 @@
         "sourceLabel": "* Idiomas de origen para traducciones",
         "targetTitle": "Idiomas de destino",
         "targetLabel": "* Idiomas destino para subtítulos y traducciones",
-        "learnTitle": "Idiomas de destino para Learn",
+        "learnTitle": "Idiomas de destino para Learn Mode",
         "learnLabel": "Selecciona idiomas para Learn Mode",
         "learnDescription": "Crea entradas \"Learn (Idioma)\" que combinan líneas de origen y traducidas en WebVTT. Selecciona idiomas \"Learn\" arriba tras habilitarlo."
       },
@@ -956,6 +1074,9 @@
         "empty": "No hay archivos en cola",
         "download": "Descargar",
         "untitled": "Sin título",
+        "options": {
+          "addTargets": "Agregar idiomas destino en Configurar"
+        },
         "status": {
           "pending": "En cola",
           "processing": "En proceso",
@@ -1112,6 +1233,9 @@
         "start": "Aplicar sincronización",
         "startBusy": "Sincronizando...",
         "progress": "Sincronizando subtítulos...",
+        "options": {
+          "addTargets": "Agregar idiomas destino en Configurar"
+        },
         "status": {
           "noStream": "Sin emisión vinculada. Los offsets manuales funcionan, pero el autosync necesitará una URL http(s).",
           "invalidStream": "El autosync requiere una URL http(s) válida. Los offsets manuales pueden funcionar sin ella.",
@@ -1306,9 +1430,9 @@
         "open": "Abrir",
         "reload": "Recargar",
         "reset": "Restablecer",
-        "copyright": "SubMaker xSync \u00a9 2025",
-        "resetConfirm": "\u00bfSeguro que quieres restablecer la extensi\u00f3n? Esto borrar\u00e1 todos los ajustes y datos.",
-        "resetFailed": "No se pudo restablecer la extensi\u00f3n. Intenta quitarla e instalarla de nuevo.",
+        "copyright": "SubMaker xSync © 2025",
+        "resetConfirm": "¿Seguro que quieres restablecer la extensión? Esto borrará todos los ajustes y datos.",
+        "resetFailed": "No se pudo restablecer la extensión. Intenta quitarla e instalarla de nuevo.",
         "engineBusy": "Sincronizando ahora",
         "engineIdle": "En espera",
         "themeAria": "Tema: {theme}"
@@ -1361,8 +1485,56 @@
         "clearStatsConfirm": "¿Restablecer las estadísticas del popup (contadores de sincronización activa/total)?",
         "statusActiveCount": "{count} sincronizando",
         "statusExtractingCount": "{count} extrayendo",
-        "themeAria": "Tema: {theme}"
+        "themeAria": "Tema: {theme}",
+        "syncEyebrow": "Comportamiento de sync",
+        "syncTitle": "Automatización y seguridad",
+        "preferAlass": "Preferir ALASS",
+        "preferAlassHint": "Favorece ALASS cuando esté disponible para alineación más precisa.",
+        "concurrency": "Concurrencia",
+        "concurrencyHint": "Evita sobrecarga cuando varias pestañas sincronizan a la vez.",
+        "concurrencyOption1": "Un solo trabajo",
+        "concurrencyOption2": "Hasta 2 trabajos",
+        "concurrencyOption3": "Hasta 3 trabajos",
+        "concurrencyOption4": "Hasta 4 trabajos",
+        "fallbackBehavior": "Comportamiento de respaldo",
+        "fallbackHint": "Cómo manejar problemas durante la sincronización en segundo plano.",
+        "fallbackOptionRetry": "Reintentar en silencio",
+        "fallbackOptionManual": "Preguntarme",
+        "fallbackOptionSkip": "Saltar sync fallido",
+        "quietMode": "Modo silencioso",
+        "quietModeHint": "Pausar sync automático hasta reactivarlo.",
+        "integrationsEyebrow": "Integraciones",
+        "integrationsTitle": "SubMaker Link",
+        "detectPages": "Detectar páginas de SubMaker",
+        "detectPagesHint": "Escuchar la página de sync para auto-conectarse.",
+        "offscreenWorker": "Worker en segundo plano",
+        "offscreenHint": "Permitir el documento offscreen para procesar.",
+        "notificationsEyebrow": "Notificaciones",
+        "notificationsTitle": "Avisos y horas de silencio",
+        "notifyStart": "Al iniciar",
+        "notifyStartHint": "Mostrar un aviso cuando empiece una sync.",
+        "notifySuccess": "Al terminar",
+        "notifySuccessHint": "Celebrar cuando una sync finalice.",
+        "notifyError": "En error",
+        "notifyErrorHint": "Mostrar problemas al instante.",
+        "notifySound": "Sonidos",
+        "notifySoundHint": "Reproducir señales suaves con las notificaciones.",
+        "quietHours": "Horas de silencio",
+        "quietHoursHint": "Silenciar notificaciones en una franja.",
+        "quietStart": "Inicio silencio",
+        "quietEnd": "Fin silencio",
+        "supportEyebrow": "Soporte y datos",
+        "supportTitle": "Copias, reinicios, diagnósticos",
+        "export": "Exportar ajustes",
+        "import": "Importar ajustes",
+        "resetStats": "Restablecer estadísticas",
+        "resetDefaults": "Restablecer valores predeterminados",
+        "supportHint": "Las exportaciones son JSON. Reset de estadísticas solo limpia métricas del popup (activos/total).",
+        "saveEyebrow": "Guardar",
+        "saveSubline": "Aplica al instante en toda la extensión."
       }
     }
   }
 }
+
+
