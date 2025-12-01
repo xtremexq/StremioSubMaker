@@ -15,8 +15,10 @@ All notable changes to this project will be documented in this file.
 
 **Bug Fixes:**
 
-- **Template safety:** Escaped backticks and fixed template literals in QuickNav/toolbox scripts to prevent malformed inline scripts.
+- **Batch context in single-batch splits:** When single-batch translations exceed token limits and auto-split, surrounding/previous-entry context is now passed through so coherence is preserved in this edge mode.
+- **Mobile quick-nav toggle:** Restored the hamburger bars on tool pages for screens under 1100px with.
 - **Resilient language maps:** Subtitle menu now guards language-map bootstrapping and drops stale backups so missing/invalid maps can’t crash subtitle rendering.
+- **Many other major and minor bug fixes.**
 
 **Improvements:**
 
@@ -28,6 +30,7 @@ All notable changes to this project will be documented in this file.
 - **Cache maintenance:** Subtitle cache/bypass integrity checks, size calculation, and evictions now run asynchronously to avoid blocking the event loop during periodic cleanups.
 - **Subtitle labels:** Subtitle menu normalizes generated labels (Make/Learn/xEmbed/xSync) and hides empty groups from screen readers for clearer navigation.
 - **Permanent translation cache reinstated (scoped & namespaced):** Permanent “Make (Language)” translations are re-enabled with strict config-scoped keys, a new namespaced storage prefix, automatic legacy purge, and hard bypass of permanent writes when a config hash is missing—eliminating cross-user leakage while retaining LRU size-based eviction.
+- **xSync/xEmbed hardening:** Synced and embedded subtitle caches now require valid sessions for reads/writes and xEmbed downloads are served with no-store headers to avoid cross-user leakage via shared cache.
 
 ## SubMaker v1.4.10
 

@@ -80,38 +80,72 @@ async function loadIndex(adapter, videoHash, languageCode) {
   return { indexKey, keys: index.keys };
 }
 
-async function persistIndex(adapter, indexKey, keys) {
+async function persistIndex(adapter, indexKey, keys, previousKeys = [], scanPattern = null) {
   const unique = Array.from(new Set(keys)).slice(-MAX_INDEX_ENTRIES);
+  const trimmed = Array.isArray(keys) ? keys.filter(k => k && !unique.includes(k)) : [];
+  const removed = Array.isArray(previousKeys) ? previousKeys.filter(k => k && !unique.includes(k)) : [];
+  const stray = [];
+
+  if (scanPattern) {
+    try {
+      const listed = await adapter.list(StorageAdapter.CACHE_TYPES.SYNC, scanPattern);
+      if (Array.isArray(listed)) {
+        for (const key of listed) {
+          if (key && !unique.includes(key)) {
+            stray.push(key);
+          }
+        }
+      }
+    } catch (error) {
+      log.warn(() => [`[Sync Cache] Failed to list for pruning (${scanPattern}):`, error.message]);
+    }
+  }
+
+  const toDelete = Array.from(new Set([...trimmed, ...removed, ...stray]));
+
   await adapter.set(indexKey, { version: INDEX_VERSION, keys: unique }, StorageAdapter.CACHE_TYPES.SYNC);
+
+  if (toDelete.length) {
+    for (const key of toDelete) {
+      try {
+        await adapter.delete(key, StorageAdapter.CACHE_TYPES.SYNC);
+      } catch (error) {
+        log.warn(() => [`[Sync Cache] Failed to delete pruned key ${key}:`, error.message]);
+      }
+    }
+  }
+
   return unique;
 }
 
 async function addToIndex(adapter, videoHash, languageCode, cacheKey) {
-  const { indexKey, keys } = await loadIndex(adapter, videoHash, languageCode);
-  if (keys.includes(cacheKey)) {
-    return keys;
+  const { indexKey, keys: previousKeys } = await loadIndex(adapter, videoHash, languageCode);
+  if (previousKeys.includes(cacheKey)) {
+    return previousKeys;
   }
-  keys.push(cacheKey);
-  return persistIndex(adapter, indexKey, keys);
+  const updated = [...previousKeys, cacheKey];
+  const pattern = `${videoHash}_${languageCode}_*`;
+  return persistIndex(adapter, indexKey, updated, previousKeys, pattern);
 }
 
 async function removeFromIndex(adapter, videoHash, languageCode, cacheKey) {
-  const { indexKey, keys } = await loadIndex(adapter, videoHash, languageCode);
-  if (!keys.length) {
+  const { indexKey, keys: previousKeys } = await loadIndex(adapter, videoHash, languageCode);
+  if (!previousKeys.length) {
     return;
   }
-  const filtered = keys.filter(k => k !== cacheKey);
-  if (filtered.length === keys.length) {
+  const filtered = previousKeys.filter(k => k !== cacheKey);
+  if (filtered.length === previousKeys.length) {
     return;
   }
-  await persistIndex(adapter, indexKey, filtered);
+  const pattern = `${videoHash}_${languageCode}_*`;
+  await persistIndex(adapter, indexKey, filtered, previousKeys, pattern);
 }
 
 async function rebuildIndexFromStorage(adapter, videoHash, languageCode) {
   const pattern = `${videoHash}_${languageCode}_*`;
   const keys = await adapter.list(StorageAdapter.CACHE_TYPES.SYNC, pattern);
-  const { indexKey } = await loadIndex(adapter, videoHash, languageCode);
-  const saved = await persistIndex(adapter, indexKey, keys || []);
+  const { indexKey, keys: previousKeys } = await loadIndex(adapter, videoHash, languageCode);
+  const saved = await persistIndex(adapter, indexKey, keys || [], previousKeys, pattern);
   return saved;
 }
 

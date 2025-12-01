@@ -2522,7 +2522,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         <p>You can download both extracted or translated subtitles as SRT.</p>
         <p>Translated subtitles are automatically uploaded to the database, matching the video hash, under the "xEmbed (Language)" entry (reload the stream on Stremio to see it).</p>
         <p>If translation/sync problems happen, simply retranslate the subtitle to overwrite the xEmbed database cache.</p>
-        <p>Extracted subtitles are discarded.</p>
+        <p>Extracted subtitles are saved to xEmbed as originals and show up under their source language (no separate label).</p>
         <p class="muted">Currently doesn't work with image-based subtitles - OCR may be implemented.</p>
       </div>
       <div class="modal-footer">
@@ -3524,7 +3524,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       return URL.createObjectURL(blob);
     }
 
-    async function persistOriginals() {
+    async function persistOriginals(batchId) {
       for (const track of state.tracks) {
         try {
           const { data, mime } = resolveTrackData(track);
@@ -3553,7 +3553,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
                 extractedAt: Date.now(),
                 source: 'extension',
                 encoding,
-                mime
+                mime,
+                batchId: batchId || Date.now()
               }
             })
           });
@@ -3705,7 +3706,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           renderSelectedTrackSummary();
           renderTargets();
           renderDownloads();
-          persistOriginals();
+          const batchId = Date.now();
+          persistOriginals(batchId);
           setStep2Enabled(false);
           logExtract('Extracted ' + state.tracks.length + ' track(s).');
         } else {

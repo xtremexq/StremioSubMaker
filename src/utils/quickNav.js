@@ -168,7 +168,9 @@ function quickNavStyles() {
       display: none;
       align-items: center;
       justify-content: center;
-      gap: 4px;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px;
       cursor: pointer;
       z-index: 10001;
       box-shadow: 0 3px 10px var(--shadow-color, rgba(0, 0, 0, 0.2));
@@ -177,8 +179,8 @@ function quickNavStyles() {
 
     .mobile-menu-toggle span {
       display: block;
-      width: 8px;
-      height: 8px;
+      width: 22px;
+      height: 3px;
       background: var(--text-primary);
       border-radius: 999px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.15);

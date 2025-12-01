@@ -1621,6 +1621,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     <li><strong>Manual Offset:</strong> Adjust subtitle timing manually with positive/negative milliseconds when you don't want to run autosync.</li>
                     <li><strong>ALASS (audio ➜ subtitle):</strong> Fast wasm anchors against the audio; pick Rapid/Balanced/Deep/Complete profiles for coverage.</li>
                     <li><strong>FFSubSync (audio ➜ subtitle):</strong> Drift-aware audio alignment via ffsubsync-wasm; choose a light, balanced, deep, or complete scan.</li>
+                    <li><strong>Vosk CTC/DTW (text ➜ audio):</strong> Force-align your subtitle text directly to audio with Vosk logits + DTW, great for broken timings or big offsets.</li>
                     <li><strong>Whisper + ALASS (subtitle ➜ subtitle):</strong> Whisper transcript alignment with an ALASS refinement pass; use light/balanced/deep/complete profiles to control scan size.</li>
                 </ol>
                 <p>Select a primary engine first, then pick its scan profile. Coverage adapts to the detected runtime so heavy cases can get deeper scans.</p>
@@ -1753,6 +1754,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                             <option value="manual">📝 Manual Offset Adjustment</option>
                             <option value="alass" disabled>🎯 ALASS (audio ➜ subtitle)</option>
                             <option value="ffsubsync" disabled>🎛️ FFSubSync (audio ➜ subtitle)</option>
+                            <option value="vosk-ctc" disabled>🧭 Vosk CTC/DTW (text ➜ audio)</option>
                             <option value="whisper-alass" disabled>🗣️ Whisper + ALASS (subtitle ➜ subtitle)</option>
                         </select>
                     </div>
@@ -2267,7 +2269,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             return \`\${seconds}s\`;
         }
 
-        const AUTO_PRIMARY_MODES = ['alass', 'ffsubsync', 'whisper-alass'];
+        const AUTO_PRIMARY_MODES = ['alass', 'ffsubsync', 'vosk-ctc', 'whisper-alass'];
         const SYNC_MODE_LIBRARY = {
             alass: {
                 description: 'Audio ➜ subtitle anchors via alass-wasm.',
@@ -2287,6 +2289,15 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     { value: 'ffss-complete', label: 'Complete (full runtime)', description: 'Full-runtime ffsubsync scan for maximum accuracy.', plan: { coverageTargetPct: 1, strategy: 'full', fullScan: true, legacyMode: 'complete' }, preferFfsubsync: true }
                 ]
             },
+            'vosk-ctc': {
+                description: 'Text ➜ audio (Vosk CTC logits + DTW).',
+                options: [
+                    { value: 'vosk-light', label: 'Vosk Light (~10–12%)', description: 'Quick CTC/DTW pass for big offsets and broken timings.', plan: { coverageTargetPct: 0.12, minWindows: 4, maxWindows: 7, windowSeconds: 70, strategy: 'spread', legacyMode: 'vosk-light' }, preferCtc: true },
+                    { value: 'vosk-balanced', label: 'Vosk Balanced (~16–20%)', description: 'Adds more anchors for ads/drift while staying fast.', plan: { coverageTargetPct: 0.18, minWindows: 6, maxWindows: 9, windowSeconds: 85, strategy: 'spread', legacyMode: 'vosk-balanced' }, preferCtc: true },
+                    { value: 'vosk-deep', label: 'Vosk Deep (~26–32%)', description: 'Dense anchors for noisy audio or messy subs.', plan: { coverageTargetPct: 0.28, minWindows: 8, maxWindows: 12, windowSeconds: 95, strategy: 'dense-spread', legacyMode: 'vosk-deep' }, preferCtc: true },
+                    { value: 'vosk-complete', label: 'Vosk Complete (full runtime)', description: 'Full-runtime Vosk CTC/DTW alignment when accuracy is critical.', plan: { coverageTargetPct: 1, strategy: 'full', fullScan: true, legacyMode: 'vosk-complete' }, preferCtc: true }
+                ]
+            },
             'whisper-alass': {
                 description: 'Subtitle ➜ subtitle (Whisper transcript + ALASS refine).',
                 options: [
@@ -2301,6 +2312,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             manual: '📝 Manual offset: type the millisecond shift you need.',
             alass: '🎯 ALASS anchors the subtitle to audio for fast, offline alignment.',
             ffsubsync: '🎛️ FFSubSync detects drifts/ads directly from the audio waveform.',
+            'vosk-ctc': '🧭 Vosk CTC/DTW force-aligns your subtitle text directly to the audio.',
             'whisper-alass': '🗣️ Whisper transcript alignment with an ALASS refinement pass.'
         };
         const PRESET_DESCRIPTIONS = (() => {
@@ -2443,7 +2455,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         const secondaryModeGroup = document.getElementById('secondaryModeGroup');
 
         function setAutoSyncAvailability(enabled) {
-            const primaryOptions = ['alass', 'ffsubsync', 'whisper-alass'];
+            const primaryOptions = ['alass', 'ffsubsync', 'vosk-ctc', 'whisper-alass'];
             primaryOptions.forEach((mode) => {
                 const opt = primaryModeSelect?.querySelector('option[value="' + mode + '"]');
                 if (opt) opt.disabled = !enabled;
@@ -2483,7 +2495,8 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             const preset = resolveSecondaryPreset(primaryMode, secondaryPresetValue);
             return {
                 preferAlass: !!(preset?.preferAlass || primaryMode === 'alass'),
-                preferFfsubsync: !!(preset?.preferFfsubsync || primaryMode === 'ffsubsync')
+                preferFfsubsync: !!(preset?.preferFfsubsync || primaryMode === 'ffsubsync'),
+                preferCtc: !!(preset?.preferCtc || primaryMode === 'vosk-ctc')
             };
         }
 
@@ -2541,7 +2554,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
 
                     setAutoSyncAvailability(true);
 
-                    logSync('Sync engines unlocked (ALASS / FFSubSync / Whisper + ALASS)', 'info');
+                    logSync('Sync engines unlocked (ALASS / FFSubSync / Vosk CTC/DTW / Whisper + ALASS)', 'info');
 
                     if (primaryModeSelect && primaryModeSelect.value === 'manual') {
                         primaryModeSelect.value = 'whisper-alass';
@@ -2571,7 +2584,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         setTimeout(pingExtension, 150);
 
         // Request sync from Chrome extension
-        function requestExtensionSync(streamUrl, subtitleContent, plan = null, preferAlass = false, preferFfsubsync = false) {
+        function requestExtensionSync(streamUrl, subtitleContent, plan = null, preferAlass = false, preferFfsubsync = false, preferCtc = false) {
             return new Promise((resolve, reject) => {
                 const messageId = 'sync_' + Date.now();
                 const modeToSend = (plan && plan.legacyMode) ? plan.legacyMode : (plan && plan.preset) ? plan.preset : 'smart';
@@ -2629,10 +2642,11 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                         subtitleContent,
                         mode: modeToSend,  // Pass mode to extension
                         preset: plan?.preset || modeToSend,
-                        plan: planPayload,
-                        preferAlass: !!preferAlass,
-                        preferFfsubsync: !!preferFfsubsync
-                    }
+                    plan: planPayload,
+                    preferAlass: !!preferAlass,
+                    preferFfsubsync: !!preferFfsubsync,
+                    preferCtc: !!preferCtc
+                }
                 }, '*');
                 const summary = describeSyncPlan(plan);
                 logSync('Sent sync request (' + modeToSend + ')' + (summary ? ' [' + summary + ']' : '') + ' to extension.', 'info');
@@ -2852,7 +2866,8 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                         STATE.subtitleContent,
                         syncPlan,
                         prefs.preferAlass,
-                        prefs.preferFfsubsync
+                        prefs.preferFfsubsync,
+                        prefs.preferCtc
                     );
 
                     if (!syncResult.success) {

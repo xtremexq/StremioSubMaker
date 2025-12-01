@@ -264,8 +264,8 @@ const cacheResetHistory = new LRUCache({
     updateAgeOnGet: false,
 });
 
-// Feature toggle: keep embedded original tracks in cache (default off to save space)
-const KEEP_EMBEDDED_ORIGINALS = String(process.env.KEEP_EMBEDDED_ORIGINALS || '').toLowerCase() === 'true';
+// Feature toggle: keep embedded original tracks in cache (default ON; set to "false" to opt out)
+const KEEP_EMBEDDED_ORIGINALS = String(process.env.KEEP_EMBEDDED_ORIGINALS || 'true').toLowerCase() !== 'false';
 
 // Keep router cache aligned with latest session config across updates/deletes (including Redis pub/sub events)
 if (typeof sessionManager.on === 'function') {
@@ -3394,6 +3394,10 @@ app.get('/addon/:config/xsync/:videoHash/:lang/:sourceSubId', async (req, res) =
 
         const { config: configStr, videoHash, lang, sourceSubId } = req.params;
         const config = await resolveConfigGuarded(configStr, req, res, '[xSync Download] config');
+        if (!config || config.__sessionTokenError === true) {
+            log.warn(() => '[xSync Download] Rejected due to invalid/missing session token');
+            return res.status(401).send('Invalid or expired session token');
+        }
 
         log.debug(() => `[xSync Download] Request for ${videoHash}_${lang}_${sourceSubId}`);
 
@@ -3434,7 +3438,7 @@ app.post('/api/save-synced-subtitle', userDataWriteLimiter, async (req, res) => 
         const config = await resolveConfigGuarded(configStr, req, res, '[Save Synced] config');
 
         // Reject writes when session token is missing/invalid to prevent cross-user pollution of shared sync cache
-        if (config.__sessionTokenError === true) {
+        if (!config || config.__sessionTokenError === true) {
             log.warn(() => '[Save Synced] Rejected write due to invalid/missing session token');
             return res.status(401).json({ error: 'Invalid or expired session token' });
         }
@@ -3461,7 +3465,12 @@ app.post('/api/save-synced-subtitle', userDataWriteLimiter, async (req, res) => 
 app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId', async (req, res) => {
     try {
         const { config: configStr, videoHash, lang, trackId } = req.params;
-        await resolveConfigGuarded(configStr, req, res, '[xEmbed Download] config');
+        setNoStore(res);
+        const config = await resolveConfigGuarded(configStr, req, res, '[xEmbed Download] config');
+        if (!config || config.__sessionTokenError === true) {
+            log.warn(() => '[xEmbed Download] Rejected due to invalid/missing session token');
+            return res.status(401).send('Invalid or expired session token');
+        }
 
         const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
         const safeTrackId = (typeof trackId === 'string' || typeof trackId === 'number') && /^[a-zA-Z0-9._-]{1,120}$/.test(String(trackId)) ? String(trackId) : null;
@@ -3497,7 +3506,12 @@ app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId', async (req, res) =
 app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId/original', async (req, res) => {
     try {
         const { config: configStr, videoHash, lang, trackId } = req.params;
-        await resolveConfigGuarded(configStr, req, res, '[xEmbed Original] config');
+        setNoStore(res);
+        const config = await resolveConfigGuarded(configStr, req, res, '[xEmbed Original] config');
+        if (!config || config.__sessionTokenError === true) {
+            log.warn(() => '[xEmbed Original] Rejected due to invalid/missing session token');
+            return res.status(401).send('Invalid or expired session token');
+        }
 
         const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
         const safeTrackId = (typeof trackId === 'string' || typeof trackId === 'number') && /^[a-zA-Z0-9._-]{1,120}$/.test(String(trackId)) ? String(trackId) : null;
@@ -3551,16 +3565,33 @@ app.post('/api/save-embedded-subtitle', userDataWriteLimiter, async (req, res) =
             return res.status(413).json({ error: 'Embedded subtitle is too large' });
         }
 
-        await resolveConfigGuarded(configStr, req, res, '[Save Embedded] config');
-
-        if (KEEP_EMBEDDED_ORIGINALS) {
-            const saveResult = await embeddedCache.saveOriginalEmbedded(normalizedVideoHash, normalizedTrackId, normalizedLang, subtitleContent, metadata || {});
-            return res.json({ success: true, kept: true, cacheKey: saveResult.cacheKey, metadata: saveResult.entry.metadata || {} });
+        const config = await resolveConfigGuarded(configStr, req, res, '[Save Embedded] config');
+        if (!config || config.__sessionTokenError === true) {
+            log.warn(() => '[Save Embedded] Rejected write due to invalid/missing session token');
+            return res.status(401).json({ error: 'Invalid or expired session token' });
         }
 
-        // Discard originals by default to avoid xEmbed source-language entries and save space
-        log.debug(() => `[Save Embedded] Discarded original for ${normalizedVideoHash}_${normalizedLang}_${normalizedTrackId} (KEEP_EMBEDDED_ORIGINALS disabled)`);
-        return res.json({ success: true, kept: false, message: 'Embedded originals discarded by default (set KEEP_EMBEDDED_ORIGINALS=true to persist).' });
+        let kept = false;
+        let cacheKey = null;
+        let normalizedMetadata = (metadata && typeof metadata === 'object') ? { ...metadata } : {};
+
+        if (KEEP_EMBEDDED_ORIGINALS) {
+            const saveResult = await embeddedCache.saveOriginalEmbedded(
+                normalizedVideoHash,
+                normalizedTrackId,
+                normalizedLang,
+                subtitleContent,
+                normalizedMetadata
+            );
+            kept = true;
+            cacheKey = saveResult.cacheKey;
+            normalizedMetadata = saveResult.entry.metadata || normalizedMetadata;
+        } else {
+            // Respect opt-out, but still acknowledge success
+            log.debug(() => `[Save Embedded] Discarded original for ${normalizedVideoHash}_${normalizedLang}_${normalizedTrackId} (KEEP_EMBEDDED_ORIGINALS disabled)`);
+        }
+
+        return res.json({ success: true, kept, cacheKey, metadata: normalizedMetadata });
     } catch (error) {
         if (respondStorageUnavailable(res, error, '[Save Embedded]')) return;
         log.error(() => '[Save Embedded] Error:', error);
@@ -3609,6 +3640,10 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
         const safeSourceLanguage = normalizedSourceLang || 'und';
 
         const baseConfig = await resolveConfigGuarded(configStr, req, res, '[Embedded Translate] config');
+        if (!baseConfig || baseConfig.__sessionTokenError === true) {
+            log.warn(() => '[Embedded Translate] Rejected due to invalid/missing session token');
+            return res.status(401).json({ error: 'Invalid or expired session token' });
+        }
         const workingConfig = {
             ...baseConfig,
             advancedSettings: { ...(baseConfig.advancedSettings || {}) }
@@ -3799,7 +3834,13 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
             try {
                 const existingOriginal = await embeddedCache.getOriginalEmbedded(safeVideoHash, safeTrackId, safeSourceLanguage);
                 if (!existingOriginal || !existingOriginal.content) {
-                    const persisted = await embeddedCache.saveOriginalEmbedded(safeVideoHash, safeTrackId, safeSourceLanguage, sourceContent, mergedMetadata || {});
+                    const persisted = await embeddedCache.saveOriginalEmbedded(
+                        safeVideoHash,
+                        safeTrackId,
+                        safeSourceLanguage,
+                        sourceContent,
+                        mergedMetadata || {}
+                    );
                     originalEntry = persisted.entry;
                     log.debug(() => `[Embedded Translate] Persisted inline original ${safeTrackId} for ${safeVideoHash}`);
                 } else {

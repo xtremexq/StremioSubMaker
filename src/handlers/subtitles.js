@@ -1018,7 +1018,7 @@ async function enforceCacheSizeLimit() {
 }
 
 // Log cache metrics periodically
-function logCacheMetrics() {
+async function logCacheMetrics() {
   const uptime = Math.floor((Date.now() - cacheMetrics.lastReset) / 1000 / 60); // minutes
   const hitRate = cacheMetrics.hits + cacheMetrics.misses > 0
     ? ((cacheMetrics.hits / (cacheMetrics.hits + cacheMetrics.misses)) * 100).toFixed(1)
@@ -1026,6 +1026,16 @@ function logCacheMetrics() {
   const cacheSizeGB = (cacheMetrics.totalCacheSize / 1024 / 1024 / 1024).toFixed(2);
 
   log.debug(() => `[Cache Metrics] Uptime: ${uptime}m | Hits: ${cacheMetrics.hits} | Misses: ${cacheMetrics.misses} | Hit Rate: ${hitRate}% | Disk R/W: ${cacheMetrics.diskReads}/${cacheMetrics.diskWrites} | API Calls: ${cacheMetrics.apiCalls} | Est. Cost Saved: $${cacheMetrics.estimatedCostSaved.toFixed(3)} | Cache Size: ${cacheSizeGB}GB | Evicted: ${cacheMetrics.filesEvicted}`);
+
+  // Also snapshot session namespace so Redis SCAN output includes sessions alongside other caches
+  try {
+    const adapter = await getStorageAdapter();
+    if (adapter && typeof adapter.list === 'function') {
+      await adapter.list(StorageAdapter.CACHE_TYPES.SESSION, '*');
+    }
+  } catch (err) {
+    log.warn(() => `[Cache Metrics] Failed to list sessions for diagnostics: ${err?.message || err}`);
+  }
 }
 
 // Initialize cache on module load
@@ -2341,9 +2351,11 @@ function createSubtitleHandler(config) {
 
       // Add xEmbed entries (translated embedded tracks from cache)
       const xEmbedEntries = [];
+      const xEmbedOriginalEntries = [];
       if (videoHashes.length) {
         try {
           const seenKeys = new Set();
+          const seenOriginals = new Set();
           for (const hash of videoHashes) {
             const translations = await embeddedCache.listEmbeddedTranslations(hash);
             for (const entry of translations) {
@@ -2361,9 +2373,30 @@ function createSubtitleHandler(config) {
                 url: `{{ADDON_URL}}/xembedded/${hash}/${targetCode}/${entry.trackId}`
               });
             }
+
+            // Originals: surfaced as regular subtitles under their source language
+            const originals = await embeddedCache.listEmbeddedOriginals(hash);
+            for (const entry of originals) {
+              if (!entry || !entry.trackId) continue;
+              const sourceCode = (entry.languageCode || '').toString().toLowerCase();
+              if (!sourceCode) continue;
+              const dedupeKey = `${entry.trackId}_${sourceCode}`;
+              if (seenOriginals.has(dedupeKey)) continue;
+              seenOriginals.add(dedupeKey);
+
+              const langName = getLanguageName(sourceCode) || sourceCode;
+              xEmbedOriginalEntries.push({
+                id: `xembed_orig_${entry.cacheKey}`,
+                lang: langName,
+                url: `{{ADDON_URL}}/xembedded/${hash}/${sourceCode}/${entry.trackId}/original`
+              });
+            }
           }
           if (xEmbedEntries.length > 0) {
             log.debug(() => `[Subtitles] Added ${xEmbedEntries.length} xEmbed entries`);
+          }
+          if (xEmbedOriginalEntries.length > 0) {
+            log.debug(() => `[Subtitles] Added ${xEmbedOriginalEntries.length} xEmbed original entries`);
           }
         } catch (error) {
           log.error(() => [`[Subtitles] Failed to get xEmbed entries for ${videoHashes.join(',')}:`, error.message]);
@@ -2371,7 +2404,14 @@ function createSubtitleHandler(config) {
       }
 
       // Add special action buttons
-      let allSubtitles = [...stremioSubtitles, ...translationEntries, ...learnEntries, ...xSyncEntries, ...xEmbedEntries];
+      let allSubtitles = [
+        ...stremioSubtitles,
+        ...translationEntries,
+        ...learnEntries,
+        ...xSyncEntries,
+        ...xEmbedOriginalEntries,
+        ...xEmbedEntries
+      ];
 
       // If OpenSubtitles auth failed, append a final entry per language with a helpful SRT
       if (openSubsAuthFailed === true) {
@@ -2409,8 +2449,8 @@ function createSubtitleHandler(config) {
       // Put action buttons at the top
       allSubtitles = [...actionButtons, ...allSubtitles];
 
-      const totalResponseItems = stremioSubtitles.length + translationEntries.length + learnEntries.length + xSyncEntries.length + xEmbedEntries.length + actionButtons.length;
-      log.debug(() => `[Subtitles] Returning ${totalResponseItems} items (${stremioSubtitles.length} subs + ${translationEntries.length} trans + ${learnEntries.length} learn + ${xSyncEntries.length} xSync + ${xEmbedEntries.length} xEmbed + ${actionButtons.length} actions)`);
+      const totalResponseItems = stremioSubtitles.length + translationEntries.length + learnEntries.length + xSyncEntries.length + xEmbedOriginalEntries.length + xEmbedEntries.length + actionButtons.length;
+      log.debug(() => `[Subtitles] Returning ${totalResponseItems} items (${stremioSubtitles.length} subs + ${translationEntries.length} trans + ${learnEntries.length} learn + ${xSyncEntries.length} xSync + ${xEmbedOriginalEntries.length} xEmbed originals + ${xEmbedEntries.length} xEmbed + ${actionButtons.length} actions)`);
 
       return {
         subtitles: allSubtitles

@@ -905,7 +905,13 @@ class RedisStorageAdapter extends StorageAdapter {
           }
         } while (cursor !== '0');
 
-        log.debug(() => `[RedisStorage] SCAN with pattern ${scanPattern} found ${keys.length} ${cacheType} key(s)`);
+        if (cacheType === StorageAdapter.CACHE_TYPES.SESSION) {
+          const sessionTokenCount = keys.filter(k => /^[a-f0-9]{32}$/.test(k)).length;
+          const helperKeyCount = keys.length - sessionTokenCount;
+          log.debug(() => `[RedisStorage] SCAN with pattern ${scanPattern} found ${keys.length} session key(s) (tokens: ${sessionTokenCount}, helper keys: ${helperKeyCount})`);
+        } else {
+          log.debug(() => `[RedisStorage] SCAN with pattern ${scanPattern} found ${keys.length} ${cacheType} key(s)`);
+        }
         return keys;
       });
     } catch (error) {

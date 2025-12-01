@@ -320,6 +320,10 @@ class TranslationEngine {
     for (let batchIndex = 0; batchIndex < chunks.length; batchIndex++) {
       const batch = chunks[batchIndex];
       const useStreaming = chunkCount === 1 && this.enableStreaming;
+      // Preserve coherence when the "single-batch" path auto-splits by reusing the same context builder
+      const context = this.enableBatchContext
+        ? this.prepareContextForBatch(batch, entries, translatedEntries, batchIndex)
+        : null;
 
       const translatedBatch = await this.translateBatch(
         batch,
@@ -327,7 +331,7 @@ class TranslationEngine {
         customPrompt,
         batchIndex,
         chunks.length,
-        null,
+        context,
         {
           allowAutoChunking: false,
           streaming: useStreaming,
