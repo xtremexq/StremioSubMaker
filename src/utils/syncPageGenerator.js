@@ -1340,6 +1340,32 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             border-radius: 12px;
         }
 
+        .offset-headline {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .offset-summary {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .offset-hint {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            text-align: right;
+        }
+
+        .offset-nudges {
+            display: flex;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
         .checkbox-group input[type="checkbox"] {
             width: 20px;
             height: 20px;
@@ -1826,13 +1852,24 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     <div id="manualSyncControls">
                         <div class="form-group">
                             <label for="offsetMs">Time Offset (milliseconds):</label>
-                            <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                <input type="number" id="offsetMs" value="0" step="100" style="flex: 1;">
-                                <button class="btn btn-secondary" onclick="document.getElementById('offsetMs').value = parseInt(document.getElementById('offsetMs').value) - 1000">-1s</button>
-                                <button class="btn btn-secondary" onclick="document.getElementById('offsetMs').value = parseInt(document.getElementById('offsetMs').value) - 100">-100ms</button>
-                                <button class="btn btn-secondary" onclick="document.getElementById('offsetMs').value = 0">Reset</button>
-                                <button class="btn btn-secondary" onclick="document.getElementById('offsetMs').value = parseInt(document.getElementById('offsetMs').value) + 100">+100ms</button>
-                                <button class="btn btn-secondary" onclick="document.getElementById('offsetMs').value = parseInt(document.getElementById('offsetMs').value) + 1000">+1s</button>
+                            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                <div class="offset-headline">
+                                    <div id="offsetSummary" class="offset-summary">On time</div>
+                                    <div class="offset-hint">Hotkeys: ←/→ = ±100ms • Shift+←/→ = ±500ms • 0 = reset</div>
+                                </div>
+                                <input type="range" id="offsetSlider" min="-15000" max="15000" step="50" value="0" style="width: 100%;">
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <input type="number" id="offsetMs" value="0" step="50" style="flex: 1;">
+                                    <div class="offset-nudges">
+                                        <button class="btn btn-secondary offset-btn" data-step="-1000">-1s</button>
+                                        <button class="btn btn-secondary offset-btn" data-step="-500">-500ms</button>
+                                        <button class="btn btn-secondary offset-btn" data-step="-100">-100ms</button>
+                                        <button class="btn btn-secondary offset-btn" data-reset="true">Reset</button>
+                                        <button class="btn btn-secondary offset-btn" data-step="100">+100ms</button>
+                                        <button class="btn btn-secondary offset-btn" data-step="500">+500ms</button>
+                                        <button class="btn btn-secondary offset-btn" data-step="1000">+1s</button>
+                                    </div>
+                                </div>
                             </div>
                             <p style="font-size: 0.85rem; color: #9CA3AF; margin-top: 0.5rem;">
                                 Positive values = delay subtitles (appear later)<br>
@@ -2487,8 +2524,8 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             let result = '';
 
             for (const sub of subtitles) {
-                const newStart = sub.start + offsetMs;
-                const newEnd = sub.end + offsetMs;
+                const newStart = Math.max(0, sub.start + offsetMs);
+                const newEnd = Math.max(newStart, sub.end + offsetMs);
 
                 result += \`\${sub.index}\\n\`;
                 result += \`\${formatTime(newStart)} --> \${formatTime(newEnd)}\\n\`;
@@ -2511,6 +2548,9 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         const primaryModeSelect = document.getElementById('primarySyncMode');
         const secondaryModeSelect = document.getElementById('secondarySyncMode');
         const secondaryModeGroup = document.getElementById('secondaryModeGroup');
+        const manualOffsetInput = document.getElementById('offsetMs');
+        const manualOffsetSlider = document.getElementById('offsetSlider');
+        const manualOffsetSummary = document.getElementById('offsetSummary');
 
         function setAutoSyncAvailability(enabled) {
             const primaryOptions = ['alass', 'ffsubsync', 'vosk-ctc', 'whisper-alass'];
@@ -2521,6 +2561,25 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             if (secondaryModeSelect) {
                 secondaryModeSelect.disabled = !enabled;
             }
+        }
+
+        function formatOffsetLabel(ms) {
+            if (!Number.isFinite(ms)) return 'On time';
+            if (ms === 0) return 'On time';
+            const dir = ms > 0 ? 'later' : 'earlier';
+            const abs = Math.abs(ms);
+            const pretty = abs >= 1000 ? (abs / 1000).toFixed(abs % 1000 === 0 ? 0 : 1) + 's' : abs + 'ms';
+            return `${pretty} ${dir}`;
+        }
+
+        function setManualOffset(ms) {
+            const min = Number(manualOffsetSlider?.min) || -15000;
+            const max = Number(manualOffsetSlider?.max) || 15000;
+            const clamped = Math.min(max, Math.max(min, Math.round(ms || 0)));
+            if (manualOffsetInput) manualOffsetInput.value = clamped;
+            if (manualOffsetSlider) manualOffsetSlider.value = clamped;
+            if (manualOffsetSummary) manualOffsetSummary.textContent = formatOffsetLabel(clamped);
+            return clamped;
         }
 
         function populateSecondaryOptions(primaryMode) {
@@ -2731,6 +2790,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                 autoSyncInfo.style.display = 'none';
                 syncMethodDesc.innerHTML = '';
                 STATE.activeSyncPlan = null;
+                setManualOffset(parseInt(manualOffsetInput?.value || '0', 10) || 0);
                 return;
             }
 
@@ -2753,6 +2813,45 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             refreshSyncPlanPreview();
         });
         secondaryModeSelect?.addEventListener('change', refreshSyncPlanPreview);
+
+        // Manual offset controls sync
+        if (manualOffsetInput) {
+            manualOffsetInput.addEventListener('input', (e) => {
+                const ms = parseInt(e.target.value || '0', 10);
+                setManualOffset(ms);
+            });
+        }
+        if (manualOffsetSlider) {
+            manualOffsetSlider.addEventListener('input', (e) => {
+                const ms = parseInt(e.target.value || '0', 10);
+                setManualOffset(ms);
+            });
+        }
+        document.querySelectorAll('.offset-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const reset = e.currentTarget.getAttribute('data-reset') === 'true';
+                const step = parseInt(e.currentTarget.getAttribute('data-step') || '0', 10);
+                const current = parseInt(manualOffsetInput?.value || '0', 10);
+                const next = reset ? 0 : current + step;
+                setManualOffset(next);
+            });
+        });
+        window.addEventListener('keydown', (e) => {
+            if (!primaryModeSelect || primaryModeSelect.value !== 'manual') return;
+            if (['ArrowLeft', 'ArrowRight', '0'].includes(e.key)) {
+                if (e.key === '0') {
+                    setManualOffset(0);
+                    e.preventDefault();
+                    return;
+                }
+                const base = e.shiftKey ? 500 : 100;
+                const delta = e.key === 'ArrowRight' ? base : -base;
+                setManualOffset((parseInt(manualOffsetInput?.value || '0', 10) || 0) + delta);
+                e.preventDefault();
+            }
+        });
+        setManualOffset(0);
 
         populateSecondaryOptions(primaryModeSelect?.value || 'alass');
         refreshSyncPlanPreview();
