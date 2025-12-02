@@ -208,6 +208,7 @@
         maxTargetLanguages: 6,
         maxNoTranslationLanguages: 9
     };
+    let uiLanguageExpanded = false;
     const SUPPORTED_UI_LANGUAGES = [
         {
             value: 'en',
@@ -734,6 +735,19 @@ Translate to {target_language}.`;
         currentConfig.providerParameters = mergeProviderParameters(defaults, currentConfig.providerParameters);
     }
 
+    function setUiLanguageExpanded(expanded) {
+        uiLanguageExpanded = expanded === true;
+        const dock = document.getElementById('uiLanguageDock');
+        const row = document.getElementById('uiLanguageFlags');
+        if (dock) {
+            dock.classList.toggle('expanded', uiLanguageExpanded);
+            dock.setAttribute('aria-expanded', uiLanguageExpanded ? 'true' : 'false');
+        }
+        if (row) {
+            row.classList.toggle('collapsed', !uiLanguageExpanded);
+        }
+    }
+
     function renderUiLanguageFlags(selectedLang) {
         const container = document.getElementById('uiLanguageFlags');
         const dock = document.getElementById('uiLanguageDock');
@@ -758,6 +772,7 @@ Translate to {target_language}.`;
                 const current = (currentConfig && currentConfig.uiLanguage) || '';
                 if (meta.value === current) return;
                 setUiLanguage(meta.value);
+                setUiLanguageExpanded(false);
             });
             container.appendChild(btn);
         });
@@ -767,6 +782,7 @@ Translate to {target_language}.`;
             dock.setAttribute('aria-label', ariaPrefix + (activeMeta.label || activeMeta.value.toUpperCase()));
         }
         updateUiLanguageBadge(activeMeta.value);
+        setUiLanguageExpanded(uiLanguageExpanded);
     }
 
     function setUiLanguage(lang) {
@@ -776,6 +792,7 @@ Translate to {target_language}.`;
         }
         currentConfig.uiLanguage = normalized;
         updateUiLanguageBadge(normalized);
+        setUiLanguageExpanded(false);
         try { localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, normalized); } catch (_) {}
         initLocale(normalized);
     }
@@ -790,6 +807,7 @@ Translate to {target_language}.`;
         const activeLang = (currentConfig && currentConfig.uiLanguage) || (locale && locale.lang) || 'en';
         renderUiLanguageFlags(activeLang);
         updateUiLanguageBadge(activeLang);
+        setUiLanguageExpanded(false);
         const heroTitle = document.getElementById('heroTitle');
         if (heroTitle) {
             heroTitle.textContent = translate('config.heroTitle', 'SubMaker');
@@ -1880,11 +1898,11 @@ Translate to {target_language}.`;
 
         // Delegate language grid item clicks to containers (reduces per-item listeners)
         const gridMap = [
-            ['sourceLanguages', 'source'],
-            ['targetLanguages', 'target'],
-            ['learnLanguages', 'learn'],
-            ['noTranslationLanguages', 'notranslation']
-        ];
+        ['sourceLanguages', 'source'],
+        ['targetLanguages', 'target'],
+        ['learnLanguages', 'learn'],
+        ['noTranslationLanguages', 'notranslation']
+    ];
         gridMap.forEach(([id, type]) => {
             const grid = document.getElementById(id);
             if (grid && !grid.__delegated) {
@@ -1916,6 +1934,22 @@ Translate to {target_language}.`;
                     if (code) removeLanguage(type, code);
                 });
                 box.__delegated = true;
+            }
+        });
+
+        const dock = document.getElementById('uiLanguageDock');
+        if (dock) {
+            dock.addEventListener('click', (e) => {
+                e.stopPropagation();
+                setUiLanguageExpanded(!uiLanguageExpanded);
+            });
+        }
+        document.addEventListener('click', () => {
+            if (uiLanguageExpanded) setUiLanguageExpanded(false);
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && uiLanguageExpanded) {
+                setUiLanguageExpanded(false);
             }
         });
 

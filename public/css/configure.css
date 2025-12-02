@@ -284,6 +284,7 @@
             z-index: 9985;
             transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
             isolation: isolate;
+            cursor: pointer;
         }
 
         .ui-language-dock::after {
@@ -332,6 +333,10 @@
             gap: 0.4rem;
             position: relative;
             z-index: 1;
+        }
+
+        .ui-language-flag-row.collapsed .ui-lang-flag:not(.active) {
+            display: none;
         }
 
         .ui-lang-flag {
