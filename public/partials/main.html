@@ -52,26 +52,6 @@
     </button>
     <button class="help-button mario" id="configHelp" title="Help" data-i18n="config.quickActionHelp" data-i18n-attr="title">?</button>
 
-    <!-- Quick stats -->
-    <div class="quick-stats-grid" id="quickStats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin: 1.5rem 0;">
-        <div class="quick-stat">
-            <p class="quick-stat-label" data-i18n="config.quickStatsStatus">Status</p>
-            <strong class="quick-stat-value" id="quickStatStatus">--</strong>
-        </div>
-        <div class="quick-stat">
-            <p class="quick-stat-label" data-i18n="config.quickStatsConfigure">Configure</p>
-            <strong class="quick-stat-value" id="quickStatConfigure">--</strong>
-        </div>
-        <div class="quick-stat">
-            <p class="quick-stat-label" data-i18n="config.quickStatsToolbox">Toolbox</p>
-            <strong class="quick-stat-value" id="quickStatToolbox">--</strong>
-        </div>
-        <div class="quick-stat">
-            <p class="quick-stat-label" data-i18n="config.quickStatsLastSave">Last Save</p>
-            <strong class="quick-stat-value" id="quickStatLastSave">--</strong>
-        </div>
-    </div>
-
     <!-- Disable native HTML validation: we run all validation in config.js and hidden inputs (provider advanced sliders) can trip browser validity when collapsed -->
     <form id="configForm" autocomplete="off" spellcheck="false" novalidate>
         <!-- No Translation Mode Toggle -->

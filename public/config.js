@@ -267,7 +267,13 @@
 
     function resolveUiLanguageMeta(entry) {
         if (!entry) return null;
-        const label = tConfig(entry.labelKey, {}, entry.fallbackLabel || entry.value.toUpperCase());
+        const codeLabelMap = {
+            'en': 'EN',
+            'es': 'ES',
+            'pt-br': 'PT',
+            'ar': 'AR'
+        };
+        const label = codeLabelMap[entry.value] || entry.value.toUpperCase();
         const translatedFlag = tConfig(entry.flagKey, {}, entry.fallbackFlag || entry.value.toUpperCase());
         const emojiFlag = toFlagEmoji(translatedFlag) || toFlagEmoji(entry.fallbackFlag) || translatedFlag || entry.fallbackFlag || entry.value.toUpperCase();
         return {
