@@ -1426,6 +1426,15 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       const channelName = 'submaker-stream-' + configSig;
       const ownerKey = 'submaker-stream-owner-' + configSig;
       const tabId = Date.now() + '-' + Math.random().toString(16).slice(2);
+      const GLOBAL_OWNER_KEY = '__submakerStreamOwners__';
+      const globalOwners = (() => {
+        try {
+          if (!window[GLOBAL_OWNER_KEY]) window[GLOBAL_OWNER_KEY] = {};
+          return window[GLOBAL_OWNER_KEY];
+        } catch (_) {
+          return {};
+        }
+      })();
       const hasBroadcast = typeof BroadcastChannel === 'function';
       const channel = hasBroadcast ? new BroadcastChannel(channelName) : null;
       let isOwner = false;
@@ -1528,10 +1537,15 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       function becomeOwner(force = false) {
         if (isOwner) return true;
         const rec = readOwner();
+        const globalOwner = globalOwners[configSig];
+        if (!force && globalOwner && globalOwner !== tabId) {
+          return false;
+        }
         if (!force && rec && rec.id !== tabId && ownerIsFresh(rec)) {
           return false;
         }
         isOwner = true;
+        try { globalOwners[configSig] = tabId; } catch (_) {}
         try { localStorage.setItem(ownerKey, JSON.stringify({ id: tabId, ts: Date.now() })); } catch (_) {}
         refreshOwnerLease();
         startSse();
@@ -1743,6 +1757,9 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
         if (sseProbeTimer) clearTimeout(sseProbeTimer);
         if (ownerLeaseTimer) clearInterval(ownerLeaseTimer);
         if (isOwner) {
+          try {
+            if (globalOwners[configSig] === tabId) delete globalOwners[configSig];
+          } catch (_) {}
           try { localStorage.removeItem(ownerKey); } catch (_) {}
         }
       });
