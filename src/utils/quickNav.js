@@ -741,7 +741,8 @@ function quickNavScript() {
             es = null;
 
             if (sseRetryCount < MAX_SSE_RETRIES) {
-              const delay = Math.min(1000 * Math.pow(2, sseRetryCount), 30000);
+              // Backoff starting at 5s to avoid rapid reconnect spam
+              const delay = Math.min(5000 * Math.pow(2, sseRetryCount), 30000);
               sseRetryCount++;
               sseRetryTimer = setTimeout(startSse, delay);
             } else {

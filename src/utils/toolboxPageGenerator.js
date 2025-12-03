@@ -1572,9 +1572,9 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
             try { es.close(); } catch (_) {}
             es = null;
 
-            // Retry SSE with exponential backoff
+            // Retry SSE with exponential backoff (start at 5s)
             if (sseRetryCount < MAX_SSE_RETRIES) {
-              const delay = Math.min(1000 * Math.pow(2, sseRetryCount), 30000);
+              const delay = Math.min(5000 * Math.pow(2, sseRetryCount), 30000);
               sseRetryCount++;
               sseRetryTimer = setTimeout(startSse, delay);
             } else {
