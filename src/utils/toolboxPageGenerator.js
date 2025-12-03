@@ -4079,7 +4079,13 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     };
     function normalizeTrackLanguageCode(raw) {
       if (!raw) return null;
-      const cleaned = String(raw).trim().toLowerCase().replace(/[^a-z-]/g, '');
+      const rawStr = String(raw).trim().toLowerCase();
+      if (/^extracte/.test(rawStr)) return null;
+      if (/^extracted[_\\s-]?sub/.test(rawStr)) return null;
+      if (/^remux[_\\s-]?sub/.test(rawStr)) return null;
+      if (/^track\\s*\\d+/.test(rawStr)) return null;
+      if (/^subtitle\\s*\\d+/.test(rawStr)) return null;
+      const cleaned = rawStr.replace(/[^a-z-]/g, '');
       if (!cleaned) return null;
       const base = cleaned.split('-')[0];
       if (!base) return null;
@@ -4093,6 +4099,11 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     function detectLanguageFromLabel(label) {
       if (!label) return null;
       const lowered = String(label).toLowerCase();
+      if (/^extracte/.test(lowered)) return null;
+      if (/^extracted[_\\s-]?sub/.test(lowered)) return null;
+      if (/^remux[_\\s-]?sub/.test(lowered)) return null;
+      if (/^track\\s+\\d+/.test(lowered)) return null;
+      if (/^subtitle\\s+\\d+/.test(lowered)) return null;
       if (lowered.includes('brazil')) return 'pob';
       if (lowered.includes('portuguese (br')) return 'pob';
       const codeMatch = lowered.match(/(?:^|\\[|\\(|\\s)([a-z]{2,3})(?:\\s|$|\\]|\\))/);
@@ -4113,6 +4124,13 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       return null;
     }
     function canonicalTrackLanguageCode(raw) {
+      if (!raw) return 'und';
+      const lowered = String(raw).toLowerCase();
+      if (/^extracte/.test(lowered)) return 'und';
+      if (/^extracted[_\\s-]?sub/.test(lowered)) return 'und';
+      if (/^remux[_\\s-]?sub/.test(lowered)) return 'und';
+      if (/^track\\s*\\d+/.test(lowered)) return 'und';
+      if (/^subtitle\\s*\\d+/.test(lowered)) return 'und';
       return normalizeTrackLanguageCode(raw) || detectLanguageFromLabel(raw) || 'und';
     }
 
@@ -4311,16 +4329,23 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           const isGeneratedLabel = (label) => {
             if (!label) return true;
             const lower = String(label).toLowerCase();
-            return /^extracted_sub/.test(lower) || /^track\\s+\\d+$/i.test(lower);
+            if (/^extracted[_\\s-]?sub/.test(lower)) return true;
+            if (/^extracted[_\\s-]?sub[_-]?fix/.test(lower)) return true;
+            if (/^remux[_\\s-]?sub/.test(lower)) return true;
+            if (/^track\\s+\\d+/.test(lower)) return true;
+            if (/^subtitle\\s+\\d+/.test(lower)) return true;
+            return false;
           };
           const isGeneratedLangHint = (value) => {
             if (!value) return false;
             const lower = String(value).toLowerCase();
             // ignore common auto-generated placeholders/filenames
-            if (/^extracted_sub/.test(lower)) return true;
-            if (/^track\\s+\\d+$/i.test(lower)) return true;
-            if (/^remux_sub/.test(lower)) return true;
-            if (/^extracted_sub_fix/.test(lower)) return true;
+            if (/^extracte/.test(lower)) return true;
+            if (/^extracted[_\\s-]?sub/.test(lower)) return true;
+            if (/^remux[_\\s-]?sub/.test(lower)) return true;
+            if (/^track\\s+\\d+/.test(lower)) return true;
+            if (/^subtitle\\s+\\d+/.test(lower)) return true;
+            if (/^extracted[_\\s-]?sub[_-]?fix/.test(lower)) return true;
             if (/(\\.srt|\\.vtt|\\.ass|\\.ssa|\\.sup)(\\b|$)/i.test(lower)) return true;
             return false;
           };
