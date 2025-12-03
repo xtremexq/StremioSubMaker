@@ -2879,8 +2879,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           <div class="mode-controls">
             <label for="extract-mode">Mode</label>
             <select id="extract-mode" class="compact-select">
-              <option value="smart-v2">Smart (fast)</option>
-              <option value="complete-v2">Complete (full file)</option>
+              <option value="smart">Smart (fast)</option>
+              <option value="complete">Complete (full file)</option>
             </select>
             <p class="mode-helper">Smart performs one best-effort fast pass and fails if incomplete. Complete always downloads the entire stream and runs one FFmpeg demux with no retries.</p>
             <button id="extract-btn" type="button" class="secondary">Extract Subtitles</button>
@@ -3031,7 +3031,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       tracks: [],
       selectedTrackId: null,
       selectedTargetLang: baseTargetOptions[0]?.code || null,
-      extractMode: 'complete-v2',
+      extractMode: 'complete',
       targets: {},
       downloads: [],
       activeTranslations: 0,
@@ -3107,15 +3107,15 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     function loadExtractMode() {
       try {
         const stored = localStorage.getItem(EXTRACT_MODE_KEY);
-        if (stored === 'smart-v2' || stored === 'complete-v2') return stored;
-        if (stored === 'smart') return 'smart-v2';
-        if (stored === 'complete') return 'complete-v2';
+        if (stored === 'smart' || stored === 'complete') return stored;
+        if (stored === 'smart-v2') return 'smart';
+        if (stored === 'complete-v2') return 'complete';
       } catch (_) {}
-      return 'complete-v2';
+      return 'complete';
     }
 
     function persistExtractMode(mode) {
-      if (mode !== 'smart-v2' && mode !== 'complete-v2') return;
+      if (mode !== 'smart' && mode !== 'complete') return;
       try { localStorage.setItem(EXTRACT_MODE_KEY, mode); } catch (_) {}
     }
 
@@ -3193,7 +3193,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
 
     function autoSelectModeForUrl(url) {
       const shouldUseComplete = !url || isMkvUrl(url);
-      const nextMode = shouldUseComplete ? 'complete-v2' : 'smart-v2';
+      const nextMode = shouldUseComplete ? 'complete' : 'smart';
       if (state.extractMode === nextMode) return;
       state.extractMode = nextMode;
       if (els.modeSelect) els.modeSelect.value = nextMode;
@@ -3374,8 +3374,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
 
     state.extractMode = loadExtractMode();
     if (els.modeSelect) {
-      if (state.extractMode !== 'smart-v2' && state.extractMode !== 'complete-v2') {
-        state.extractMode = 'complete-v2';
+      if (state.extractMode !== 'smart' && state.extractMode !== 'complete') {
+        state.extractMode = 'complete';
       }
       els.modeSelect.value = state.extractMode;
     }
@@ -4261,7 +4261,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       }
       resetExtractionState(true);
       if (els.extractLog) els.extractLog.innerHTML = '';
-      const mode = state.extractMode === 'complete-v2' ? 'complete-v2' : 'smart-v2';
+      const mode = state.extractMode === 'complete' ? 'complete' : 'smart';
       const messageId = 'extract_' + Date.now();
       setStep2Enabled(false);
       setExtractionInFlight(true);
@@ -4328,7 +4328,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     if (els.modeSelect) {
       els.modeSelect.addEventListener('change', () => {
         const value = (els.modeSelect.value || '').toLowerCase();
-        state.extractMode = value === 'complete-v2' ? 'complete-v2' : 'smart-v2';
+        state.extractMode = value === 'complete' ? 'complete' : 'smart';
         persistExtractMode(state.extractMode);
       });
     }
