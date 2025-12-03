@@ -3083,14 +3083,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       const currentSig = getStreamSignature();
       if (!nextSig || nextSig === currentSig) return;
 
-      const isNew = !pendingStreamUpdate || pendingStreamUpdate.signature !== nextSig;
       pendingStreamUpdate = { payload, signature: nextSig };
-      if (isNew && els.extractLog) {
-        const pendingLabel = window.t
-          ? window.t('toolbox.logs.linkedPending', {}, 'New stream detected. It will switch after the current extraction/translation finishes.')
-          : 'New stream detected. It will switch after the current extraction/translation finishes.';
-        logExtract(pendingLabel);
-      }
     }
 
     initInstructions();
