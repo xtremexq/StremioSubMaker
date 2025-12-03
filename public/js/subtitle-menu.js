@@ -18,10 +18,15 @@
   };
   const tMenu = (key, vars, fallback) => translate(`subtitleMenu.${key}`, vars, fallback);
   const GROUP_LABELS = {
-    source: tMenu('group.source', {}, 'Source Languages'),
+    source: tMenu('group.source', {}, 'Source & Target'),
     target: tMenu('group.target', {}, 'Target Languages'),
     translation: tMenu('group.translation', {}, 'Translation'),
     other: tMenu('group.other', {}, 'Other Entries')
+  };
+  const GROUP_HINTS = {
+    primary: tMenu('group.sourceHint', {}, 'Original + target subtitles'),
+    translation: tMenu('group.translationHint', {}, 'Spin up translations'),
+    other: tMenu('group.otherHint', {}, 'xEmbed, Learn, xSync & tools')
   };
   const STATUS_LABELS = {
     waitingStream: tMenu('status.waitingStream', {}, 'Waiting for a linked stream before loading subtitles.'),
@@ -251,30 +256,111 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--sm-border);
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.08), rgba(14, 165, 233, 0.04));
+      box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
+    }
+
+    .subtitle-menu-group + .subtitle-menu-group {
+      margin-top: 2px;
     }
 
     /* Keep categories in a predictable order */
-    .subtitle-menu-group-source { order: 1; }
-    .subtitle-menu-group-target { order: 2; }
-    .subtitle-menu-group-translation { order: 3; }
-    .subtitle-menu-group-other { order: 4; }
+    .subtitle-menu-group-primary { order: 1; }
+    .subtitle-menu-group-translation { order: 2; }
+    .subtitle-menu-group-other { order: 3; }
 
-    .subtitle-menu-group-title {
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--sm-text-muted);
-      display: flex;
-      align-items: center;
-      gap: 12px;
+    .subtitle-menu-group.is-collapsed .subtitle-menu-list {
+      display: none;
     }
 
-    .subtitle-menu-group-title::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--sm-border);
+    .subtitle-menu-group-title {
+      width: 100%;
+      appearance: none;
+      outline: none;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--sm-text);
+      cursor: pointer;
+      box-shadow: 0 6px 14px -10px rgba(0, 0, 0, 0.35);
+      transition: all 0.2s ease;
+      text-align: left;
+    }
+
+    .subtitle-menu-group-title:hover {
+      border-color: var(--sm-primary);
+      box-shadow: 0 10px 28px -12px var(--sm-primary-glow);
+      transform: translateY(-1px);
+    }
+
+    .subtitle-menu-group-heading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .subtitle-menu-group-labels {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .subtitle-menu-group-label {
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--sm-text);
+    }
+
+    .subtitle-menu-group-sub {
+      font-size: 12px;
+      color: var(--sm-text-muted);
+      font-weight: 600;
+    }
+
+    .subtitle-menu-group-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .subtitle-menu-count-pill {
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--sm-text);
+      min-width: 28px;
+      text-align: center;
+    }
+
+    .subtitle-menu-group-chevron {
+      display: inline-flex;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--sm-text-muted);
+      transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+
+    .subtitle-menu-group.is-open .subtitle-menu-group-chevron {
+      transform: rotate(90deg);
+      background: rgba(8, 164, 213, 0.12);
+      color: var(--sm-primary);
     }
 
     .subtitle-menu-list {
@@ -670,32 +756,52 @@
         </div>
       </div>
       <div class="subtitle-menu-body" id="subtitleMenuBody">
-        <div class="subtitle-menu-group subtitle-menu-group-source">
-          <div class="subtitle-menu-group-title">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-            ${GROUP_LABELS.source}
-          </div>
-          <div class="subtitle-menu-list" id="subtitleMenuSource"></div>
+        <div class="subtitle-menu-group subtitle-menu-group-primary is-collapsed">
+          <button class="subtitle-menu-group-title" type="button" id="subtitleMenuPrimaryToggle" aria-expanded="false">
+            <div class="subtitle-menu-group-heading">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+              <div class="subtitle-menu-group-labels">
+                <span class="subtitle-menu-group-label">${GROUP_LABELS.source}</span>
+                <span class="subtitle-menu-group-sub">${GROUP_HINTS.primary}</span>
+              </div>
+            </div>
+            <div class="subtitle-menu-group-meta">
+              <span class="subtitle-menu-count-pill" id="subtitleMenuPrimaryCount">0</span>
+              <span class="subtitle-menu-group-chevron">›</span>
+            </div>
+          </button>
+          <div class="subtitle-menu-list" id="subtitleMenuPrimary"></div>
         </div>
-        <div class="subtitle-menu-group subtitle-menu-group-target">
-          <div class="subtitle-menu-group-title">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-            ${GROUP_LABELS.target}
-          </div>
-          <div class="subtitle-menu-list" id="subtitleMenuTarget"></div>
-        </div>
-        <div class="subtitle-menu-group subtitle-menu-group-translation">
-          <div class="subtitle-menu-group-title">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14h6"></path><path d="M2 5h12"></path><path d="M7 2h1"></path><path d="M22 22l-5-10-5 10"></path><path d="M14 18h6"></path></svg>
-            ${GROUP_LABELS.translation}
-          </div>
+        <div class="subtitle-menu-group subtitle-menu-group-translation is-collapsed">
+          <button class="subtitle-menu-group-title" type="button" id="subtitleMenuTranslationToggle" aria-expanded="false">
+            <div class="subtitle-menu-group-heading">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14h6"></path><path d="M2 5h12"></path><path d="M7 2h1"></path><path d="M22 22l-5-10-5 10"></path><path d="M14 18h6"></path></svg>
+              <div class="subtitle-menu-group-labels">
+                <span class="subtitle-menu-group-label">${GROUP_LABELS.translation}</span>
+                <span class="subtitle-menu-group-sub">${GROUP_HINTS.translation}</span>
+              </div>
+            </div>
+            <div class="subtitle-menu-group-meta">
+              <span class="subtitle-menu-count-pill" id="subtitleMenuTranslationCount">0</span>
+              <span class="subtitle-menu-group-chevron">›</span>
+            </div>
+          </button>
           <div class="subtitle-menu-list" id="subtitleMenuTranslation"></div>
         </div>
-        <div class="subtitle-menu-group subtitle-menu-group-other">
-          <div class="subtitle-menu-group-title">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-            ${GROUP_LABELS.other}
-          </div>
+        <div class="subtitle-menu-group subtitle-menu-group-other is-collapsed">
+          <button class="subtitle-menu-group-title" type="button" id="subtitleMenuOtherToggle" aria-expanded="false">
+            <div class="subtitle-menu-group-heading">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <div class="subtitle-menu-group-labels">
+                <span class="subtitle-menu-group-label">${GROUP_LABELS.other}</span>
+                <span class="subtitle-menu-group-sub">${GROUP_HINTS.other}</span>
+              </div>
+            </div>
+            <div class="subtitle-menu-group-meta">
+              <span class="subtitle-menu-count-pill" id="subtitleMenuOtherCount">0</span>
+              <span class="subtitle-menu-group-chevron">›</span>
+            </div>
+          </button>
           <div class="subtitle-menu-list" id="subtitleMenuOther"></div>
         </div>
       </div>
@@ -717,14 +823,18 @@
       panel,
       status: panel.querySelector('#subtitleMenuStatus'),
       body: panel.querySelector('#subtitleMenuBody'),
-      sourceList: panel.querySelector('#subtitleMenuSource'),
+      primaryList: panel.querySelector('#subtitleMenuPrimary'),
       translationList: panel.querySelector('#subtitleMenuTranslation'),
-      targetList: panel.querySelector('#subtitleMenuTarget'),
       otherList: panel.querySelector('#subtitleMenuOther'),
-      sourceGroup: panel.querySelector('.subtitle-menu-group-source'),
-      targetGroup: panel.querySelector('.subtitle-menu-group-target'),
+      primaryGroup: panel.querySelector('.subtitle-menu-group-primary'),
       translationGroup: panel.querySelector('.subtitle-menu-group-translation'),
       otherGroup: panel.querySelector('.subtitle-menu-group-other'),
+      primaryToggle: panel.querySelector('#subtitleMenuPrimaryToggle'),
+      translationToggle: panel.querySelector('#subtitleMenuTranslationToggle'),
+      otherToggle: panel.querySelector('#subtitleMenuOtherToggle'),
+      primaryCount: panel.querySelector('#subtitleMenuPrimaryCount'),
+      translationCount: panel.querySelector('#subtitleMenuTranslationCount'),
+      otherCount: panel.querySelector('#subtitleMenuOtherCount'),
       refresh: panel.querySelector('#subtitleMenuRefresh'),
       close: panel.querySelector('#subtitleMenuClose'),
       substatus: panel.querySelector('#subtitleMenuSubstatus'),
@@ -1004,15 +1114,14 @@
     }
 
     function groupSubtitlesByLanguage(items) {
-      const buckets = { source: new Map(), target: new Map(), translation: new Map(), other: new Map() };
+      const buckets = { primary: new Map(), translation: new Map(), other: new Map() };
       items.forEach(item => {
         const bucket = item.group === 'translation' ? 'translation'
-          : (item.group === 'target' ? 'target'
-            : (item.group === 'other' ? 'other' : 'source'));
+          : (item.group === 'other' ? 'other' : 'primary');
 
         const map = buckets[bucket];
 
-        // For Source and Target, group by language key (e.g. "portuguese")
+        // For main group, bucket by language so source+target stack together
         // For Translation and Other, group by label (e.g. "Make Portuguese", "Learn Spanish")
         let key, label;
 
@@ -1317,10 +1426,13 @@
         const codeCandidate = (langEntry.items.find(it => it.languageKey)?.languageKey || langEntry.key || '').toString().trim();
         return codeCandidate ? codeCandidate.toUpperCase() : 'SUB';
       })();
-      sortedItems.forEach((item, idx) => {
-        const displayItem = (groupType === 'source')
-          ? Object.assign({}, item, { label: `${languageCodeLabel} - Subtitle ${idx + 1}` })
+      let sourceCounter = 0;
+      sortedItems.forEach((item) => {
+        const isSourceType = item.type === 'source';
+        const displayItem = (groupType === 'primary' && isSourceType)
+          ? Object.assign({}, item, { label: `${languageCodeLabel} - Subtitle ${sourceCounter + 1}` })
           : item;
+        if (isSourceType) sourceCounter += 1;
         menu.appendChild(buildSubtitleMenuItem(displayItem));
       });
 
@@ -1349,34 +1461,57 @@
       return keys;
     }
 
+    function setGroupOpenState(groupEl, toggleEl, open) {
+      if (!groupEl) return;
+      const next = open === true;
+      groupEl.classList.toggle('is-collapsed', !next);
+      groupEl.classList.toggle('is-open', next);
+      if (toggleEl) {
+        toggleEl.setAttribute('aria-expanded', next ? 'true' : 'false');
+      }
+    }
+
+    function toggleGroupState(groupEl, toggleEl) {
+      if (!groupEl) return;
+      const isCurrentlyOpen = groupEl.classList.contains('is-open') && !groupEl.classList.contains('is-collapsed');
+      setGroupOpenState(groupEl, toggleEl, !isCurrentlyOpen);
+    }
+
     function renderSubtitleMenu(items, els) {
-      if (!els.sourceList || !els.targetList || !els.translationList) return;
+      if (!els.primaryList || !els.translationList) return;
       const filtered = (items || []).filter(shouldDisplaySubtitle);
       const grouped = groupSubtitlesByLanguage(filtered);
 
-      const renderList = (container, groupEl, map, groupType) => {
+      const renderList = (container, groupEl, map, groupType, countEl, toggleEl) => {
+        if (!container) return;
         const openKeys = getOpenCardKeys(container);
         container.innerHTML = '';
         const languages = Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+        const totalItems = languages.reduce((acc, lang) => acc + (lang.items?.length || 0), 0);
+        if (countEl) countEl.textContent = totalItems;
 
         if (languages.length === 0) {
           if (groupEl) {
             groupEl.style.display = 'none';
             groupEl.setAttribute('aria-hidden', 'true');
+            setGroupOpenState(groupEl, toggleEl, false);
           }
         } else {
           if (groupEl) {
             groupEl.style.display = 'flex';
             groupEl.removeAttribute('aria-hidden');
+            if (toggleEl) {
+              const isOpen = groupEl.classList.contains('is-open') && !groupEl.classList.contains('is-collapsed');
+              toggleEl.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            }
           }
           languages.forEach(lang => container.appendChild(buildLanguageCard(lang, openKeys.has(lang.key), container, groupType)));
         }
       };
 
-      renderList(els.sourceList, els.sourceGroup, grouped.source, 'source');
-      renderList(els.targetList, els.targetGroup, grouped.target, 'target');
-      renderList(els.translationList, els.translationGroup, grouped.translation, 'translation');
-      renderList(els.otherList, els.otherGroup, grouped.other, 'other');
+      renderList(els.primaryList, els.primaryGroup, grouped.primary, 'primary', els.primaryCount, els.primaryToggle);
+      renderList(els.translationList, els.translationGroup, grouped.translation, 'translation', els.translationCount, els.translationToggle);
+      renderList(els.otherList, els.otherGroup, grouped.other, 'other', els.otherCount, els.otherToggle);
 
       if (els.body) {
         const hasAny = filtered.length > 0;
@@ -1776,6 +1911,15 @@
     if (elements.refresh) {
       elements.refresh.addEventListener('click', () => fetchSubtitleMenuData(elements, { silent: false, force: true }));
     }
+
+    const attachGroupToggle = (toggleEl, groupEl) => {
+      if (!toggleEl || !groupEl) return;
+      toggleEl.addEventListener('click', () => toggleGroupState(groupEl, toggleEl));
+    };
+    attachGroupToggle(elements.primaryToggle, elements.primaryGroup);
+    attachGroupToggle(elements.translationToggle, elements.translationGroup);
+    attachGroupToggle(elements.otherToggle, elements.otherGroup);
+
     updateSubtitleMenuMeta(elements);
     setSubtitleMenuStatus(elements, '', 'muted', { persist: true });
     hydrateStreamMetadata(elements).catch(() => { });

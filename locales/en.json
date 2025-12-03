@@ -444,10 +444,13 @@
       "makeLanguage": "Make {language}",
       "learnLanguage": "Learn {language}",
       "group": {
-        "source": "Source Languages",
+        "source": "Source & Target",
         "target": "Target Languages",
         "translation": "Translation",
-        "other": "Other Entries"
+        "other": "Other Entries",
+        "sourceHint": "Original + target subtitles",
+        "translationHint": "Spin up translations",
+        "otherHint": "xEmbed, Learn, xSync & tools"
       },
       "actions": {
         "translate": "Translate",

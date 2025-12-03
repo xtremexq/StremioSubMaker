@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## SubMaker v1.4.12
 
 **Bug Fixes:**
+- **Subtitle menu UX:** Stream subtitle menu now surfaces source and target tracks together under "Source & Target," with all categories collapsible by default, pill counts, and refreshed chrome for quicker scanning.
 - **Locale placeholders:** Config page now re-applies limit copy with `data-i18n-vars` so `{max}` placeholders resolve correctly after locale reloads (target/source/no-translation language caps no longer show raw template tokens).
 - **BCP-47 locale support:** Locale loader now accepts alphanumeric tags with dashes/underscores (e.g., `es-419`, `pt_BR`) instead of silently falling back to English.
 - **Safe alerts:** Config alerts no longer render via `innerHTML`, preventing HTML injection from bubbled error strings while keeping icons/spacing intact.
