@@ -3902,7 +3902,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         lastExtensionLabel = text;
       }
       const dotTone = ready
-        ? (state.extractionInFlight ? 'warn' : 'ok')
+        ? (tone || 'ok')
         : (tone || 'bad');
       els.extDot.className = 'status-dot ' + dotTone;
       if (els.extLabel) {
@@ -5200,6 +5200,13 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         if (!els.provider) return;
         const options = Array.isArray(BOOTSTRAP.providerOptions) ? BOOTSTRAP.providerOptions : [];
         els.provider.innerHTML = '';
+        if (!options.length) {
+          const empty = document.createElement('option');
+          empty.value = '';
+          empty.textContent = tt('toolbox.autoSubs.providers.missing', {}, 'No provider configured');
+          els.provider.appendChild(empty);
+          return;
+        }
         options.forEach((opt) => {
           const o = document.createElement('option');
           o.value = opt.key || opt.value || opt;
@@ -5240,7 +5247,10 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
               card.className = 'card';
               const title = document.createElement('div');
               title.style.fontWeight = '700';
-              title.textContent = entry.languageCode ? `Translated ${entry.languageCode}` : 'Translated subtitle';
+              const langLabel = entry.languageCode || '';
+              title.textContent = langLabel
+                ? tt('toolbox.autoSubs.steps.translationCardTitle', { lang: langLabel }, 'Translated ' + langLabel)
+                : tt('toolbox.autoSubs.steps.translationCardFallback', {}, 'Translated subtitle');
               card.appendChild(title);
               if (entry.error) {
                 const err = document.createElement('div');
@@ -5255,7 +5265,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
                 const blob = new Blob([entry.srt], { type: 'text/plain' });
                 btn.href = entry.downloadUrl || URL.createObjectURL(blob);
                 btn.download = (PAGE.videoHash || 'video') + '_' + (entry.languageCode || 'lang') + '_autosub.srt';
-                btn.textContent = 'Download ' + (entry.languageCode || 'subtitle');
+                btn.textContent = tt('toolbox.autoSubs.actions.downloadTranslation', { lang: entry.languageCode || 'subtitle' }, 'Download ' + (entry.languageCode || 'subtitle'));
                 actions.appendChild(btn);
                 card.appendChild(actions);
               }
@@ -5264,7 +5274,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
           } else {
             const empty = document.createElement('div');
             empty.style.color = 'var(--text-secondary)';
-            empty.textContent = 'No translations yet.';
+            empty.textContent = tt('toolbox.autoSubs.steps.translationsEmpty', {}, 'No translations yet.');
             els.translations.appendChild(empty);
           }
         }
@@ -5284,13 +5294,23 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         state.cacheBlocked = cacheBlocked || hasMismatch;
         if (hashEl) {
           if (hasMismatch) {
-            hashEl.textContent = 'Hash mismatch: linked ' + linked + ' vs pasted ' + streamHash + '. Cache uploads disabled.';
+            hashEl.textContent = tt(
+              'toolbox.autoSubs.hash.mismatch',
+              { linked, stream: streamHash },
+              `Hash mismatch: linked ${linked} vs pasted ${streamHash}. Cache uploads disabled.`
+            );
             hashEl.classList.add('warn');
           } else if (streamHash) {
-            hashEl.textContent = 'Linked: ' + linked + ' | Stream: ' + streamHash + (cacheBlocked ? ' (cache disabled)' : '');
+            const cacheLabel = cacheBlocked ? tt('toolbox.autoSubs.hash.cacheDisabled', {}, ' (cache disabled)') : '';
+            hashEl.textContent = tt(
+              'toolbox.autoSubs.hash.linked',
+              { linked, stream: streamHash, cache: cacheLabel },
+              `Linked: ${linked} | Stream: ${streamHash}${cacheLabel}`
+            );
             hashEl.classList.remove('warn');
           } else {
-            hashEl.textContent = tt('toolbox.autoSubs.badges.waitingExtension', {}, 'Waiting for stream hash...');
+            hashEl.textContent = tt('toolbox.autoSubs.hash.waiting', {}, 'Waiting for stream hash...');
+            hashEl.classList.remove('warn');
           }
         }
       }
@@ -5310,13 +5330,13 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         if (state.autoSubsInFlight) return;
         const stream = (els.streamUrl?.value || '').trim();
         if (!stream) {
-          appendLog('Paste a stream URL first.');
-          setStatus('Awaiting input...');
+          appendLog(tt('toolbox.autoSubs.logs.noStream', {}, 'Paste a stream URL first.'));
+          setStatus(tt('toolbox.autoSubs.status.awaiting', {}, 'Awaiting input...'));
           return;
         }
         const targets = getSelectedTargets();
         if (els.translateToggle?.checked && targets.length === 0) {
-          appendLog('Select at least one target language or disable translation.');
+          appendLog(tt('toolbox.autoSubs.logs.noTargets', {}, 'Select at least one target language or disable translation.'));
           return;
         }
         setInFlight(true);
@@ -5324,7 +5344,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         markStep('fetch', 'check');
         setStatus(tt('toolbox.autoSubs.status.fetching', {}, 'Fetching stream...'));
         setProgress(10);
-        appendLog('Sending request to Cloudflare Workers AI...');
+        appendLog(tt('toolbox.autoSubs.logs.sendingRequest', {}, 'Sending request to Cloudflare Workers AI...'));
 
         const payload = {
           configStr: PAGE.configStr,
@@ -5358,7 +5378,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
           handleHashStatus(data.hashes || {}, data.cacheBlocked);
           markStep('transcribe', 'check');
           setProgress(60);
-          setStatus('Transcription complete. Preparing downloads...');
+          setStatus(tt('toolbox.autoSubs.status.transcriptionDone', {}, 'Transcription complete. Preparing downloads...'));
           setPreview(data.original?.srt || '');
           setDownloads(data.original, data.translations || []);
           if (payload.translate && targets.length) {
@@ -5369,11 +5389,13 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
           markStep('deliver', 'check');
           setProgress(100);
           setStatus(tt('toolbox.autoSubs.status.done', {}, 'Done. Ready to download.'));
-          appendLog('Finished. Downloads are ready.' + (data.cacheBlocked ? ' Cache uploads were skipped due to hash mismatch.' : ''));
+          const finishedMsg = tt('toolbox.autoSubs.logs.finished', {}, 'Finished. Downloads are ready.');
+          const cacheSkipped = data.cacheBlocked ? ' ' + tt('toolbox.autoSubs.logs.cacheSkipped', {}, 'Cache uploads were skipped due to hash mismatch.') : '';
+          appendLog(finishedMsg + cacheSkipped);
         } catch (error) {
           markStep('translate', 'danger');
-          setStatus('Failed: ' + error.message);
-          appendLog('Error: ' + error.message);
+          setStatus(tt('toolbox.autoSubs.status.failedPrefix', {}, 'Failed: ') + error.message);
+          appendLog(tt('toolbox.autoSubs.logs.errorPrefix', {}, 'Error: ') + error.message);
         } finally {
           setInFlight(false);
         }
@@ -5569,6 +5591,11 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
       },
       diarization: t('toolbox.autoSubs.steps.diarization', {}, 'Speaker diarization'),
       translateOutput: t('toolbox.autoSubs.steps.translateOutput', {}, 'Translate to target languages'),
+      singleBatch: t('toolbox.autoSubs.steps.singleBatch', {}, 'Single batch mode'),
+      sendTimestamps: t('toolbox.autoSubs.steps.sendTimestamps', {}, 'Send timestamps to AI'),
+      providerLabel: t('toolbox.autoSubs.steps.providerLabel', {}, 'Translation provider'),
+      providerModelLabel: t('toolbox.autoSubs.steps.providerModelLabel', {}, 'Translation model'),
+      providerModelPlaceholder: t('toolbox.autoSubs.steps.providerModelPlaceholder', {}, 'Use provider default'),
       runPipelineTitle: t('toolbox.autoSubs.steps.step3Title', {}, 'Run pipeline'),
       pipelineDesc: t('toolbox.autoSubs.steps.pipeline', {}, 'We\'ll stitch: fetch -> segment -> transcribe -> align -> translate (optional) -> deliver SRT.'),
       start: t('toolbox.autoSubs.actions.start', {}, 'Start auto-subtitles'),
@@ -5588,6 +5615,9 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
       downloads: t('toolbox.autoSubs.steps.downloads', {}, 'Downloads'),
       downloadSrt: t('toolbox.autoSubs.actions.downloadSrt', {}, 'Download SRT'),
       downloadVtt: t('toolbox.autoSubs.actions.downloadVtt', {}, 'Download VTT'),
+      translationsEmpty: t('toolbox.autoSubs.steps.translationsEmpty', {}, 'No translations yet.'),
+      translationCardTitle: t('toolbox.autoSubs.steps.translationCardTitle', { lang: '{lang}' }, 'Translated {lang}'),
+      translationCardFallback: t('toolbox.autoSubs.steps.translationCardFallback', {}, 'Translated subtitle'),
       enableAfter: t('toolbox.autoSubs.steps.downloadsNote', {}, 'We\'ll enable downloads after the pipeline finishes.')
     },
     options: {
@@ -6260,7 +6290,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
           </div>
           <div class="controls">
             <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
-              <input type="checkbox" id="singleBatchMode"> Single batch mode
+              <input type="checkbox" id="singleBatchMode"> ${escapeHtml(copy.steps.singleBatch)}
             </label>
             <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
               <input type="checkbox" id="enableDiarization"> ${escapeHtml(copy.steps.diarization)}
@@ -6269,17 +6299,17 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
               <input type="checkbox" id="translateOutput" checked> ${escapeHtml(copy.steps.translateOutput)}
             </label>
             <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
-              <input type="checkbox" id="sendTimestamps"> Send timestamps to AI
+              <input type="checkbox" id="sendTimestamps"> ${escapeHtml(copy.steps.sendTimestamps)}
             </label>
           </div>
           <div class="row" style="margin-top:10px;">
             <div>
-              <label for="translationProvider">Translation provider</label>
+              <label for="translationProvider">${escapeHtml(copy.steps.providerLabel)}</label>
               <select id="translationProvider"></select>
             </div>
             <div>
-              <label for="translationModel">Translation model</label>
-              <input type="text" id="translationModel" placeholder="Use provider default">
+              <label for="translationModel">${escapeHtml(copy.steps.providerModelLabel)}</label>
+              <input type="text" id="translationModel" placeholder="${escapeHtml(copy.steps.providerModelPlaceholder)}">
             </div>
           </div>
         </div>
@@ -6414,6 +6444,17 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
       subtitleMenuInstance.notify(title + message, 'muted', { persist: true });
       return false; // keep in-page toast visible
     }
+    initStreamWatcher({
+      configStr: PAGE.configStr,
+      current: { videoId: PAGE.videoId, filename: PAGE.filename, videoHash: PAGE.videoHash },
+      buildUrl: (payload) => {
+        return '/auto-subtitles?config=' + encodeURIComponent(PAGE.configStr) +
+          '&videoId=' + encodeURIComponent(payload.videoId || '') +
+          '&filename=' + encodeURIComponent(payload.filename || '');
+      },
+      onEpisode: handleStreamUpdate,
+      notify: forwardMenuNotification
+    });
     initStreamRefreshButton({
       buttonId: 'quickNavRefresh',
       configStr: PAGE.configStr,
