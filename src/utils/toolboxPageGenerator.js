@@ -3558,6 +3558,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           els.extractBtn.removeAttribute('title');
         }
       }
+      renderHashMismatchAlert();
     }
 
     function updatePlaceholderBlock(source = {}) {
@@ -3690,6 +3691,16 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       els.hashMismatchAlert.style.display = 'block';
     }
 
+    function renderHashMismatchAlert() {
+      if (!els.hashMismatchAlert) return;
+      if (state.hashMismatchBlocked && state.hashMismatchInfo) {
+        const alertHtml = buildHashMismatchAlert(state.hashMismatchInfo.linked, state.hashMismatchInfo.stream);
+        setHashMismatchAlert(alertHtml, { asHtml: true });
+      } else if (!state.cacheBlocked) {
+        setHashMismatchAlert('');
+      }
+    }
+
     function updateHashMismatchState(opts = {}) {
       const streamUrl = typeof opts.streamUrl === 'string' ? opts.streamUrl : (els.streamUrl?.value || '');
       const trimmedUrl = (streamUrl || '').trim();
@@ -3715,6 +3726,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           state.hashMismatchLogged = true;
         }
       }
+      renderHashMismatchAlert();
       applyExtractDisabled();
       return { mismatch, linkedHash, streamHash: streamHashInfo.hash || '' };
     }
