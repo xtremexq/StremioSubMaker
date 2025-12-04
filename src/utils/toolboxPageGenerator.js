@@ -2313,10 +2313,50 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       border: 1px solid rgba(239,68,68,0.35);
       background: rgba(239,68,68,0.08);
       color: var(--danger);
-      font-weight: 800;
+      font-weight: 700;
+      font-size: 14px;
       text-align: center;
       width: min(780px, 100%);
       box-shadow: 0 8px 22px rgba(239,68,68,0.12);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .log-alert .alert-head {
+      color: #fff;
+      background: linear-gradient(135deg, #ef4444, #b91c1c);
+      padding: 6px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: 0 10px 18px rgba(185,28,28,0.18);
+    }
+    .log-alert .alert-body {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: var(--danger);
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    #hash-mismatch-alert {
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 600;
+      width: min(680px, 100%);
+      box-shadow: 0 6px 16px rgba(239,68,68,0.12);
+      gap: 4px;
+    }
+    #hash-mismatch-alert .alert-head {
+      font-size: 11px;
+      padding: 4px 10px;
+    }
+    #hash-mismatch-alert .alert-body {
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.35;
     }
     .log-header {
       display: inline-flex;
@@ -2854,7 +2894,10 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       placeholderBlocked: isPlaceholderStreamValue(PAGE.videoId) || isPlaceholderStreamValue(PAGE.filename),
       cacheBlocked: false,
       cacheBlockInfo: null,
-      streamHashInfo: null
+      streamHashInfo: null,
+      hashMismatchBlocked: false,
+      hashMismatchInfo: null,
+      hashMismatchLogged: false
     };
     const translatedHistory = new Set();
     const instructionsEls = {
@@ -3500,12 +3543,20 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     function applyExtractDisabled() {
       if (!els.extractBtn) return;
       const blocked = !!state.placeholderBlocked;
-      const disabled = !!state.extractionInFlight || blocked;
+      const hashBlocked = !!state.hashMismatchBlocked;
+      const disabled = !!state.extractionInFlight || blocked || hashBlocked;
       els.extractBtn.disabled = disabled;
       const busyLabel = buttonCopy.extracting || tt('toolbox.embedded.buttons.extracting', {}, 'Extracting...');
       els.extractBtn.textContent = state.extractionInFlight ? busyLabel : buttonLabels.extract;
       if (els.extractError) {
         els.extractError.style.display = blocked ? 'block' : 'none';
+      }
+      if (els.extractBtn) {
+        if (hashBlocked) {
+          els.extractBtn.title = 'Hash mismatch: refresh the linked stream and paste the matching URL to unlock extraction.';
+        } else {
+          els.extractBtn.removeAttribute('title');
+        }
       }
     }
 
@@ -3551,6 +3602,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       els.videoMetaTitle.textContent = resolvedTitle;
       els.videoMetaSubtitle.textContent = details.join(' - ') || metaTemplates.waiting;
       updateTranslationContext({ ...source, title: resolvedTitle, videoId: source.videoId, filename: source.filename });
+      updateHashMismatchState({ log: false });
     }
 
     function base64ToUint8(base64) {
@@ -3609,18 +3661,66 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       els.reloadHint.style.display = 'block';
     }
 
-    function setHashMismatchAlert(message) {
+    const HASH_MISMATCH_LINES = [
+      'Hashes must match before extraction can start.',
+      'Copy the stream link again in Stremio and paste it here to unlock the button.'
+    ];
+
+    function buildHashMismatchAlert(linkedHash, streamHash) {
+      const safeLinked = escapeHtml(linkedHash || 'unknown');
+      const safeStream = escapeHtml(streamHash || 'unknown');
+      const head = 'Hash mismatch detected: linked stream (' + safeLinked + ') vs pasted URL (' + safeStream + ').';
+      return '<div class="alert-head">' + head + '</div>' +
+        '<div class="alert-body"><div>' + escapeHtml(HASH_MISMATCH_LINES[0]) + '</div><div>' + escapeHtml(HASH_MISMATCH_LINES[1]) + '</div></div>';
+    }
+
+    function setHashMismatchAlert(message, opts = {}) {
       if (!els.hashMismatchAlert) return;
+      const useHtml = opts.asHtml === true;
       if (!message) {
         els.hashMismatchAlert.style.display = 'none';
-        els.hashMismatchAlert.textContent = '';
+        els.hashMismatchAlert.innerHTML = '';
         return;
       }
-      els.hashMismatchAlert.textContent = message;
+      if (useHtml) {
+        els.hashMismatchAlert.innerHTML = message;
+      } else {
+        els.hashMismatchAlert.textContent = message;
+      }
       els.hashMismatchAlert.style.display = 'block';
     }
 
-    function resetExtractionState(clearLogs = false) {
+    function updateHashMismatchState(opts = {}) {
+      const streamUrl = typeof opts.streamUrl === 'string' ? opts.streamUrl : (els.streamUrl?.value || '');
+      const trimmedUrl = (streamUrl || '').trim();
+      const linkedHash = getVideoHash();
+      const fallback = { videoId: PAGE.videoId || BOOTSTRAP.videoId, filename: PAGE.filename || BOOTSTRAP.filename };
+      const streamHashInfo = trimmedUrl ? deriveStreamHashFromUrl(trimmedUrl, fallback) : { hash: '', filename: '', videoId: '', source: 'stream-url' };
+      const hasStreamHash = !!streamHashInfo.hash;
+      const hasLinkedHash = !!linkedHash;
+      const mismatch = hasStreamHash && hasLinkedHash && streamHashInfo.hash !== linkedHash;
+      state.streamHashInfo = hasStreamHash ? streamHashInfo : null;
+      state.hashMismatchBlocked = mismatch;
+      state.hashMismatchInfo = mismatch ? { linked: linkedHash, stream: streamHashInfo.hash } : null;
+
+      if (!mismatch) {
+        state.hashMismatchLogged = false;
+        if (!opts.keepAlert) setHashMismatchAlert('');
+      } else {
+        const alertHtml = buildHashMismatchAlert(linkedHash, streamHashInfo.hash);
+        setHashMismatchAlert(alertHtml, { asHtml: true });
+        if (opts.log !== false && !state.hashMismatchLogged) {
+          const mismatchMsg = 'Hash mismatch detected: linked stream (' + linkedHash + ') vs pasted URL (' + streamHashInfo.hash + '). Extraction is blocked until hashes match.';
+          logExtract(mismatchMsg);
+          state.hashMismatchLogged = true;
+        }
+      }
+      applyExtractDisabled();
+      return { mismatch, linkedHash, streamHash: streamHashInfo.hash || '' };
+    }
+
+    function resetExtractionState(clearLogs = false, opts = {}) {
+      const preserveMismatch = !!(opts && opts.preserveMismatch);
       state.tracks = [];
       state.currentBatchId = null;
       state.targets = {};
@@ -3628,18 +3728,36 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       state.activeTranslations = 0;
       state.selectedTrackId = null;
       state.lastProgressStatus = null;
-      state.cacheBlocked = false;
-      state.cacheBlockInfo = null;
-      state.streamHashInfo = null;
+      if (!preserveMismatch) {
+        state.cacheBlocked = false;
+        state.cacheBlockInfo = null;
+        state.streamHashInfo = null;
+        if (state.hashMismatchBlocked && state.hashMismatchInfo) {
+          const alertHtml = buildHashMismatchAlert(state.hashMismatchInfo.linked, state.hashMismatchInfo.stream);
+          setHashMismatchAlert(alertHtml, { asHtml: true });
+        } else {
+          setHashMismatchAlert('');
+        }
+      } else if (state.cacheBlocked && state.cacheBlockInfo) {
+        const alertHtml = buildHashMismatchAlert(state.cacheBlockInfo.linked, state.cacheBlockInfo.stream);
+        setHashMismatchAlert(alertHtml, { asHtml: true });
+      } else if (state.hashMismatchBlocked && state.hashMismatchInfo) {
+        const alertHtml = buildHashMismatchAlert(state.hashMismatchInfo.linked, state.hashMismatchInfo.stream);
+        setHashMismatchAlert(alertHtml, { asHtml: true });
+      }
       updateReloadHint(false);
-      setHashMismatchAlert('');
       renderSelectedTrackSummary();
       renderDownloads();
       renderTargets();
       setStep2Enabled(false);
       setTranslationInFlight(false);
-      if (clearLogs && els.translateLog) {
-        els.translateLog.innerHTML = '';
+      if (clearLogs) {
+        if (els.translateLog) els.translateLog.innerHTML = '';
+        if (els.extractLog) els.extractLog.innerHTML = '';
+        if (els.extractedDownloads) els.extractedDownloads.innerHTML = '';
+        if (els.translatedDownloads) els.translatedDownloads.innerHTML = '';
+        if (els.extractedEmpty) els.extractedEmpty.style.display = 'block';
+        if (els.translatedEmpty) els.translatedEmpty.style.display = 'block';
       }
     }
 
@@ -3697,7 +3815,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       logExtract(label);
       state.extractMessageId = null;
       state.lastProgressStatus = null;
-      resetExtractionState(false);
+      resetExtractionState(false, { preserveMismatch: state.cacheBlocked });
       setExtractionInFlight(false);
       requestExtensionReset('extract-timeout');
       // Re-ping in case the extension went idle
@@ -4390,7 +4508,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         state.lastProgressStatus = null; // Reset for next extraction
         state.extractMessageId = null;
         if (msg.success && Array.isArray(msg.tracks)) {
-          resetExtractionState(true);
+          resetExtractionState(true, { preserveMismatch: state.cacheBlocked });
           state.selectedTargetLang = getTargetOptions()[0]?.code || null;
           const rawTracks = msg.tracks || [];
           const filteredTracks = rawTracks.filter((t) => !(t && (t.binary || t.codec === 'copy' || (t.mime && String(t.mime).toLowerCase().includes('matroska')) || t.source === 'copy')));
@@ -4467,7 +4585,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           const label = window.t ? window.t('toolbox.logs.extracted', { count: state.tracks.length }, 'Extracted ' + state.tracks.length + ' track(s).') : ('Extracted ' + state.tracks.length + ' track(s).');
           logExtract(label);
         } else {
-          resetExtractionState(true);
+          resetExtractionState(true, { preserveMismatch: state.cacheBlocked });
           const label = window.t ? window.t('toolbox.logs.failed', { error: msg.error || 'unknown error' }, 'Extraction failed: ' + (msg.error || 'unknown error')) : ('Extraction failed: ' + (msg.error || 'unknown error'));
           logExtract(label);
           setStep2Enabled(false);
@@ -4525,24 +4643,31 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         logExtract(label);
         return;
       }
+      const hashStatus = updateHashMismatchState({ streamUrl, log: true });
+      if (hashStatus.mismatch) {
+        return;
+      }
       resetExtractionState(true);
+      state.cacheBlocked = false;
+      state.cacheBlockInfo = null;
+      state.hashMismatchBlocked = false;
+      state.hashMismatchInfo = null;
+      state.hashMismatchLogged = false;
       if (els.extractLog) els.extractLog.innerHTML = '';
-      const linkedHash = getVideoHash();
+      const linkedHash = hashStatus.linkedHash || getVideoHash();
       const streamHashInfo = deriveStreamHashFromUrl(streamUrl, { videoId: PAGE.videoId || BOOTSTRAP.videoId, filename: PAGE.filename || BOOTSTRAP.filename });
       state.streamHashInfo = streamHashInfo;
-      state.cacheBlocked = Boolean(streamHashInfo.hash && linkedHash && streamHashInfo.hash !== linkedHash);
-      state.cacheBlockInfo = state.cacheBlocked ? { linked: linkedHash, stream: streamHashInfo.hash } : null;
-      if (state.cacheBlocked) {
-        const mismatchMsg = 'Hash mismatch detected: linked stream (' + linkedHash + ') vs pasted URL (' + streamHashInfo.hash + '). The pasted URL and Linked Stream should match. Uploads to xEmbed are disabled; you can still download/translate and drag into Stremio manually.';
-        const stampedMsg = '[' + new Date().toLocaleTimeString() + '] ' + mismatchMsg;
-        setHashMismatchAlert(stampedMsg);
+      if (streamHashInfo.hash && linkedHash && streamHashInfo.hash !== linkedHash) {
+        state.cacheBlocked = true;
+        state.cacheBlockInfo = { linked: linkedHash, stream: streamHashInfo.hash };
+        const mismatchMsg = 'Hash mismatch detected: linked stream (' + linkedHash + ') vs pasted URL (' + streamHashInfo.hash + '). Extraction is blocked until the hashes match.';
+        const alertHtml = buildHashMismatchAlert(linkedHash, streamHashInfo.hash);
+        setHashMismatchAlert(alertHtml, { asHtml: true });
         logExtract(mismatchMsg);
-        if (els.reloadHint) {
-          els.reloadHint.style.display = 'none';
-        }
-      } else {
-        setHashMismatchAlert('');
+        applyExtractDisabled();
+        return;
       }
+      setHashMismatchAlert('');
       const mode = state.extractMode === 'complete' ? 'complete' : 'smart';
       const messageId = 'extract_' + Date.now();
       setStep2Enabled(false);
@@ -4565,6 +4690,14 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     }
 
     // Event bindings
+    if (els.streamUrl) {
+      const handleStreamInput = () => {
+        updateHashMismatchState({ log: false });
+      };
+      ['input', 'change', 'blur'].forEach(evt => {
+        els.streamUrl.addEventListener(evt, handleStreamInput);
+      });
+    }
     els.extractBtn.onclick = requestExtraction;
     els.translateBtn.onclick = () => {
       const targetLang = state.selectedTargetLang;
