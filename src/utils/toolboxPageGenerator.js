@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { getLanguageName, languageMap } = require('./languages');
+const { allLanguages } = require('./allLanguages');
 const { deriveVideoHash } = require('./videoHash');
 const { parseStremioId } = require('./subtitle');
 const { version: appVersion } = require('../../package.json');
@@ -76,6 +77,23 @@ function buildLanguageLookupMaps() {
   }
 
   return { byCode, byNameKey };
+}
+
+function formatLanguageLabel(code, fallback) {
+  if (!code) return fallback || '';
+  const normalized = String(code).replace('_', '-');
+  const base =
+    getLanguageName(normalized) ||
+    getLanguageName(normalized.replace('-', '')) ||
+    fallback ||
+    code;
+  const regionMatch = normalized.match(/^[a-z]{2}-([a-z]{2})$/i);
+  if (regionMatch) {
+    const region = regionMatch[1].toUpperCase();
+    const trimmed = base.replace(/\s*\([^)]+\)\s*$/, '').trim();
+    return `${trimmed} (${region})`;
+  }
+  return base;
 }
 
 function buildQuery(params) {
@@ -1216,7 +1234,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
             <div class="tool-icon">🧲</div>
             <div>
               <div class="tool-title">${t('toolbox.tools.embedded.title', {}, 'Extract + Translate')}</div>
-              <p>${t('toolbox.tools.embedded.body', {}, 'Pull subtitles from the current stream or file, then translate with your provider.')}</p>
+              <p>${t('toolbox.tools.embedded.body', {}, 'Extract embedded subtitles from the current stream or file, then translate with your provider.')}</p>
               <span class="tool-link">${t('toolbox.tools.embedded.cta', {}, 'Open extractor')}</span>
             </div>
           </a>
@@ -1564,7 +1582,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       }
       if (!enabled) return;
       seen.add(norm);
-      options.push({ key: norm, label: label || formatLabel(key, model) });
+      options.push({ key: norm, label: label || formatLabel(key, model), model: model || '' });
     };
     if (geminiEnabled) {
       const geminiLabel = formatLabel('Gemini', config.geminiModel || providers.gemini?.model || '');
@@ -4828,6 +4846,10 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
   const targetOptions = targetLanguages.length
     ? targetLanguages.map(code => `<option value="${escapeHtml(code)}">${escapeHtml(getLanguageName(code) || code)}</option>`).join('')
     : `<option value="">${escapeHtml(t('toolbox.autoSubs.options.addTargets', {}, 'Add target languages in Configure'))}</option>`;
+  const sourceLanguageOptions = allLanguages.map(lang => {
+    const label = formatLanguageLabel(lang.code, lang.name);
+    return `<option value="${escapeHtml(lang.code)}">${escapeHtml(label)}</option>`;
+  }).join('');
   const videoHash = deriveVideoHash(filename, videoId);
   const urlSchemePattern = new RegExp('^[a-z][a-z0-9+.-]*://', 'i');
   const isLikelyUrl = (val) => urlSchemePattern.test(val || '');
@@ -4902,15 +4924,21 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         log: document.getElementById('logArea'),
         streamUrl: document.getElementById('streamUrl'),
         hashStatus: document.getElementById('hashStatus'),
+        modeSelect: document.getElementById('autoSubsMode'),
+        modeDetails: document.getElementById('modeDetails'),
         sourceLang: document.getElementById('detectedLang'),
         targetLang: document.getElementById('targetLang'),
         model: document.getElementById('whisperModel'),
         translateToggle: document.getElementById('translateOutput'),
-        sendTimestamps: document.getElementById('sendTimestamps'),
-        singleBatch: document.getElementById('singleBatchMode'),
+        batchMode: document.getElementById('singleBatchModeSelect'),
+        timestampsMode: document.getElementById('timestampsMode'),
         diarization: document.getElementById('enableDiarization'),
         provider: document.getElementById('translationProvider'),
         providerModel: document.getElementById('translationModel'),
+        translationStep: document.getElementById('translationStep'),
+        translationSettings: document.getElementById('translationSettings'),
+        translationSettingsToggle: document.getElementById('translationSettingsToggle'),
+        translationSettingsContent: document.getElementById('translationSettingsContent'),
         srtPreview: document.getElementById('srtPreview'),
         dlSrt: document.getElementById('downloadSrt'),
         dlVtt: document.getElementById('downloadVtt'),
@@ -5275,22 +5303,100 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       function renderProviders() {
         if (!els.provider) return;
         const options = Array.isArray(BOOTSTRAP.providerOptions) ? BOOTSTRAP.providerOptions : [];
-        els.provider.innerHTML = '';
-        if (!options.length) {
-          const empty = document.createElement('option');
-          empty.value = '';
-          empty.textContent = tt('toolbox.autoSubs.providers.missing', {}, 'No provider configured');
-          els.provider.appendChild(empty);
-          return;
+      els.provider.innerHTML = '';
+      if (!options.length) {
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = tt('toolbox.autoSubs.providers.missing', {}, 'No provider configured');
+        els.provider.appendChild(empty);
+        return;
+      }
+      options.forEach((opt) => {
+        const o = document.createElement('option');
+        o.value = opt.key || opt.value || opt;
+        o.textContent = opt.label || formatProviderName(opt.key || opt.value || opt);
+        if (opt.model) o.dataset.model = opt.model;
+        els.provider.appendChild(o);
+      });
+      const desired = BOOTSTRAP.defaults?.provider || options[0]?.key || '';
+      if (desired) els.provider.value = desired;
+      renderProviderModels();
+    }
+
+      function renderProviderModels() {
+        if (!els.providerModel) return;
+        const selectedProvider = (els.provider?.value || '').toString().toLowerCase();
+        const options = Array.isArray(BOOTSTRAP.providerOptions) ? BOOTSTRAP.providerOptions : [];
+        const match = options.find(opt => (opt.key || opt.value || '').toString().toLowerCase() === selectedProvider);
+        const configuredModel = match?.model || '';
+        const desired = BOOTSTRAP.defaults?.translationModel || '';
+        const current = els.providerModel.value || '';
+        const seen = new Set();
+        const addOption = (value, label) => {
+          const key = String(value);
+          if (seen.has(key)) return;
+          const opt = document.createElement('option');
+          opt.value = value;
+          opt.textContent = label;
+          els.providerModel.appendChild(opt);
+          seen.add(key);
+        };
+        els.providerModel.innerHTML = '';
+        addOption('', copy.steps.providerModelPlaceholder || 'Use provider default');
+        if (configuredModel) {
+          const label = tt('toolbox.autoSubs.steps.providerModelConfigured', { model: configuredModel }, `Configured: ${configuredModel}`);
+          addOption(configuredModel, label);
         }
-        options.forEach((opt) => {
-          const o = document.createElement('option');
-          o.value = opt.key || opt.value || opt;
-          o.textContent = opt.label || formatProviderName(opt.key || opt.value || opt);
-          els.provider.appendChild(o);
+        if (desired && desired !== configuredModel) {
+          addOption(desired, desired);
+        }
+        if (current && !seen.has(current)) {
+          addOption(current, current);
+        }
+        const next = desired || configuredModel || current || '';
+        if (next && seen.has(next)) {
+          els.providerModel.value = next;
+        } else {
+          els.providerModel.value = '';
+        }
+      }
+
+      function toggleModeDetails() {
+        const mode = (els.modeSelect?.value || '').toString().toLowerCase();
+        const showDetails = mode !== 'local';
+        if (els.modeDetails) {
+          els.modeDetails.style.display = showDetails ? '' : 'none';
+        }
+      }
+
+      function toggleTranslationStep() {
+        const enabled = els.translateToggle?.checked === true;
+        if (els.translationStep) {
+          els.translationStep.style.display = enabled ? '' : 'none';
+          els.translationStep.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+        }
+        if (els.translationSettingsToggle) {
+          els.translationSettingsToggle.disabled = !enabled;
+        }
+        [els.provider, els.providerModel, els.targetLang, els.batchMode, els.timestampsMode].forEach((el) => {
+          if (el) el.disabled = !enabled;
         });
-        const desired = BOOTSTRAP.defaults?.provider || options[0]?.key || '';
-        if (desired) els.provider.value = desired;
+        if (!enabled) {
+          toggleTranslationSettings(false);
+        }
+      }
+
+      function toggleTranslationSettings(forceOpen = null) {
+        const container = els.translationSettings;
+        const toggle = els.translationSettingsToggle;
+        const content = els.translationSettingsContent;
+        if (!container || !toggle || !content) return;
+        const shouldOpen = typeof forceOpen === 'boolean'
+          ? forceOpen
+          : !container.classList.contains('open');
+        container.classList.toggle('open', shouldOpen);
+        content.style.display = shouldOpen ? 'block' : 'none';
+        toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
       }
 
       function setDownloads(original, translations) {
@@ -5413,8 +5519,9 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           setStatus(tt('toolbox.autoSubs.status.awaiting', {}, 'Awaiting input...'));
           return;
         }
-        const targets = getSelectedTargets();
-        if (els.translateToggle?.checked && targets.length === 0) {
+        const translateEnabled = els.translateToggle?.checked === true;
+        const targets = translateEnabled ? getSelectedTargets() : [];
+        if (translateEnabled && targets.length === 0) {
           appendLog(tt('toolbox.autoSubs.logs.noTargets', {}, 'Select at least one target language or disable translation.'));
           return;
         }
@@ -5426,22 +5533,24 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         markStep('translate', 'warn');
         setStatus(tt('toolbox.autoSubs.status.fetching', {}, 'Fetching stream...'));
         setProgress(10);
-        appendLog(tt('toolbox.autoSubs.logs.sendingRequest', {}, 'Sending request to Cloudflare Workers AI...'));
+        const modeValue = (els.modeSelect?.value || 'cloudflare').toLowerCase();
+        const modeLabel = els.modeSelect?.selectedOptions?.[0]?.textContent || 'Cloudflare Workers AI';
+        appendLog(tt('toolbox.autoSubs.logs.sendingRequest', {}, 'Sending request to the selected auto-subtitles engine...') + ' [' + modeLabel + ']');
 
         const payload = {
           configStr: PAGE.configStr,
           streamUrl: stream,
           videoId: PAGE.videoId,
           filename: PAGE.filename,
-          engine: 'remote',
+          engine: modeValue === 'local' ? 'local' : 'remote',
           model: els.model?.value || '@cf/openai/whisper',
           sourceLanguage: els.sourceLang?.value || '',
           targetLanguages: targets,
-          translate: els.translateToggle?.checked !== false,
+          translate: translateEnabled,
           translationProvider: els.provider?.value || '',
           translationModel: (els.providerModel?.value || '').trim(),
-          sendTimestampsToAI: els.sendTimestamps?.checked === true,
-          singleBatchMode: els.singleBatch?.checked === true,
+          sendTimestampsToAI: (els.timestampsMode?.value || '') === 'send',
+          singleBatchMode: (els.batchMode?.value || '') === 'single',
           translationPrompt: '',
           diarization: els.diarization?.checked === true
         };
@@ -5492,6 +5601,18 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       }
 
       function initDefaults() {
+        const preferredMode = (BOOTSTRAP.defaults?.mode || 'cloudflare').toLowerCase();
+        if (els.modeSelect) {
+          const options = Array.from(els.modeSelect.options || []);
+          const hasPreferred = options.some(opt => opt.value.toLowerCase() === preferredMode && !opt.disabled);
+          if (hasPreferred) {
+            els.modeSelect.value = preferredMode;
+          } else if (options.length) {
+            const firstEnabled = options.find(opt => !opt.disabled);
+            if (firstEnabled) els.modeSelect.value = firstEnabled.value;
+          }
+          toggleModeDetails();
+        }
         if (els.model) {
           const desiredModel = BOOTSTRAP.defaults?.whisperModel;
           const opts = Array.from(els.model.options || []);
@@ -5502,14 +5623,17 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
             els.model.value = opts[0].value;
           }
         }
-        if (els.sendTimestamps) {
-          els.sendTimestamps.checked = BOOTSTRAP.defaults?.sendTimestampsToAI === true;
+        if (els.translateToggle) {
+          els.translateToggle.checked = BOOTSTRAP.defaults?.translateToTarget !== false;
         }
-        if (els.singleBatch) {
-          els.singleBatch.checked = BOOTSTRAP.defaults?.singleBatchMode === true;
+        if (els.batchMode) {
+          els.batchMode.value = BOOTSTRAP.defaults?.singleBatchMode ? 'single' : 'multi';
         }
-        if (els.providerModel && BOOTSTRAP.defaults?.translationModel) {
-          els.providerModel.value = BOOTSTRAP.defaults.translationModel;
+        if (els.timestampsMode) {
+          els.timestampsMode.value = BOOTSTRAP.defaults?.sendTimestampsToAI ? 'send' : 'original';
+        }
+        if (els.diarization) {
+          els.diarization.checked = BOOTSTRAP.defaults?.diarization === true;
         }
         hydrateVideoMeta({
           title: BOOTSTRAP.linkedTitle || '',
@@ -5518,6 +5642,11 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         });
         hydrateTargets();
         renderProviders();
+        if (els.providerModel && BOOTSTRAP.defaults?.translationModel) {
+          els.providerModel.value = BOOTSTRAP.defaults.translationModel;
+        }
+        toggleTranslationStep();
+        toggleTranslationSettings(false);
         updateHashStatusFromInput();
       }
 
@@ -5535,6 +5664,12 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         });
         els.streamUrl?.addEventListener('blur', updateHashStatusFromInput);
         els.streamUrl?.addEventListener('change', updateHashStatusFromInput);
+        els.translateToggle?.addEventListener('change', () => {
+          toggleTranslationStep();
+        });
+        els.modeSelect?.addEventListener('change', toggleModeDetails);
+        els.translationSettingsToggle?.addEventListener('click', () => toggleTranslationSettings());
+        els.provider?.addEventListener('change', renderProviderModels);
       }
 
       // Extension messaging (status only)
@@ -5621,7 +5756,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
   }
 
   const defaults = {
-    whisperModel: 'medium',
+    mode: 'cloudflare',
+    whisperModel: '@cf/openai/whisper',
     diarization: false,
     translateToTarget: true,
     streamFilename: filename || '',
@@ -5677,24 +5813,34 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       streamLabel: t('toolbox.autoSubs.steps.streamLabel', {}, 'Stream / file URL'),
       streamPlaceholder: t('toolbox.autoSubs.steps.streamPlaceholder', {}, 'https://example.com/video.mkv'),
       prefill: t('toolbox.autoSubs.steps.prefill', {}, 'Use provided stream id'),
-      langModelTitle: t('toolbox.autoSubs.steps.step2Title', {}, 'Language + model'),
-      sourceLabel: t('toolbox.autoSubs.steps.sourceLabel', {}, 'Source language (optional)'),
+      langModelTitle: t('toolbox.autoSubs.steps.step2Title', {}, 'Mode & audio'),
+      modeLabel: t('toolbox.autoSubs.steps.modeLabel', {}, 'Auto-subtitles mode'),
+      modeHelper: t('toolbox.autoSubs.steps.modeHelper', {}, 'Cloudflare Workers AI runs remotely. Local xSync is coming soon.'),
+      modeLocal: t('toolbox.autoSubs.steps.modeLocal', {}, 'Local (xSync)'),
+      modeRemote: t('toolbox.autoSubs.steps.modeRemote', {}, 'Cloudflare Workers AI'),
+      sourceLabel: t('toolbox.autoSubs.steps.sourceLabel', {}, 'Source audio language'),
       autoDetect: t('toolbox.autoSubs.steps.autoDetect', {}, 'Auto-detect'),
-      targetLabel: t('toolbox.autoSubs.steps.targetLabel', {}, 'Target language'),
       modelLabel: t('toolbox.autoSubs.steps.modelLabel', {}, 'Whisper model'),
       model: {
-        tiny: t('toolbox.autoSubs.steps.modelTiny', {}, 'tiny (fastest)'),
-        small: t('toolbox.autoSubs.steps.modelSmall', {}, 'small'),
-        medium: t('toolbox.autoSubs.steps.modelMedium', {}, 'medium (balanced)'),
-        turbo: t('toolbox.autoSubs.steps.modelTurbo', {}, 'turbo (GPU)')
+        standard: t('toolbox.autoSubs.steps.modelStandard', {}, 'Whisper'),
+        turbo: t('toolbox.autoSubs.steps.modelTurbo', {}, 'Whisper Large V3 Turbo')
       },
       diarization: t('toolbox.autoSubs.steps.diarization', {}, 'Speaker diarization'),
       translateOutput: t('toolbox.autoSubs.steps.translateOutput', {}, 'Translate to target languages'),
-      singleBatch: t('toolbox.autoSubs.steps.singleBatch', {}, 'Single batch mode'),
-      sendTimestamps: t('toolbox.autoSubs.steps.sendTimestamps', {}, 'Send timestamps to AI'),
+      translationStepChip: t('toolbox.autoSubs.steps.stepTwoFiveChip', {}, 'Step 2.5'),
+      translationStepTitle: t('toolbox.autoSubs.steps.stepTwoFiveTitle', {}, 'Translation targets'),
+      translationSettingsTitle: t('toolbox.autoSubs.steps.translationSettings', {}, 'Translation settings'),
+      translationSettingsMeta: t('toolbox.autoSubs.steps.translationSettingsMeta', {}, 'Batching & timestamps'),
+      targetLabel: t('toolbox.autoSubs.steps.targetLabel', {}, 'Target language'),
       providerLabel: t('toolbox.autoSubs.steps.providerLabel', {}, 'Translation provider'),
       providerModelLabel: t('toolbox.autoSubs.steps.providerModelLabel', {}, 'Translation model'),
       providerModelPlaceholder: t('toolbox.autoSubs.steps.providerModelPlaceholder', {}, 'Use provider default'),
+      batchingLabel: t('toolbox.autoSubs.steps.batchingLabel', {}, 'Batching'),
+      batchingMultiple: t('toolbox.autoSubs.steps.batchingMultiple', {}, 'Multiple batches (recommended)'),
+      batchingSingle: t('toolbox.autoSubs.steps.batchingSingle', {}, 'Single batch (all at once)'),
+      timestampsLabel: t('toolbox.autoSubs.steps.timestampsLabel', {}, 'Timestamp handling'),
+      timestampsRebuild: t('toolbox.autoSubs.steps.timestampsRebuild', {}, 'Rebuild timestamps'),
+      sendTimestamps: t('toolbox.autoSubs.steps.sendTimestamps', {}, 'Send timestamps to AI'),
       runPipelineTitle: t('toolbox.autoSubs.steps.step3Title', {}, 'Run pipeline'),
       pipelineDesc: t('toolbox.autoSubs.steps.pipeline', {}, 'We\'ll stitch: fetch -> segment -> transcribe -> align -> translate (optional) -> deliver SRT.'),
       start: t('toolbox.autoSubs.actions.start', {}, 'Start auto-subtitles'),
@@ -6116,6 +6262,25 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
 
     .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+    .controls.wrap { justify-content: flex-start; }
+    .inline-checkbox { display: flex; gap: 8px; align-items: center; font-weight: 600; color: var(--text-primary); }
+    .mode-details { margin-top: 10px; display: grid; gap: 12px; }
+    .mode-helper { margin: 6px 0 0; }
+    .translation-settings { margin-top: 14px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface-light); }
+    .translation-settings-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      color: var(--text-primary);
+    }
+    .translation-settings-toggle .caret { font-weight: 800; }
+    .translation-settings-content { padding: 12px; border-top: 1px solid var(--border); display: none; }
+    .translation-settings.open .translation-settings-content { display: block; }
 
     .section-joined .joined-grid {
       position: relative;
@@ -6401,50 +6566,90 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         <div class="step-card">
           <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.two)}</span><span>${escapeHtml(copy.steps.langModelTitle)}</span></div>
           <div class="step-body">
-            <div class="row">
-              <div>
-                <label for="detectedLang">${escapeHtml(copy.steps.sourceLabel)}</label>
-                <select id="detectedLang">
-                  <option value="">${escapeHtml(copy.steps.autoDetect)}</option>
-                  ${targetOptions}
-                </select>
+            <label for="autoSubsMode">${escapeHtml(copy.steps.modeLabel)}</label>
+            <select id="autoSubsMode">
+              <option value="local" disabled>${escapeHtml(copy.steps.modeLocal)}</option>
+              <option value="cloudflare" selected>${escapeHtml(copy.steps.modeRemote)}</option>
+            </select>
+            <p class="muted mode-helper">${escapeHtml(copy.steps.modeHelper)}</p>
+            <div id="modeDetails" class="mode-details">
+              <div class="row">
+                <div>
+                  <label for="detectedLang">${escapeHtml(copy.steps.sourceLabel)}</label>
+                  <select id="detectedLang">
+                    <option value="">${escapeHtml(copy.steps.autoDetect)}</option>
+                    ${sourceLanguageOptions}
+                  </select>
+                </div>
+                <div>
+                  <label for="whisperModel">${escapeHtml(copy.steps.modelLabel)}</label>
+                  <select id="whisperModel">
+                    <option value="@cf/openai/whisper">${escapeHtml(copy.steps.model.standard)}</option>
+                    <option value="@cf/openai/whisper-large-v3-turbo">${escapeHtml(copy.steps.model.turbo)}</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label for="targetLang">${escapeHtml(copy.steps.targetLabel)}</label>
-                <select id="targetLang">
-                  ${targetOptions}
-                </select>
-              </div>
-              <div>
-                <label for="whisperModel">${escapeHtml(copy.steps.modelLabel)}</label>
-                <select id="whisperModel">
-                  <option value="@cf/openai/whisper">CF @cf/openai/whisper</option>
-                  <option value="@cf/openai/whisper-large-v3-turbo">@cf/openai/whisper-large-v3-turbo</option>
-                </select>
+              <div class="controls wrap">
+                <label class="inline-checkbox">
+                  <input type="checkbox" id="enableDiarization"> ${escapeHtml(copy.steps.diarization)}
+                </label>
+                <label class="inline-checkbox">
+                  <input type="checkbox" id="translateOutput" checked> ${escapeHtml(copy.steps.translateOutput)}
+                </label>
               </div>
             </div>
-            <div class="controls">
-              <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
-                <input type="checkbox" id="singleBatchMode"> ${escapeHtml(copy.steps.singleBatch)}
-              </label>
-              <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
-                <input type="checkbox" id="enableDiarization"> ${escapeHtml(copy.steps.diarization)}
-              </label>
-              <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
-                <input type="checkbox" id="translateOutput" checked> ${escapeHtml(copy.steps.translateOutput)}
-              </label>
-              <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
-                <input type="checkbox" id="sendTimestamps"> ${escapeHtml(copy.steps.sendTimestamps)}
-              </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="translationStep">
+      <h2><span class="section-number">2.5</span> ${escapeHtml(copy.steps.translationStepTitle)}</h2>
+      <div class="step-card">
+        <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.translationStepChip)}</span><span>${escapeHtml(copy.steps.translationStepTitle)}</span></div>
+        <div class="step-body">
+          <div class="row">
+            <div>
+              <label for="translationProvider">${escapeHtml(copy.steps.providerLabel)}</label>
+              <select id="translationProvider"></select>
             </div>
-            <div class="row" style="margin-top:10px;">
-              <div>
-                <label for="translationProvider">${escapeHtml(copy.steps.providerLabel)}</label>
-                <select id="translationProvider"></select>
+            <div>
+              <label for="translationModel">${escapeHtml(copy.steps.providerModelLabel)}</label>
+              <select id="translationModel">
+                <option value="">${escapeHtml(copy.steps.providerModelPlaceholder)}</option>
+              </select>
+            </div>
+            <div>
+              <label for="targetLang">${escapeHtml(copy.steps.targetLabel)}</label>
+              <select id="targetLang">
+                ${targetOptions}
+              </select>
+            </div>
+          </div>
+          <div class="translation-settings" id="translationSettings">
+            <button class="translation-settings-toggle" id="translationSettingsToggle" type="button" aria-expanded="false">
+              <div class="toggle-labels">
+                <span class="eyebrow">${escapeHtml(copy.steps.translationSettingsTitle)}</span>
+                <span class="muted">${escapeHtml(copy.steps.translationSettingsMeta)}</span>
               </div>
-              <div>
-                <label for="translationModel">${escapeHtml(copy.steps.providerModelLabel)}</label>
-                <input type="text" id="translationModel" placeholder="${escapeHtml(copy.steps.providerModelPlaceholder)}">
+              <span class="caret">▼</span>
+            </button>
+            <div class="translation-settings-content" id="translationSettingsContent">
+              <div class="row">
+                <div>
+                  <label for="singleBatchModeSelect">${escapeHtml(copy.steps.batchingLabel)}</label>
+                  <select id="singleBatchModeSelect">
+                    <option value="multi">${escapeHtml(copy.steps.batchingMultiple)}</option>
+                    <option value="single">${escapeHtml(copy.steps.batchingSingle)}</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="timestampsMode">${escapeHtml(copy.steps.timestampsLabel)}</label>
+                  <select id="timestampsMode">
+                    <option value="original">${escapeHtml(copy.steps.timestampsRebuild)}</option>
+                    <option value="send">${escapeHtml(copy.steps.sendTimestamps)}</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>

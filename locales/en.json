@@ -202,7 +202,7 @@
         },
         "embedded": {
           "title": "Extract + Translate",
-          "body": "Pull subtitles from the current stream or file, then translate with your provider.",
+          "body": "Extract embedded subtitles from the current stream or file, then translate with your provider.",
           "cta": "Open extractor"
         },
         "sync": {

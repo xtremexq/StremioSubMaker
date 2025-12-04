@@ -446,6 +446,10 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             startBusy: t('sync.step3.startBusy', {}, 'Syncing...'),
             progress: t('sync.step3.progress', {}, 'Syncing subtitles...')
         },
+        locks: {
+            needContinue: t('sync.locks.needContinue', {}, 'Click Continue to unlock subtitle selection.'),
+            needSubtitle: t('sync.locks.needSubtitle', {}, 'Select or upload a subtitle to unlock syncing.')
+        },
         step4: {
             title: t('sync.step4.title', {}, 'Preview & Download'),
             downloadSynced: t('sync.step4.downloadSynced', {}, 'Download Synced Subtitle'),
@@ -1341,7 +1345,36 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             flex-direction: column;
             gap: 1rem;
             height: 100%;
+            position: relative;
+            overflow: hidden;
             transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+        }
+
+        .step-card.locked {
+            opacity: 0.55;
+        }
+
+        .step-card.locked::after {
+            content: attr(data-locked-label);
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.76);
+            color: var(--muted);
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            pointer-events: all;
+            z-index: 5;
+        }
+
+        [data-theme="dark"] .step-card.locked::after,
+        [data-theme="true-dark"] .step-card.locked::after {
+            background: rgba(10, 12, 22, 0.78);
+            color: #d5def3;
         }
 
         [data-theme="dark"] .step-card,
@@ -1623,6 +1656,10 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             margin-top: 1rem;
             display: none;
             font-weight: 500;
+        }
+
+        #hashStatus {
+            margin-top: 0;
         }
 
         .status-message.info {
@@ -1925,7 +1962,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     </button>
                 </div>
 
-                <div class="step-card" id="step2Section">
+                <div class="step-card locked" id="step2Section" data-locked-label="${escapeHtml(copy.locks.needContinue)}">
                     <div class="step-title">
                         <span class="step-chip">${escapeHtml(copy.step2.chip)}</span>
                         <span>${escapeHtml(copy.step2.title)}</span>
@@ -1966,7 +2003,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
 
         <div class="section step3-section">
             <div class="step3-wrapper">
-                <div class="step-card step3-standalone" id="step3Section" style="opacity: 0.5; pointer-events: none;">
+                <div class="step-card step3-standalone locked" id="step3Section" data-locked-label="${escapeHtml(copy.locks.needContinue)}">
                     <div class="step-title">
                         <span class="step-chip">${escapeHtml(copy.step3.chip)}</span>
                         <span>${escapeHtml(copy.step3.title)}</span>
@@ -2096,6 +2133,10 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         })};
         const subtitleMenuTargets = ${JSON.stringify(targetLanguages.map(lang => ({ code: lang, name: getLanguageName(lang) || lang })))};
         const hashStatusEl = document.getElementById('hashStatus');
+        const lockReasons = {
+            needContinue: ${JSON.stringify(copy.locks.needContinue)},
+            needSubtitle: ${JSON.stringify(copy.locks.needSubtitle)}
+        };
 
         function md5hex(str) {
             function rotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
@@ -2340,6 +2381,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         let pendingStreamUpdate = null;
 
         let STATE = {
+            step1Confirmed: false,
             streamUrl: null,
             streamHashInfo: null,
             cacheBlocked: false,
@@ -2566,10 +2608,37 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             document.getElementById(elementId).style.display = 'none';
         }
 
+        function lockSection(sectionId, label) {
+            const section = document.getElementById(sectionId);
+            if (!section) return;
+            if (label) section.setAttribute('data-locked-label', label);
+            section.classList.add('locked');
+            section.setAttribute('aria-disabled', 'true');
+            section.inert = true;
+        }
+
         function enableSection(sectionId) {
             const section = document.getElementById(sectionId);
-            section.style.opacity = '1';
-            section.style.pointerEvents = 'auto';
+            if (!section) return;
+            section.classList.remove('locked');
+            section.removeAttribute('aria-disabled');
+            section.inert = false;
+            section.removeAttribute('inert');
+            section.style.opacity = '';
+            section.style.pointerEvents = '';
+        }
+
+        function resetStepFlow(reasonLabel) {
+            STATE.step1Confirmed = false;
+            lockSection('step2Section', reasonLabel || lockReasons.needContinue);
+            lockSection('step3Section', reasonLabel || lockReasons.needContinue);
+        }
+
+        function requireStep1Confirmation() {
+            if (STATE.step1Confirmed) return false;
+            showStatus('syncStatus', lockReasons.needContinue, 'warn');
+            resetStepFlow(lockReasons.needContinue);
+            return true;
         }
 
         function cleanLinkedName(raw) {
@@ -3349,15 +3418,29 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         const streamUrlInput = document.getElementById('streamUrl');
         if (streamUrlInput) {
             ['input', 'change', 'blur'].forEach((evt) => {
-                streamUrlInput.addEventListener(evt, updateHashStatusFromInput);
+                streamUrlInput.addEventListener(evt, () => {
+                    updateHashStatusFromInput();
+                    if (evt === 'input' && STATE.step1Confirmed) {
+                        resetStepFlow(lockReasons.needContinue);
+                    }
+                });
             });
         }
+        resetStepFlow(lockReasons.needContinue);
         updateHashStatusFromInput();
 
         // Step 1: Continue button
         document.getElementById('continueBtn').addEventListener('click', async () => {
             const streamUrl = document.getElementById('streamUrl').value.trim();
             updateHashStatusFromInput();
+
+            STATE.step1Confirmed = true;
+            enableSection('step2Section');
+            if (STATE.subtitleContent) {
+                enableSection('step3Section');
+            } else {
+                lockSection('step3Section', lockReasons.needSubtitle);
+            }
 
             if (!streamUrl) {
                 STATE.streamUrl = null;
@@ -3366,6 +3449,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             }
 
             if (!isHttpUrl(streamUrl)) {
+                STATE.streamUrl = null;
                 showStatus('syncStatus', tt('sync.step3.status.invalidStream', {}, 'Autosync requires a valid http(s) stream URL. Manual offsets can run without it.'), 'error');
                 return;
             }
@@ -3377,6 +3461,11 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
 
         // Step 2: Select Subtitle
         document.getElementById('subtitleSelect').addEventListener('change', (e) => {
+            if (requireStep1Confirmation()) {
+                e.target.selectedIndex = 0;
+                return;
+            }
+
             const option = e.target.selectedOptions[0];
             if (option && option.value) {
                 STATE.selectedSubtitleId = option.value;
@@ -3397,8 +3486,14 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                     })
                     .catch(error => {
                         console.error('[Subtitle] Fetch failed:', error);
+                        STATE.subtitleContent = null;
+                        lockSection('step3Section', lockReasons.needSubtitle);
                         showStatus('syncStatus', tt('sync.step3.status.fetchSubtitleFailed', {}, 'Failed to fetch subtitle'), 'error');
                     });
+            } else {
+                lockSection('step3Section', lockReasons.needSubtitle);
+                STATE.selectedSubtitleId = null;
+                STATE.subtitleContent = null;
             }
         });
 
@@ -3406,7 +3501,10 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
 
-        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('click', () => {
+            if (requireStep1Confirmation()) return;
+            fileInput.click();
+        });
 
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -3421,15 +3519,18 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             e.preventDefault();
             uploadArea.classList.remove('dragover');
             const file = e.dataTransfer.files[0];
+            if (requireStep1Confirmation()) return;
             handleSubtitleFile(file);
         });
 
         fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
+            if (requireStep1Confirmation()) return;
             handleSubtitleFile(file);
         });
 
         function handleSubtitleFile(file) {
+            if (requireStep1Confirmation()) return;
             if (!file || !file.name.endsWith('.srt')) {
                 showStatus('syncStatus', tt('sync.upload.invalidFile', {}, 'Please select a valid .srt file'), 'error');
                 return;
@@ -3475,6 +3576,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         }
 
         startSyncBtn?.addEventListener('click', async () => {
+            if (requireStep1Confirmation()) return;
             if (syncInFlight) return;
             if (!STATE.subtitleContent) {
                 showStatus('syncStatus', tt('sync.step3.status.needSubtitle', {}, 'Please select a subtitle first'), 'error');
