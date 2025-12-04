@@ -1271,6 +1271,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
     </div>
 
   </div>
+  <script src="/js/subtitle-menu.js?v=${escapeHtml(appVersion || 'dev')}"></script>
   <script>
     const TOOLBOX = ${safeJsonSerialize({
     configStr,
@@ -1278,6 +1279,11 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
     filename: filename || '',
     videoHash
   })};
+    const SUBTITLE_MENU_TARGETS = ${JSON.stringify(subtitleMenuTargets)};
+    const SUBTITLE_MENU_SOURCES = ${JSON.stringify(config.sourceLanguages || [])};
+    const SUBTITLE_MENU_TARGET_CODES = ${JSON.stringify(config.targetLanguages || [])};
+    const SUBTITLE_LANGUAGE_MAPS = ${safeJsonSerialize(languageMaps)};
+    let subtitleMenuInstance = null;
 
     function initStreamRefreshButton(opts) {
       const btn = document.getElementById(opts.buttonId);
@@ -1352,6 +1358,31 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
           '&filename=' + encodeURIComponent(payload.filename || '');
       }
     });
+
+    function mountSubtitleMenu() {
+      if (!window.SubtitleMenu || typeof window.SubtitleMenu.mount !== 'function') return null;
+      try {
+        return window.SubtitleMenu.mount({
+          configStr: TOOLBOX.configStr,
+          videoId: TOOLBOX.videoId,
+          filename: TOOLBOX.filename,
+          videoHash: TOOLBOX.videoHash,
+          targetOptions: SUBTITLE_MENU_TARGETS,
+          sourceLanguages: SUBTITLE_MENU_SOURCES,
+          targetLanguages: SUBTITLE_MENU_TARGET_CODES,
+          languageMaps: SUBTITLE_LANGUAGE_MAPS,
+          getVideoHash: () => TOOLBOX.videoHash || '',
+          version: '${appVersion}'
+        });
+      } catch (err) {
+        console.warn('Subtitle menu init failed', err);
+        return null;
+      }
+    }
+    subtitleMenuInstance = mountSubtitleMenu();
+    if (subtitleMenuInstance && typeof subtitleMenuInstance.prefetch === 'function') {
+      subtitleMenuInstance.prefetch();
+    }
 
     (function initHeaderBadges() {
       const timeEl = document.getElementById('time-value');
@@ -1500,9 +1531,17 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       modeHelper: t('toolbox.embedded.step1.modeHelper', {}, 'In Complete mode, the whole file will be fetched for extraction.\nComplete mode is needed for MKV files.'),
       extractButton: t('toolbox.embedded.step1.extractButton', {}, 'Extract Subtitles'),
       extractBlocked: t('toolbox.embedded.step1.extractBlocked', {}, ''),
-      hashMismatchInline: t('toolbox.embedded.step1.hashMismatchInline', {}, ''),
+      hashMismatchInline: t(
+        'toolbox.embedded.step1.hashMismatchInline',
+        {},
+        'Hashes do not match. Extraction stays blocked until the pasted URL matches your linked stream.'
+      ),
       hashMismatchLine1: t('toolbox.embedded.step1.hashMismatchLine1', {}, 'Hashes must match before extraction can start.'),
-      hashMismatchLine2: t('toolbox.embedded.step1.hashMismatchLine2', {}, ''),
+      hashMismatchLine2: t(
+        'toolbox.embedded.step1.hashMismatchLine2',
+        {},
+        'Copy the stream link directly from Stremio to unlock extraction.'
+      ),
       logHeader: t('toolbox.embedded.step1.logHeader', {}, 'Live log'),
       logSub: t('toolbox.embedded.step1.logSub', {}, 'Auto-filled while extraction runs.'),
       outputsEyebrow: t('toolbox.embedded.step1.outputsEyebrow', {}, 'Outputs'),
@@ -1573,7 +1612,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   const step1Helper = (copy.step1.helper && copy.step1.helper !== 'toolbox.embedded.step1.helper')
     ? copy.step1.helper
     : '';
-  const hashAlertLines = [copy.step1.hashMismatchLine1].filter(Boolean);
+  const hashAlertLines = [copy.step1.hashMismatchLine1, copy.step1.hashMismatchLine2].filter(Boolean);
   const providerOptions = (() => {
     const options = [];
     const providers = config.providers || {};
@@ -2828,7 +2867,6 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
               </select>
               <p class="mode-helper">${modeHelperHtml}</p>
               <button id="extract-btn" type="button" class="secondary">${escapeHtml(copy.step1.extractButton)}</button>
-              <p id="hash-mismatch-inline" class="hash-inline">${escapeHtml(copy.step1.hashMismatchInline)}</p>
             </div>
           <div class="log-header" aria-hidden="true">
             <span class="pulse"></span>

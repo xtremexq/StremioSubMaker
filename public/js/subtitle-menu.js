@@ -95,8 +95,24 @@
       box-shadow: var(--sm-shadow);
       cursor: pointer;
       z-index: 12010;
+      isolation: isolate;
+      animation: sm-toggle-breathe 6s ease-in-out infinite;
       transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
       color: var(--sm-text);
+    }
+
+    .subtitle-menu-toggle::before {
+      content: '';
+      position: absolute;
+      inset: -8px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 50% 50%, var(--sm-primary-glow), transparent 65%);
+      opacity: 0.45;
+      transform: scale(0.94);
+      filter: blur(0.5px);
+      z-index: -1;
+      pointer-events: none;
+      animation: sm-toggle-pulse 3.4s ease-in-out infinite;
     }
 
     .subtitle-menu-toggle:hover {
@@ -104,6 +120,12 @@
       border-color: var(--sm-primary);
       box-shadow: 0 20px 40px -5px var(--sm-primary-glow);
       color: var(--sm-primary);
+    }
+
+    .subtitle-menu-toggle:hover::before,
+    .subtitle-menu-toggle:focus-visible::before {
+      animation-duration: 2.4s;
+      opacity: 0.6;
     }
 
     .subtitle-menu-toggle svg {
@@ -126,6 +148,11 @@
       border-top-color: var(--sm-primary);
       border-right-color: var(--sm-primary);
       animation: sm-spin 1s linear infinite;
+    }
+
+    .subtitle-menu-toggle.is-loading::before {
+      animation-play-state: paused;
+      opacity: 0.25;
     }
 
     .subtitle-menu-panel {
@@ -627,6 +654,18 @@
     }
 
     @keyframes sm-slide-up { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    @keyframes sm-toggle-pulse {
+      0% { transform: scale(0.94); box-shadow: 0 0 0 0 rgba(8, 164, 213, 0.35); }
+      55% { transform: scale(1.03); box-shadow: 0 0 0 12px rgba(8, 164, 213, 0); }
+      100% { transform: scale(0.94); box-shadow: 0 0 0 0 rgba(8, 164, 213, 0); }
+    }
+
+    @keyframes sm-toggle-breathe {
+      0% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-1px) scale(1.02); }
+      100% { transform: translateY(0) scale(1); }
+    }
 
     @keyframes sm-spin { to { transform: rotate(360deg); } }
     @keyframes sm-slide-down { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
