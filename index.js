@@ -33,6 +33,7 @@ const syncCache = require('./src/utils/syncCache');
 const embeddedCache = require('./src/utils/embeddedCache');
 const { generateSubtitleSyncPage } = require('./src/utils/syncPageGenerator');
 const { generateSubToolboxPage, generateEmbeddedSubtitlePage, generateAutoSubtitlePage } = require('./src/utils/toolboxPageGenerator');
+const { deriveVideoHash } = require('./src/utils/videoHash');
 const { registerFileUploadRoutes } = require('./src/routes/fileUploadRoutes');
 const {
     validateRequest,
@@ -243,6 +244,229 @@ function cleanupCachesOnStartup() {
     } else {
         log.info(() => '[Security] Startup cache cleanup complete: no contamination detected');
     }
+}
+
+function deriveStreamHashFromUrlServer(streamUrl, fallback = {}) {
+    let filename = (fallback.filename || fallback.streamFilename || '').trim();
+    let streamVideoId = (fallback.videoId || '').trim();
+    if (streamUrl) {
+        try {
+            const url = new URL(streamUrl);
+            const paramKeys = ['filename', 'file', 'name', 'download', 'dn'];
+            for (const key of paramKeys) {
+                const val = url.searchParams.get(key);
+                if (val && val.trim()) {
+                    filename = decodeURIComponent(val.trim().split('/').pop());
+                    break;
+                }
+            }
+            const idKeys = ['videoId', 'video', 'id', 'mediaid', 'imdb', 'tmdb', 'kitsu', 'anidb', 'mal', 'anilist'];
+            for (const key of idKeys) {
+                const val = url.searchParams.get(key);
+                if (val && val.trim()) {
+                    streamVideoId = val.trim();
+                    break;
+                }
+            }
+            if (!streamVideoId) {
+                const parts = (url.pathname || '').split('/').filter(Boolean);
+                const directId = parts.find((p) => /^tt\d+/i.test(p) || p.includes(':'));
+                if (directId) streamVideoId = directId.trim();
+            }
+        } catch (_) {
+            /* ignore parse errors */
+        }
+    }
+    const hash = deriveVideoHash(filename, streamVideoId);
+    return {
+        hash,
+        filename,
+        videoId: streamVideoId,
+        source: 'stream-url'
+    };
+}
+
+const AUTOSUB_MAX_AUDIO_BYTES = parseInt(process.env.AUTOSUB_MAX_AUDIO_BYTES, 10) || 120 * 1024 * 1024; // 120MB cap
+const AUTOSUB_FETCH_TIMEOUT_MS = parseInt(process.env.AUTOSUB_FETCH_TIMEOUT_MS, 10) || 45_000;
+const AUTOSUB_CF_TIMEOUT_MS = parseInt(process.env.AUTOSUB_CF_TIMEOUT_MS, 10) || 60_000;
+
+async function downloadStreamAudio(streamUrl, options = {}) {
+    const maxBytes = Number(options.maxBytes) > 0 ? Number(options.maxBytes) : AUTOSUB_MAX_AUDIO_BYTES;
+    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : AUTOSUB_FETCH_TIMEOUT_MS;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    let response;
+    try {
+        response = await fetch(streamUrl, {
+            headers: { Range: `bytes=0-${maxBytes - 1}` },
+            signal: controller.signal
+        });
+    } catch (error) {
+        clearTimeout(timeout);
+        throw new Error(`Failed to fetch stream audio: ${error.message || error}`);
+    }
+    if (!response || !response.ok) {
+        clearTimeout(timeout);
+        throw new Error(`Failed to fetch stream audio (status ${response?.status || 'unknown'})`);
+    }
+    if (!response.body) {
+        clearTimeout(timeout);
+        throw new Error('Stream response has no body');
+    }
+
+    const chunks = [];
+    let total = 0;
+    try {
+        for await (const chunk of response.body) {
+            total += chunk.length;
+            if (total > maxBytes) {
+                throw new Error(`Audio exceeds maximum allowed size (${maxBytes} bytes)`);
+            }
+            chunks.push(chunk);
+        }
+    } catch (error) {
+        clearTimeout(timeout);
+        if (error.name === 'AbortError') {
+            throw new Error('Audio fetch aborted due to timeout or cancellation');
+        }
+        throw error;
+    }
+    clearTimeout(timeout);
+    return Buffer.concat(chunks);
+}
+
+function formatTimestamp(seconds = 0) {
+    const clamped = Math.max(0, Number(seconds) || 0);
+    const hrs = Math.floor(clamped / 3600);
+    const mins = Math.floor((clamped % 3600) / 60);
+    const secs = Math.floor(clamped % 60);
+    const ms = Math.floor((clamped - Math.floor(clamped)) * 1000);
+    const pad = (v, len = 2) => String(v).padStart(len, '0');
+    return `${pad(hrs)}:${pad(mins)}:${pad(secs)},${pad(ms, 3)}`;
+}
+
+function segmentsToSrt(segments = []) {
+    if (!Array.isArray(segments) || segments.length === 0) return '';
+    const lines = [];
+    segments.forEach((seg, idx) => {
+        const start = formatTimestamp(seg.start || seg.start_time || 0);
+        const end = formatTimestamp(seg.end || seg.end_time || (Number(seg.start || 0) + 4));
+        const text = (seg.text || seg.transcript || '').toString().trim() || '[...]';
+        lines.push(String(idx + 1));
+        lines.push(`${start} --> ${end}`);
+        lines.push(text);
+        lines.push('');
+    });
+    return lines.join('\n');
+}
+
+function safeModelKey(model) {
+    if (!model) return 'auto';
+    return String(model).toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 64) || 'auto';
+}
+
+async function transcribeWithCloudflare(audioBuffer, opts = {}) {
+    const accountId = (opts.accountId || '').trim();
+    const token = (opts.token || '').trim();
+    if (!accountId || !token) {
+        throw new Error('Cloudflare Workers AI credentials are missing');
+    }
+    const model = (opts.model || '@cf/openai/whisper').trim();
+    const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${encodeURIComponent(model)}`;
+    const FormDataCtor = typeof FormData !== 'undefined' ? FormData : global.FormData;
+    const BlobCtor = typeof Blob !== 'undefined' ? Blob : require('buffer').Blob;
+    if (!FormDataCtor || !BlobCtor) {
+        throw new Error('FormData/Blob not available in this environment');
+    }
+    const formData = new FormDataCtor();
+    formData.append('file', new BlobCtor([audioBuffer]), 'audio.bin');
+    if (opts.sourceLanguage) formData.append('language', opts.sourceLanguage);
+    if (opts.diarization) formData.append('diarization', 'true');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AUTOSUB_CF_TIMEOUT_MS);
+    let response;
+    try {
+        response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+            signal: controller.signal
+        });
+    } catch (error) {
+        clearTimeout(timeout);
+        if (error.name === 'AbortError') {
+            throw new Error('Cloudflare transcription timed out');
+        }
+        throw new Error(`Cloudflare transcription failed: ${error.message || error}`);
+    }
+    clearTimeout(timeout);
+
+    let data = null;
+    try {
+        data = await response.json();
+    } catch (_) {
+        data = null;
+    }
+
+    if (!response.ok) {
+        const cfMessage = data?.errors?.[0]?.message || data?.error || data?.message;
+        throw new Error(cfMessage || `Cloudflare Workers AI request failed (${response.status})`);
+    }
+
+    const result = data?.result || data?.data || data;
+    if (!result) {
+        throw new Error('Cloudflare Workers AI returned an empty response');
+    }
+    const segments = Array.isArray(result.segments) ? result.segments : [];
+    const language = result.language || result.detected_language || result.detectedLanguage || '';
+    const text = result.text || result.transcript || '';
+    const srt = segments.length ? segmentsToSrt(segments) : (text ? `1\n00:00:00,000 --> 00:00:05,000\n${text}\n` : '');
+
+    return {
+        srt: srt || '',
+        languageCode: (language || '').toString().toLowerCase(),
+        model,
+        raw: result
+    };
+}
+
+function normalizeSyncLang(lang) {
+    const val = (lang || '').toString().trim().toLowerCase();
+    if (!val) return 'und';
+    return canonicalSyncLanguageCode(val) || val || 'und';
+}
+
+function resolveAutoSubTranslationProvider(config, providerKeyOverride, modelOverride) {
+    const providers = (config && config.providers) || {};
+    const mergedParams = mergeProviderParameters(getDefaultProviderParameters(), config?.providerParameters || {});
+    const normalizeKey = (key) => String(key || '').trim().toLowerCase();
+    const desiredKey = normalizeKey(providerKeyOverride || config?.mainProvider || 'gemini');
+    const findProviderConfig = () => {
+        if (providers[desiredKey]) return providers[desiredKey];
+        const match = Object.keys(providers || {}).find((k) => normalizeKey(k) === desiredKey);
+        if (match) return providers[match];
+        if (desiredKey === 'gemini') {
+            return {
+                enabled: true,
+                apiKey: config?.geminiApiKey || config?.geminiKey,
+                model: modelOverride || config?.geminiModel
+            };
+        }
+        return null;
+    };
+    const providerConfig = findProviderConfig();
+    if (!providerConfig || providerConfig.enabled === false) return null;
+    const params = mergedParams[desiredKey] || mergedParams.default || {};
+    const cfg = { ...providerConfig, model: modelOverride || providerConfig.model || config?.geminiModel };
+    const provider = createProviderInstance(desiredKey, cfg, params);
+    if (!provider) return null;
+    return {
+        provider,
+        providerName: desiredKey,
+        providerModel: cfg.model,
+        fallbackProviderName: ''
+    };
 }
 
 // Security: LRU cache for request deduplication to prevent duplicate processing (max 500 entries)
@@ -972,6 +1196,26 @@ const embeddedTranslationLimiter = rateLimit({
             } catch (e) {
                 // Fall through
             }
+        }
+        return `ip:${ipKeyGenerator(req.ip)}`;
+    }
+});
+
+// Security: Rate limiting for automatic subtitles pipeline
+const autoSubLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 6,
+    message: 'Too many auto-subtitle requests, please slow down.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+        if (req.session?.id) {
+            return `session:${req.session.id}`;
+        }
+        if (req.body?.configStr) {
+            try {
+                return `config:${computeConfigHash(req.body.configStr)}`;
+            } catch (_) { /* fall through */ }
         }
         return `ip:${ipKeyGenerator(req.ip)}`;
     }
@@ -3457,6 +3701,207 @@ app.get('/auto-subtitles', async (req, res) => {
         if (respondStorageUnavailable(res, error, '[Auto Subs Page]', t)) return;
         log.error(() => '[Auto Subs Page] Error:', error);
         res.status(500).send(t('server.errors.autoSubsPageFailed', {}, 'Failed to load automatic subtitles page'));
+    }
+});
+
+// API: Automatic subtitles (Cloudflare Workers AI transcription + optional translation)
+app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
+    try {
+        setNoStore(res);
+        let t = res.locals?.t || getTranslatorFromRequest(req, res, req.body);
+        const {
+            configStr,
+            streamUrl,
+            videoId,
+            filename,
+            engine = 'remote',
+            model,
+            sourceLanguage,
+            targetLanguages,
+            translate = true,
+            translationProvider,
+            translationModel,
+            sendTimestampsToAI = false,
+            singleBatchMode = false,
+            translationPrompt,
+            diarization = false
+        } = req.body || {};
+
+        if (!configStr || !streamUrl || !videoId) {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Missing required fields: configStr, streamUrl, videoId') });
+        }
+
+        const config = await resolveConfigGuarded(configStr, req, res, '[Auto Subs API] config', t);
+        if (!config || config.__sessionTokenError === true) {
+            log.warn(() => '[Auto Subs API] Rejected due to invalid/missing session token');
+            t = getTranslatorFromRequest(req, res, config);
+            return res.status(401).json({ error: t('server.errors.invalidSessionToken', {}, 'Invalid or expired session token') });
+        }
+        t = getTranslatorFromRequest(req, res, config);
+
+        const linkedHash = deriveVideoHash(filename || '', videoId || '');
+        const streamHashInfo = deriveStreamHashFromUrlServer(streamUrl, { filename, videoId });
+        const cacheBlocked = Boolean(streamHashInfo.hash && linkedHash && streamHashInfo.hash !== linkedHash);
+        const videoHash = linkedHash || streamHashInfo.hash || deriveVideoHash(streamHashInfo.filename || filename || '', streamHashInfo.videoId || videoId || '');
+
+        const engineKey = String(engine || 'remote').toLowerCase();
+        if (engineKey === 'local') {
+            return res.status(400).json({
+                error: t('server.errors.autoSubsLocalUnavailable', {}, 'Local Whisper (extension) is not available yet. Use Remote (Cloudflare Workers AI).'),
+                cacheBlocked,
+                hashes: { linked: linkedHash, stream: streamHashInfo.hash || '' }
+            });
+        }
+
+        const providerKey = (translationProvider || config.mainProvider || 'gemini').toString().toLowerCase();
+        const cfApiKey = req.body?.cfApiKey
+            || (config.providers?.cfworkers?.apiKey)
+            || (config.providers?.cloudflare?.apiKey)
+            || process.env.CF_WORKERS_API_KEY
+            || process.env.CLOUDFLARE_API_KEY;
+        const cfCreds = resolveCfWorkersCredentials(cfApiKey || '');
+        if (!cfCreds.accountId || !cfCreds.token) {
+            return res.status(400).json({ error: t('server.errors.cfWorkersMissing', {}, 'Cloudflare Workers AI credentials are missing. Provide ACCOUNT_ID|TOKEN.') });
+        }
+
+        let audioBuffer;
+        try {
+            audioBuffer = await downloadStreamAudio(streamUrl);
+        } catch (error) {
+            log.warn(() => ['[Auto Subs API] Audio fetch failed:', error.message]);
+            return res.status(400).json({ error: t('server.errors.audioFetchFailed', {}, `Failed to fetch stream audio: ${error.message}`) });
+        }
+
+        let transcription;
+        try {
+            transcription = await transcribeWithCloudflare(audioBuffer, {
+                accountId: cfCreds.accountId,
+                token: cfCreds.token,
+                model: model || '@cf/openai/whisper',
+                sourceLanguage,
+                diarization: diarization === true
+            });
+        } catch (error) {
+            log.error(() => ['[Auto Subs API] Transcription failed:', error.message]);
+            return res.status(502).json({ error: t('server.errors.transcriptionFailed', {}, `Transcription failed: ${error.message}`) });
+        }
+
+        const originalSrt = (transcription && transcription.srt) ? transcription.srt : '';
+        if (!originalSrt || !originalSrt.trim()) {
+            return res.status(500).json({ error: t('server.errors.transcriptionEmpty', {}, 'Transcription returned no content') });
+        }
+        const originalLang = normalizeSyncLang(sourceLanguage || transcription.languageCode || 'und');
+        const modelKey = safeModelKey(model || transcription.model);
+        const originalSourceId = `autosub_${modelKey}_orig`;
+        const originalVtt = srtPairToWebVTT(originalSrt);
+
+        const baseMetadata = {
+            source: 'auto-subtitles',
+            provider: 'cloudflare-workers',
+            model: transcription.model || model || '@cf/openai/whisper',
+            streamHash: streamHashInfo.hash || '',
+            linkedHash,
+            cacheBlocked,
+            diarization: diarization === true,
+            createdAt: Date.now()
+        };
+
+        let originalDownloadUrl = null;
+        if (!cacheBlocked) {
+            try {
+                await syncCache.saveSyncedSubtitle(videoHash, originalLang, originalSourceId, {
+                    content: originalSrt,
+                    originalSubId: originalSourceId,
+                    metadata: baseMetadata
+                });
+                originalDownloadUrl = `/addon/${encodeURIComponent(configStr)}/xsync/${videoHash}/${originalLang}/${originalSourceId}`;
+            } catch (error) {
+                log.warn(() => ['[Auto Subs API] Failed to persist original to xSync:', error.message]);
+            }
+        }
+
+        const translations = [];
+        const normalizedTargets = Array.isArray(targetLanguages)
+            ? targetLanguages.map(l => normalizeSyncLang(l)).filter(Boolean)
+            : [];
+
+        if (translate !== false && normalizedTargets.length > 0) {
+            const providerBundle = resolveAutoSubTranslationProvider(config, providerKey, translationModel);
+            if (!providerBundle || !providerBundle.provider) {
+                log.warn(() => '[Auto Subs API] No translation provider resolved; skipping translations');
+            } else {
+                const translationEngine = new TranslationEngine(
+                    providerBundle.provider,
+                    providerBundle.providerModel,
+                    { ...(config.advancedSettings || {}), sendTimestampsToAI: sendTimestampsToAI === true },
+                    { singleBatchMode: singleBatchMode === true, providerName: providerBundle.providerName, fallbackProviderName: providerBundle.fallbackProviderName }
+                );
+
+                for (const targetLang of normalizedTargets) {
+                    try {
+                        const translated = await translationEngine.translateSubtitle(
+                            originalSrt,
+                            getLanguageName(targetLang) || targetLang,
+                            translationPrompt || config.translationPrompt || '',
+                            null
+                        );
+                        const translatedVtt = srtPairToWebVTT(originalSrt, translated);
+                        const sourceId = `autosub_${modelKey}_${targetLang}`;
+                        let downloadUrl = null;
+                        if (!cacheBlocked) {
+                            try {
+                                await syncCache.saveSyncedSubtitle(videoHash, targetLang, sourceId, {
+                                    content: translated,
+                                    originalSubId: originalSourceId,
+                                    metadata: {
+                                        ...baseMetadata,
+                                        provider: providerBundle.providerName,
+                                        model: providerBundle.providerModel || providerBundle.providerName,
+                                        targetLanguage: targetLang
+                                    }
+                                });
+                                downloadUrl = `/addon/${encodeURIComponent(configStr)}/xsync/${videoHash}/${targetLang}/${sourceId}`;
+                            } catch (error) {
+                                log.warn(() => ['[Auto Subs API] Failed to persist translated subtitle:', error.message]);
+                            }
+                        }
+                        translations.push({
+                            languageCode: targetLang,
+                            srt: translated,
+                            vtt: translatedVtt,
+                            downloadUrl,
+                            sourceId
+                        });
+                    } catch (error) {
+                        log.warn(() => ['[Auto Subs API] Translation failed for', targetLang, ':', error.message]);
+                        translations.push({
+                            languageCode: targetLang,
+                            error: error.message || 'Translation failed'
+                        });
+                    }
+                }
+            }
+        }
+
+        return res.json({
+            success: true,
+            cacheBlocked,
+            hashes: { linked: linkedHash, stream: streamHashInfo.hash || '' },
+            videoHash,
+            original: {
+                languageCode: originalLang,
+                srt: originalSrt,
+                vtt: originalVtt,
+                downloadUrl: originalDownloadUrl,
+                sourceId: originalSourceId
+            },
+            translations
+        });
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[Auto Subs API]', t)) return;
+        log.error(() => '[Auto Subs API] Error:', error);
+        res.status(500).json({ error: t('server.errors.autoSubsFailed', {}, `Automatic subtitles failed: ${error.message}`) });
     }
 });
 

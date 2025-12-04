@@ -1457,6 +1457,9 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       modeHelper: t('toolbox.embedded.step1.modeHelper', {}, 'Smart performs one best-effort fast pass and fails if incomplete. Complete always downloads the entire stream and runs one FFmpeg demux with no retries.'),
       extractButton: t('toolbox.embedded.step1.extractButton', {}, 'Extract Subtitles'),
       extractBlocked: t('toolbox.embedded.step1.extractBlocked', {}, 'Refresh the stream link in Stremio, then try again.'),
+      hashMismatchInline: t('toolbox.embedded.step1.hashMismatchInline', {}, 'Stream URL hash mismatch. Copy the matching Stremio stream link to unlock extraction.'),
+      hashMismatchLine1: t('toolbox.embedded.step1.hashMismatchLine1', {}, 'Hashes must match before extraction can start.'),
+      hashMismatchLine2: t('toolbox.embedded.step1.hashMismatchLine2', {}, 'Copy the stream link again in Stremio and paste it here to unlock the button.'),
       logHeader: t('toolbox.embedded.step1.logHeader', {}, 'Live log'),
       logSub: t('toolbox.embedded.step1.logSub', {}, 'Auto-filled while extraction runs.'),
       outputsEyebrow: t('toolbox.embedded.step1.outputsEyebrow', {}, 'Outputs'),
@@ -1605,7 +1608,11 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         translate: copy.step2.translateButton,
         extracting: copy.buttons.extracting
       },
-      extractBlocked: copy.step1.extractBlocked
+      extractBlocked: copy.step1.extractBlocked,
+      hashMismatch: {
+        inline: copy.step1.hashMismatchInline,
+        alertLines: [copy.step1.hashMismatchLine1, copy.step1.hashMismatchLine2]
+      }
     }
   };
 
@@ -2341,6 +2348,13 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       font-weight: 700;
       line-height: 1.4;
     }
+    .hash-inline {
+      display: none;
+      margin: 6px 0 0;
+      color: var(--danger);
+      font-weight: 700;
+      font-size: 13px;
+    }
     #hash-mismatch-alert {
       padding: 8px 10px;
       font-size: 13px;
@@ -2704,6 +2718,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
             <p class="mode-helper">${escapeHtml(copy.step1.modeHelper)}</p>
             <button id="extract-btn" type="button" class="secondary">${escapeHtml(copy.step1.extractButton)}</button>
             <p id="extract-blocked-msg" style="margin:6px 0 0; color:#d14343; font-weight:600; display:none;">${escapeHtml(copy.step1.extractBlocked)}</p>
+            <p id="hash-mismatch-inline" class="hash-inline">${escapeHtml(copy.step1.hashMismatchInline)}</p>
           </div>
           <div class="log-header" aria-hidden="true">
             <span class="pulse"></span>
@@ -2833,6 +2848,23 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     const translationContextTemplate = BOOTSTRAP.strings?.translationContextTemplate || "You're translating subtitles for {label}";
     const translationContextFallback = BOOTSTRAP.strings?.translationContextFallback || 'your linked stream';
     const extractBlockedCopy = BOOTSTRAP.strings?.extractBlocked || 'Refresh the stream link in Stremio, then try again.';
+    const hashMismatchStrings = BOOTSTRAP.strings?.hashMismatch || {};
+    const HASH_MISMATCH_LINES = Array.isArray(hashMismatchStrings.alertLines) && hashMismatchStrings.alertLines.length
+      ? hashMismatchStrings.alertLines
+      : [
+        'Hashes must match before extraction can start.',
+        'Copy the stream link again in Stremio and paste it here to unlock the button.'
+      ];
+    const HASH_MISMATCH_INLINE = hashMismatchStrings.inline || 'Stream URL hash mismatch. Copy the matching Stremio stream link to unlock extraction.';
+    const escapeHtmlClient = (value) => {
+      if (value === undefined || value === null) return '';
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
     function formatMetaLabel(type, value) {
       if (!value) return '';
       const template = metaTemplates[type] || '{value}';
@@ -3432,6 +3464,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       modeSelect: document.getElementById('extract-mode'),
       extractError: document.getElementById('extract-blocked-msg'),
       hashMismatchAlert: document.getElementById('hash-mismatch-alert')
+      , hashMismatchInline: document.getElementById('hash-mismatch-inline')
     };
     const tr = (key, vars = {}, fallback = '') => window.t ? window.t(key, vars, fallback || key) : (fallback || key);
     const buttonLabels = {
@@ -3662,17 +3695,12 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       els.reloadHint.style.display = 'block';
     }
 
-    const HASH_MISMATCH_LINES = [
-      'Hashes must match before extraction can start.',
-      'Copy the stream link again in Stremio and paste it here to unlock the button.'
-    ];
-
     function buildHashMismatchAlert(linkedHash, streamHash) {
-      const safeLinked = escapeHtml(linkedHash || 'unknown');
-      const safeStream = escapeHtml(streamHash || 'unknown');
+      const safeLinked = escapeHtmlClient(linkedHash || 'unknown');
+      const safeStream = escapeHtmlClient(streamHash || 'unknown');
       const head = 'Hash mismatch detected: linked stream (' + safeLinked + ') vs pasted URL (' + safeStream + ').';
       return '<div class="alert-head">' + head + '</div>' +
-        '<div class="alert-body"><div>' + escapeHtml(HASH_MISMATCH_LINES[0]) + '</div><div>' + escapeHtml(HASH_MISMATCH_LINES[1]) + '</div></div>';
+        '<div class="alert-body"><div>' + escapeHtmlClient(HASH_MISMATCH_LINES[0]) + '</div><div>' + escapeHtmlClient(HASH_MISMATCH_LINES[1]) + '</div></div>';
     }
 
     function setHashMismatchAlert(message, opts = {}) {
@@ -3698,6 +3726,10 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         setHashMismatchAlert(alertHtml, { asHtml: true });
       } else if (!state.cacheBlocked) {
         setHashMismatchAlert('');
+      }
+      if (els.hashMismatchInline) {
+        els.hashMismatchInline.textContent = HASH_MISMATCH_INLINE;
+        els.hashMismatchInline.style.display = (state.hashMismatchBlocked || state.cacheBlocked) ? 'block' : 'none';
       }
     }
 
@@ -3747,15 +3779,31 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         if (state.hashMismatchBlocked && state.hashMismatchInfo) {
           const alertHtml = buildHashMismatchAlert(state.hashMismatchInfo.linked, state.hashMismatchInfo.stream);
           setHashMismatchAlert(alertHtml, { asHtml: true });
+          if (els.hashMismatchInline) {
+            els.hashMismatchInline.textContent = HASH_MISMATCH_INLINE;
+            els.hashMismatchInline.style.display = 'block';
+          }
         } else {
           setHashMismatchAlert('');
+          if (els.hashMismatchInline) {
+            els.hashMismatchInline.textContent = HASH_MISMATCH_INLINE;
+            els.hashMismatchInline.style.display = 'none';
+          }
         }
       } else if (state.cacheBlocked && state.cacheBlockInfo) {
         const alertHtml = buildHashMismatchAlert(state.cacheBlockInfo.linked, state.cacheBlockInfo.stream);
         setHashMismatchAlert(alertHtml, { asHtml: true });
+        if (els.hashMismatchInline) {
+          els.hashMismatchInline.textContent = HASH_MISMATCH_INLINE;
+          els.hashMismatchInline.style.display = 'block';
+        }
       } else if (state.hashMismatchBlocked && state.hashMismatchInfo) {
         const alertHtml = buildHashMismatchAlert(state.hashMismatchInfo.linked, state.hashMismatchInfo.stream);
         setHashMismatchAlert(alertHtml, { asHtml: true });
+        if (els.hashMismatchInline) {
+          els.hashMismatchInline.textContent = HASH_MISMATCH_INLINE;
+          els.hashMismatchInline.style.display = 'block';
+        }
       }
       updateReloadHint(false);
       renderSelectedTrackSummary();
@@ -4597,7 +4645,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
           const label = window.t ? window.t('toolbox.logs.extracted', { count: state.tracks.length }, 'Extracted ' + state.tracks.length + ' track(s).') : ('Extracted ' + state.tracks.length + ' track(s).');
           logExtract(label);
         } else {
-          resetExtractionState(true, { preserveMismatch: state.cacheBlocked });
+          resetExtractionState(false, { preserveMismatch: state.cacheBlocked });
           const label = window.t ? window.t('toolbox.logs.failed', { error: msg.error || 'unknown error' }, 'Extraction failed: ' + (msg.error || 'unknown error')) : ('Extraction failed: ' + (msg.error || 'unknown error'));
           logExtract(label);
           setStep2Enabled(false);
@@ -4788,12 +4836,447 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     code,
     name: getLanguageName(code) || code
   }));
+  const providerOptions = (() => {
+    const options = [];
+    const providers = config.providers || {};
+    const seen = new Set();
+    const resolveProviderEntry = (key) => {
+      const normalized = String(key || '').trim().toLowerCase();
+      const matchKey = Object.keys(providers || {}).find(k => String(k).toLowerCase() === normalized);
+      return matchKey ? { key: matchKey, config: providers[matchKey] || {} } : null;
+    };
+    const formatLabel = (name, model) => {
+      const base = formatProviderName(name);
+      const modelLabel = model ? ` (${model})` : '';
+      return `${base}${modelLabel}`;
+    };
+    const geminiConfigured = Boolean(config.geminiModel || config.geminiKey || config.geminiApiKey || providers.gemini);
+    const geminiEnabled = providers.gemini ? providers.gemini.enabled !== false : geminiConfigured;
+    const addIfEnabled = (key, label, model) => {
+      const norm = String(key || '').trim().toLowerCase();
+      if (!norm || seen.has(norm)) return;
+      let enabled = false;
+      if (norm === 'gemini') {
+        enabled = geminiEnabled;
+      } else {
+        const entry = resolveProviderEntry(norm);
+        enabled = entry?.config?.enabled === true;
+      }
+      if (!enabled) return;
+      seen.add(norm);
+      options.push({ key: norm, label: label || formatLabel(key, model) });
+    };
+    if (geminiEnabled) {
+      const geminiLabel = formatLabel('Gemini', config.geminiModel || providers.gemini?.model || '');
+      addIfEnabled('gemini', geminiLabel, config.geminiModel || providers.gemini?.model || '');
+    }
+    if (config.multiProviderEnabled && config.mainProvider) {
+      const entry = resolveProviderEntry(config.mainProvider);
+      const model = entry?.config?.model || (config.mainProvider.toLowerCase() === 'gemini' ? config.geminiModel : '');
+      addIfEnabled(config.mainProvider, `Main: ${formatLabel(config.mainProvider, model)}`, model);
+    }
+    if (config.secondaryProviderEnabled && config.secondaryProvider) {
+      const entry = resolveProviderEntry(config.secondaryProvider);
+      const model = entry?.config?.model || (config.secondaryProvider.toLowerCase() === 'gemini' ? config.geminiModel : '');
+      addIfEnabled(config.secondaryProvider, `Secondary: ${formatLabel(config.secondaryProvider, model)}`, model);
+    }
+    Object.keys(providers || {}).forEach(key => {
+      const model = providers[key]?.model || '';
+      addIfEnabled(key, `Provider: ${formatLabel(key, model)}`, model);
+    });
+    return options;
+  })();
+
+    (function() {
+      const els = {
+        startBtn: document.getElementById('startAutoSubs'),
+        previewBtn: document.getElementById('previewSteps'),
+        status: document.getElementById('statusText'),
+        progress: document.getElementById('progressFill'),
+        log: document.getElementById('logArea'),
+        streamUrl: document.getElementById('streamUrl'),
+        hashStatus: document.getElementById('hashStatus'),
+        sourceLang: document.getElementById('detectedLang'),
+        targetLang: document.getElementById('targetLang'),
+        model: document.getElementById('whisperModel'),
+        translateToggle: document.getElementById('translateOutput'),
+        sendTimestamps: document.getElementById('sendTimestamps'),
+        singleBatch: document.getElementById('singleBatchMode'),
+        diarization: document.getElementById('enableDiarization'),
+        provider: document.getElementById('translationProvider'),
+        providerModel: document.getElementById('translationModel'),
+        srtPreview: document.getElementById('srtPreview'),
+        dlSrt: document.getElementById('downloadSrt'),
+        dlVtt: document.getElementById('downloadVtt'),
+        translations: document.getElementById('translationDownloads'),
+        prefill: document.getElementById('prefillFromVideo'),
+        clear: document.getElementById('clearInputs'),
+        extDot: document.getElementById('ext-dot'),
+        extLabel: document.getElementById('ext-label'),
+        extStatus: document.getElementById('ext-status')
+      };
+      const stepPills = {
+        fetch: document.getElementById('stepFetch'),
+        transcribe: document.getElementById('stepTranscribe'),
+        translate: document.getElementById('stepTranslate'),
+        deliver: document.getElementById('stepDeliver')
+      };
+      const startBtnLabel = els.startBtn ? els.startBtn.textContent : tt('toolbox.autoSubs.actions.start', {}, ${JSON.stringify(copy.steps.start)});
+      const state = {
+        extensionReady: false,
+        cacheBlocked: false,
+        autoSubsInFlight: false
+      };
+
+      function md5hex(str) {
+        function rotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
+        function addUnsigned(lX, lY) {
+          const lX4 = lX & 0x40000000;
+          const lY4 = lY & 0x40000000;
+          const lX8 = lX & 0x80000000;
+          const lY8 = lY & 0x80000000;
+          const lResult = (lX & 0x3FFFFFFF) + (lY & 0x3FFFFFFF);
+          if (lX4 & lY4) return lResult ^ 0x80000000 ^ lX8 ^ lY8;
+          if (lX4 | lY4) {
+            if (lResult & 0x40000000) return lResult ^ 0xC0000000 ^ lX8 ^ lY8;
+            return lResult ^ 0x40000000 ^ lX8 ^ lY8;
+          }
+          return lResult ^ lX8 ^ lY8;
+        }
+        function F(x, y, z) { return (x & y) | (~x & z); }
+        function G(x, y, z) { return (x & z) | (y & ~z); }
+        function H(x, y, z) { return x ^ y ^ z; }
+        function I(x, y, z) { return y ^ (x | ~z); }
+        function FF(a, b, c, d, x, s, ac) { a = addUnsigned(a, addUnsigned(addUnsigned(F(b, c, d), x), ac)); return addUnsigned(rotateLeft(a, s), b); }
+        function GG(a, b, c, d, x, s, ac) { a = addUnsigned(a, addUnsigned(addUnsigned(G(b, c, d), x), ac)); return addUnsigned(rotateLeft(a, s), b); }
+        function HH(a, b, c, d, x, s, ac) { a = addUnsigned(a, addUnsigned(addUnsigned(H(b, c, d), x), ac)); return addUnsigned(rotateLeft(a, s), b); }
+        function II(a, b, c, d, x, s, ac) { a = addUnsigned(a, addUnsigned(addUnsigned(I(b, c, d), x), ac)); return addUnsigned(rotateLeft(a, s), b); }
+        function convertToWordArray(strVal) {
+          const lWordCount = [];
+          let lMessageLength = strVal.length;
+          let lNumberOfWordsTempOne = lMessageLength + 8;
+          const lNumberOfWordsTempTwo = (lNumberOfWordsTempOne - (lNumberOfWordsTempOne % 64)) / 64;
+          const lNumberOfWords = (lNumberOfWordsTempTwo + 1) * 16;
+          for (let i = 0; i < lNumberOfWords; i++) lWordCount[i] = 0;
+          let lBytePosition = 0;
+          let lByteCount = 0;
+          while (lByteCount < lMessageLength) {
+            const lWordCountIndex = (lByteCount - (lByteCount % 4)) / 4;
+            lBytePosition = (lByteCount % 4) * 8;
+            lWordCount[lWordCountIndex] |= strVal.charCodeAt(lByteCount) << lBytePosition;
+            lByteCount++;
+          }
+          const lWordCountIndex = (lByteCount - (lByteCount % 4)) / 4;
+          lBytePosition = (lByteCount % 4) * 8;
+          lWordCount[lWordCountIndex] |= 0x80 << lBytePosition;
+          lWordCount[lNumberOfWords - 2] = lMessageLength << 3;
+          lWordCount[lNumberOfWords - 1] = lMessageLength >>> 29;
+          return lWordCount;
+        }
+        function wordToHex(lValue) {
+          let wordToHexValue = '';
+          for (let lCount = 0; lCount <= 3; lCount++) {
+            const lByte = (lValue >>> (lCount * 8)) & 255;
+            const wordToHexValueTemp = '0' + lByte.toString(16);
+            wordToHexValue += wordToHexValueTemp.substr(wordToHexValueTemp.length - 2, 2);
+          }
+          return wordToHexValue;
+        }
+        function utf8Encode(string) {
+          string = string.replace(/\\r\\n/g, '\\n');
+          let utftext = '';
+          for (let n = 0; n < string.length; n++) {
+            const c = string.charCodeAt(n);
+            if (c < 128) utftext += String.fromCharCode(c);
+            else if (c < 2048) {
+              utftext += String.fromCharCode((c >> 6) | 192);
+              utftext += String.fromCharCode((c & 63) | 128);
+            } else {
+              utftext += String.fromCharCode((c >> 12) | 224);
+              utftext += String.fromCharCode(((c >> 6) & 63) | 128);
+              utftext += String.fromCharCode((c & 63) | 128);
+            }
+          }
+          return utftext;
+        }
+        let x = [];
+        let k, AA, BB, CC, DD, a, b, c, d;
+        const S11 = 7, S12 = 12, S13 = 17, S14 = 22;
+        const S21 = 5, S22 = 9 , S23 = 14, S24 = 20;
+        const S31 = 4, S32 = 11, S33 = 16, S34 = 23;
+        const S41 = 6, S42 = 10, S43 = 15, S44 = 21;
+        str = utf8Encode(str);
+        x = convertToWordArray(str);
+        a = 0x67452301; b = 0xEFCDAB89; c = 0x98BADCFE; d = 0x10325476;
+        for (k = 0; k < x.length; k += 16) {
+          AA = a; BB = b; CC = c; DD = d;
+          a = FF(a, b, c, d, x[k + 0],  S11, 0xD76AA478);
+          d = FF(d, a, b, c, x[k + 1],  S12, 0xE8C7B756);
+          c = FF(c, d, a, b, x[k + 2],  S13, 0x242070DB);
+          b = FF(b, c, d, a, x[k + 3],  S14, 0xC1BDCEEE);
+          a = FF(a, b, c, d, x[k + 4],  S11, 0xF57C0FAF);
+          d = FF(d, a, b, c, x[k + 5],  S12, 0x4787C62A);
+          c = FF(c, d, a, b, x[k + 6],  S13, 0xA8304613);
+          b = FF(b, c, d, a, x[k + 7],  S14, 0xFD469501);
+          a = FF(a, b, c, d, x[k + 8],  S11, 0x698098D8);
+          d = FF(d, a, b, c, x[k + 9],  S12, 0x8B44F7AF);
+          c = FF(c, d, a, b, x[k + 10], S13, 0xFFFF5BB1);
+          b = FF(b, c, d, a, x[k + 11], S14, 0x895CD7BE);
+          a = FF(a, b, c, d, x[k + 12], S11, 0x6B901122);
+          d = FF(d, a, b, c, x[k + 13], S12, 0xFD987193);
+          c = FF(c, d, a, b, x[k + 14], S13, 0xA679438E);
+          b = FF(b, c, d, a, x[k + 15], S14, 0x49B40821);
+          a = GG(a, b, c, d, x[k + 1],  S21, 0xF61E2562);
+          d = GG(d, a, b, c, x[k + 6],  S22, 0xC040B340);
+          c = GG(c, d, a, b, x[k + 11], S23, 0x265E5A51);
+          b = GG(b, c, d, a, x[k + 0],  S24, 0xE9B6C7AA);
+          a = GG(a, b, c, d, x[k + 5],  S21, 0xD62F105D);
+          d = GG(d, a, b, c, x[k + 10], S22, 0x02441453);
+          c = GG(c, d, a, b, x[k + 15], S23, 0xD8A1E681);
+          b = GG(b, c, d, a, x[k + 4],  S24, 0xE7D3FBC8);
+          a = GG(a, b, c, d, x[k + 9],  S21, 0x21E1CDE6);
+          d = GG(d, a, b, c, x[k + 14], S22, 0xC33707D6);
+          c = GG(c, d, a, b, x[k + 3],  S23, 0xF4D50D87);
+          b = GG(b, c, d, a, x[k + 8],  S24, 0x455A14ED);
+          a = GG(a, b, c, d, x[k + 13], S21, 0xA9E3E905);
+          d = GG(d, a, b, c, x[k + 2],  S22, 0xFCEFA3F8);
+          c = GG(c, d, a, b, x[k + 7],  S23, 0x676F02D9);
+          b = GG(b, c, d, a, x[k + 12], S24, 0x8D2A4C8A);
+          a = HH(a, b, c, d, x[k + 5],  S31, 0xFFFA3942);
+          d = HH(d, a, b, c, x[k + 8],  S32, 0x8771F681);
+          c = HH(c, d, a, b, x[k + 11], S33, 0x6D9D6122);
+          b = HH(b, c, d, a, x[k + 14], S34, 0xFDE5380C);
+          a = HH(a, b, c, d, x[k + 1],  S31, 0xA4BEEA44);
+          d = HH(d, a, b, c, x[k + 4],  S32, 0x4BDECFA9);
+          c = HH(c, d, a, b, x[k + 7],  S33, 0xF6BB4B60);
+          b = HH(b, c, d, a, x[k + 10], S34, 0xBEBFBC70);
+          a = HH(a, b, c, d, x[k + 13], S31, 0x289B7EC6);
+          d = HH(d, a, b, c, x[k + 0],  S32, 0xEAA127FA);
+          c = HH(c, d, a, b, x[k + 3],  S33, 0xD4EF3085);
+          b = HH(b, c, d, a, x[k + 6],  S34, 0x04881D05);
+          a = HH(a, b, c, d, x[k + 9],  S31, 0xD9D4D039);
+          d = HH(d, a, b, c, x[k + 12], S32, 0xE6DB99E5);
+          c = HH(c, d, a, b, x[k + 15], S33, 0x1FA27CF8);
+          b = HH(b, c, d, a, x[k + 2],  S34, 0xC4AC5665);
+          a = II(a, b, c, d, x[k + 0],  S41, 0xF4292244);
+          d = II(d, a, b, c, x[k + 7],  S42, 0x432AFF97);
+          c = II(c, d, a, b, x[k + 14], S43, 0xAB9423A7);
+          b = II(b, c, d, a, x[k + 5],  S44, 0xFC93A039);
+          a = II(a, b, c, d, x[k + 12], S41, 0x655B59C3);
+          d = II(d, a, b, c, x[k + 3],  S42, 0x8F0CCC92);
+          c = II(c, d, a, b, x[k + 10], S43, 0xFFEFF47D);
+          b = II(b, c, d, a, x[k + 1],  S44, 0x85845DD1);
+          a = II(a, b, c, d, x[k + 8],  S41, 0x6FA87E4F);
+          d = II(d, a, b, c, x[k + 15], S42, 0xFE2CE6E0);
+          c = II(c, d, a, b, x[k + 6],  S43, 0xA3014314);
+          b = II(b, c, d, a, x[k + 13], S44, 0x4E0811A1);
+          a = II(a, b, c, d, x[k + 4],  S41, 0xF7537E82);
+          d = II(d, a, b, c, x[k + 11], S42, 0xBD3AF235);
+          c = II(c, d, a, b, x[k + 2],  S43, 0x2AD7D2BB);
+          b = II(b, c, d, a, x[k + 9],  S44, 0xEB86D391);
+          a = addUnsigned(a, AA); b = addUnsigned(b, BB); c = addUnsigned(c, CC); d = addUnsigned(d, DD);
+        }
+        const temp = wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d);
+        return temp.toLowerCase();
+      }
+
+      function deriveVideoHashFromParts(filename, fallbackId) {
+        const name = (filename && String(filename).trim()) || '';
+        const fallback = (fallbackId && String(fallbackId).trim()) || '';
+        const base = [name, fallback].filter(Boolean).join('::');
+        if (!base) return '';
+        return md5hex(base).substring(0, 16);
+      }
+
+      function extractStreamFilename(streamUrl) {
+        try {
+          const url = new URL(streamUrl);
+          const paramKeys = ['filename', 'file', 'name', 'download', 'dn'];
+          for (const key of paramKeys) {
+            const val = url.searchParams.get(key);
+            if (val && val.trim()) return decodeURIComponent(val.trim().split('/').pop());
+          }
+          const parts = (url.pathname || '').split('/').filter(Boolean);
+          if (!parts.length) return '';
+          return decodeURIComponent(parts[parts.length - 1]);
+        } catch (_) {
+          return '';
+        }
+      }
+
+      function extractStreamVideoId(streamUrl) {
+        try {
+          const url = new URL(streamUrl);
+          const paramKeys = ['videoId', 'video', 'id', 'mediaid', 'imdb', 'tmdb', 'kitsu', 'anidb', 'mal', 'anilist'];
+          for (const key of paramKeys) {
+            const val = url.searchParams.get(key);
+            if (val && val.trim()) return val.trim();
+          }
+          const parts = (url.pathname || '').split('/').filter(Boolean);
+          const directId = parts.find(p => /^tt\\d+/i.test(p) || p.includes(':'));
+          if (directId) return directId.trim();
+          return '';
+        } catch (_) {
+          return '';
+        }
+      }
+
+      function deriveStreamHashFromUrl(streamUrl, fallback = {}) {
+        const filename = extractStreamFilename(streamUrl) || fallback.filename || '';
+        const streamVideoId = extractStreamVideoId(streamUrl) || fallback.videoId || '';
+        const hash = deriveVideoHashFromParts(filename, streamVideoId);
+        return { hash, filename, videoId: streamVideoId, source: 'stream-url' };
+      }
+
+      function appendLog(message) {
+        if (!els.log) return;
+        const time = new Date().toLocaleTimeString();
+        const text = `[${time}] ${message}`;
+        const needsNewline = els.log.textContent && !els.log.textContent.endsWith('\\n');
+        els.log.textContent += (needsNewline ? '\\n' : '') + text + '\\n';
+        els.log.scrollTop = els.log.scrollHeight;
+      }
+
+      function setStatus(text) {
+        if (els.status) els.status.textContent = text;
+      }
+
+      function setProgress(pct) {
+        if (els.progress) els.progress.style.width = Math.min(100, Math.max(0, pct || 0)) + '%';
+      }
+
+      function resetPills() {
+        Object.values(stepPills).forEach((pill) => {
+          if (!pill) return;
+          pill.classList.remove('check', 'warn', 'danger');
+          pill.textContent = pill.textContent.replace(/^(OK|-)/, '-');
+        });
+      }
+
+      function markStep(step, state = 'check') {
+        const pill = stepPills[step];
+        if (!pill) return;
+        pill.classList.remove('check', 'warn', 'danger');
+        pill.classList.add(state);
+        const baseLabel = pill.textContent.replace(/^(OK|-)/, '').trim();
+        const okLabel = tt('toolbox.autoSubs.status.ok', {}, 'OK');
+        pill.textContent = state === 'check' ? `${okLabel} ${baseLabel}` : `- ${baseLabel}`;
+      }
+
+      function setInFlight(active) {
+        state.autoSubsInFlight = !!active;
+        if (els.startBtn) {
+          els.startBtn.disabled = active;
+          els.startBtn.textContent = active ? tt('toolbox.autoSubs.status.running', {}, 'Running...') : startBtnLabel;
+        }
+      }
+
+      function getSelectedTargets() {
+        if (!els.targetLang) return [];
+        const values = [];
+        for (const opt of els.targetLang.options) {
+          if (opt.selected && opt.value) values.push(opt.value);
+        }
+        return values;
+      }
+
+      function hydrateTargets() {
+        if (!els.targetLang) return;
+        const preferred = Array.isArray(BOOTSTRAP.targetLanguages) ? BOOTSTRAP.targetLanguages : [];
+        let firstFound = false;
+        for (const opt of els.targetLang.options) {
+          const match = preferred.includes(opt.value);
+          opt.selected = match;
+          if (match) firstFound = true;
+        }
+        if (!firstFound && els.targetLang.options.length) {
+          els.targetLang.options[0].selected = true;
+        }
+      }
+
+      function renderProviders() {
+        if (!els.provider) return;
+        const options = Array.isArray(BOOTSTRAP.providerOptions) ? BOOTSTRAP.providerOptions : [];
+        els.provider.innerHTML = '';
+        options.forEach((opt) => {
+          const o = document.createElement('option');
+          o.value = opt.key || opt.value || opt;
+          o.textContent = opt.label || formatProviderName(opt.key || opt.value || opt);
+          els.provider.appendChild(o);
+        });
+        const desired = BOOTSTRAP.defaults?.provider || options[0]?.key || '';
+        if (desired) els.provider.value = desired;
+      }
+
+      function setDownloads(original, translations) {
+        if (els.dlSrt) {
+          if (original?.srt) {
+            const blob = new Blob([original.srt], { type: 'text/plain' });
+            els.dlSrt.href = original.downloadUrl || URL.createObjectURL(blob);
+            els.dlSrt.download = (PAGE.videoHash || 'video') + '_' + (original.languageCode || 'und') + '_autosub.srt';
+            els.dlSrt.disabled = false;
+          } else {
+            els.dlSrt.disabled = true;
+          }
+        }
+        if (els.dlVtt) {
+          if (original?.vtt) {
+            const blob = new Blob([original.vtt], { type: 'text/vtt' });
+            els.dlVtt.href = original.downloadUrl || URL.createObjectURL(blob);
+            els.dlVtt.download = (PAGE.videoHash || 'video') + '_' + (original.languageCode || 'und') + '_autosub.vtt';
+            els.dlVtt.disabled = false;
+          } else {
+            els.dlVtt.disabled = true;
+          }
+        }
+
+        if (els.translations) {
+          els.translations.innerHTML = '';
+          if (Array.isArray(translations) && translations.length) {
+            translations.forEach((entry) => {
+              const card = document.createElement('div');
+              card.className = 'card';
+              const title = document.createElement('div');
+              title.style.fontWeight = '700';
+              title.textContent = entry.languageCode ? `Translated ${entry.languageCode}` : 'Translated subtitle';
+              card.appendChild(title);
+              if (entry.error) {
+                const err = document.createElement('div');
+                err.style.color = 'var(--danger)';
+                err.textContent = entry.error;
+                card.appendChild(err);
+              } else if (entry.srt) {
+                const actions = document.createElement('div');
+                actions.className = 'controls';
+                const btn = document.createElement('a');
+                btn.className = 'btn secondary';
+                const blob = new Blob([entry.srt], { type: 'text/plain' });
+                btn.href = entry.downloadUrl || URL.createObjectURL(blob);
+                btn.download = (PAGE.videoHash || 'video') + '_' + (entry.languageCode || 'lang') + '_autosub.srt';
+                btn.textContent = 'Download ' + (entry.languageCode || 'subtitle');
+                actions.appendChild(btn);
+                card.appendChild(actions);
+              }
+              els.translations.appendChild(card);
+            });
+          } else {
+            const empty = document.createElement('div');
+            empty.style.color = 'var(--text-secondary)';
+            empty.textContent = 'No translations yet.';
+            els.translations.appendChild(empty);
+          }
+        }
+      }
 
   const defaults = {
     whisperModel: 'medium',
     diarization: false,
     translateToTarget: true,
-    streamFilename: filename || ''
+    streamFilename: filename || '',
+    provider: providerOptions[0]?.key || 'gemini',
+    translationModel: config?.geminiModel || '',
+    sendTimestampsToAI: config?.advancedSettings?.sendTimestampsToAI === true,
+    singleBatchMode: config?.singleBatchMode === true
   };
 
   const themeToggleLabel = t('fileUpload.themeToggle', {}, 'Toggle theme');
@@ -5351,6 +5834,21 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
       transition: width 0.25s ease;
     }
 
+    .log-area {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface-light);
+      min-height: 80px;
+      max-height: 220px;
+      overflow-y: auto;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+    }
+
     .status {
       margin-top: 8px;
       font-weight: 700;
@@ -5489,6 +5987,7 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
           <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.one)}</span><span>${escapeHtml(copy.steps.inputTitle)}</span></div>
           <label for="streamUrl">${escapeHtml(copy.steps.streamLabel)}</label>
           <input type="text" id="streamUrl" placeholder="${escapeHtml(copy.steps.streamPlaceholder)}">
+          <div class="notice" id="hashStatus" style="margin-top:10px;">${escapeHtml(copy.videoMeta.waiting)}</div>
           <small style="color: var(--text-secondary); display:block; margin-top:6px;">${escapeHtml(copy.steps.streamHelp)}</small>
           <div class="controls" style="margin-top:12px;">
             <button class="btn secondary" id="prefillFromVideo">${escapeHtml(copy.steps.prefill)}</button>
@@ -5507,27 +6006,42 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
             </div>
             <div>
               <label for="targetLang">${escapeHtml(copy.steps.targetLabel)}</label>
-              <select id="targetLang">
+              <select id="targetLang" multiple>
                 ${targetOptions}
               </select>
             </div>
             <div>
               <label for="whisperModel">${escapeHtml(copy.steps.modelLabel)}</label>
               <select id="whisperModel">
-                <option value="tiny">${escapeHtml(copy.steps.model.tiny)}</option>
-                <option value="small">${escapeHtml(copy.steps.model.small)}</option>
-                <option value="medium" selected>${escapeHtml(copy.steps.model.medium)}</option>
-                <option value="turbo">${escapeHtml(copy.steps.model.turbo)}</option>
+                <option value="@cf/openai/whisper">CF @cf/openai/whisper</option>
+                <option value="@cf/openai/whisper-large-v3-turbo">@cf/openai/whisper-large-v3-turbo</option>
+                <option value="@cf/myshell-ai/melotts">@cf/myshell-ai/melotts</option>
               </select>
             </div>
           </div>
           <div class="controls">
+            <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
+              <input type="checkbox" id="singleBatchMode"> Single batch mode
+            </label>
             <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
               <input type="checkbox" id="enableDiarization"> ${escapeHtml(copy.steps.diarization)}
             </label>
             <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
               <input type="checkbox" id="translateOutput" checked> ${escapeHtml(copy.steps.translateOutput)}
             </label>
+            <label style="display:flex; gap:8px; align-items:center; font-weight:600; color:var(--text-primary);">
+              <input type="checkbox" id="sendTimestamps"> Send timestamps to AI
+            </label>
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <div>
+              <label for="translationProvider">Translation provider</label>
+              <select id="translationProvider"></select>
+            </div>
+            <div>
+              <label for="translationModel">Translation model</label>
+              <input type="text" id="translationModel" placeholder="Use provider default">
+            </div>
           </div>
         </div>
       </div>
@@ -5550,10 +6064,10 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
           <div class="chips" style="margin-top:10px;">
             <span class="pill check" id="stepFetch">- ${escapeHtml(copy.steps.pills.fetch)}</span>
             <span class="pill" id="stepTranscribe">- ${escapeHtml(copy.steps.pills.transcribe)}</span>
-            <span class="pill" id="stepAlign">- ${escapeHtml(copy.steps.pills.align)}</span>
             <span class="pill" id="stepTranslate">- ${escapeHtml(copy.steps.pills.translate)}</span>
             <span class="pill" id="stepDeliver">- ${escapeHtml(copy.steps.pills.deliver)}</span>
           </div>
+          <div id="logArea" class="log-area" aria-live="polite"></div>
         </div>
         <div class="step-card">
           <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.four)}</span><span>${escapeHtml(copy.steps.outputTitle)}</span></div>
@@ -5563,13 +6077,14 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
               <div style="padding:12px; border:1px solid var(--border); border-radius:12px; background: var(--surface-light); min-height:120px;" id="srtPreview">
                 ${escapeHtml(copy.steps.noOutput)}
               </div>
-            </div>
-            <div>
-              <label>${escapeHtml(copy.steps.downloads)}</label>
-              <div class="controls">
+              <div class="controls" style="margin-top:8px;">
                 <button class="btn secondary" disabled id="downloadSrt">${escapeHtml(copy.steps.downloadSrt)}</button>
                 <button class="btn secondary" disabled id="downloadVtt">${escapeHtml(copy.steps.downloadVtt)}</button>
               </div>
+            </div>
+            <div>
+              <label>${escapeHtml(copy.steps.downloads)}</label>
+              <div id="translationDownloads" style="display:grid; gap:10px;"></div>
               <p style="margin-top:8px; color: var(--text-secondary);">${escapeHtml(copy.steps.enableAfter)}</p>
             </div>
           </div>
@@ -5586,7 +6101,10 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     videoId,
     filename: filename || '',
     videoHash,
-    defaults
+    defaults,
+    providerOptions,
+    targetLanguages,
+    sourceLanguages: config.sourceLanguages || []
   })};
     const PAGE = { configStr: BOOTSTRAP.configStr, videoId: BOOTSTRAP.videoId, filename: BOOTSTRAP.filename || '', videoHash: BOOTSTRAP.videoHash || '' };
     const SUBTITLE_MENU_TARGETS = ${JSON.stringify(subtitleMenuTargets)};
@@ -5675,37 +6193,45 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
     });
 
     (function() {
-      const startBtn = document.getElementById('startAutoSubs');
-      const previewBtn = document.getElementById('previewSteps');
-      const statusText = document.getElementById('statusText');
-      const progressFill = document.getElementById('progressFill');
+      const els = {
+        startBtn: document.getElementById('startAutoSubs'),
+        previewBtn: document.getElementById('previewSteps'),
+        status: document.getElementById('statusText'),
+        progress: document.getElementById('progressFill'),
+        log: document.getElementById('logArea'),
+        streamUrl: document.getElementById('streamUrl'),
+        hashStatus: document.getElementById('hashStatus'),
+        sourceLang: document.getElementById('detectedLang'),
+        targetLang: document.getElementById('targetLang'),
+        model: document.getElementById('whisperModel'),
+        translateToggle: document.getElementById('translateOutput'),
+        sendTimestamps: document.getElementById('sendTimestamps'),
+        singleBatch: document.getElementById('singleBatchMode'),
+        diarization: document.getElementById('enableDiarization'),
+        provider: document.getElementById('translationProvider'),
+        providerModel: document.getElementById('translationModel'),
+        srtPreview: document.getElementById('srtPreview'),
+        dlSrt: document.getElementById('downloadSrt'),
+        dlVtt: document.getElementById('downloadVtt'),
+        translations: document.getElementById('translationDownloads'),
+        prefill: document.getElementById('prefillFromVideo'),
+        clear: document.getElementById('clearInputs'),
+        extDot: document.getElementById('ext-dot'),
+        extLabel: document.getElementById('ext-label'),
+        extStatus: document.getElementById('ext-status')
+      };
       const stepPills = {
         fetch: document.getElementById('stepFetch'),
         transcribe: document.getElementById('stepTranscribe'),
-        align: document.getElementById('stepAlign'),
         translate: document.getElementById('stepTranslate'),
         deliver: document.getElementById('stepDeliver')
       };
-      const streamUrl = document.getElementById('streamUrl');
-      const targetLang = document.getElementById('targetLang');
-      const whisperModel = document.getElementById('whisperModel');
-      const translateOutput = document.getElementById('translateOutput');
-      const srtPreview = document.getElementById('srtPreview');
-      const downloadSrt = document.getElementById('downloadSrt');
-      const downloadVtt = document.getElementById('downloadVtt');
-      const prefillFromVideo = document.getElementById('prefillFromVideo');
-      const clearInputs = document.getElementById('clearInputs');
-      const extDot = document.getElementById('ext-dot');
-      const extLabel = document.getElementById('ext-label');
-      const extStatus = document.getElementById('ext-status');
-      const startBtnLabel = startBtn ? startBtn.textContent : tt('toolbox.autoSubs.actions.start', {}, ${JSON.stringify(copy.steps.start)});
-
-      let extensionReady = false;
-      let pingRetries = 0;
-      let pingTimer = null;
-      const MAX_PING_RETRIES = 5;
-      let autoSubsInFlight = false;
-      const EXT_INSTALL_URL = (extLabel && extLabel.getAttribute('href')) || 'https://chromewebstore.google.com/detail/submaker-xsync/lpocanpndchjkkpgchefobjionncknjn';
+      const startBtnLabel = els.startBtn ? els.startBtn.textContent : tt('toolbox.autoSubs.actions.start', {}, ${JSON.stringify(copy.steps.start)});
+      const state = {
+        extensionReady: false,
+        cacheBlocked: false,
+        autoSubsInFlight: false
+      };
 
       function updateExtensionStatus(ready, text, tone) {
         extensionReady = ready;

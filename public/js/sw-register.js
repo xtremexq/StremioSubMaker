@@ -26,17 +26,11 @@
                 var hadController = !!navigator.serviceWorker.controller;
                 return Promise.all((regs || []).map(function(reg) { return reg.unregister().catch(function(){}); }))
                     .then(function() {
-                        // If nothing was registered or controlling, avoid a needless reload (common on first incognito load)
-                        if (!hadRegs && !hadController) return;
-                        // Avoid reload loop: only reload once per tab/session
-                        var reloadedKey = 'swBypassReloaded';
-                        try {
-                            if (!sessionStorage.getItem(reloadedKey)) {
-                                sessionStorage.setItem(reloadedKey, '1');
-                                window.location.reload();
-                            }
-                        } catch (_) {
-                            window.location.reload();
+                        // We used to force a reload here to drop the controller immediately.
+                        // That caused surprise refreshes on toolbox pages; instead, rely on
+                        // the next navigation to shed the controller naturally.
+                        if (hadRegs || hadController) {
+                            try { sessionStorage.setItem('swBypassReloaded', '1'); } catch (_) {}
                         }
                     });
             })
