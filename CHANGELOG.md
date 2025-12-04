@@ -7,6 +7,10 @@ All notable changes to this project will be documented in this file.
 - **xEmbed language grouping:** Embedded originals now surface with canonical language codes, so extracted tracks merge into the same Stremio language bucket instead of creating duplicate language entries.
 - **Make from embedded:** “Make (Language)” entries now include extracted embedded tracks as valid sources, even when no provider subtitles exist, with deduped source lists.
 - **Embedded translation path:** Translations triggered from embedded originals pull directly from the xEmbed cache (skipping provider downloads) and save the resulting xEmbed translations back with metadata for reuse.
+- **Toolbox subtitle toggle:** Subtitles Toolbox now mounts the floating subtitle menu with a pulsing toggle button, prefetching stream data so source/target lists stay handy while working in the toolbox.
+- **Auto-subtitles stream guards:** Auto-subtitles and sync Step 1 now demand valid/matching stream URLs, reset flows when the link changes, and surface clearer hash-mismatch alerts to stop runs from starting on stale or mismatched streams.
+- **Cloudflare Whisper path:** Workers AI endpoint keeps model paths unencoded (preserving slashes) so Whisper requests reach Cloudflare successfully.
+- **Other minor fixes.**
 
 ## SubMaker v1.4.13
 
