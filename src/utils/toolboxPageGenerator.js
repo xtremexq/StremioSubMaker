@@ -4921,7 +4921,9 @@ function generateAutoSubtitlePage(configStr, videoId, filename, config = {}) {
         translate: document.getElementById('stepTranslate'),
         deliver: document.getElementById('stepDeliver')
       };
-      const startBtnLabel = els.startBtn ? els.startBtn.textContent : tt('toolbox.autoSubs.actions.start', {}, ${JSON.stringify(copy.steps.start)});
+      const startBtnLabel = els.startBtn
+        ? els.startBtn.textContent
+        : tt('toolbox.autoSubs.actions.start', {}, copy.steps.start || 'Start');
       const state = {
         extensionReady: false,
         cacheBlocked: false,
