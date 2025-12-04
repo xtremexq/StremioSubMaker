@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ## SubMaker v1.4.13
 
 - **Subtitle caching:** Final SRT/VTT responses (downloads, xSync, xEmbed) now use device-private caching so user-set subtitle delays are kept instead of resetting when the player reloads the track.
+- **Storage outage handling:** All config-driven routes now bail out early when config storage is unavailable, ensuring the storage-unavailable response is sent instead of double responses or broken redirects.
+- **Auto-subtitles UI stability:** Auto-subtitles page now bootstraps its runtime with translated copy/video metadata to fix broken rendering and keeps the hash badge/cache-block state consistent.
+- **Embedded extraction logs:** Extraction logs stay visible after successful embedded runs for easier troubleshooting, while auto-sub hash/cache badges keep cache-block flags without noisy warnings.
+- **RTL + flags:** Arabic UI now flips to RTL with isolated LTR tokens for mixed Arabic/English lines, and UI language flags map to real locales (Arabic -> Saudi Arabia, pt-br -> Brazil, en -> US).
 
 ## SubMaker v1.4.12
 
