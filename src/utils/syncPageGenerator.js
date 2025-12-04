@@ -2002,7 +2002,6 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                         <label for="streamUrl">${escapeHtml(copy.step1.streamLabel)}</label>
                         <input type="text" id="streamUrl" placeholder="${escapeHtml(copy.step1.placeholder)}" value="">
                     </div>
-                    <div class="status-message info" id="hashStatus" style="display: block;">${escapeHtml(t('toolbox.autoSubs.hash.waiting', {}, 'Waiting for stream hash...'))}</div>
                     <div class="hash-mismatch-alert" id="hashMismatchAlert" role="status" aria-live="polite"></div>
                     <button id="continueBtn" class="btn btn-primary">
                         <span>➡️</span> ${escapeHtml(copy.step1.continue)}
@@ -2195,8 +2194,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                 .replace(/'/g, '&#39;');
         };
         const HASH_MISMATCH_LINES = [
-            tt('toolbox.embedded.step1.hashMismatchLine1', {}, 'Hashes must match before extraction can start.'),
-            tt('toolbox.embedded.step1.hashMismatchLine2', {}, 'Copy the stream link again in Stremio and paste it here to unlock the button.')
+            tt('toolbox.embedded.step1.hashMismatchLine1', {}, 'Hashes must match before extraction can start.')
         ];
         function buildHashMismatchAlert(linkedHash, streamHash) {
             const safeLinked = escapeHtmlClient(linkedHash || 'unknown');
@@ -2428,29 +2426,33 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         }
 
         function renderHashStatus(hashes = {}, cacheBlocked = false) {
-            if (!hashStatusEl) return;
             const linked = hashes.linked || CONFIG.videoHash || '';
             const stream = hashes.stream || '';
             const hasMismatch = linked && stream && linked !== stream;
             const cacheFlag = stream ? (cacheBlocked || hasMismatch) : false;
             STATE.cacheBlocked = cacheFlag;
-            hashStatusEl.classList.remove('warn', 'success', 'error');
+            if (hashStatusEl) hashStatusEl.classList.remove('warn', 'success', 'error');
             if (hasMismatch) {
-                hashStatusEl.textContent = 'Hash mismatch detected.';
-                hashStatusEl.classList.add('warn');
+                if (hashStatusEl) {
+                    hashStatusEl.textContent = 'Hash mismatch detected.';
+                    hashStatusEl.classList.add('warn');
+                }
                 setHashMismatchAlert(buildHashMismatchAlert(linked, stream));
             } else if (stream) {
-                hashStatusEl.textContent = 'Hash 1 = Hash 2';
-                hashStatusEl.classList.add('success');
+                if (hashStatusEl) {
+                    hashStatusEl.textContent = 'Hash 1 = Hash 2';
+                    hashStatusEl.classList.add('success');
+                }
                 setHashMismatchAlert('');
             } else {
-                hashStatusEl.textContent = tt('toolbox.autoSubs.hash.waiting', {}, 'Waiting for stream hash...');
+                if (hashStatusEl) {
+                    hashStatusEl.textContent = tt('toolbox.autoSubs.hash.waiting', {}, 'Waiting for stream hash...');
+                }
                 setHashMismatchAlert('');
             }
         }
 
         function updateHashStatusFromInput() {
-            if (!hashStatusEl) return;
             const streamInput = document.getElementById('streamUrl');
             if (!streamInput) return;
             const streamUrl = (streamInput.value || '').trim();

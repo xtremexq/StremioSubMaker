@@ -1574,9 +1574,6 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     ? copy.step1.helper
     : '';
   const hashAlertLines = [copy.step1.hashMismatchLine1].filter(Boolean);
-  const hashAlertBodyHtml = hashAlertLines.length
-    ? `<div class="alert-body">${hashAlertLines.map(line => `<div>${escapeHtml(line)}</div>`).join('')}</div>`
-    : '';
   const providerOptions = (() => {
     const options = [];
     const providers = config.providers || {};
@@ -2822,10 +2819,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
               <label for="stream-url">${escapeHtml(copy.step1.streamLabel)}</label>
               <input type="text" id="stream-url" placeholder="${escapeHtml(copy.step1.streamPlaceholder)}">
             </div>
-            <div class="notice hash-status neutral" id="hash-status" aria-live="polite">
-              <div class="alert-head">${escapeHtml(t('toolbox.embedded.step1.hashStatus.neutralTitle', {}, 'Hash check ready'))}</div>
-              ${hashAlertBodyHtml}
-            </div>
+            <div class="log-alert" id="hash-mismatch-alert" style="display:none;" role="status" aria-live="polite"></div>
             <div class="mode-controls">
               <label for="extract-mode">${escapeHtml(copy.step1.modeLabel)}</label>
               <select id="extract-mode" class="compact-select">
@@ -2842,7 +2836,6 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
             <span>${escapeHtml(copy.step1.logSub)}</span>
           </div>
           <div class="log" id="extract-log" aria-live="polite"></div>
-          <div class="log-alert" id="hash-mismatch-alert" style="display:none;" role="status" aria-live="polite"></div>
 
           <div class="result-box">
             <div class="result-head">
@@ -5152,7 +5145,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         continueBtn: document.getElementById('autoContinue'),
         step2Card: document.getElementById('autoStep2Card'),
         translationCard: document.getElementById('autoTranslationCard'),
-        step3Card: document.getElementById('autoStep3Card')
+        step3Card: document.getElementById('autoStep3Card'),
+        step4Card: document.getElementById('autoStep4Card')
       };
       const stepPills = {
         fetch: document.getElementById('stepFetch'),
@@ -5180,8 +5174,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           .replace(/'/g, '&#39;');
       };
       const HASH_MISMATCH_LINES = [
-        tt('toolbox.embedded.step1.hashMismatchLine1', {}, 'Hashes must match before extraction can start.'),
-        tt('toolbox.embedded.step1.hashMismatchLine2', {}, 'Copy the stream link again in Stremio and paste it here to unlock the button.')
+        tt('toolbox.embedded.step1.hashMismatchLine1', {}, 'Hashes must match before extraction can start.')
       ];
       function buildHashMismatchAlert(linkedHash, streamHash) {
         const safeLinked = escapeHtmlClient(linkedHash || 'unknown');
@@ -5240,6 +5233,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           lockSection(els.step2Card, needContinueLabel);
           lockSection(els.translationCard, needContinueLabel);
           lockSection(els.step3Card, needContinueLabel);
+          lockSection(els.step4Card, needContinueLabel);
           applyStartDisabled(false);
           return;
         }
@@ -5248,8 +5242,10 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         const step3Ready = isStep3Ready();
         if (step3Ready) {
           unlockSection(els.step3Card);
+          unlockSection(els.step4Card);
         } else {
           lockSection(els.step3Card, lockReasons.needTarget);
+          lockSection(els.step4Card, lockReasons.needTarget);
         }
         applyStartDisabled(step3Ready);
       }
@@ -6949,7 +6945,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
             </div>
             <label for="streamUrl">${escapeHtml(copy.steps.streamLabel)}</label>
             <input type="text" id="streamUrl" placeholder="${escapeHtml(copy.steps.streamPlaceholder)}">
-            <div class="notice" id="hashStatus" style="margin-top:10px;">${escapeHtml(copy.videoMeta.waiting)}</div>
             <div class="hash-mismatch-alert" id="auto-hash-mismatch" role="status" aria-live="polite"></div>
             <div class="controls" style="margin-top:12px;">
               <button class="btn secondary" id="prefillFromVideo">${escapeHtml(copy.steps.prefill)}</button>
@@ -7076,7 +7071,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
             <div id="logArea" class="log-area" aria-live="polite"></div>
           </div>
         </div>
-        <div class="step-card">
+        <div class="step-card locked" id="autoStep4Card" data-locked-label="${escapeHtml(copy.locks.needContinue)}">
           <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.four)}</span><span>${escapeHtml(copy.steps.outputTitle)}</span></div>
           <div class="step-body">
             <div class="row">
