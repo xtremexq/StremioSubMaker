@@ -304,7 +304,8 @@
             box-shadow: 0 12px 28px var(--shadow), 0 0 0 1px rgba(255, 255, 255, 0.25);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            z-index: 9985;
+            /* Place above modals/loading overlays so desktop users always see the flags */
+            z-index: 11050;
             transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
             isolation: isolate;
             cursor: pointer;

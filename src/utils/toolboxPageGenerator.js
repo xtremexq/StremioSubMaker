@@ -5510,13 +5510,32 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         return { hash, filename, videoId: streamVideoId, source: 'stream-url' };
       }
 
-      function appendLog(message) {
+      const LOG_LIMIT = 250;
+      function appendLog(message, tone = 'muted') {
+        if (!els.log || !message) return;
+        const entry = document.createElement('div');
+        entry.className = 'log-entry ' + (tone ? `log-${tone}` : 'log-muted');
+
+        const time = document.createElement('span');
+        time.className = 'log-time';
+        time.textContent = new Date().toLocaleTimeString();
+
+        const text = document.createElement('span');
+        text.className = 'log-text';
+        text.textContent = message;
+
+        entry.appendChild(time);
+        entry.appendChild(text);
+        els.log.insertBefore(entry, els.log.firstChild);
+
+        while (els.log.childNodes.length > LOG_LIMIT) {
+          els.log.removeChild(els.log.lastChild);
+        }
+      }
+
+      function clearLog() {
         if (!els.log) return;
-        const time = new Date().toLocaleTimeString();
-        const text = `[${time}] ${message}`;
-        const needsNewline = els.log.textContent && !els.log.textContent.endsWith('\\n');
-        els.log.textContent += (needsNewline ? '\\n' : '') + text + '\\n';
-        els.log.scrollTop = els.log.scrollHeight;
+        els.log.innerHTML = '';
       }
 
       function setStatus(text) {
@@ -5859,14 +5878,14 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         if (state.autoSubsInFlight) return;
         if (!state.step1Confirmed) {
           const message = lockReasons.needContinue;
-          appendLog(message);
+          appendLog(message, 'warn');
           setStatus(message);
           refreshStepLocks(message);
           return;
         }
         const stream = (els.streamUrl?.value || '').trim();
         if (!stream) {
-          appendLog(tt('toolbox.autoSubs.logs.noStream', {}, 'Paste a stream URL first.'));
+          appendLog(tt('toolbox.autoSubs.logs.noStream', {}, 'Paste a stream URL first.'), 'warn');
           setStatus(tt('toolbox.autoSubs.status.awaiting', {}, 'Awaiting input...'));
           return;
         }
@@ -5874,11 +5893,13 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         const targets = translateEnabled ? getSelectedTargets() : [];
         if (translateEnabled && targets.length === 0) {
           const message = lockReasons.needTarget || tt('toolbox.autoSubs.logs.noTargets', {}, 'Select at least one target language or disable translation.');
-          appendLog(message);
+          appendLog(message, 'warn');
           setStatus(message);
           refreshStepLocks(message);
           return;
         }
+        clearLog();
+        appendLog(tt('toolbox.autoSubs.logs.previewPlan', {}, 'Pipeline: fetch -> transcribe -> align -> translate -> deliver.'), 'info');
         setInFlight(true);
         resetPills();
         markStep('fetch', 'check');
@@ -5889,7 +5910,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         setProgress(10);
         const modeValue = (els.modeSelect?.value || 'cloudflare').toLowerCase();
         const modeLabel = els.modeSelect?.selectedOptions?.[0]?.textContent || 'Cloudflare Workers AI';
-        appendLog(tt('toolbox.autoSubs.logs.sendingRequest', {}, 'Sending request to the selected auto-subtitles engine...') + ' [' + modeLabel + ']');
+        appendLog(tt('toolbox.autoSubs.logs.sendingRequest', {}, 'Sending request to the selected auto-subtitles engine...') + ' [' + modeLabel + ']', 'info');
 
         const payload = {
           configStr: PAGE.configStr,
@@ -5915,10 +5936,26 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
           });
-          const data = await resp.json().catch(() => ({}));
+          const clone = resp.clone();
+          let data = {};
+          try {
+            data = await clone.json();
+          } catch (_) {
+            try {
+              const text = await clone.text();
+              if (text) data = { message: text.slice(0, 400) };
+            } catch (_) {
+              data = {};
+            }
+          }
+          const upstreamHint = (data?.cfStatus && Number(data.cfStatus) >= 500)
+            ? tt('toolbox.autoSubs.logs.upstream', {}, 'Cloudflare Workers AI returned a 5xx response. This is usually temporary; try again shortly or verify your account limits.')
+            : '';
           if (!resp.ok || data.success !== true) {
-            const msg = data?.error || `Request failed (${resp.status})`;
-            throw new Error(msg);
+            const cfStatusLabel = data?.cfStatus ? ` [Cloudflare ${data.cfStatus}]` : '';
+            const msg = data?.error || data?.message || data?.details || `Request failed (${resp.status})`;
+            const combined = [msg + cfStatusLabel, upstreamHint].filter(Boolean).join(' ');
+            throw new Error(combined);
           }
           handleHashStatus(data.hashes || {}, data.cacheBlocked);
           markStep('transcribe', 'check');
@@ -5938,13 +5975,13 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           setStatus(tt('toolbox.autoSubs.status.done', {}, 'Done. Ready to download.'));
           const finishedMsg = tt('toolbox.autoSubs.logs.finished', {}, 'Finished. Downloads are ready.');
           const cacheSkipped = data.cacheBlocked ? ' ' + tt('toolbox.autoSubs.logs.cacheSkipped', {}, 'Cache uploads were skipped due to hash mismatch.') : '';
-          appendLog(finishedMsg + cacheSkipped);
+          appendLog(finishedMsg + cacheSkipped, 'success');
         } catch (error) {
           markStep('transcribe', 'danger');
           markStep('align', 'danger');
           markStep('translate', 'danger');
           setStatus(tt('toolbox.autoSubs.status.failedPrefix', {}, 'Failed: ') + error.message);
-          appendLog(tt('toolbox.autoSubs.logs.errorPrefix', {}, 'Error: ') + error.message);
+          appendLog(tt('toolbox.autoSubs.logs.errorPrefix', {}, 'Error: ') + error.message, 'error');
         } finally {
           setInFlight(false);
         }
@@ -6039,13 +6076,13 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           };
 
           if (!stream) {
-            appendLog(missingMsg);
+            appendLog(missingMsg, 'warn');
             resetWithReason(missingMsg);
             updateHashStatusFromInput();
             return;
           }
           if (!isLikelyStreamUrl(stream)) {
-            appendLog(invalidMsg);
+            appendLog(invalidMsg, 'warn');
             resetWithReason(invalidMsg);
             updateHashStatusFromInput();
             return;
@@ -6061,7 +6098,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           if (hasMismatch) {
             const alert = buildHashMismatchAlert(linkedHash, derived.hash);
             setHashMismatchAlert(alert);
-            appendLog(mismatchMsg);
+            appendLog(mismatchMsg, 'warn');
             resetWithReason(mismatchMsg);
             updateHashStatusFromInput();
             return;
@@ -6184,6 +6221,10 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     hero: {
       title: t('toolbox.autoSubs.heroTitle', {}, 'Automatic Subtitles'),
       subtitle: t('toolbox.autoSubs.heroSubtitle', {}, 'Generate subtitles with Whisper then translate')
+    },
+    log: {
+      header: t('toolbox.autoSubs.log.header', {}, 'Live log'),
+      sub: t('toolbox.autoSubs.log.sub', {}, 'Watch each pipeline step, errors, and upstream responses here.')
     },
     badges: {
       addon: t('toolbox.status.addon', {}, 'Addon'),
@@ -6876,20 +6917,61 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       transition: width 0.25s ease;
     }
 
-    .log-area {
+    .log-block { width: 100%; }
+    .log-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
       margin-top: 10px;
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: var(--surface-light);
-      min-height: 80px;
-      max-height: 220px;
-      overflow-y: auto;
-      font-size: 14px;
-      line-height: 1.5;
       color: var(--text-secondary);
-      white-space: pre-wrap;
+      font-size: 14px;
+      font-weight: 600;
     }
+    .log-header .label { font-weight: 800; color: var(--text-primary); display: block; }
+    .log-header .muted { font-weight: 600; color: var(--text-secondary); display: block; }
+    .log-header .pulse {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--success);
+      box-shadow: 0 0 0 0 rgba(16,185,129,0.5);
+      animation: pulse 2s infinite;
+      flex-shrink: 0;
+    }
+    .log {
+      position: relative;
+      background: var(--surface-light);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      height: 240px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.5;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+      background-image:
+        linear-gradient(135deg, rgba(8,164,213,0.06) 25%, transparent 25%),
+        linear-gradient(135deg, transparent 50%, rgba(8,164,213,0.06) 50%, rgba(8,164,213,0.06) 75%, transparent 75%),
+        linear-gradient(to bottom, rgba(255,255,255,0.08), rgba(255,255,255,0));
+      background-size: 18px 18px, 18px 18px, auto;
+      background-position: 0 0, 9px 9px, 0 0;
+    }
+    .log-entry {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px dashed rgba(255,255,255,0.08);
+      word-break: break-word;
+    }
+    .log-entry:last-child { border-bottom: none; }
+    .log-time { font-family: 'Space Grotesk', 'SFMono-Regular', 'Roboto Mono', monospace; color: var(--muted); font-weight: 700; }
+    .log-text { color: var(--text-secondary); }
+    .log-entry.log-success .log-text { color: var(--success); font-weight: 700; }
+    .log-entry.log-error .log-text { color: var(--danger); font-weight: 700; }
+    .log-entry.log-warn .log-text { color: var(--warning); font-weight: 700; }
+    .log-entry.log-info .log-text { color: var(--text-primary); font-weight: 700; }
+    .log-entry.log-muted .log-text { color: var(--text-secondary); }
 
     .status {
       margin-top: 8px;
@@ -7195,7 +7277,16 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
               <span class="pill" id="stepTranslate">- ${escapeHtml(copy.steps.pills.translate)}</span>
               <span class="pill" id="stepDeliver">- ${escapeHtml(copy.steps.pills.deliver)}</span>
             </div>
-            <div id="logArea" class="log-area" aria-live="polite"></div>
+            <div class="log-block">
+              <div class="log-header" aria-hidden="true">
+                <span class="pulse"></span>
+                <div class="log-header-text">
+                  <span class="label">${escapeHtml(copy.log.header)}</span>
+                  <span class="muted">${escapeHtml(copy.log.sub)}</span>
+                </div>
+              </div>
+              <div id="logArea" class="log" aria-live="polite"></div>
+            </div>
           </div>
         </div>
         <div class="step-card locked" id="autoStep4Card" data-locked-label="${escapeHtml(copy.locks.needContinue)}">

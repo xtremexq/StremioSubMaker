@@ -95,7 +95,8 @@
                 if (!key) return;
                 const attr = node.getAttribute('data-i18n-attr');
                 const fallbackAttr = node.getAttribute('data-i18n-fallback');
-                const fallback = fallbackAttr || (attr ? node.getAttribute(attr) : node.textContent);
+                const attrList = (attr || '').split(',').map(a => a.trim()).filter(Boolean);
+                const fallback = fallbackAttr || (attrList.length ? node.getAttribute(attrList[0]) : node.textContent);
                 const varsAttr = node.getAttribute('data-i18n-vars');
                 let vars = {};
                 if (varsAttr) {
@@ -106,16 +107,34 @@
                     }
                 }
                 const value = tConfig(key, vars, fallback || '');
-                if (attr === 'innerHTML') {
+                if (attrList.includes('innerHTML')) {
                     node.innerHTML = value;
-                } else if (attr) {
-                    node.setAttribute(attr, value);
+                } else if (attrList.length > 0) {
+                    attrList.forEach(name => node.setAttribute(name, value));
                 } else {
                     node.textContent = value;
                 }
             });
         } catch (err) {
             console.warn('[i18n] Failed to apply data-i18n copy', err);
+        }
+    }
+
+    function refreshComboboxTranslations() {
+        try {
+            const selects = document.querySelectorAll('select.combo-hidden-select');
+            selects.forEach(select => {
+                const wrapper = select.parentElement;
+                const state = wrapper && wrapper.__comboState;
+                if (state && typeof state.rebuild === 'function') {
+                    state.rebuild();
+                }
+                if (state && typeof state.sync === 'function') {
+                    state.sync();
+                }
+            });
+        } catch (err) {
+            console.warn('[i18n] Failed to refresh combo translations', err);
         }
     }
 
@@ -192,9 +211,31 @@
         setText('targetLanguagesError', 'config.validation.targetRequired', 'Please select at least one target language');
         setText('learnLanguagesError', 'config.validation.learnRequired', 'Please select at least one learn language');
         applyDataI18n();
+        refreshComboboxTranslations();
         // Reapply any dynamic copy that depends on runtime values (e.g., language limits)
         try { updateLanguageLimitCopy(); } catch (_) {}
     }
+
+    // If partials finished loading after config.js executed (e.g., slow fetch/timeout path),
+    // re-apply translations once they are ready so late-inserted nodes get translated too.
+    let partialCopyApplied = false;
+    function applyCopyAfterPartials() {
+        if (partialCopyApplied) return;
+        const ready = (typeof window !== 'undefined' && (window.partialsReady || window.mainPartialReady));
+        if (ready && typeof ready.then === 'function') {
+            ready.then(() => {
+                if (partialCopyApplied) return;
+                partialCopyApplied = true;
+                try {
+                    applyUiLanguageCopy();
+                    applyStaticCopy();
+                } catch (err) {
+                    console.warn('[i18n] Failed to reapply copy after partials', err);
+                }
+            }).catch(() => {});
+        }
+    }
+    applyCopyAfterPartials();
 
     /**
      * Default API Keys Configuration

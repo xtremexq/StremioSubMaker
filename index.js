@@ -403,16 +403,26 @@ async function transcribeWithCloudflare(audioBuffer, opts = {}) {
     }
     clearTimeout(timeout);
 
+    let raw = '';
     let data = null;
     try {
-        data = await response.json();
+        raw = await response.text();
+        data = raw ? JSON.parse(raw) : null;
     } catch (_) {
         data = null;
     }
 
     if (!response.ok) {
-        const cfMessage = data?.errors?.[0]?.message || data?.error || data?.message;
-        throw new Error(cfMessage || `Cloudflare Workers AI request failed (${response.status})`);
+        const cfMessage =
+            data?.errors?.[0]?.message ||
+            data?.result?.errors?.[0]?.message ||
+            data?.error ||
+            data?.message ||
+            (raw ? raw.slice(0, 400) : '');
+        const error = new Error(cfMessage || `Cloudflare Workers AI request failed (${response.status})`);
+        error.cfStatus = response.status;
+        error.cfBody = raw || '';
+        throw error;
     }
 
     const result = data?.result || data?.data || data;
@@ -1720,19 +1730,22 @@ app.get('/api/languages', (req, res) => {
 app.get('/api/locale', async (req, res) => {
     try {
         setNoStore(res);
-        let lang = (req.query.lang || '').toString().trim().toLowerCase() || DEFAULT_LANG;
+        const requestedLang = (req.query.lang || '').toString().trim().toLowerCase();
+        let lang = requestedLang || DEFAULT_LANG;
         const configStr = req.query.config;
         let t = res.locals?.t || getTranslatorFromRequest(req, res);
 
-        // If config token is provided, use user-selected uiLanguage
+        // If config token is provided, prefer explicit lang param; otherwise fall back to saved uiLanguage
         if (configStr) {
             const resolved = await resolveConfigGuarded(configStr, req, res, '[Locale] config', t);
             if (!resolved) return;
-            lang = (resolved.uiLanguage || lang || 'en').toString().trim().toLowerCase() || 'en';
-            t = getTranslatorFromRequest(req, res, resolved);
+            const configLang = (resolved.uiLanguage || '').toString().trim().toLowerCase();
+            lang = requestedLang || configLang || lang || DEFAULT_LANG;
+            // Ensure translator matches the effective language, not just the stored config value
+            t = getTranslatorFromRequest(req, res, { ...resolved, uiLanguage: lang });
         }
 
-        const locale = loadLocale(lang);
+        const locale = loadLocale(lang || DEFAULT_LANG);
         res.json(locale);
     } catch (error) {
         log.error(() => ['[API] Error getting locale:', error]);
@@ -3805,8 +3818,16 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
                 diarization: diarization === true
             });
         } catch (error) {
-            log.error(() => ['[Auto Subs API] Transcription failed:', error.message]);
-            return res.status(502).json({ error: t('server.errors.transcriptionFailed', {}, `Transcription failed: ${error.message}`) });
+            const cfStatus = Number(error?.cfStatus || error?.status || error?.statusCode);
+            const statusCode = Number.isFinite(cfStatus) && cfStatus >= 500 ? 502 : 400;
+            const message = t('server.errors.transcriptionFailed', {}, `Transcription failed: ${error.message}`);
+            log.error(() => ['[Auto Subs API] Transcription failed', { status: cfStatus || 'n/a', message }]);
+            return res.status(statusCode).json({
+                error: message,
+                cfStatus: cfStatus || null,
+                hashes: { linked: linkedHash, stream: streamHashInfo.hash || '' },
+                cacheBlocked
+            });
         }
 
         const originalSrt = (transcription && transcription.srt) ? transcription.srt : '';
