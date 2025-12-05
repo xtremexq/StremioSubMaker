@@ -178,6 +178,20 @@ function formatEpisodeTag(parsed) {
   return (s || e) ? (s + e) : '';
 }
 
+function buildLinkedVideoLabel(videoId, streamFilename, resolvedTitle, t) {
+  const parsed = parseStremioId(videoId);
+  const cleanedFilename = streamFilename ? cleanDisplayName(streamFilename) : '';
+  const movieTitle = resolvedTitle || cleanedFilename || parsed?.imdbId || parsed?.animeId || streamFilename;
+
+  if (parsed && (parsed.type === 'episode' || parsed.type === 'anime-episode')) {
+    const baseTitle = movieTitle || (t ? t('sync.meta.linkedFallback', {}, 'linked stream') : 'linked stream');
+    const suffix = formatEpisodeTag(parsed) || (t ? t('sync.meta.episodeFallback', {}, 'Episode') : 'Episode');
+    return `${baseTitle} - ${suffix}`;
+  }
+
+  return movieTitle || (t ? t('sync.meta.linkedFallback', {}, 'linked stream') : 'linked stream');
+}
+
 async function fetchLinkedTitleServer(videoId) {
   const parsed = parseStremioId(videoId);
   if (!parsed) return null;
@@ -1462,7 +1476,6 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   const videoHash = deriveVideoHash(filename, videoId);
   const parsedVideo = parseStremioId(videoId);
   const episodeTag = formatEpisodeTag(parsedVideo);
-  const linkedTitle = await fetchLinkedTitleServer(videoId);
   const config = arguments[3] || {};
   const targetLanguages = (Array.isArray(config.targetLanguages) ? config.targetLanguages : [])
     .map(code => ({ code, name: getLanguageName(code) || code }));
@@ -1472,6 +1485,9 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   const devMode = config.devMode === true;
   const localeBootstrap = buildClientBootstrap(loadLocale(config?.uiLanguage || 'en'));
   const t = getTranslator(config?.uiLanguage || 'en');
+  const metaSeparator = ' • ';
+  const linkedTitle = await fetchLinkedTitleServer(videoId);
+  const linkedVideoDisplay = buildLinkedVideoLabel(videoId, filename, linkedTitle, t);
   const themeToggleLabel = t('fileUpload.themeToggle', {}, 'Toggle theme');
   const copy = {
     meta: {
@@ -1591,17 +1607,14 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       extracting: t('toolbox.embedded.buttons.extracting', {}, 'Extracting...')
     }
   };
-  const translationContextLabel = [
-    (linkedTitle || cleanDisplayName(filename) || cleanDisplayName(videoId) || copy.step2.translationContextFallback).trim(),
-    episodeTag
-  ].filter(Boolean).join(' ').trim() || copy.step2.translationContextFallback;
+  const translationContextLabel = linkedVideoDisplay || copy.step2.translationContextFallback;
   const metaDetails = [];
   if (linkedTitle) metaDetails.push(t('toolbox.embedded.meta.title', { title: linkedTitle }, `Title: ${linkedTitle}`));
   else if (videoId) metaDetails.push(t('toolbox.embedded.meta.videoId', { id: videoId }, `Video ID: ${videoId}`));
   if (episodeTag) metaDetails.push(t('toolbox.embedded.meta.episode', { episode: episodeTag }, `Episode: ${episodeTag}`));
   if (filename) metaDetails.push(t('toolbox.embedded.meta.file', { file: cleanDisplayName(filename) }, `File: ${cleanDisplayName(filename)}`));
-  const initialVideoTitle = escapeHtml(linkedTitle || cleanDisplayName(filename) || cleanDisplayName(videoId) || copy.videoMeta.none);
-  const initialVideoSubtitle = escapeHtml(metaDetails.join(' - ') || copy.videoMeta.unavailable);
+  const initialVideoTitle = escapeHtml(linkedVideoDisplay || copy.videoMeta.none);
+  const initialVideoSubtitle = escapeHtml(metaDetails.join(metaSeparator) || copy.videoMeta.unavailable);
   const initialTranslationContext = escapeHtml(
     t(
       'toolbox.embedded.step2.translationContext',
@@ -1664,6 +1677,23 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     });
     return options;
   })();
+  const parseCfCreds = (rawKey) => {
+    const cleaned = typeof rawKey === 'string' ? rawKey.trim() : '';
+    if (!cleaned) return { accountId: '', token: '' };
+    const delimiters = ['|', ':'];
+    for (const delim of delimiters) {
+      if (cleaned.includes(delim)) {
+        const [account, ...rest] = cleaned.split(delim);
+        return { accountId: (account || '').trim(), token: rest.join(delim).trim() };
+      }
+    }
+    return { accountId: '', token: cleaned };
+  };
+  const cfKey = (config.providers?.cfworkers?.apiKey || config.providers?.cloudflare?.apiKey || '').toString();
+  const cfClient = (() => {
+    const creds = parseCfCreds(cfKey);
+    return creds.accountId && creds.token ? creds : null;
+  })();
 
   const bootstrap = {
     configStr,
@@ -1690,6 +1720,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         manual: copy.step2.reloadHintManual
       },
       videoMeta: {
+        separator: metaSeparator,
         waiting: copy.videoMeta.waiting,
         none: copy.videoMeta.none,
         unavailable: copy.videoMeta.unavailable,
@@ -2998,6 +3029,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       waiting: metaCopy.waiting || 'Waiting for a linked stream...',
       unavailable: metaCopy.unavailable || 'Video ID unavailable'
     };
+    const metaSeparator = metaCopy.separator || ' • ';
     const statusLabels = BOOTSTRAP.strings?.statusLabels || {};
     const buttonCopy = BOOTSTRAP.strings?.buttons || {};
     const translationContextTemplate = BOOTSTRAP.strings?.translationContextTemplate || "You're translating subtitles for {label}";
@@ -3682,6 +3714,14 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       return raw.replace(/\.[a-z0-9]{2,4}$/i, '').replace(/[._]/g, ' ').trim();
     }
 
+    function cleanLinkedName(raw) {
+      if (!raw) return '';
+      const lastSegment = String(raw).split(/[\\/]/).pop() || '';
+      const withoutExt = lastSegment.replace(/\.[^.]+$/, '');
+      const spaced = withoutExt.replace(/[_\\.]+/g, ' ').replace(/\s+/g, ' ').trim();
+      return spaced || withoutExt || lastSegment;
+    }
+
     function normalizeImdbId(id) {
       if (!id) return '';
       const trimmed = String(id).trim();
@@ -3763,16 +3803,24 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       return '';
     }
 
-    function buildTranslationContextLabel(source = {}) {
-      const baseTitle = source.title || cleanVideoName(source.filename) || cleanVideoName(source.videoId) || '';
-      const episodeTag = formatEpisodeTag(source.videoId);
-      const parts = [baseTitle || '', episodeTag || ''].filter(Boolean);
-      return parts.join(' ').trim();
+    function buildLinkedVideoLabel(videoId, filename, resolvedTitle) {
+      const parsed = parseVideoId(videoId);
+      const cleanedFilename = filename ? cleanLinkedName(filename) : '';
+      const cleanedVideoId = cleanLinkedName(videoId);
+      const movieTitle = resolvedTitle || cleanedFilename || cleanedVideoId || videoId;
+      const episodeTag = formatEpisodeTag(videoId);
+      if (parsed && (parsed.type === 'episode' || parsed.type === 'anime')) {
+        const baseTitle = movieTitle || tt('sync.meta.linkedFallback', {}, 'linked stream');
+        const suffix = episodeTag || tt('sync.meta.episodeFallback', {}, 'Episode');
+      return suffix ? (baseTitle + ' - ' + suffix) : baseTitle;
+      }
+      return movieTitle || tt('sync.meta.linkedFallback', {}, 'linked stream');
     }
 
     function updateTranslationContext(source = {}) {
       if (!els.translationContext) return;
-      const label = buildTranslationContextLabel(source);
+      const hasSource = source && (source.title || source.videoId || source.filename);
+      const label = hasSource ? buildLinkedVideoLabel(source.videoId, source.filename, source.title) : '';
       const targetLabel = label || translationContextFallback;
       const fallback = translationContextTemplate.replace('{label}', targetLabel);
       els.translationContext.textContent = tt('toolbox.embedded.step2.translationContext', { label: targetLabel }, fallback);
@@ -3807,37 +3855,33 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       if (!els.videoMetaTitle || !els.videoMetaSubtitle) return;
       const source = payload || BOOTSTRAP;
       updatePlaceholderBlock(source);
-      const title = source.title || cleanVideoName(source.filename) || cleanVideoName(source.videoId) || metaTemplates.none;
       const episodeTag = formatEpisodeTag(source.videoId);
+      const fallbackTitle = buildLinkedVideoLabel(source.videoId, source.filename, source.title);
       const fallbackDetails = [];
-      if (source.title) {
-        fallbackDetails.push(formatMetaLabel('title', source.title));
-      } else if (source.videoId) {
-        fallbackDetails.push(formatMetaLabel('videoId', source.videoId));
-      }
+      if (source.title) fallbackDetails.push(formatMetaLabel('title', source.title));
+      else if (source.videoId) fallbackDetails.push(formatMetaLabel('videoId', source.videoId));
       if (episodeTag) fallbackDetails.push(formatMetaLabel('episode', episodeTag));
       if (source.filename) fallbackDetails.push(formatMetaLabel('file', source.filename));
-      els.videoMetaTitle.textContent = title || metaTemplates.none;
-      els.videoMetaSubtitle.textContent = fallbackDetails.join(' - ') || metaTemplates.waiting;
-      updateTranslationContext({ ...source, title, videoId: source.videoId, filename: source.filename });
+      const renderedFallbackTitle = fallbackTitle || metaTemplates.none;
+      els.videoMetaTitle.textContent = renderedFallbackTitle;
+      els.videoMetaSubtitle.textContent = fallbackDetails.join(metaSeparator) || metaTemplates.waiting;
+      updateTranslationContext({ ...source, title: renderedFallbackTitle, videoId: source.videoId, filename: source.filename });
 
       const requestId = ++linkedTitleRequestId;
       const fetchedTitle = source.title || await fetchLinkedTitle(source.videoId);
       if (requestId !== linkedTitleRequestId) return;
 
       const details = [];
-      if (fetchedTitle) {
-        details.push(formatMetaLabel('title', fetchedTitle));
-      } else if (source.videoId) {
-        details.push(formatMetaLabel('videoId', source.videoId));
-      }
+      if (fetchedTitle) details.push(formatMetaLabel('title', fetchedTitle));
+      else if (source.videoId) details.push(formatMetaLabel('videoId', source.videoId));
       if (episodeTag) details.push(formatMetaLabel('episode', episodeTag));
       if (source.filename) details.push(formatMetaLabel('file', source.filename));
 
-      const resolvedTitle = fetchedTitle || title || metaTemplates.none;
-      els.videoMetaTitle.textContent = resolvedTitle;
-      els.videoMetaSubtitle.textContent = details.join(' - ') || metaTemplates.waiting;
-      updateTranslationContext({ ...source, title: resolvedTitle, videoId: source.videoId, filename: source.filename });
+      const resolvedTitle = buildLinkedVideoLabel(source.videoId, source.filename, fetchedTitle);
+      const renderedResolvedTitle = resolvedTitle || metaTemplates.none;
+      els.videoMetaTitle.textContent = renderedResolvedTitle;
+      els.videoMetaSubtitle.textContent = details.join(metaSeparator) || metaTemplates.waiting;
+      updateTranslationContext({ ...source, title: renderedResolvedTitle, videoId: source.videoId, filename: source.filename });
       updateHashMismatchState({ log: false });
     }
 
@@ -5180,7 +5224,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         translateToggle: document.getElementById('translateOutput'),
         batchMode: document.getElementById('singleBatchModeSelect'),
         timestampsMode: document.getElementById('timestampsMode'),
-        diarization: document.getElementById('enableDiarization'),
         provider: document.getElementById('translationProvider'),
         providerModel: document.getElementById('translationModel'),
         translationStep: document.getElementById('translationStep'),
@@ -5200,6 +5243,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         hashBadgeDot: document.getElementById('hashBadgeDot'),
         hashBadgeValue: document.getElementById('hashBadgeValue'),
         continueBtn: document.getElementById('autoContinue'),
+        step2ContinueBtn: document.getElementById('autoStep2Continue'),
         step2Card: document.getElementById('autoStep2Card'),
         translationCard: document.getElementById('autoTranslationCard'),
         step3Card: document.getElementById('autoStep3Card'),
@@ -5219,7 +5263,13 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         extensionReady: false,
         cacheBlocked: false,
         autoSubsInFlight: false,
-        step1Confirmed: false
+        step1Confirmed: false,
+        step2Confirmed: false,
+        autoSubsCompleted: false,
+        autoSubsMessageId: null,
+        autoSubsResolver: null,
+        autoSubsReject: null,
+        autoSubsTimer: null
       };
       const escapeHtmlClient = (value) => {
         if (value === undefined || value === null) return '';
@@ -5233,6 +5283,24 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       const HASH_MISMATCH_LINES = [
         tt('toolbox.embedded.step1.hashMismatchLine1', {}, 'Hashes must match before extraction can start.')
       ];
+      function primeHashMismatchSpace() {
+        const alertEl = els.hashMismatchAlert;
+        if (!alertEl) return;
+        const placeholder = buildHashMismatchAlert('0'.repeat(64), '0'.repeat(64));
+        const prevHtml = alertEl.innerHTML;
+        const prevVisibility = alertEl.style.visibility;
+        alertEl.innerHTML = placeholder;
+        alertEl.classList.add('is-visible');
+        alertEl.style.visibility = 'hidden';
+        const { height } = alertEl.getBoundingClientRect();
+        if (height) {
+          alertEl.style.setProperty('--hash-alert-min-height', Math.ceil(height) + 'px');
+        }
+        alertEl.classList.remove('is-visible');
+        alertEl.style.visibility = prevVisibility;
+        alertEl.innerHTML = prevHtml;
+        alertEl.setAttribute('aria-hidden', 'true');
+      }
       function buildHashMismatchAlert(linkedHash, streamHash) {
         const safeLinked = escapeHtmlClient(linkedHash || 'unknown');
         const safeStream = escapeHtmlClient(streamHash || 'unknown');
@@ -5246,16 +5314,20 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       function setHashMismatchAlert(message) {
         if (!els.hashMismatchAlert) return;
         if (!message) {
-          els.hashMismatchAlert.style.display = 'none';
+          els.hashMismatchAlert.classList.remove('is-visible');
           els.hashMismatchAlert.innerHTML = '';
+          els.hashMismatchAlert.setAttribute('aria-hidden', 'true');
           return;
         }
         els.hashMismatchAlert.innerHTML = message;
-        els.hashMismatchAlert.style.display = 'block';
+        els.hashMismatchAlert.classList.add('is-visible');
+        els.hashMismatchAlert.removeAttribute('aria-hidden');
       }
       const lockReasons = {
         needContinue: (copy?.locks && copy.locks.needContinue) || tt('toolbox.autoSubs.locks.needContinue', {}, 'Click Continue to unlock the next steps.'),
-        needTarget: (copy?.locks && copy.locks.needTarget) || tt('toolbox.autoSubs.locks.needTarget', {}, 'Select a target or disable translation to unlock Run.')
+        needTarget: (copy?.locks && copy.locks.needTarget) || tt('toolbox.autoSubs.locks.needTarget', {}, 'Select a target or disable translation to unlock Run.'),
+        needStep2: (copy?.locks && copy.locks.needStep2) || tt('toolbox.autoSubs.locks.needStep2', {}, 'Complete Step 2 and press Continue to proceed.'),
+        needRun: (copy?.locks && copy.locks.needRun) || tt('toolbox.autoSubs.locks.needRun', {}, 'Run auto-subs to unlock downloads.')
       };
       function lockSection(el, label) {
         if (!el) return;
@@ -5277,7 +5349,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         return !translateEnabled || hasTarget;
       }
       function isStep3Ready() {
-        return state.step1Confirmed && isTranslationReady();
+        return state.step1Confirmed && state.step2Confirmed && isTranslationReady();
       }
       function applyStartDisabled(ready) {
         if (!els.startBtn) return;
@@ -5286,6 +5358,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       }
       function refreshStepLocks(reason) {
         const needContinueLabel = reason || lockReasons.needContinue;
+        const needStep2Label = lockReasons.needStep2 || needContinueLabel;
+        const needRunLabel = lockReasons.needRun || needContinueLabel;
         if (!state.step1Confirmed) {
           lockSection(els.step2Card, needContinueLabel);
           lockSection(els.translationCard, needContinueLabel);
@@ -5295,19 +5369,33 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           return;
         }
         unlockSection(els.step2Card);
+        if (!state.step2Confirmed) {
+          lockSection(els.translationCard, needStep2Label);
+          lockSection(els.step3Card, needStep2Label);
+          lockSection(els.step4Card, needStep2Label);
+          applyStartDisabled(false);
+          return;
+        }
         unlockSection(els.translationCard);
         const step3Ready = isStep3Ready();
         if (step3Ready) {
           unlockSection(els.step3Card);
-          unlockSection(els.step4Card);
         } else {
           lockSection(els.step3Card, lockReasons.needTarget);
-          lockSection(els.step4Card, lockReasons.needTarget);
+        }
+        if (state.autoSubsCompleted) {
+          unlockSection(els.step4Card);
+        } else {
+          const lockLabel = step3Ready ? needRunLabel : lockReasons.needTarget;
+          lockSection(els.step4Card, lockLabel);
         }
         applyStartDisabled(step3Ready);
       }
       function resetStepFlow(reason) {
         state.step1Confirmed = false;
+        state.step2Confirmed = false;
+        state.autoSubsCompleted = false;
+        resetOutputs();
         refreshStepLocks(reason || lockReasons.needContinue);
       }
       let videoMetaRequestId = 0;
@@ -5842,6 +5930,24 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         }
       }
 
+      function resetOutputs() {
+        state.autoSubsCompleted = false;
+        setPreview('');
+        if (els.dlSrt) {
+          els.dlSrt.disabled = true;
+          els.dlSrt.removeAttribute('href');
+          els.dlSrt.removeAttribute('download');
+        }
+        if (els.dlVtt) {
+          els.dlVtt.disabled = true;
+          els.dlVtt.removeAttribute('href');
+          els.dlVtt.removeAttribute('download');
+        }
+        if (els.translations) {
+          els.translations.innerHTML = '';
+        }
+      }
+
       function setPreview(content) {
         if (els.srtPreview) {
           els.srtPreview.textContent = content || tt('toolbox.autoSubs.status.noOutput', {}, 'No output yet.');
@@ -5896,10 +6002,141 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         handleHashStatus({ linked: PAGE.videoHash, stream: derived.hash }, state.cacheBlocked);
       }
 
+      function getCfCredentials() {
+        const cf = BOOTSTRAP.cfClient || {};
+        if (cf.accountId && cf.token) return { accountId: cf.accountId, token: cf.token };
+        return null;
+      }
+
+      function resetAutoSubWait() {
+        if (state.autoSubsTimer) {
+          clearTimeout(state.autoSubsTimer);
+          state.autoSubsTimer = null;
+        }
+        state.autoSubsMessageId = null;
+        state.autoSubsResolver = null;
+        state.autoSubsReject = null;
+      }
+
+      function waitForAutoSubResponse(messageId) {
+        if (state.autoSubsTimer) clearTimeout(state.autoSubsTimer);
+        return new Promise((resolve, reject) => {
+          state.autoSubsMessageId = messageId;
+          state.autoSubsResolver = resolve;
+          state.autoSubsReject = reject;
+          state.autoSubsTimer = setTimeout(() => {
+            state.autoSubsTimer = null;
+            state.autoSubsMessageId = null;
+            reject(new Error('Extension did not return a transcript in time'));
+          }, 90000);
+        });
+      }
+
+      async function submitTranscriptToServer(transcript, stream, targets, translateEnabled) {
+        const payload = {
+          configStr: PAGE.configStr,
+          streamUrl: stream,
+          videoId: PAGE.videoId,
+          filename: PAGE.filename,
+          engine: 'remote',
+          model: transcript.model || els.model?.value || '@cf/openai/whisper',
+          sourceLanguage: transcript.languageCode || els.sourceLang?.value || '',
+          targetLanguages: targets,
+          translate: translateEnabled,
+          translationProvider: els.provider?.value || '',
+          translationModel: (els.providerModel?.value || '').trim(),
+          sendTimestampsToAI: (els.timestampsMode?.value || '') === 'send',
+          singleBatchMode: (els.batchMode?.value || '') === 'single',
+          translationPrompt: '',
+          transcript: {
+            srt: transcript.srt || '',
+            languageCode: transcript.languageCode || transcript.language || '',
+            cfStatus: transcript.cfStatus || transcript.status || null,
+            cfBody: transcript.cfBody || '',
+            model: transcript.model || '',
+            audioBytes: transcript.audioBytes,
+            audioSource: transcript.audioSource || 'extension',
+            contentType: transcript.contentType || 'audio/wav'
+          }
+        };
+
+        const resp = await fetch('/api/auto-subtitles/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const clone = resp.clone();
+        let data = {};
+        try {
+          data = await clone.json();
+        } catch (_) {
+          try {
+            const text = await clone.text();
+            if (text) data = { message: text.slice(0, 400) };
+          } catch (_) {
+            data = {};
+          }
+        }
+        return { resp, data };
+      }
+
+      function handleAutoSubProgressMessage(msg) {
+        if (!msg || !state.autoSubsMessageId || (msg.messageId && msg.messageId !== state.autoSubsMessageId)) return;
+        const tone = (msg.level || '').toString().toLowerCase();
+        const logTone = tone === 'error' ? 'error' : (tone === 'warn' ? 'warn' : 'info');
+        if (msg.status) {
+          appendLog(msg.status, logTone);
+          setStatus(msg.status);
+        }
+        if (typeof msg.progress === 'number') {
+          const current = Number((els.progress?.style?.width || '0').replace('%', '')) || 0;
+          setProgress(Math.max(current, Math.min(95, msg.progress)));
+        }
+        if (msg.stage === 'fetch') {
+          markStep('fetch', logTone === 'error' ? 'danger' : 'check');
+        } else if (msg.stage === 'transcribe') {
+          markStep('transcribe', logTone === 'error' ? 'danger' : 'warn');
+        } else if (msg.stage === 'package') {
+          markStep('align', 'warn');
+        } else if (msg.stage === 'error') {
+          markStep('fetch', 'danger');
+          markStep('transcribe', 'danger');
+        }
+      }
+
+      function handleAutoSubResponseMessage(msg) {
+        if (!msg || !state.autoSubsMessageId || (msg.messageId && msg.messageId !== state.autoSubsMessageId)) return;
+        if (state.autoSubsTimer) {
+          clearTimeout(state.autoSubsTimer);
+          state.autoSubsTimer = null;
+        }
+        const resolver = state.autoSubsResolver;
+        const rejecter = state.autoSubsReject;
+        state.autoSubsResolver = null;
+        state.autoSubsReject = null;
+        state.autoSubsMessageId = null;
+        if (msg.success) {
+          if (typeof resolver === 'function') {
+            resolver(msg.transcript || {});
+          }
+        } else {
+          const error = new Error(msg.error || 'Auto-subtitles failed');
+          if (typeof rejecter === 'function') rejecter(error);
+          else appendLog(error.message, 'error');
+        }
+      }
+
       async function runAutoSubs() {
         if (state.autoSubsInFlight) return;
         if (!state.step1Confirmed) {
           const message = lockReasons.needContinue;
+          appendLog(message, 'warn');
+          setStatus(message);
+          refreshStepLocks(message);
+          return;
+        }
+        if (!state.step2Confirmed) {
+          const message = lockReasons.needStep2 || lockReasons.needContinue;
           appendLog(message, 'warn');
           setStatus(message);
           refreshStepLocks(message);
@@ -5911,6 +6148,20 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           setStatus(tt('toolbox.autoSubs.status.awaiting', {}, 'Awaiting input...'));
           return;
         }
+        const cfCreds = getCfCredentials();
+        if (!cfCreds) {
+          const msg = 'Cloudflare Workers AI credentials missing in config; extension cannot transcribe.';
+          appendLog(msg, 'error');
+          setStatus(msg);
+          return;
+        }
+        if (!state.extensionReady) {
+          const msg = tt('toolbox.autoSubs.extension.notDetected', {}, 'Extension not detected');
+          appendLog(msg, 'warn');
+          setStatus(msg);
+          return;
+        }
+
         const translateEnabled = els.translateToggle?.checked === true;
         const targets = translateEnabled ? getSelectedTargets() : [];
         if (translateEnabled && targets.length === 0) {
@@ -5920,80 +6171,83 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           refreshStepLocks(message);
           return;
         }
+
+        resetOutputs();
+        state.autoSubsCompleted = false;
+        resetAutoSubWait();
+        refreshStepLocks(lockReasons.needRun);
         clearLog();
         appendLog(tt('toolbox.autoSubs.logs.previewPlan', {}, 'Pipeline: fetch -> transcribe -> align -> translate -> deliver.'), 'info');
         setInFlight(true);
         resetPills();
-        markStep('fetch', 'check');
+        markStep('fetch', 'warn');
         markStep('transcribe', 'warn');
         markStep('align', 'warn');
         markStep('translate', 'warn');
         setStatus(tt('toolbox.autoSubs.status.fetching', {}, 'Fetching stream...'));
-        setProgress(10);
-        const modeValue = (els.modeSelect?.value || 'cloudflare').toLowerCase();
-        const modeLabel = els.modeSelect?.selectedOptions?.[0]?.textContent || 'Cloudflare Workers AI';
-        appendLog(tt('toolbox.autoSubs.logs.sendingRequest', {}, 'Sending request to the selected auto-subtitles engine...') + ' [' + modeLabel + ']', 'info');
+        setProgress(8);
 
-        const payload = {
-          configStr: PAGE.configStr,
-          streamUrl: stream,
-          videoId: PAGE.videoId,
-          filename: PAGE.filename,
-          engine: modeValue === 'local' ? 'local' : 'remote',
-          model: els.model?.value || '@cf/openai/whisper',
-          sourceLanguage: els.sourceLang?.value || '',
-          targetLanguages: targets,
-          translate: translateEnabled,
-          translationProvider: els.provider?.value || '',
-          translationModel: (els.providerModel?.value || '').trim(),
-          sendTimestampsToAI: (els.timestampsMode?.value || '') === 'send',
-          singleBatchMode: (els.batchMode?.value || '') === 'single',
-          translationPrompt: '',
-          diarization: els.diarization?.checked === true
-        };
+        const messageId = 'autosub_' + Date.now();
+        const waitForTranscript = waitForAutoSubResponse(messageId);
+        window.postMessage({
+          type: 'SUBMAKER_AUTOSUB_REQUEST',
+          source: 'webpage',
+          messageId,
+          data: {
+            streamUrl: stream,
+            filename: PAGE.filename || '',
+            model: els.model?.value || '@cf/openai/whisper',
+            sourceLanguage: els.sourceLang?.value || '',
+            diarization: false,
+            cfAccountId: cfCreds.accountId,
+            cfToken: cfCreds.token
+          }
+        }, '*');
+        appendLog('Sent auto-sub request to extension (Cloudflare path)', 'info');
 
+        let transcript = null;
         let serverLogs = [];
         try {
-          const resp = await fetch('/api/auto-subtitles/run', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          const clone = resp.clone();
-          let data = {};
-          try {
-            data = await clone.json();
-          } catch (_) {
-            try {
-              const text = await clone.text();
-              if (text) data = { message: text.slice(0, 400) };
-            } catch (_) {
-              data = {};
-            }
+          transcript = await waitForTranscript;
+          if (!transcript || transcript === true) {
+            throw new Error('Extension returned no transcript');
           }
+          markStep('fetch', 'check');
+          markStep('transcribe', 'check');
+          setProgress(60);
+          appendLog(tt('toolbox.autoSubs.logs.transcriptionDone', {}, 'Transcription completed.'), 'success');
+          setPreview(transcript.srt || '');
+          setStatus(tt('toolbox.autoSubs.status.transcriptionDone', {}, 'Transcription complete. Preparing downloads...'));
+
+          const { resp, data } = await submitTranscriptToServer(transcript, stream, targets, translateEnabled);
           serverLogs = Array.isArray(data?.logTrail) ? data.logTrail : [];
-          const upstreamHint = (data?.cfStatus && Number(data.cfStatus) >= 500)
-            ? tt('toolbox.autoSubs.logs.upstream', {}, 'Cloudflare Workers AI returned a 5xx response. This is usually temporary; try again shortly or verify your account limits.')
-            : '';
           if (!resp.ok || data.success !== true) {
             const cfStatusLabel = data?.cfStatus ? ` [Cloudflare ${data.cfStatus}]` : '';
             const msg = data?.error || data?.message || data?.details || `Request failed (${resp.status})`;
-            const combined = [msg + cfStatusLabel, upstreamHint].filter(Boolean).join(' ');
-            const err = new Error(combined);
+            const err = new Error([msg + cfStatusLabel, data?.cfBody ? `Cloudflare response: ${String(data.cfBody).slice(0, 200)}` : ''].filter(Boolean).join(' '));
             err.serverLogs = serverLogs;
+            err.cfBody = data?.cfBody || '';
+            err.cfStatus = data?.cfStatus;
             throw err;
           }
           appendServerLogs(serverLogs);
           handleHashStatus(data.hashes || {}, data.cacheBlocked);
-          markStep('transcribe', 'check');
-          setProgress(60);
           markStep('align', 'check');
           setProgress(80);
-          setStatus(tt('toolbox.autoSubs.status.transcriptionDone', {}, 'Transcription complete. Preparing downloads...'));
-          setPreview(data.original?.srt || '');
+          appendLog(tt('toolbox.autoSubs.logs.alignmentDone', {}, 'Alignment and timestamp generation complete.'), 'info');
+          setPreview(data.original?.srt || transcript.srt || '');
           setDownloads(data.original, data.translations || []);
-          if (payload.translate && targets.length) {
+          state.autoSubsCompleted = true;
+          if (translateEnabled && targets.length) {
             markStep('translate', (data.translations || []).some(t => t.error) ? 'warn' : 'check');
+            const successCount = (data.translations || []).filter(t => !t.error).length;
+            const failedCount = (data.translations || []).filter(t => t.error).length;
+            const translateSummary = tt('toolbox.autoSubs.logs.translationSummary', {}, 'Translation finished.');
+            const translateParts = [];
+            if (successCount) translateParts.push(tt('toolbox.autoSubs.logs.translationSuccess', { count: successCount }, `${successCount} ready`));
+            if (failedCount) translateParts.push(tt('toolbox.autoSubs.logs.translationFailed', { count: failedCount }, `${failedCount} failed`));
+            const translateLog = [translateSummary, translateParts.join(', ')].filter(Boolean).join(' ');
+            appendLog(translateLog, failedCount ? 'warn' : 'success');
           } else {
             markStep('translate', 'warn');
           }
@@ -6003,14 +6257,26 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           const finishedMsg = tt('toolbox.autoSubs.logs.finished', {}, 'Finished. Downloads are ready.');
           const cacheSkipped = data.cacheBlocked ? ' ' + tt('toolbox.autoSubs.logs.cacheSkipped', {}, 'Cache uploads were skipped due to hash mismatch.') : '';
           appendLog(finishedMsg + cacheSkipped, 'success');
+          const totalTracks = 1 + ((data.translations || []).filter(t => !t.error).length);
+          appendLog(tt('toolbox.autoSubs.logs.readyToDeliver', { count: totalTracks }, `Ready to deliver ${totalTracks} track(s).`), 'success');
         } catch (error) {
           markStep('transcribe', 'danger');
           markStep('align', 'danger');
           markStep('translate', 'danger');
-          setStatus(tt('toolbox.autoSubs.status.failedPrefix', {}, 'Failed: ') + error.message);
+          const failMsg = tt('toolbox.autoSubs.status.failedPrefix', {}, 'Failed: ') + (error.message || error);
+          setStatus(failMsg);
           appendServerLogs(error?.serverLogs || serverLogs);
-          appendLog(tt('toolbox.autoSubs.logs.errorPrefix', {}, 'Error: ') + error.message, 'error');
+          if (error?.cfStatus) {
+            appendLog(tt('toolbox.autoSubs.logs.cfStatus', { status: error.cfStatus }, `Cloudflare status: ${error.cfStatus}`), 'warn');
+          }
+          if (error?.cfBody) {
+            appendLog(tt('toolbox.autoSubs.logs.cfBody', {}, 'Cloudflare response: ') + String(error.cfBody).slice(0, 400), 'warn');
+          }
+          appendLog(tt('toolbox.autoSubs.logs.errorPrefix', {}, 'Error: ') + (error.message || error), 'error');
         } finally {
+          state.autoSubsCompleted = state.autoSubsCompleted === true;
+          refreshStepLocks(lockReasons.needRun);
+          resetAutoSubWait();
           setInFlight(false);
         }
       }
@@ -6020,6 +6286,11 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       }
 
       function initDefaults() {
+        primeHashMismatchSpace();
+        state.step1Confirmed = false;
+        state.step2Confirmed = false;
+        state.autoSubsCompleted = false;
+        resetOutputs();
         const preferredMode = (BOOTSTRAP.defaults?.mode || 'cloudflare').toLowerCase();
         if (els.modeSelect) {
           const options = Array.from(els.modeSelect.options || []);
@@ -6050,9 +6321,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         }
         if (els.timestampsMode) {
           els.timestampsMode.value = BOOTSTRAP.defaults?.sendTimestampsToAI ? 'send' : 'original';
-        }
-        if (els.diarization) {
-          els.diarization.checked = BOOTSTRAP.defaults?.diarization === true;
         }
         hydrateVideoMeta({
           title: BOOTSTRAP.linkedTitle || '',
@@ -6133,8 +6401,23 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           }
 
           state.step1Confirmed = true;
+          state.step2Confirmed = false;
+          state.autoSubsCompleted = false;
+          resetOutputs();
           refreshStepLocks();
           updateHashStatusFromInput();
+        });
+        els.step2ContinueBtn?.addEventListener('click', () => {
+          if (!state.step1Confirmed) {
+            const message = lockReasons.needContinue;
+            appendLog(message, 'warn');
+            setStatus(message);
+            refreshStepLocks(message);
+            return;
+          }
+          state.step2Confirmed = true;
+          state.autoSubsCompleted = false;
+          refreshStepLocks();
         });
       }
 
@@ -6179,6 +6462,14 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
               ? tt('toolbox.autoSubs.extension.readyWithVersion', { version: msg.version || '-' }, 'Ready (v' + (msg.version || '-') + ')')
               : tt('toolbox.autoSubs.extension.ready', {}, 'Ready');
             updateExtensionStatus(true, readyLabel);
+          }
+          if (msg.type === 'SUBMAKER_AUTOSUB_PROGRESS') {
+            handleAutoSubProgressMessage(msg);
+          } else if (msg.type === 'SUBMAKER_AUTOSUB_RESPONSE') {
+            handleAutoSubResponseMessage(msg);
+          } else if (msg.type === 'SUBMAKER_DEBUG_LOG' && state.autoSubsInFlight) {
+            const logTone = (msg.level || '').toString().toLowerCase();
+            appendLog(msg.text || 'Extension log event', logTone === 'error' ? 'error' : (logTone === 'warn' ? 'warn' : 'info'));
           }
         });
         function sendPing() {
@@ -6226,7 +6517,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
   const defaults = {
     mode: 'cloudflare',
     whisperModel: config?.whisperModel || '@cf/openai/whisper',
-    diarization: false,
     translateToTarget: true,
     streamFilename: filename || '',
     provider: (config?.mainProvider && String(config.mainProvider).toLowerCase()) || providerOptions[0]?.key || 'gemini',
@@ -6286,7 +6576,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       streamPlaceholder: t('toolbox.autoSubs.steps.streamPlaceholder', {}, 'https://example.com/video.mkv'),
       langModelTitle: t('toolbox.autoSubs.steps.step2Title', {}, 'Mode & audio'),
       modeLabel: t('toolbox.autoSubs.steps.modeLabel', {}, 'Auto-subtitles mode'),
-      modeHelper: t('toolbox.autoSubs.steps.modeHelper', {}, 'Cloudflare Workers AI runs remotely. Local xSync is coming soon.'),
+      modeHelper: t('toolbox.autoSubs.steps.modeHelper', {}, 'Cloudflare runs via the xSync extension. The server will not fetch your stream.'),
       modeLocal: t('toolbox.autoSubs.steps.modeLocal', {}, 'Local (xSync)'),
       modeRemote: t('toolbox.autoSubs.steps.modeRemote', {}, 'Cloudflare Workers AI'),
       sourceLabel: t('toolbox.autoSubs.steps.sourceLabel', {}, 'Source audio language'),
@@ -6296,7 +6586,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         standard: t('toolbox.autoSubs.steps.modelStandard', {}, 'Whisper'),
         turbo: t('toolbox.autoSubs.steps.modelTurbo', {}, 'Whisper Large V3 Turbo')
       },
-      diarization: t('toolbox.autoSubs.steps.diarization', {}, 'Speaker diarization'),
       translateOutput: t('toolbox.autoSubs.steps.translateOutput', {}, 'Translate to target languages'),
       translationStepChip: t('toolbox.autoSubs.steps.stepTwoFiveChip', {}, 'Step 2.5'),
       translationStepTitle: t('toolbox.autoSubs.steps.stepTwoFiveTitle', {}, 'Translation targets'),
@@ -6338,7 +6627,9 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     },
     locks: {
       needContinue: t('toolbox.autoSubs.locks.needContinue', {}, 'Click Continue to unlock the next steps.'),
-      needTarget: t('toolbox.autoSubs.locks.needTarget', {}, 'Select a target or disable translation to unlock Run.')
+      needTarget: t('toolbox.autoSubs.locks.needTarget', {}, 'Select a target or disable translation to unlock Run.'),
+      needStep2: t('toolbox.autoSubs.locks.needStep2', {}, 'Complete Step 2 and press Continue to proceed.'),
+      needRun: t('toolbox.autoSubs.locks.needRun', {}, 'Run auto-subs to unlock downloads.')
     },
     actions: {
       continue: t('toolbox.autoSubs.actions.continue', {}, 'Continue')
@@ -6782,13 +7073,23 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       font-weight: 700;
       font-size: 14px;
       box-shadow: 0 8px 22px rgba(239,68,68,0.12);
-      display: none;
+      display: block;
       width: 100%;
       box-sizing: border-box;
       text-align: center;
       align-self: stretch;
       word-break: break-word;
       overflow-wrap: anywhere;
+      min-height: var(--hash-alert-min-height, 74px);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+    .hash-mismatch-alert.is-visible {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
     }
     .hash-mismatch-alert .alert-head {
       color: #fff;
@@ -7196,7 +7497,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
             </div>
             <label for="streamUrl">${escapeHtml(copy.steps.streamLabel)}</label>
             <input type="text" id="streamUrl" placeholder="${escapeHtml(copy.steps.streamPlaceholder)}">
-            <div class="hash-mismatch-alert" id="auto-hash-mismatch" role="status" aria-live="polite"></div>
+            <div class="hash-mismatch-alert" id="auto-hash-mismatch" role="status" aria-live="polite" aria-hidden="true"></div>
             <div class="controls" style="margin-top:12px;">
               <button class="btn" id="autoContinue"><span>➡️</span> ${escapeHtml(copy.actions.continue)}</button>
             </div>
@@ -7230,12 +7531,12 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
               </div>
               <div class="controls wrap">
                 <label class="inline-checkbox">
-                  <input type="checkbox" id="enableDiarization"> ${escapeHtml(copy.steps.diarization)}
-                </label>
-                <label class="inline-checkbox">
                   <input type="checkbox" id="translateOutput" checked> ${escapeHtml(copy.steps.translateOutput)}
                 </label>
               </div>
+            </div>
+            <div class="controls" style="margin-top:12px;">
+              <button class="btn" id="autoStep2Continue"><span>➡️</span> ${escapeHtml(copy.actions.continue)}</button>
             </div>
           </div>
         </div>
@@ -7367,6 +7668,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     streamUrl: initialStreamUrl,
     videoHash,
     linkedTitle,
+    cfClient,
     defaults,
     providerOptions,
     targetLanguages,
