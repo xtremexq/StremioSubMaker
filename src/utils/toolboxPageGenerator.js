@@ -2245,6 +2245,11 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
     #step1Card .step-header h3,
     #step1Card .step-header p { align-self: flex-start; text-align: left; }
     #step1Card .step-title-row { width: 100%; }
+    #step2Card .section-head { flex-direction: row; align-items: flex-start; justify-content: flex-start; text-align: left; }
+    #step2Card .section-head > div { text-align: left; }
+    #step2Card .step-header { align-items: flex-start; }
+    #step2Card .step-header h3,
+    #step2Card .step-header p { align-self: flex-start; text-align: left; }
     .centered-section { text-align: center; }
     .centered-section .section-head { flex-direction: column; align-items: center; justify-content: center; text-align: center; }
     .centered-section .section-head > div { text-align: center; }
@@ -5154,6 +5159,18 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
   const parsedVideo = parseStremioId(videoId);
   const episodeTag = formatEpisodeTag(parsedVideo);
   const linkedTitle = await fetchLinkedTitleServer(videoId);
+  const parseCfCreds = (rawKey) => {
+    const cleaned = typeof rawKey === 'string' ? rawKey.trim() : '';
+    if (!cleaned) return { accountId: '', token: '' };
+    const delimiters = ['|', ':'];
+    for (const delim of delimiters) {
+      if (cleaned.includes(delim)) {
+        const [account, ...rest] = cleaned.split(delim);
+        return { accountId: (account || '').trim(), token: rest.join(delim).trim() };
+      }
+    }
+    return { accountId: '', token: cleaned };
+  };
   const providerOptions = (() => {
     const options = [];
     const providers = config.providers || {};
@@ -5203,6 +5220,11 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       addIfEnabled(key, `Provider: ${formatLabel(key, model)}`, model);
     });
     return options;
+  })();
+  const cfKey = (config.providers?.cfworkers?.apiKey || config.providers?.cloudflare?.apiKey || '').toString();
+  const cfClient = (() => {
+    const creds = parseCfCreds(cfKey);
+    return creds.accountId && creds.token ? creds : null;
   })();
 
   function autoSubsRuntime(copy) {
