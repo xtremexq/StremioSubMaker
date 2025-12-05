@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 - **Linked stream parity:** Embedded-subtitles now renders the linked stream title/episode exactly like Subtitle Sync (no truncation to "Re"), including episode tags and separators.
 - **Translation context alignment:** Translation context and meta subtitles in embedded-subtitles share the same label/separator logic as sync, so manual refresh or extension updates keep the full linked title visible.
 - **Hash/status resilience:** Embedded-subtitles metadata updates reuse the shared linked-title helper and avoid placeholder fallbacks when titles arrive late from Cinemeta.
+- **Stream activity isolation:** Stream activity buckets are now scoped to the requesting session/token instead of shared config hashes, preventing cross-user SSE collisions and hash-mismatch banners.
+- **Stream watcher polling:** Poll fallback treats 204 responses as healthy and no longer references an undefined streak cap, stopping 15-minute pauses after normal idle periods and keeping latest streams accurate.
 
 ## SubMaker v1.4.16
 

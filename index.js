@@ -843,14 +843,44 @@ function computeConfigHash(configStr) {
     }
 }
 
+// Helper: derive a scoped hash that mixes the base hash with a session-specific seed
+function scopeConfigHash(baseHash, scopeSeed) {
+    if (!baseHash) return baseHash;
+    if (!scopeSeed) return baseHash;
+    try {
+        return crypto.createHash('sha256').update(String(baseHash)).update('|').update(String(scopeSeed)).digest('hex').slice(0, 16);
+    } catch (error) {
+        log.warn(() => ['[ConfigHash] Failed to scope hash:', error.message]);
+        return baseHash;
+    }
+}
+
+// Hash scope seed so tokens/config strings are never exposed directly
+function computeConfigScope(scopeSeed) {
+    if (!scopeSeed) return '';
+    try {
+        return crypto.createHash('sha256').update(String(scopeSeed)).digest('hex').slice(0, 12);
+    } catch (error) {
+        log.warn(() => ['[ConfigHash] Failed to compute scope seed hash:', error.message]);
+        return '';
+    }
+}
+
 // Helper: ensure a config object has a stable hash attached (derived from normalized payload)
 function ensureConfigHash(config, fallbackSeed = '') {
     if (!config || typeof config !== 'object') {
         return 'anonymous';
     }
-    if (typeof config.__configHash === 'string' && config.__configHash.length > 0) {
-        return config.__configHash;
+
+    // If the stored hash was computed with the same scope, keep it; otherwise recompute to avoid cross-user collisions.
+    const scopeSeed = (typeof fallbackSeed === 'string' && fallbackSeed.length) ? fallbackSeed : '';
+    const scopeTag = computeConfigScope(scopeSeed);
+    const storedHash = (typeof config.__configHash === 'string' && config.__configHash.length > 0) ? config.__configHash : '';
+    const storedScope = (typeof config.__configHashScope === 'string' && config.__configHashScope.length > 0) ? config.__configHashScope : '';
+    if (storedHash && (!scopeTag || storedScope === scopeTag)) {
+        return storedHash;
     }
+
     let hash = computeConfigHash(config || fallbackSeed || 'empty_config_00');
 
     // If the payload normalized to an empty/invalid hash (e.g., corrupted session),
@@ -858,8 +888,18 @@ function ensureConfigHash(config, fallbackSeed = '') {
     if (hash === 'empty_config_00' && fallbackSeed) {
         hash = computeConfigHash(`fallback:${fallbackSeed}`);
     }
-    config.__configHash = hash;
-    return hash;
+
+    const scopedHash = scopeTag ? scopeConfigHash(hash, scopeTag) : hash;
+    config.__configHash = scopedHash;
+    if (scopeTag) {
+        // Track the scope seed we used (hashed) so we can detect outdated hashes on the next request
+        config.__configHashScope = scopeTag;
+    }
+    // Preserve the unscoped hash when we had to add a scope so future code can differentiate if needed
+    if (scopedHash !== hash) {
+        config.__configBaseHash = hash;
+    }
+    return scopedHash;
 }
 
 // Helper: Deep clone config object to prevent shared references between users

@@ -786,8 +786,14 @@ function quickNavScript() {
         const isStale = (Date.now() - lastSeenTs) > STALE_BACKSTOP_MS;
         try {
           const resp = await fetch('/api/stream-activity?config=' + encodeURIComponent(configStr), { cache: 'no-store' });
-          if (!resp.ok || resp.status === 204) {
-            pollErrorStreak = Math.min(pollErrorStreak + 1, POLL_ERROR_STREAK_CAP);
+          if (resp.status === 204) {
+            // No stream yet; treat as a healthy response so we don't pause polling
+            pollErrorStreak = 0;
+            pauseNotified = false;
+            return;
+          }
+          if (!resp.ok) {
+            pollErrorStreak = Math.min(pollErrorStreak + 1, PAUSE_AFTER_FAILURES);
             return;
           }
           const data = await resp.json();
