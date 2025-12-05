@@ -1637,6 +1637,7 @@ app.use((req, res, next) => {
         '/js/theme-toggle.js',
         '/js/help-modal.js',
         '/js/sw-register.js',
+        '/js/subtitle-menu.js',
         '/sw.js'
     ];
     const configUiPartials = [
@@ -1644,7 +1645,13 @@ app.use((req, res, next) => {
         '/partials/footer.html',
         '/partials/overlays.html'
     ];
-    const isConfigUiAsset = configUiAssets.includes(req.path) || configUiPartials.includes(req.path);
+    const configUiFonts = [
+        '/fonts/Twemoji.ttf'
+    ];
+    const isConfigUiAsset =
+        configUiAssets.includes(req.path) ||
+        configUiPartials.includes(req.path) ||
+        configUiFonts.includes(req.path);
 
     if (isConfigUiAsset) {
         // Force a cache-busting query so stale CDN copies (e.g. elfhosted) are bypassed
