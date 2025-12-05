@@ -5317,6 +5317,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         autoSubsReject: null,
         autoSubsTimer: null
       };
+      const AUTO_SUB_TIMEOUT_MS = 15 * 60 * 1000;
       const escapeHtmlClient = (value) => {
         if (value === undefined || value === null) return '';
         return String(value)
@@ -6054,27 +6055,42 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         return null;
       }
 
-      function resetAutoSubWait() {
+      function clearAutoSubTimeout() {
         if (state.autoSubsTimer) {
           clearTimeout(state.autoSubsTimer);
           state.autoSubsTimer = null;
         }
+      }
+
+      function failAutoSubTimeout() {
+        clearAutoSubTimeout();
+        const rejecter = state.autoSubsReject;
+        state.autoSubsMessageId = null;
+        state.autoSubsResolver = null;
+        state.autoSubsReject = null;
+        const err = new Error('Extension did not return a transcript in time');
+        if (typeof rejecter === 'function') rejecter(err);
+        else appendLog(err.message, 'error');
+      }
+
+      function refreshAutoSubTimeout() {
+        clearAutoSubTimeout();
+        state.autoSubsTimer = setTimeout(failAutoSubTimeout, AUTO_SUB_TIMEOUT_MS);
+      }
+
+      function resetAutoSubWait() {
+        clearAutoSubTimeout();
         state.autoSubsMessageId = null;
         state.autoSubsResolver = null;
         state.autoSubsReject = null;
       }
 
       function waitForAutoSubResponse(messageId) {
-        if (state.autoSubsTimer) clearTimeout(state.autoSubsTimer);
         return new Promise((resolve, reject) => {
           state.autoSubsMessageId = messageId;
           state.autoSubsResolver = resolve;
           state.autoSubsReject = reject;
-          state.autoSubsTimer = setTimeout(() => {
-            state.autoSubsTimer = null;
-            state.autoSubsMessageId = null;
-            reject(new Error('Extension did not return a transcript in time'));
-          }, 90000);
+          refreshAutoSubTimeout();
         });
       }
 
@@ -6128,6 +6144,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
 
       function handleAutoSubProgressMessage(msg) {
         if (!msg || !state.autoSubsMessageId || (msg.messageId && msg.messageId !== state.autoSubsMessageId)) return;
+        refreshAutoSubTimeout();
         const tone = (msg.level || '').toString().toLowerCase();
         const logTone = tone === 'error' ? 'error' : (tone === 'warn' ? 'warn' : 'info');
         if (msg.status) {
@@ -6152,10 +6169,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
 
       function handleAutoSubResponseMessage(msg) {
         if (!msg || !state.autoSubsMessageId || (msg.messageId && msg.messageId !== state.autoSubsMessageId)) return;
-        if (state.autoSubsTimer) {
-          clearTimeout(state.autoSubsTimer);
-          state.autoSubsTimer = null;
-        }
+        clearAutoSubTimeout();
         const resolver = state.autoSubsResolver;
         const rejecter = state.autoSubsReject;
         state.autoSubsResolver = null;
