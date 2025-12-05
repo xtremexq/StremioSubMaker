@@ -5533,6 +5533,18 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         }
       }
 
+      function appendServerLogs(logs) {
+        if (!Array.isArray(logs)) return;
+        logs.forEach((entry) => {
+          if (!entry) return;
+          const level = (entry.level || entry.tone || '').toString().toLowerCase();
+          const tone = level === 'error' ? 'error' : (level === 'warn' ? 'warn' : (level === 'success' ? 'success' : 'info'));
+          const msg = entry.message || entry.msg || '';
+          if (!msg) return;
+          appendLog(msg, tone);
+        });
+      }
+
       function clearLog() {
         if (!els.log) return;
         els.log.innerHTML = '';
@@ -5930,6 +5942,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           diarization: els.diarization?.checked === true
         };
 
+        let serverLogs = [];
         try {
           const resp = await fetch('/api/auto-subtitles/run', {
             method: 'POST',
@@ -5948,6 +5961,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
               data = {};
             }
           }
+          serverLogs = Array.isArray(data?.logTrail) ? data.logTrail : [];
           const upstreamHint = (data?.cfStatus && Number(data.cfStatus) >= 500)
             ? tt('toolbox.autoSubs.logs.upstream', {}, 'Cloudflare Workers AI returned a 5xx response. This is usually temporary; try again shortly or verify your account limits.')
             : '';
@@ -5955,8 +5969,11 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
             const cfStatusLabel = data?.cfStatus ? ` [Cloudflare ${data.cfStatus}]` : '';
             const msg = data?.error || data?.message || data?.details || `Request failed (${resp.status})`;
             const combined = [msg + cfStatusLabel, upstreamHint].filter(Boolean).join(' ');
-            throw new Error(combined);
+            const err = new Error(combined);
+            err.serverLogs = serverLogs;
+            throw err;
           }
+          appendServerLogs(serverLogs);
           handleHashStatus(data.hashes || {}, data.cacheBlocked);
           markStep('transcribe', 'check');
           setProgress(60);
@@ -5981,6 +5998,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           markStep('align', 'danger');
           markStep('translate', 'danger');
           setStatus(tt('toolbox.autoSubs.status.failedPrefix', {}, 'Failed: ') + error.message);
+          appendServerLogs(error?.serverLogs || serverLogs);
           appendLog(tt('toolbox.autoSubs.logs.errorPrefix', {}, 'Error: ') + error.message, 'error');
         } finally {
           setInFlight(false);
@@ -6529,6 +6547,19 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     .status-labels { display: flex; flex-direction: column; line-height: 1.15; }
     .label-eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
     .status-badge strong { font-size: 14px; }
+    .status-badge .ext-link {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--primary);
+      text-decoration: underline;
+    }
+    .status-badge .ext-link.ready {
+      color: var(--text-primary);
+      text-decoration: none;
+      pointer-events: none;
+      cursor: default;
+      font-weight: 800;
+    }
     .status-badge.warn { border-color: rgba(244,63,94,0.25); box-shadow: 0 12px 30px rgba(244,63,94,0.16); }
     .status-dot {
       width: 12px;

@@ -13,7 +13,9 @@ const { LRUCache } = require('lru-cache');
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const Joi = require('joi');
 const path = require('path');
+const { spawn } = require('child_process');
 const crypto = require('crypto');
+const ffmpegPath = require('ffmpeg-static');
 
 const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits, getDefaultProviderParameters, mergeProviderParameters } = require('./src/utils/config');
 const { srtPairToWebVTT } = require('./src/utils/subtitle');
@@ -290,49 +292,180 @@ const AUTOSUB_MAX_AUDIO_BYTES = parseInt(process.env.AUTOSUB_MAX_AUDIO_BYTES, 10
 const AUTOSUB_FETCH_TIMEOUT_MS = parseInt(process.env.AUTOSUB_FETCH_TIMEOUT_MS, 10) || 45_000;
 const AUTOSUB_CF_TIMEOUT_MS = parseInt(process.env.AUTOSUB_CF_TIMEOUT_MS, 10) || 60_000;
 
-async function downloadStreamAudio(streamUrl, options = {}) {
-    const maxBytes = Number(options.maxBytes) > 0 ? Number(options.maxBytes) : AUTOSUB_MAX_AUDIO_BYTES;
-    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : AUTOSUB_FETCH_TIMEOUT_MS;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    let response;
-    try {
-        response = await fetch(streamUrl, {
-            headers: { Range: `bytes=0-${maxBytes - 1}` },
-            signal: controller.signal
-        });
-    } catch (error) {
-        clearTimeout(timeout);
-        throw new Error(`Failed to fetch stream audio: ${error.message || error}`);
-    }
-    if (!response || !response.ok) {
-        clearTimeout(timeout);
-        throw new Error(`Failed to fetch stream audio (status ${response?.status || 'unknown'})`);
-    }
-    if (!response.body) {
-        clearTimeout(timeout);
-        throw new Error('Stream response has no body');
-    }
+function formatBytes(value) {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const idx = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+    const scaled = bytes / Math.pow(1024, idx);
+    return `${scaled.toFixed(scaled >= 10 ? 0 : 1)}${units[idx]}`;
+}
 
-    const chunks = [];
-    let total = 0;
-    try {
-        for await (const chunk of response.body) {
+function looksLikePlaylist(buffer) {
+    if (!buffer || buffer.length === 0) return false;
+    const slice = buffer.slice(0, 2048).toString('utf8').trim();
+    if (!slice) return false;
+    return /^#EXTM3U/i.test(slice) || slice.includes('#EXTINF') || slice.includes('EXT-X-STREAM-INF');
+}
+
+function looksLikeHtml(buffer) {
+    if (!buffer || buffer.length === 0) return false;
+    const slice = buffer.slice(0, 1024).toString('utf8').trim();
+    if (!slice) return false;
+    return /^<!doctype html/i.test(slice) || /^<html/i.test(slice);
+}
+
+async function extractAudioWithFfmpeg(streamUrl, options = {}, logger = null) {
+    const logStep = (message, level = 'info') => {
+        try {
+            if (typeof logger === 'function') logger(message, level);
+        } catch (_) { /* ignore logger errors */ }
+    };
+    const binary = ffmpegPath;
+    if (!binary) {
+        throw new Error('FFmpeg binary not available. Install ffmpeg-static to enable audio extraction.');
+    }
+    const maxBytes = Number(options.maxBytes) > 0 ? Number(options.maxBytes) : AUTOSUB_MAX_AUDIO_BYTES;
+    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : Math.max(AUTOSUB_FETCH_TIMEOUT_MS, 60_000);
+    const args = [
+        '-hide_banner',
+        '-loglevel', 'error',
+        '-nostdin',
+        '-i', streamUrl,
+        '-vn',
+        '-ac', '1',
+        '-ar', '16000',
+        '-f', 'wav',
+        'pipe:1'
+    ];
+
+    logStep(`FFmpeg fallback: decoding audio from stream (limit ${formatBytes(maxBytes)})`, 'info');
+
+    return await new Promise((resolve, reject) => {
+        const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        const chunks = [];
+        let total = 0;
+        let killed = false;
+        let stderrBuf = '';
+        const timer = setTimeout(() => {
+            killed = true;
+            child.kill('SIGKILL');
+        }, timeoutMs);
+
+        const cleanup = () => clearTimeout(timer);
+
+        child.stdout.on('data', (chunk) => {
             total += chunk.length;
             if (total > maxBytes) {
-                throw new Error(`Audio exceeds maximum allowed size (${maxBytes} bytes)`);
+                killed = true;
+                stderrBuf = `FFmpeg output exceeded ${formatBytes(maxBytes)}`;
+                child.kill('SIGKILL');
+                return;
             }
             chunks.push(chunk);
+        });
+
+        child.stderr.on('data', (chunk) => {
+            if (stderrBuf.length < 4000) {
+                stderrBuf += chunk.toString('utf8');
+            }
+        });
+
+        child.on('error', (error) => {
+            cleanup();
+            reject(new Error(`FFmpeg failed to start: ${error.message || error}`));
+        });
+
+        child.on('close', (code, signal) => {
+            cleanup();
+            if (killed && total === 0) {
+                return reject(new Error(`FFmpeg was terminated (${signal || 'killed'}). ${stderrBuf || 'No output captured.'}`));
+            }
+            if (code !== 0 || killed) {
+                const reason = stderrBuf ? stderrBuf.trim() : `exit code ${code}`;
+                return reject(new Error(`FFmpeg exited with error: ${reason}`));
+            }
+            const buffer = Buffer.concat(chunks);
+            logStep(`FFmpeg produced ${formatBytes(buffer.length)} of audio`, 'info');
+            resolve({
+                buffer,
+                bytes: buffer.length,
+                source: 'ffmpeg',
+                contentType: 'audio/wav'
+            });
+        });
+    });
+}
+
+async function downloadStreamAudio(streamUrl, options = {}, logger = null) {
+    const maxBytes = Number(options.maxBytes) > 0 ? Number(options.maxBytes) : AUTOSUB_MAX_AUDIO_BYTES;
+    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : AUTOSUB_FETCH_TIMEOUT_MS;
+    const forceFfmpeg = options.forceFfmpeg === true;
+    const logStep = (message, level = 'info') => {
+        try {
+            if (typeof logger === 'function') logger(message, level);
+        } catch (_) { /* swallow logger errors */ }
+    };
+    const urlStr = String(streamUrl || '');
+    const looksAdaptive = /\.m3u8(\?|$)/i.test(urlStr) || /\.mpd(\?|$)/i.test(urlStr);
+    if (!forceFfmpeg && !looksAdaptive) {
+        logStep(`Fetching audio via HTTP range (limit ${formatBytes(maxBytes)})`, 'info');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        let response;
+        try {
+            response = await fetch(streamUrl, {
+                headers: { Range: `bytes=0-${maxBytes - 1}` },
+                signal: controller.signal
+            });
+        } catch (error) {
+            clearTimeout(timeout);
+            logStep(`HTTP fetch failed: ${error.message || error}`, 'warn');
+            response = null;
         }
-    } catch (error) {
-        clearTimeout(timeout);
-        if (error.name === 'AbortError') {
-            throw new Error('Audio fetch aborted due to timeout or cancellation');
+        if (response && response.ok && response.body) {
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            const chunks = [];
+            let total = 0;
+            try {
+                for await (const chunk of response.body) {
+                    total += chunk.length;
+                    if (total > maxBytes) {
+                        throw new Error(`Audio exceeds maximum allowed size (${formatBytes(maxBytes)})`);
+                    }
+                    chunks.push(chunk);
+                }
+            } catch (error) {
+                clearTimeout(timeout);
+                if (error.name === 'AbortError') {
+                    logStep('HTTP fetch aborted due to timeout', 'warn');
+                } else {
+                    logStep(`HTTP fetch stream failed: ${error.message || error}`, 'warn');
+                }
+            }
+            clearTimeout(timeout);
+            const buffer = Buffer.concat(chunks);
+            const playlistLike = looksLikePlaylist(buffer);
+            const htmlLike = looksLikeHtml(buffer);
+            const isPlaylistContentType = /mpegurl|m3u8|dash|mpd/.test(contentType);
+            if (!playlistLike && !htmlLike && !isPlaylistContentType && buffer.length > 0) {
+                logStep(`Fetched ${formatBytes(buffer.length)} via HTTP range (${contentType || 'unknown'})`, 'info');
+                return {
+                    buffer,
+                    bytes: buffer.length,
+                    source: 'http-range',
+                    contentType: contentType || ''
+                };
+            }
+            logStep('HTTP fetch returned playlist/HTML content; switching to FFmpeg fallback', 'warn');
+        } else if (response) {
+            clearTimeout(timeout);
+            logStep(`HTTP fetch failed (status ${response.status})`, 'warn');
         }
-        throw error;
     }
-    clearTimeout(timeout);
-    return Buffer.concat(chunks);
+
+    // Fallback to FFmpeg extraction for adaptive streams or when HTTP fetch failed
+    return await extractAudioWithFfmpeg(streamUrl, { maxBytes, timeoutMs }, logger);
 }
 
 function formatTimestamp(seconds = 0) {
@@ -387,6 +520,7 @@ async function transcribeWithCloudflare(audioBuffer, opts = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AUTOSUB_CF_TIMEOUT_MS);
     let response;
+    let responseStatus = null;
     try {
         response = await fetch(endpoint, {
             method: 'POST',
@@ -394,6 +528,7 @@ async function transcribeWithCloudflare(audioBuffer, opts = {}) {
             body: formData,
             signal: controller.signal
         });
+        responseStatus = response?.status || null;
     } catch (error) {
         clearTimeout(timeout);
         if (error.name === 'AbortError') {
@@ -438,6 +573,8 @@ async function transcribeWithCloudflare(audioBuffer, opts = {}) {
         srt: srt || '',
         languageCode: (language || '').toString().toLowerCase(),
         model,
+        cfStatus: responseStatus,
+        segmentCount: Array.isArray(segments) ? segments.length : null,
         raw: result
     };
 }
@@ -1502,6 +1639,27 @@ app.use((req, res, next) => {
         '/js/sw-register.js',
         '/sw.js'
     ];
+    const configUiPartials = [
+        '/partials/main.html',
+        '/partials/footer.html',
+        '/partials/overlays.html'
+    ];
+    const isConfigUiAsset = configUiAssets.includes(req.path) || configUiPartials.includes(req.path);
+
+    if (isConfigUiAsset) {
+        // Force a cache-busting query so stale CDN copies (e.g. elfhosted) are bypassed
+        if (!Object.prototype.hasOwnProperty.call(req.query || {}, '_cb')) {
+            try {
+                const url = new URL(req.originalUrl, `http://${req.headers.host || 'localhost'}`);
+                url.searchParams.set('_cb', CACHE_BUSTER_VERSION);
+                return res.redirect(307, url.pathname + url.search);
+            } catch (err) {
+                log.warn(() => ['[Cache] Failed to build cache-buster redirect:', err.message]);
+            }
+        }
+        // Even with a cache-busted URL, mark the response as no-store to prevent future staleness
+        setNoStore(res);
+    }
 
     // Never cache session/config endpoints or configure assets (prevents cross-user bleed)
     const noStorePaths = [
@@ -3740,6 +3898,7 @@ app.get('/auto-subtitles', async (req, res) => {
 
 // API: Automatic subtitles (Cloudflare Workers AI transcription + optional translation)
 app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
+    let logTrail = [];
     try {
         setNoStore(res);
         let t = res.locals?.t || getTranslatorFromRequest(req, res, req.body);
@@ -3760,9 +3919,19 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
             translationPrompt,
             diarization = false
         } = req.body || {};
+        logTrail = [];
+        const logStep = (message, level = 'info') => {
+            const entry = { ts: Date.now(), level, message: String(message || '') };
+            logTrail.push(entry);
+            return entry;
+        };
 
         if (!configStr || !streamUrl || !videoId) {
-            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Missing required fields: configStr, streamUrl, videoId') });
+            logStep('Missing required fields for auto-subs request', 'error');
+            return res.status(400).json({
+                error: t('server.errors.missingFields', {}, 'Missing required fields: configStr, streamUrl, videoId'),
+                logTrail
+            });
         }
 
         const config = await resolveConfigGuarded(configStr, req, res, '[Auto Subs API] config', t);
@@ -3771,7 +3940,10 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
         if (!config || config.__sessionTokenError === true) {
             log.warn(() => '[Auto Subs API] Rejected due to invalid/missing session token');
             t = getTranslatorFromRequest(req, res, config);
-            return res.status(401).json({ error: t('server.errors.invalidSessionToken', {}, 'Invalid or expired session token') });
+            return res.status(401).json({
+                error: t('server.errors.invalidSessionToken', {}, 'Invalid or expired session token'),
+                logTrail
+            });
         }
         t = getTranslatorFromRequest(req, res, config);
 
@@ -3779,13 +3951,17 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
         const streamHashInfo = deriveStreamHashFromUrlServer(streamUrl, { filename, videoId });
         const cacheBlocked = Boolean(streamHashInfo.hash && linkedHash && streamHashInfo.hash !== linkedHash);
         const videoHash = linkedHash || streamHashInfo.hash || deriveVideoHash(streamHashInfo.filename || filename || '', streamHashInfo.videoId || videoId || '');
+        logStep(`Starting auto-subs run (engine=${engine || 'remote'}, translate=${translate !== false}, diarization=${diarization === true})`, 'info');
+        logStep(`Video hash derived as ${videoHash || 'n/a'} (linked=${linkedHash || 'n/a'}, stream=${streamHashInfo.hash || 'n/a'})`, cacheBlocked ? 'warn' : 'info');
 
         const engineKey = String(engine || 'remote').toLowerCase();
         if (engineKey === 'local') {
+            logStep('Local engine requested but not available in hosted mode', 'warn');
             return res.status(400).json({
                 error: t('server.errors.autoSubsLocalUnavailable', {}, 'Local Whisper (extension) is not available yet. Use Remote (Cloudflare Workers AI).'),
                 cacheBlocked,
-                hashes: { linked: linkedHash, stream: streamHashInfo.hash || '' }
+                hashes: { linked: linkedHash, stream: streamHashInfo.hash || '' },
+                logTrail
             });
         }
 
@@ -3797,19 +3973,36 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
             || process.env.CLOUDFLARE_API_KEY;
         const cfCreds = resolveCfWorkersCredentials(cfApiKey || '');
         if (!cfCreds.accountId || !cfCreds.token) {
-            return res.status(400).json({ error: t('server.errors.cfWorkersMissing', {}, 'Cloudflare Workers AI credentials are missing. Provide ACCOUNT_ID|TOKEN.') });
+            logStep('Cloudflare Workers AI credentials are missing', 'error');
+            return res.status(400).json({
+                error: t('server.errors.cfWorkersMissing', {}, 'Cloudflare Workers AI credentials are missing. Provide ACCOUNT_ID|TOKEN.'),
+                logTrail
+            });
         }
 
-        let audioBuffer;
+        let audioResult;
         try {
-            audioBuffer = await downloadStreamAudio(streamUrl);
+            audioResult = await downloadStreamAudio(streamUrl, {}, (msg, level) => logStep(msg, level));
+            if (!audioResult || !audioResult.buffer || !audioResult.buffer.length) {
+                throw new Error('No audio was returned from fetch pipeline');
+            }
+            logStep(
+                `Audio prepared (${formatBytes(audioResult.buffer.length)} via ${audioResult.source || 'unknown'})${audioResult.contentType ? ` [${audioResult.contentType}]` : ''}`,
+                'info'
+            );
         } catch (error) {
             log.warn(() => ['[Auto Subs API] Audio fetch failed:', error.message]);
-            return res.status(400).json({ error: t('server.errors.audioFetchFailed', {}, `Failed to fetch stream audio: ${error.message}`) });
+            logStep(`Audio fetch failed: ${error.message || error}`, 'error');
+            return res.status(400).json({
+                error: t('server.errors.audioFetchFailed', {}, `Failed to fetch stream audio: ${error.message}`),
+                logTrail
+            });
         }
+        const audioBuffer = audioResult.buffer;
 
         let transcription;
         try {
+            logStep(`Sending audio to Cloudflare Workers AI (${model || '@cf/openai/whisper'})`, 'info');
             transcription = await transcribeWithCloudflare(audioBuffer, {
                 accountId: cfCreds.accountId,
                 token: cfCreds.token,
@@ -3817,6 +4010,10 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
                 sourceLanguage,
                 diarization: diarization === true
             });
+            logStep(
+                `Cloudflare transcription ok (status ${transcription.cfStatus || '200'}, segments=${transcription.segmentCount || 'n/a'})`,
+                'info'
+            );
         } catch (error) {
             const cfStatus = Number(error?.cfStatus || error?.status || error?.statusCode);
             const statusCode = Number.isFinite(cfStatus) && cfStatus >= 500 ? 502 : 400;
@@ -3826,13 +4023,18 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
                 error: message,
                 cfStatus: cfStatus || null,
                 hashes: { linked: linkedHash, stream: streamHashInfo.hash || '' },
-                cacheBlocked
+                cacheBlocked,
+                logTrail
             });
         }
 
         const originalSrt = (transcription && transcription.srt) ? transcription.srt : '';
         if (!originalSrt || !originalSrt.trim()) {
-            return res.status(500).json({ error: t('server.errors.transcriptionEmpty', {}, 'Transcription returned no content') });
+            logStep('Transcription returned no content', 'error');
+            return res.status(500).json({
+                error: t('server.errors.transcriptionEmpty', {}, 'Transcription returned no content'),
+                logTrail
+            });
         }
         const originalLang = normalizeSyncLang(sourceLanguage || transcription.languageCode || 'und');
         const modelKey = safeModelKey(model || transcription.model);
@@ -3873,7 +4075,9 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
             const providerBundle = resolveAutoSubTranslationProvider(config, providerKey, translationModel);
             if (!providerBundle || !providerBundle.provider) {
                 log.warn(() => '[Auto Subs API] No translation provider resolved; skipping translations');
+                logStep('No translation provider configured; skipping translations', 'warn');
             } else {
+                logStep(`Using translation provider ${providerBundle.providerName} (${providerBundle.providerModel || 'default model'})`, 'info');
                 const translationEngine = new TranslationEngine(
                     providerBundle.provider,
                     providerBundle.providerModel,
@@ -3883,6 +4087,7 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
 
                 for (const targetLang of normalizedTargets) {
                     try {
+                        logStep(`Translating to ${targetLang}`, 'info');
                         const translated = await translationEngine.translateSubtitle(
                             originalSrt,
                             getLanguageName(targetLang) || targetLang,
@@ -3916,8 +4121,10 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
                             downloadUrl,
                             sourceId
                         });
+                        logStep(`Translation complete for ${targetLang} (${translated.length} chars)`, 'info');
                     } catch (error) {
                         log.warn(() => ['[Auto Subs API] Translation failed for', targetLang, ':', error.message]);
+                        logStep(`Translation failed for ${targetLang}: ${error.message || 'Unknown error'}`, 'warn');
                         translations.push({
                             languageCode: targetLang,
                             error: error.message || 'Translation failed'
@@ -3932,6 +4139,7 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
             cacheBlocked,
             hashes: { linked: linkedHash, stream: streamHashInfo.hash || '' },
             videoHash,
+            logTrail,
             original: {
                 languageCode: originalLang,
                 srt: originalSrt,
@@ -3939,13 +4147,27 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
                 downloadUrl: originalDownloadUrl,
                 sourceId: originalSourceId
             },
-            translations
+            translations,
+            diagnostics: {
+                engine: 'cloudflare',
+                cfStatus: transcription?.cfStatus || null,
+                model: transcription?.model || model || '@cf/openai/whisper',
+                audioBytes: audioBuffer?.length || null,
+                audioSource: audioResult?.source || '',
+                contentType: audioResult?.contentType || '',
+                translationTargets: normalizedTargets
+            }
         });
     } catch (error) {
         const t = res.locals?.t || getTranslatorFromRequest(req, res);
         if (respondStorageUnavailable(res, error, '[Auto Subs API]', t)) return;
         log.error(() => '[Auto Subs API] Error:', error);
-        res.status(500).json({ error: t('server.errors.autoSubsFailed', {}, `Automatic subtitles failed: ${error.message}`) });
+        res.status(500).json({
+            error: t('server.errors.autoSubsFailed', {}, `Automatic subtitles failed: ${error.message}`),
+            logTrail: (Array.isArray(logTrail) && logTrail.length)
+                ? logTrail
+                : [{ ts: Date.now(), level: 'error', message: error.message || 'Automatic subtitles failed' }]
+        });
     }
 });
 
