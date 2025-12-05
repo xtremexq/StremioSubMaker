@@ -4,11 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.16
 
-- **Badge ready emphasis:** Auto-subtitles badge now keeps the extension “Ready (vX)” label bold when the extension is detected, matching the intended ready state styling.
+- **Config cache busting:** Config UI assets/partials now force cache-busting redirects and no-store headers to avoid stale CSS/JS on hosts with long-lived CDN caches.
 - **Auto-subs audio pipeline:** Stream audio fetch now detects playlists/HTML/HLS/DASH, falls back to bundled FFmpeg decoding, enforces byte/time limits, and reports the fetch source/type for hosted runs.
 - **Cloudflare diagnostics:** Whisper calls surface CF status/segment counts and return full per-run log trails plus diagnostics so 5xx/502 failures are actionable instead of silent.
 - **Log window parity:** Auto-subs UI displays backend logTrail entries (fetch/FFmpeg/Cloudflare/translation) in the live log so step 3 shows every action and failure inline.
-- **Config cache busting:** Config UI assets/partials now force cache-busting redirects and no-store headers to avoid stale CSS/JS on hosts with long-lived CDN caches.
 
 ## SubMaker v1.4.15
 
