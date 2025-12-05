@@ -4,13 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.17
 
-- **Config flags dock:** UI language flags stay open after you click them; late translation re-renders no longer auto-collapse the dock on first use.
-- **Auto-subs model picker:** Step 2 now uses the official Cloudflare model names ("Whisper" / "Whisper Large V3 Turbo") and removes the speaker diarization toggle since the Workers AI path doesn't expose it.
-- **Linked stream parity:** Embedded-subtitles now renders the linked stream title/episode exactly like Subtitle Sync (no truncation to "Re"), including episode tags and separators.
-- **Translation context alignment:** Translation context and meta subtitles in embedded-subtitles share the same label/separator logic as sync, so manual refresh or extension updates keep the full linked title visible.
-- **Hash/status resilience:** Embedded-subtitles metadata updates reuse the shared linked-title helper and avoid placeholder fallbacks when titles arrive late from Cinemeta.
-- **Stream activity isolation:** Stream activity buckets are now scoped to the requesting session/token instead of shared config hashes, preventing cross-user SSE collisions and hash-mismatch banners.
-- **Stream watcher polling:** Poll fallback treats 204 responses as healthy and no longer references an undefined streak cap, stopping 15-minute pauses after normal idle periods and keeping latest streams accurate.
+- **Auto-subs via xSync:** Auto-subtitles now relies on the xSync extension for Cloudflare transcription; the server only accepts client-provided transcripts, logs CF status/snippets, and uses the official "Whisper" / "Whisper Large V3 Turbo" labels (diarization toggle removed).
+- **Auto-subs gating/resets:** Step 1/2 each require a Continue click, runs are blocked until the extension + CF credentials are detected, hash alerts reserve space to avoid jumps, and downloads stay locked until a run completes with refreshed status/progress logs.
+- **Embedded metadata parity:** Embedded-subtitles uses a shared linked-video label helper so titles/episode tags and reload hints match Subtitle Sync, with consistent separators and context labels; the extra Step 2 helper copy was removed.
+- **Config flags dock:** UI language flags stay expanded after you open them, even when translations re-render late.
+- **Stream activity isolation:** Stream activity buckets are scoped per session/token and the poller treats 204s as healthy with the proper failure cap, preventing cross-user collisions and long pauses after idle periods.
+- **Various minor fixes.**
 
 ## SubMaker v1.4.16
 
