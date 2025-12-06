@@ -697,14 +697,12 @@
         },
         "toolbox": {
           "title": "\ud83e\uddf0 Instruções do Sub Toolbox",
-          "beta": "BETA: Novos recursos do toolbox estão chegando em breve.<br>Por enquanto, aproveite as traduções perfeitas de arquivos SRT em lote com todos os seus provedores de IA e configurações.",
           "howTitle": "\ud83d\ude80 Como usar o Sub Toolbox:",
-          "step1": "Habilite o <strong>\"Sub Toolbox\"</strong> na página de configuração antes de instalar.",
-          "step2": "No Stremio, abra a lista de legendas e clique em <strong>\"Sub Toolbox\"</strong>.",
-          "step3": "Clique com o botão direito no stream/vídeo tocando no Stremio e escolha <strong>\"Download Subtitles\"</strong> para iniciar o toolbox no seu navegador.",
-          "step4": "Escolha uma ferramenta: Extrair & traduzir legendas embutidas, Traduzir arquivos de legenda, Sincronizar legendas ou Legendas automáticas.",
-          "step5": "Cada ferramenta abre no seu navegador usando sua sessão salva do SubMaker e configurações do provedor de IA.",
-          "step6": "Siga os passos na tela e arraste o resultado de volta para o Stremio, se necessário."
+          "step1": "No Stremio, abra a lista de legendas e clique em <strong>\"Sub Toolbox\"</strong>.",
+          "step2": "Clique com o botão direito no stream/vídeo em reprodução no Stremio e escolha <strong>\"Download Subtitles\"</strong> para abrir o toolbox no navegador.",
+          "step3": "Escolha uma ferramenta: Extrair e traduzir legendas embutidas, Traduzir arquivos de legenda, Sincronizar legendas ou Legendas automáticas.",
+          "step4": "Cada ferramenta abre no navegador usando sua sessão salva do SubMaker e configurações do provedor de IA.",
+          "step5": "Siga os passos na tela e arraste o resultado de volta para o Stremio, se necessário."
         },
         "reset": {
           "title": "Redefinir Todas as Configurações",
@@ -722,16 +720,25 @@
         "description": "Pule a tradução por IA e apenas busque legendas nos idiomas escolhidos"
       },
       "sections": {
-        "subtitleApiTitle": "Chaves de API de Legendas"
+        "apiKeysTitle": "Chaves de API",
+        "apiKeysDescription": "Adicione e valide suas chaves para provedores de legendas e serviços de tradução com IA.",
+        "subtitleApiTitle": "Chaves de API de Legendas",
+        "languagesTitle": "Idiomas",
+        "languagesDescription": "Escolha seus idiomas de origem e destino para busca e traduções.",
+        "languagesDescriptionNoTranslation": "Escolha em quais idiomas buscar legendas.",
+        "settingsTitle": "Ajustes",
+        "settingsDescription": "Ajuste o comportamento de tradução e outras preferências."
       },
       "opensubs": {
-        "implDescription": "Escolha sua implementação preferida do OpenSubtitles abaixo.",
+        "title": "OpenSubtitles",
+        "implDescription": "Escolha sua implementação preferida do OpenSubtitles.",
         "implementationType": "Tipo de Implementação",
         "v3Title": "V3 (Padrão)",
         "v3Tooltip": "O V3 não mostra todos os resultados do OpenSubtitles e limites de taxa podem ser aplicados.",
         "v3Description": "Usa o addon oficial Stremio OpenSubtitles V3. Sem autenticação necessária, configuração simples.",
         "authTitle": "Auth (Recomendado)",
-        "authDescription": "Usa sua conta do OpenSubtitles com autenticação de chave de API. Requer nome de usuário/senha.",
+        "authDescription": "Usa sua conta do OpenSubtitles.com. Requer nome de usuário/senha.",
+        "authLink": "Criar conta",
         "usernameLabel": "Nome de usuário",
         "passwordLabel": "Senha",
         "usernamePlaceholder": "Digite o Nome de Usuário do OpenSubtitles",
@@ -758,11 +765,12 @@
         "credentialsRequired": "Por favor, insira nome de usuário e senha",
         "apiKeyRequired": "Por favor, insira uma chave de API",
         "apiKeyValid": "Chave da API é válida",
-        "testResults": "({count} resultados de teste)",
-        "connectionError": "Erro de conexão. Por favor, tente novamente.",
-        "validationFailed": "Validação falhou",
-        "testing": "Testando...",
-        "valid": "Válido",
+      "testResults": "({count} resultados de teste)",
+      "connectionError": "Erro de conexão. Por favor, tente novamente.",
+      "validationFailed": "Validação falhou",
+      "testing": "Testando...",
+      "validating": "Validando...",
+      "valid": "Válido",
         "invalid": "Inválido",
         "error": "Erro",
         "testCredentials": "Testar Credenciais",
@@ -850,7 +858,8 @@
         "useDefaultModel": "Usar Modelo Padrão",
         "main": {
           "label": "Provedor Principal",
-          "description": "Escolha qual provedor de IA habilitado usar quando múltiplos estiverem configurados."
+          "description": "Escolha qual provedor de IA habilitado usar quando múltiplos estiverem configurados.",
+          "defaultGemini": "Gemini"
         },
         "secondary": {
           "label": "Provedor Secundário<br><span class=\"label-description\">Se o provedor principal der erro (429/503/proibido/outro), repete o lote falho com este provedor, depois continua com o provedor principal.</span>"
@@ -913,7 +922,7 @@
         }
       },
       "noTranslationCard": {
-        "title": "Idiomas",
+        "title": "Idiomas de legendas",
         "label": "Idiomas de Legendas",
         "search": "Pesquisar idiomas...",
         "quickPopular": "Populares",
@@ -965,41 +974,39 @@
           "noteTitle": "\u26a0\ufe0f Modo Bypass Necessário:"
         },
         "chunking": {
-          "label": "Estratégia de Fragmentação",
-          "description": "Lotes Múltiplos envia legendas em solicitações separadas (pedaços). Lote Único traduz o arquivo de legenda inteiro de uma só vez (ainda divide automaticamente em 2 ou 3 partes em 50k e 100k+ tokens). O Lote Único ainda transmite saídas parciais enquanto processa (através de streaming de token) e entrega traduções contextuais melhores. Pode causar erros MAX_OUTPUT. Títulos longos podem ter mais problemas de sincronia.",
+          "label": "Habilitar Lote Único",
+          "description": "Traduza toda a legenda de uma vez (ainda divide apenas quando extremamente grande). Melhora a coerência contextual, mas pode atingir limites do provedor com mais facilidade.",
           "multiple": "Lotes Múltiplos (Padrão)",
           "single": "Lote Único"
         }
       },
       "multiProvider": {
         "label": "Múltiplos provedores (beta)",
-        "description": "Habilita múltiplos provedores e configurações avançadas de parâmetros."
+        "description": "Habilita múltiplos provedores de IA."
       },
       "otherSettings": {
         "title": "Outras Configurações",
-        "autosubsKeys": {
-          "label": "Chaves de API de autosubs",
-          "description": "Mostrar a seção de chave da AssemblyAI para legendas automáticas."
-        },
         "subToolbox": {
           "label": "Habilitar \"Sub Toolbox\" (Alpha)",
-          "description": "Mostra a entrada Sub Toolbox nas legendas do Stremio para acesso via navegador a todas as ferramentas. (Leia as instruções após habilitar)",
-          "instructionsLink": "Ler instruções para usar o Toolbox"
+          "description": "Mostra a entrada Sub Toolbox nas legendas do Stremio para acesso via navegador a todas as ferramentas.",
+          "instructionsLink": "Ler instruções",
+          "tools": "Ferramentas: Tradução de arquivos SRT, Extração de legendas embutidas, AutoSync e AutoSubbing."
         },
         "mobileMode": {
           "label": "Modo Móvel (correção/solução alternativa)",
           "description": "O Stremio faz apenas 1 requisição para legendas e a armazena em cache, então legendas no Android não podem ser parcialmente entregues. O Modo Móvel retém requisições de tradução e envia a legenda final apenas quando pronta. Use isso se estiver assistindo no Android/iOS. Sem traduções parciais, sem mensagens de carregamento. Pode congelar o stream até que a tradução esteja pronta. Flash-lite recomendado. Aguarde 1-3 min, se não carregar automaticamente alterne legendas para frente e para trás para carregar a tradução."
         },
         "betaMode": {
-          "label": "Modo Beta",
-          "description": "Desbloqueia recursos experimentais como Múltiplos Provedores e Configurações Avançadas."
+          "label": "Modo Avançado",
+          "description": "Desbloqueia Configurações de Parâmetros Avançados para Gemini e outros provedores."
         },
         "devMode": {
           "label": "Modo Dev"
         }
       },
       "advancedGemini": {
-        "title": "Configurações Avançadas (Gemini)",
+        "cardTitle": "Parâmetros Avançados do Gemini",
+        "title": "Configurações Avançadas",
         "infoTitle": "Ajuste fino do comportamento do Gemini:",
         "infoBody": "Sobrescrever modelo padrão e parâmetros de amostragem do Gemini.",
         "cacheNotePrefix": "Quando qualquer configuração do Gemini é alterada dos padrões,",
@@ -1023,7 +1030,7 @@
           "description": "Limiar de probabilidade (0.0-1.0). Menor = mais focado, Maior = mais diverso. Padrão: 0.95"
         },
         "batchContext": {
-          "label": "Habilitar Contexto de Lote (Experimental)",
+          "label": "Habilitar Contexto de Lote",
           "description": "Incluir contexto original ao redor e traduções anteriores ao processar lotes. Melhora a coerência da tradução, mas pode quebrar saídas e aumenta o uso de token. Desativado por padrão."
         },
         "contextSize": {
@@ -1032,7 +1039,7 @@
         }
       },
       "providerAdvanced": {
-        "title": "Parâmetros Avançados",
+        "title": "Outros Parâmetros Avançados",
         "intro": "Ajuste fino das configurações de geração para cada provedor habilitado. Estes se aplicam apenas no modo de múltiplos provedores.",
         "empty": "Habilite um provedor acima para desbloquear seus parâmetros.",
         "labels": {
@@ -1094,9 +1101,9 @@
           }
         }
       },
-      "dev": {
-        "title": "Dev"
-      },
+  "dev": {
+    "title": "Desenvolvimento"
+  },
       "reset": {
         "hint": "Algum problema? Redefinir configurações para o padrão ->",
         "cta": "Redefinir"

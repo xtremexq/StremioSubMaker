@@ -694,14 +694,12 @@
         },
         "toolbox": {
           "title": "\ud83e\uddf0 Sub Toolbox Instructions",
-          "beta": "BETA: New toolbox features are coming soon.<br>For now, enjoy seamless batch SRT file translations with all your configured AI providers and settings.",
           "howTitle": "\ud83d\ude80 How to use Sub Toolbox:",
-          "step1": "Enable <strong>\"Sub Toolbox\"</strong> on the config page before installing.",
-          "step2": "In Stremio, open the subtitles list and click <strong>\"Sub Toolbox\"</strong>.",
-          "step3": "Right-click the playing stream/video in Stremio and choose <strong>\"Download Subtitles\"</strong> to launch the toolbox in your browser.",
-          "step4": "Pick a tool: Extract & translate embedded subs, Translate subtitle files, Synchronize subtitles, or Automatic subtitles.",
-          "step5": "Each tool opens in your browser using your saved SubMaker session and AI provider settings.",
-          "step6": "Follow the on-screen steps, then drag the result back into Stremio if needed."
+          "step1": "In Stremio, open the subtitles list and click <strong>\"Sub Toolbox\"</strong>.",
+          "step2": "Right-click the playing stream/video in Stremio and choose <strong>\"Download Subtitles\"</strong> to launch the toolbox in your browser.",
+          "step3": "Pick a tool: Extract & translate embedded subs, Translate subtitle files, Synchronize subtitles, or Automatic subtitles.",
+          "step4": "Each tool opens in your browser using your saved SubMaker session and AI provider settings.",
+          "step5": "Follow the on-screen steps, then drag the result back into Stremio if needed."
         },
         "reset": {
           "title": "Reset All Settings",
@@ -719,16 +717,25 @@
         "description": "Skip AI translation and just fetch subtitles in your chosen languages"
       },
       "sections": {
-        "subtitleApiTitle": "Subtitles API Keys"
+        "apiKeysTitle": "API Keys",
+        "apiKeysDescription": "Add and validate your keys for subtitle providers and translation services.",
+        "subtitleApiTitle": "Subtitles API Keys",
+        "languagesTitle": "Languages",
+        "languagesDescription": "Choose your source and target languages for fetching and translations.",
+        "languagesDescriptionNoTranslation": "Choose which subtitle languages you want to fetch!",
+        "settingsTitle": "Settings",
+        "settingsDescription": "Adjust translation behavior and other preferences."
       },
       "opensubs": {
-        "implDescription": "Choose your preferred OpenSubtitles implementation below.",
+        "title": "OpenSubtitles",
+        "implDescription": "Choose your preferred OpenSubtitles implementation.",
         "implementationType": "Implementation Type",
         "v3Title": "V3 (Default)",
         "v3Tooltip": "V3 doesn't show all OpenSubtitles results and rate-limiting may apply.",
         "v3Description": "Uses the official Stremio OpenSubtitles V3 addon. No authentication required, simple setup.",
         "authTitle": "Auth (Recommended)",
-        "authDescription": "Uses your OpenSubtitles account with API key authentication. Requires username/password.",
+        "authDescription": "Uses your OpenSubtitles.com account. Requires username/password.",
+        "authLink": "Create account",
         "usernameLabel": "Username",
         "passwordLabel": "Password",
         "usernamePlaceholder": "Enter OpenSubtitles Username",
@@ -848,7 +855,8 @@
         "useDefaultModel": "Use Default Model",
         "main": {
           "label": "Main Provider",
-          "description": "Choose which enabled AI provider to use when multiple are configured."
+          "description": "Choose which enabled AI provider to use when multiple are configured.",
+          "defaultGemini": "Gemini"
         },
         "secondary": {
           "label": "Secondary Provider<br><span class=\"label-description\">If the main provider errors (429/503/prohibited/other), retry the failed batch with this provider, then continue with the main provider.</span>"
@@ -911,7 +919,7 @@
         }
       },
       "noTranslationCard": {
-        "title": "Languages",
+        "title": "Subtitle Languages",
         "label": "Subtitle Languages",
         "search": "Search languages...",
         "quickPopular": "Popular",
@@ -963,41 +971,39 @@
           "noteTitle": "\u26a0\ufe0f Bypass Mode Required:"
         },
         "chunking": {
-          "label": "Chunking Strategy",
-          "description": "Multiple Batches sends subtitles in separate requests (chunks). Single-Batch translates the whole subtitle file in one go (still auto-splits into 2 or 3 chunks at 50k and 100k+ tokens). Single-Batch still streams partial outputs while processing (through token streaming) and delivers better contextual translations. Might cause MAX_OUTPUT errors. Long titles may have more sync problems.",
+          "label": "Enable Single Batch",
+          "description": "Translate the whole subtitle in one go (auto-splits only when extremely large). Improves contextual coherence but can hit provider limits more easily.",
           "multiple": "Multiple Batches (Default)",
           "single": "Single-Batch"
         }
       },
       "multiProvider": {
         "label": "Multiple providers (beta)",
-        "description": "Enables multiple providers and advanced parameters settings."
+        "description": "Enables multiple AI providers."
       },
       "otherSettings": {
         "title": "Other Settings",
-        "autosubsKeys": {
-          "label": "Autosubs API Keys",
-          "description": "Show the AssemblyAI key section for automatic subtitles."
-        },
         "subToolbox": {
           "label": "Enable \"Sub Toolbox\" (Alpha)",
-          "description": "Shows the Sub Toolbox entry in Stremio subtitles for brower access to all tools. (Read instructions after enabling)",
-          "instructionsLink": "Read instructions for using the Toolbox"
+          "description": "Shows the Sub Toolbox entry in Stremio subtitles for brower access to all tools.",
+          "instructionsLink": "Read instructions",
+          "tools": "Tools: SRT Files Translation, Embedded Subs Extraction, AutoSync and AutoSubbing."
         },
         "mobileMode": {
           "label": "Mobile Mode (fix/workaround)",
           "description": "Stremio makes only 1 request for subtitles and caches it, so subtitles in Android can't be partially delivered. Mobile Mode holds translation requests and sends the final subtitle only when ready. Use this if you're watching on Android/iOS. No partial translations, no loading messages. Might freeze the stream until translation is ready. Flash-lite recommended. Wait 1-3 min, if it doesn't load automatically switch subtitles back and forth to load the translation."
         },
         "betaMode": {
-          "label": "Beta Mode",
-          "description": "Unlocks experimental features like Multiple Providers and Advanced Settings."
+          "label": "Advanced Mode",
+          "description": "Unlocks Advanced Parameters Settings for Gemini and other providers."
         },
         "devMode": {
           "label": "Dev Mode"
         }
       },
       "advancedGemini": {
-        "title": "Advanced Settings (Gemini)",
+        "cardTitle": "Gemini Advanced Parameters",
+        "title": "Advanced Settings",
         "infoTitle": "Fine-tune Gemini behavior:",
         "infoBody": "Override default Gemini model and sampling parameters.",
         "cacheNotePrefix": "When any Gemini setting is changed from defaults,",
@@ -1021,7 +1027,7 @@
           "description": "Probability threshold (0.0-1.0). Lower = more focused, Higher = more diverse. Default: 0.95"
         },
         "batchContext": {
-          "label": "Enable Batch Context (Experimental)",
+          "label": "Enable Batch Context",
           "description": "Include original surrounding context and previous translations when processing batches. Improves translation coherence but may break outputs and increases token usage. Disabled by default."
         },
         "contextSize": {
@@ -1030,7 +1036,7 @@
         }
       },
       "providerAdvanced": {
-        "title": "Advanced Parameters",
+        "title": "Other Advanced Parameters",
         "intro": "Fine-tune generation settings for every enabled provider. These apply in multi-provider mode only.",
         "empty": "Enable a provider above to unlock its parameters.",
         "labels": {

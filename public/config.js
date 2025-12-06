@@ -171,6 +171,12 @@
         }
     }
 
+    function setLanguagesSectionDescriptionKey(key, fallback) {
+        const el = document.getElementById('languagesSectionDescription');
+        if (!el) return;
+        el.textContent = tConfig(key, {}, fallback || el.textContent || '');
+    }
+
     function applyStaticCopy() {
         try {
             document.title = tConfig('config.documentTitle', {}, document.title || 'SubMaker - Configure');
@@ -182,16 +188,27 @@
         setAttr('subToolboxLauncher', 'title', 'config.actions.openToolbox', 'Open Sub Toolbox');
         setAttr('subToolboxLauncher', 'aria-label', 'config.actions.openToolbox', 'Open Sub Toolbox');
         setAttr('configHelp', 'title', 'config.quickActionHelp', 'Help');
+        setText('apiKeysSectionTitle', 'config.sections.apiKeysTitle', 'API Keys');
+        setText('apiKeysSectionDescription', 'config.sections.apiKeysDescription', 'Add and validate your keys for subtitle providers and translation services.');
+        setText('languagesSectionTitle', 'config.sections.languagesTitle', 'Languages');
+        setText('languagesSectionDescription', 'config.sections.languagesDescription', 'Choose your source and target languages for fetching and translations.');
+        setText('settingsSectionTitle', 'config.sections.settingsTitle', 'Settings');
+        setText('settingsSectionDescription', 'config.sections.settingsDescription', 'Adjust translation behavior and other preferences.');
         setText('noTranslationTitle', 'config.noTranslation.title', 'Just Fetch Subtitles (No Translation)');
         setText('noTranslationDescription', 'config.noTranslation.description', 'Skip AI translation and just fetch subtitles in your chosen languages');
         setText('subtitleApiTitle', 'config.sections.subtitleApiTitle', 'Subtitles API Keys');
-        setText('opensubsImplDescription', 'config.opensubs.implDescription', 'Choose your preferred OpenSubtitles implementation below.');
+        setText('opensubsImplDescription', 'config.opensubs.implDescription', 'Choose your preferred OpenSubtitles implementation.');
         setText('opensubsImplTypeLabel', 'config.opensubs.implementationType', 'Implementation Type');
         setText('opensubsV3Title', 'config.opensubs.v3Title', 'V3 (Default)');
         setText('opensubsV3Tooltip', 'config.opensubs.v3Tooltip', "V3 doesn't show all OpenSubtitles results and rate-limiting may apply.");
         setText('opensubsV3Description', 'config.opensubs.v3Description', 'Uses the official Stremio OpenSubtitles V3 addon. No authentication required, simple setup.');
         setText('opensubsAuthTitle', 'config.opensubs.authTitle', 'Auth (Recommended)');
-        setText('opensubsAuthDescription', 'config.opensubs.authDescription', 'Uses your OpenSubtitles account with API key authentication. Requires username/password.');
+        setDescriptionWithLink(
+            'opensubsAuthDescription',
+            'config.opensubs.authDescription',
+            'config.opensubs.authLink',
+            'Uses your OpenSubtitles.com account. Requires username/password.',
+        );
         setText('opensubsUsernameLabel', 'config.opensubs.usernameLabel', 'Username');
         setText('opensubsPasswordLabel', 'config.opensubs.passwordLabel', 'Password');
         const rateNote = document.getElementById('opensubsRateNote');
@@ -619,7 +636,7 @@ Translate to {target_language}.`;
             learnPlacement: 'top',
             geminiApiKey: DEFAULT_API_KEYS.GEMINI,
             assemblyAiApiKey: DEFAULT_API_KEYS.ASSEMBLYAI,
-            otherApiKeysEnabled: false,
+            otherApiKeysEnabled: true,
             autoSubs: {
                 defaultMode: 'cloudflare',
                 sendFullVideoToAssembly: false
@@ -819,7 +836,7 @@ Translate to {target_language}.`;
             ...defaults,
             ...(currentConfig.autoSubs || {})
         };
-        currentConfig.otherApiKeysEnabled = currentConfig.otherApiKeysEnabled === true || !!currentConfig.assemblyAiApiKey;
+        currentConfig.otherApiKeysEnabled = true;
     }
 
     function ensureUiLanguageDockExists() {
@@ -954,14 +971,13 @@ Translate to {target_language}.`;
     }
 
     function hasActiveMultiProviderState(config) {
-        if (!config || config.multiProviderEnabled !== true || config.betaModeEnabled !== true) return false;
+        if (!config || config.multiProviderEnabled !== true) return false;
         const main = String(config.mainProvider || 'gemini').toLowerCase();
         const secondaryEnabled = config.secondaryProviderEnabled === true;
         return main !== 'gemini' || secondaryEnabled;
     }
 
     function isMultiProviderActiveInForm() {
-        if (!isBetaModeEnabled()) return false;
         const multiToggle = document.getElementById('enableMultiProviders');
         const mainSelect = document.getElementById('mainProviderSelect');
         const secondaryToggle = document.getElementById('enableSecondaryProvider');
@@ -1067,7 +1083,7 @@ Translate to {target_language}.`;
         ensureProvidersInState();
         ensureProviderParametersInState();
         ensureAutoSubsDefaults();
-        const multiProviderToggleRequested = currentConfig.multiProviderEnabled === true && currentConfig.betaModeEnabled === true;
+        const multiProviderToggleRequested = currentConfig.multiProviderEnabled === true;
         currentConfig.multiProviderEnabled = multiProviderToggleRequested;
         const requestedMainProvider = currentConfig.mainProvider || 'gemini';
         const requestedSecondaryProvider = currentConfig.secondaryProvider || '';
@@ -1102,6 +1118,18 @@ Translate to {target_language}.`;
         });
 
         setupEventListeners();
+        // Keep provider-level advanced controls grouped under Advanced Settings in the UI
+        const advancedCardContent = document.querySelector('#advancedSettingsCard .card-content');
+        const geminiAdvancedCard = document.getElementById('geminiAdvancedCard');
+        const providerAdvancedCard = document.getElementById('providerAdvancedCard');
+        if (advancedCardContent && geminiAdvancedCard && geminiAdvancedCard.parentElement !== advancedCardContent) {
+            advancedCardContent.appendChild(geminiAdvancedCard);
+            geminiAdvancedCard.style.marginTop = '1.25rem';
+        }
+        if (advancedCardContent && providerAdvancedCard && providerAdvancedCard.parentElement !== advancedCardContent) {
+            advancedCardContent.appendChild(providerAdvancedCard);
+            providerAdvancedCard.style.marginTop = '1.25rem';
+        }
         loadConfigToForm();
         initLocale(currentConfig.uiLanguage || locale.lang || 'en');
         updateToolboxLauncherVisibility();
@@ -1586,10 +1614,37 @@ Translate to {target_language}.`;
         openModalById('subToolboxModal');
     }
 
-    function updateSubToolboxInstructionsLink(isEnabled) {
-        const linkBtn = document.getElementById('subToolboxInstructionsLink');
-        if (!linkBtn) return;
-        linkBtn.style.display = isEnabled ? 'inline-flex' : 'none';
+    function updateSubToolboxInstructionsLink() {
+        const wrappers = [
+            document.getElementById('subToolboxInstructionsWrapper'),
+            document.getElementById('subToolboxInstructionsWrapperNoTranslation'),
+        ];
+        wrappers.forEach(wrapper => {
+            if (wrapper) {
+                wrapper.style.display = 'inline';
+            }
+        });
+        const links = [
+            document.getElementById('subToolboxInstructionsLink'),
+            document.getElementById('subToolboxInstructionsLinkNoTranslation'),
+        ];
+        links.forEach(link => {
+            if (link) {
+                link.tabIndex = 0;
+            }
+        });
+    }
+
+    function setSubToolboxEnabledUI(isEnabled) {
+        const toolboxToggle = document.getElementById('subToolboxEnabled');
+        if (toolboxToggle) {
+            toolboxToggle.checked = isEnabled;
+        }
+        const toolboxToggleNoTranslation = document.getElementById('subToolboxEnabledNoTranslation');
+        if (toolboxToggleNoTranslation) {
+            toolboxToggleNoTranslation.checked = isEnabled;
+        }
+        updateSubToolboxInstructionsLink();
     }
 
     // (Removed extra window load fallback to reduce complexity)
@@ -1727,7 +1782,7 @@ Translate to {target_language}.`;
         if (!databaseModeEl) return;
 
         const isModified = areAdvancedSettingsModified();
-        const singleBatchEnabled = singleBatchEl ? singleBatchEl.value === 'single' : false;
+        const singleBatchEnabled = singleBatchEl ? singleBatchEl.checked === true : currentConfig?.singleBatchMode === true;
         const multiProvidersActive = isMultiProviderActiveInForm();
 
         const reasons = [];
@@ -2132,19 +2187,11 @@ Translate to {target_language}.`;
             });
         }
 
-        // Other API keys visibility
-        const otherApiKeysToggle = document.getElementById('otherApiKeysEnabled');
-        if (otherApiKeysToggle) {
-            otherApiKeysToggle.addEventListener('change', (e) => {
-                toggleOtherApiKeysSection(e.target.checked);
-            });
-        }
-
         const assemblyKeyInput = document.getElementById('assemblyAiApiKey');
         if (assemblyKeyInput) {
             assemblyKeyInput.addEventListener('input', () => {
                 if (assemblyKeyInput.value.trim()) {
-                    toggleOtherApiKeysSection(true);
+                    toggleOtherApiKeysSection();
                 }
             });
         }
@@ -2231,6 +2278,79 @@ Translate to {target_language}.`;
         }
         window.addEventListener('resize', debounce(() => updateToolboxLauncherVisibility(), 150));
 
+        // Section collapse helpers (API keys, Languages, Settings)
+        const sectionCollapseConfigs = [
+            { id: 'apiKeysSection', toggleAttr: 'api-keys' },
+            { id: 'languagesSection', toggleAttr: 'languages' },
+            { id: 'settingsSection', toggleAttr: 'settings' },
+        ];
+        const SECTION_SCROLL_OFFSET = 18;
+        // Collapse all cards with headers inside a section (skip headerless cards used as inline content)
+        const collapseSectionCards = (section) => {
+            if (!section) return;
+            section.querySelectorAll('.card').forEach(card => {
+                if (!card.querySelector('.card-header')) return;
+                card.classList.add('collapsed');
+                const btn = card.querySelector('.collapse-btn');
+                if (btn) btn.classList.add('collapsed');
+            });
+        };
+        // Keep always-on cards (like just-fetch languages) visible when a section is opened
+        const expandHeaderlessCards = (section) => {
+            if (!section) return;
+            section.querySelectorAll('.card').forEach(card => {
+                if (card.querySelector('.card-header')) return;
+                card.classList.remove('collapsed');
+            });
+        };
+        const scrollSectionHeaderIntoView = (section) => {
+            if (!section) return;
+            const header = section.querySelector('.section-header');
+            if (!header) return;
+            const targetY = Math.max(0, header.getBoundingClientRect().top + window.scrollY - SECTION_SCROLL_OFFSET);
+            const delta = Math.abs(window.scrollY - targetY);
+            if (delta < 4) return;
+            window.scrollTo({ top: targetY, behavior: 'smooth' });
+        };
+        sectionCollapseConfigs.forEach(({ id, toggleAttr }) => {
+            const section = document.getElementById(id);
+            const sectionHeader = section ? section.querySelector('.section-header') : null;
+            const toggles = Array.from(document.querySelectorAll(
+                `[data-collapse-section="${toggleAttr}"], [data-section-close="${toggleAttr}"]`
+            ));
+            const toggleSection = () => {
+                if (!section) return;
+                const wasCollapsed = section.classList.contains('collapsed');
+                section.classList.toggle('collapsed');
+                toggles.forEach(btn => btn.classList.toggle('collapsed'));
+                const nowCollapsed = section.classList.contains('collapsed');
+                if (!wasCollapsed && nowCollapsed) {
+                    collapseSectionCards(section);
+                }
+                if (wasCollapsed && !nowCollapsed) {
+                    expandHeaderlessCards(section);
+                }
+                if (!wasCollapsed && nowCollapsed) {
+                    requestAnimationFrame(() => scrollSectionHeaderIntoView(section));
+                }
+            };
+            if (toggles.length) {
+                toggles.forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleSection();
+                    });
+                });
+            }
+            if (section && sectionHeader) {
+                sectionHeader.addEventListener('click', (e) => {
+                    if (e.target.closest('.collapse-btn')) return;
+                    toggleSection();
+                });
+            }
+        });
+
         // Card collapse behavior
         // 1) Header click toggles (and stops propagation)
         document.querySelectorAll('.card-header').forEach(header => {
@@ -2302,8 +2422,7 @@ Translate to {target_language}.`;
         const multiToggle = document.getElementById('enableMultiProviders');
         if (multiToggle) {
             multiToggle.addEventListener('change', (e) => {
-                const enabled = isBetaModeEnabled() && e.target.checked;
-                e.target.checked = enabled;
+                const enabled = !!e.target.checked;
                 currentConfig.multiProviderEnabled = enabled;
                 toggleMultiProviderUI(enabled);
                 updateMainProviderOptions(currentConfig.mainProvider || 'gemini');
@@ -2419,7 +2538,17 @@ Translate to {target_language}.`;
         if (toolboxToggle) {
             toolboxToggle.addEventListener('change', (e) => {
                 const enabled = !!e.target.checked;
-                updateSubToolboxInstructionsLink(enabled);
+                setSubToolboxEnabledUI(enabled);
+                if (enabled) {
+                    showSubToolboxModal();
+                }
+            });
+        }
+        const toolboxToggleNoTranslation = document.getElementById('subToolboxEnabledNoTranslation');
+        if (toolboxToggleNoTranslation) {
+            toolboxToggleNoTranslation.addEventListener('change', (e) => {
+                const enabled = !!e.target.checked;
+                setSubToolboxEnabledUI(enabled);
                 if (enabled) {
                     showSubToolboxModal();
                 }
@@ -2428,6 +2557,13 @@ Translate to {target_language}.`;
         const toolboxInstructionsLink = document.getElementById('subToolboxInstructionsLink');
         if (toolboxInstructionsLink) {
             toolboxInstructionsLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                showSubToolboxModal();
+            });
+        }
+        const toolboxInstructionsLinkNoTranslation = document.getElementById('subToolboxInstructionsLinkNoTranslation');
+        if (toolboxInstructionsLinkNoTranslation) {
+            toolboxInstructionsLinkNoTranslation.addEventListener('click', (e) => {
                 e.preventDefault();
                 showSubToolboxModal();
             });
@@ -2641,30 +2777,12 @@ Translate to {target_language}.`;
             betaToggle.checked = betaEnabled;
         }
 
-        const multiGroup = document.getElementById('multiProvidersGroup');
         const advancedCard = document.getElementById('advancedSettingsCard');
-        if (multiGroup) multiGroup.style.display = betaEnabled ? '' : 'none';
+        const geminiAdvancedCard = document.getElementById('geminiAdvancedCard');
         if (advancedCard) advancedCard.style.display = betaEnabled ? '' : 'none';
+        if (geminiAdvancedCard) geminiAdvancedCard.style.display = betaEnabled ? '' : 'none';
 
-        if (!betaEnabled) {
-            const prevMulti = currentConfig.multiProviderEnabled === true;
-            const prevSecondaryEnabled = currentConfig.secondaryProviderEnabled === true;
-            const prevSecondary = currentConfig.secondaryProvider || '';
-            const multiToggle = document.getElementById('enableMultiProviders');
-            if (multiToggle) multiToggle.checked = false;
-            toggleMultiProviderUI(false);
-            currentConfig.multiProviderEnabled = prevMulti;
-            currentConfig.secondaryProviderEnabled = prevSecondaryEnabled;
-            currentConfig.secondaryProvider = prevSecondary;
-        } else {
-            const multiToggle = document.getElementById('enableMultiProviders');
-            if (multiToggle && currentConfig.multiProviderEnabled) {
-                multiToggle.checked = true;
-                toggleMultiProviderUI(true);
-            } else {
-                toggleProviderAdvancedCard();
-            }
-        }
+        toggleProviderAdvancedCard();
 
         if (!options.silent && prev !== betaEnabled) {
             try {
@@ -2676,30 +2794,38 @@ Translate to {target_language}.`;
     }
 
     function toggleMultiProviderUI(enabled) {
-        const betaEnabled = isBetaModeEnabled();
         const container = document.getElementById('multiProvidersContainer');
         const mainGroup = document.getElementById('mainProviderGroup');
         const secondaryGroup = document.getElementById('secondaryProviderGroup');
-        const shouldShow = betaEnabled && enabled;
-        currentConfig.multiProviderEnabled = enabled === true;
-        if (container) container.style.display = shouldShow ? 'flex' : 'none';
-        if (mainGroup) mainGroup.style.display = shouldShow ? '' : 'none';
-        if (secondaryGroup) secondaryGroup.style.display = shouldShow ? '' : 'none';
-        if (!betaEnabled || !enabled) {
-            if (!enabled) {
-                const selectSecondary = document.getElementById('secondaryProviderSelect');
-                const secondaryToggle = document.getElementById('enableSecondaryProvider');
-                if (secondaryToggle) secondaryToggle.checked = false;
-                if (selectSecondary) {
-                    selectSecondary.value = '';
-                    selectSecondary.disabled = true;
-                }
-                currentConfig.secondaryProviderEnabled = false;
+        const mainSelect = document.getElementById('mainProviderSelect');
+        const secondaryToggle = document.getElementById('enableSecondaryProvider');
+        const secondarySelect = document.getElementById('secondaryProviderSelect');
+        const shouldEnable = enabled === true;
+
+        currentConfig.multiProviderEnabled = shouldEnable;
+        if (container) container.style.display = shouldEnable ? 'flex' : 'none';
+        if (mainGroup) mainGroup.style.display = ''; // always visible
+        if (secondaryGroup) secondaryGroup.style.display = ''; // always visible
+
+        if (!shouldEnable) {
+            updateMainProviderOptions(currentConfig.mainProvider || 'gemini');
+            if (mainSelect) mainSelect.disabled = true;
+            if (secondaryToggle) {
+                secondaryToggle.checked = false;
+                secondaryToggle.disabled = true;
             }
+            if (secondarySelect) {
+                secondarySelect.value = '';
+                secondarySelect.disabled = true;
+            }
+            currentConfig.secondaryProviderEnabled = false;
+            toggleSecondaryProviderUI(false);
             toggleProviderAdvancedCard();
             return;
         }
 
+        if (mainSelect) mainSelect.disabled = false;
+        if (secondaryToggle) secondaryToggle.disabled = false;
         updateMainProviderOptions(currentConfig.mainProvider || 'gemini');
         toggleSecondaryProviderUI(currentConfig.secondaryProviderEnabled === true);
         updateSecondaryProviderOptions(currentConfig.secondaryProvider || '');
@@ -2824,7 +2950,7 @@ Translate to {target_language}.`;
     function toggleProviderAdvancedCard() {
         const card = document.getElementById('providerAdvancedCard');
         if (!card) return;
-        const enabled = currentConfig.multiProviderEnabled === true && isBetaModeEnabled();
+        const enabled = currentConfig.multiProviderEnabled === true;
         card.style.display = enabled ? '' : 'none';
         if (enabled) {
             updateProviderAdvancedVisibility();
@@ -2981,7 +3107,7 @@ Translate to {target_language}.`;
                 };
             });
         updateMainProviderOptions(currentConfig.mainProvider || 'gemini');
-        if (isBetaModeEnabled() && currentConfig.multiProviderEnabled) {
+        if (currentConfig.multiProviderEnabled) {
             const secondaryEnabled = currentConfig.secondaryProviderEnabled === true;
             if (secondaryEnabled) {
                 const toggle = document.getElementById('enableSecondaryProvider');
@@ -3523,9 +3649,16 @@ Translate to {target_language}.`;
     }
 
     function toggleAllSections() {
-        const allCollapsed = Array.from(document.querySelectorAll('.card')).every(card => card.classList.contains('collapsed'));
+        const cards = Array.from(document.querySelectorAll('.card'));
+        const collapsibleCards = cards.filter(card => card.querySelector('.card-header'));
+        const allCollapsed = collapsibleCards.length > 0 && collapsibleCards.every(card => card.classList.contains('collapsed'));
 
-        document.querySelectorAll('.card').forEach(card => {
+        cards.forEach(card => {
+            const hasHeader = !!card.querySelector('.card-header');
+            if (!hasHeader) {
+                card.classList.remove('collapsed');
+                return;
+            }
             if (allCollapsed) {
                 card.classList.remove('collapsed');
             } else {
@@ -3549,6 +3682,8 @@ Translate to {target_language}.`;
             document.getElementById('learnOrderGroup'),
             document.getElementById('learnPlacementGroup')
         ];
+        const otherSettingsCard = document.getElementById('otherSettingsCard');
+        const subToolboxNoTranslationGroup = document.getElementById('subToolboxNoTranslationGroup');
 
         ['sendTimestampsToAI', 'databaseMode', 'learnModeEnabled', 'mobileMode', 'singleBatchMode', 'betaMode'].forEach(id => {
             const group = document.getElementById(id)?.closest('.form-group');
@@ -3561,17 +3696,36 @@ Translate to {target_language}.`;
                 group.dataset.originalDisplay = group.style.display || '';
                 group.style.display = 'none';
             });
+            if (otherSettingsCard) {
+                otherSettingsCard.dataset.originalDisplay = otherSettingsCard.style.display || '';
+                otherSettingsCard.style.display = 'none';
+            }
+            if (subToolboxNoTranslationGroup) {
+                subToolboxNoTranslationGroup.style.display = '';
+            }
             return;
         }
 
-        const hasStoredState = groupsToHide.some(group => group && group.dataset.originalDisplay !== undefined);
-        if (!hasStoredState) return;
+        const hasStoredState = groupsToHide.some(group => group && group.dataset.originalDisplay !== undefined) || (otherSettingsCard && otherSettingsCard.dataset.originalDisplay !== undefined);
+        if (!hasStoredState) {
+            if (subToolboxNoTranslationGroup) {
+                subToolboxNoTranslationGroup.style.display = 'none';
+            }
+            return;
+        }
 
         groupsToHide.forEach(group => {
             if (!group) return;
             const restoreValue = group.dataset.originalDisplay !== undefined ? group.dataset.originalDisplay : '';
             group.style.display = restoreValue;
         });
+        if (otherSettingsCard) {
+            const restoreValue = otherSettingsCard.dataset.originalDisplay !== undefined ? otherSettingsCard.dataset.originalDisplay : '';
+            otherSettingsCard.style.display = restoreValue;
+        }
+        if (subToolboxNoTranslationGroup) {
+            subToolboxNoTranslationGroup.style.display = 'none';
+        }
     }
 
     function toggleNoTranslationMode(enabled) {
@@ -3587,6 +3741,12 @@ Translate to {target_language}.`;
         const learnOrderGroup = document.getElementById('learnOrderGroup');
         const learnPlacementGroup = document.getElementById('learnPlacementGroup');
         const learnGrid = document.getElementById('learnLanguages');
+        setLanguagesSectionDescriptionKey(
+            enabled ? 'config.sections.languagesDescriptionNoTranslation' : 'config.sections.languagesDescription',
+            enabled
+                ? 'Choose which subtitle languages you want to fetch without translation.'
+                : 'Choose your source and target languages for fetching and translations.'
+        );
         toggleOtherSettingsVisibilityForNoTranslation(enabled);
 
         if (enabled) {
@@ -3611,7 +3771,10 @@ Translate to {target_language}.`;
                 betaToggle.disabled = true;
             }
             // Show no-translation card, hide source, target, gemini, and translation settings cards
-            if (noTranslationCard) noTranslationCard.style.display = 'block';
+            if (noTranslationCard) {
+                noTranslationCard.style.display = 'block';
+                noTranslationCard.classList.remove('collapsed');
+            }
             if (sourceCard) sourceCard.style.display = 'none';
             if (targetCard) targetCard.style.display = 'none';
             if (geminiCard) geminiCard.style.display = 'none';
@@ -3816,25 +3979,13 @@ Translate to {target_language}.`;
         });
     }
 
-    function toggleOtherApiKeysSection(enabled) {
+    function toggleOtherApiKeysSection() {
         const card = document.getElementById('otherApiKeysCard');
-        const toggle = document.getElementById('otherApiKeysEnabled');
-        const shouldShow = enabled === true;
-        if (toggle) {
-            toggle.checked = shouldShow;
-        }
         if (card) {
-            card.style.display = shouldShow ? '' : 'none';
-            if (!shouldShow) {
-                const collapseBtn = card.querySelector('[data-collapse="other-api"]');
-                if (collapseBtn) {
-                    collapseBtn.classList.add('collapsed');
-                }
-                card.classList.add('collapsed');
-            }
+            card.style.display = '';
         }
         if (currentConfig) {
-            currentConfig.otherApiKeysEnabled = shouldShow || !!currentConfig.assemblyAiApiKey;
+            currentConfig.otherApiKeysEnabled = true;
         }
     }
 
@@ -3946,7 +4097,8 @@ Translate to {target_language}.`;
     }
 
     function handleQuickAction(e) {
-        const action = e.target.dataset.action;
+        const action = e.currentTarget?.dataset?.action || e.target?.closest?.('button')?.dataset?.action;
+        if (!action) return;
         const parts = action.split('-');
         const command = parts[0]; // 'select' or 'clear'
         let type;
@@ -4071,28 +4223,28 @@ Translate to {target_language}.`;
     function toggleProviderConfig(configId, enabled) {
         const configDiv = document.getElementById(configId);
         if (!configDiv) return;
-        
+
+        // Remember the natural display so we can restore it after hiding
+        if (!configDiv.dataset.defaultDisplay) {
+            const currentDisplay = window.getComputedStyle(configDiv).display;
+            configDiv.dataset.defaultDisplay = currentDisplay === 'none' ? 'block' : currentDisplay;
+        }
+
+        configDiv.style.display = enabled ? configDiv.dataset.defaultDisplay : 'none';
         configDiv.style.opacity = enabled ? '1' : '0.5';
+        configDiv.style.pointerEvents = enabled ? 'auto' : 'none';
+        configDiv.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+
+        // Fully disable inputs/buttons when hidden so nothing is focusable/tabbable
+        const formControls = configDiv.querySelectorAll('input, select, textarea, button');
+        formControls.forEach(control => {
+            control.disabled = !enabled;
+        });
 
         if (configId === 'opensubtitlesConfig') {
-            // For OpenSubtitles, disable individual controls instead of blocking pointer events
-            const inputs = configDiv.querySelectorAll('input, select, textarea');
-            inputs.forEach(input => {
-                input.disabled = !enabled;
-            });
-
-            // Keep validation buttons clickable so we can surface helpful errors even when disabled
-            const validateButtons = configDiv.querySelectorAll('button.validate-api-btn');
-            validateButtons.forEach(btn => {
-                btn.disabled = false;
-            });
-            
             // Always update auth fields visibility (whether enabled or disabled)
             // This ensures correct state in all scenarios: enabled/disabled, v3/auth, with/without credentials
             handleOpenSubtitlesImplChange();
-        } else {
-            // For other providers, use pointer-events as before
-            configDiv.style.pointerEvents = enabled ? 'auto' : 'none';
         }
     }
 
@@ -4360,12 +4512,7 @@ Translate to {target_language}.`;
         if (assemblyKeyInput) {
             assemblyKeyInput.value = currentConfig.assemblyAiApiKey || '';
         }
-        const otherKeysToggle = document.getElementById('otherApiKeysEnabled');
-        const otherKeysEnabled = currentConfig.otherApiKeysEnabled === true || !!currentConfig.assemblyAiApiKey;
-        if (otherKeysToggle) {
-            otherKeysToggle.checked = otherKeysEnabled;
-        }
-        toggleOtherApiKeysSection(otherKeysEnabled);
+        toggleOtherApiKeysSection();
 
         // Load Gemini model
         const modelSelect = document.getElementById('geminiModel');
@@ -4412,7 +4559,7 @@ Translate to {target_language}.`;
         ensureProviderParametersInState();
         const multiToggle = document.getElementById('enableMultiProviders');
         if (multiToggle) {
-            const multiEnabled = betaEnabled && currentConfig.multiProviderEnabled === true;
+            const multiEnabled = currentConfig.multiProviderEnabled === true;
             multiToggle.checked = multiEnabled;
             toggleMultiProviderUI(multiEnabled);
         }
@@ -4468,13 +4615,11 @@ Translate to {target_language}.`;
             || currentConfig.fileTranslationEnabled === true
             || currentConfig.syncSubtitlesEnabled === true;
         currentConfig.subToolboxEnabled = toolboxEnabled;
-        const toolboxToggle = document.getElementById('subToolboxEnabled');
-        if (toolboxToggle) toolboxToggle.checked = toolboxEnabled;
-        updateSubToolboxInstructionsLink(toolboxEnabled);
+        setSubToolboxEnabledUI(toolboxEnabled);
         const mobileModeEl = document.getElementById('mobileMode');
         if (mobileModeEl) mobileModeEl.checked = currentConfig.mobileMode === true;
         const singleBatchEl = document.getElementById('singleBatchMode');
-        if (singleBatchEl) singleBatchEl.value = (currentConfig.singleBatchMode === true) ? 'single' : 'multiple';
+        if (singleBatchEl) singleBatchEl.checked = currentConfig.singleBatchMode === true;
 
         // Load translation cache settings
         if (!currentConfig.translationCache) {
@@ -4566,7 +4711,7 @@ Translate to {target_language}.`;
         const singleBatchToggle = document.getElementById('singleBatchMode');
         if (singleBatchToggle) {
             singleBatchToggle.addEventListener('change', (e) => {
-                currentConfig.singleBatchMode = e.target.value === 'single';
+                currentConfig.singleBatchMode = e.target.checked === true;
                 updateBypassCacheForAdvancedSettings();
             });
         }
@@ -4589,7 +4734,7 @@ Translate to {target_language}.`;
         let translationPrompt = '';
         const singleBatchEnabled = (function(){
             const el = document.getElementById('singleBatchMode');
-            if (el) return el.value === 'single';
+            if (el) return el.checked === true;
             return currentConfig?.singleBatchMode === true;
         })();
         const hasActiveMultiProvider = isMultiProviderActiveInForm();
@@ -4616,7 +4761,7 @@ Translate to {target_language}.`;
             uiLanguage: (currentConfig.uiLanguage || (navigator.language || 'en')).toString().toLowerCase(),
             geminiApiKey: document.getElementById('geminiApiKey').value.trim(),
             assemblyAiApiKey: (function(){ const el = document.getElementById('assemblyAiApiKey'); return el ? el.value.trim() : ''; })(),
-            otherApiKeysEnabled: (function(){ const el = document.getElementById('otherApiKeysEnabled'); return el ? el.checked : currentConfig?.otherApiKeysEnabled === true; })(),
+            otherApiKeysEnabled: true,
             autoSubs: {
                 ...currentConfig.autoSubs,
                 defaultMode: currentConfig.autoSubs?.defaultMode || 'cloudflare',
@@ -4671,9 +4816,18 @@ Translate to {target_language}.`;
                 enabled: isBypassRequested(),
                 duration: 12
             },
-            subToolboxEnabled: (function(){ const el = document.getElementById('subToolboxEnabled'); return el ? el.checked : (currentConfig?.subToolboxEnabled === true); })(),
-            fileTranslationEnabled: (function(){ const el = document.getElementById('subToolboxEnabled'); return el ? el.checked : (currentConfig?.fileTranslationEnabled === true); })(),
-            syncSubtitlesEnabled: (function(){ const el = document.getElementById('subToolboxEnabled'); return el ? el.checked : (currentConfig?.syncSubtitlesEnabled === true); })(),
+            subToolboxEnabled: (function(){
+                const el = document.getElementById('subToolboxEnabledNoTranslation') || document.getElementById('subToolboxEnabled');
+                return el ? el.checked : (currentConfig?.subToolboxEnabled === true);
+            })(),
+            fileTranslationEnabled: (function(){
+                const el = document.getElementById('subToolboxEnabledNoTranslation') || document.getElementById('subToolboxEnabled');
+                return el ? el.checked : (currentConfig?.fileTranslationEnabled === true);
+            })(),
+            syncSubtitlesEnabled: (function(){
+                const el = document.getElementById('subToolboxEnabledNoTranslation') || document.getElementById('subToolboxEnabled');
+                return el ? el.checked : (currentConfig?.syncSubtitlesEnabled === true);
+            })(),
             mobileMode: (function(){
                 const el = document.getElementById('mobileMode');
                 if (el) return el.checked;
@@ -4692,7 +4846,7 @@ Translate to {target_language}.`;
                 sendTimestampsToAI: (function(){ const el = document.getElementById('sendTimestampsToAI'); return el ? el.value === 'ai' : false; })()
             }
         };
-        config.multiProviderEnabled = config.betaModeEnabled && multiProviderToggleChecked;
+        config.multiProviderEnabled = multiProviderToggleChecked;
         if (!config.multiProviderEnabled) {
             config.mainProvider = 'gemini';
             config.secondaryProviderEnabled = false;

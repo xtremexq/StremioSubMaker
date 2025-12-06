@@ -54,6 +54,7 @@
 
     <!-- Disable native HTML validation: we run all validation in config.js and hidden inputs (provider advanced sliders) can trip browser validity when collapsed -->
     <form id="configForm" autocomplete="off" spellcheck="false" novalidate>
+
         <!-- No Translation Mode Toggle -->
         <div
             style="margin: 2rem 0; padding: 1.5rem; background: var(--surface-light); border: 2px solid var(--border); border-radius: 12px; display: flex; align-items: center; gap: 1rem;">
@@ -72,620 +73,631 @@
             </label>
         </div>
 
-        <!-- Subtitle API Providers -->
-        <div class="card collapsed" data-card="subtitle-api">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <div class="card-icon" aria-hidden="true">
-                        <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-                            <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
-                                stroke-linejoin="round">
-                                <rect x="9" y="14" width="14" height="12" rx="2.5" ry="2.5" />
-                                <path d="M12 14v-2a4 4 0 0 1 8 0v2" />
-                                <circle cx="16" cy="20" r="2" />
-                                <path d="M16 22v2" />
-                            </g>
-                        </svg>
-                    </div>
-                    <h2 class="card-title" id="subtitleApiTitle" data-i18n="config.sections.subtitleApiTitle">Subtitles API Keys</h2>
+        <!-- API Keys Section -->
+        <section id="apiKeysSection" class="section-block collapsed">
+        <div class="section-header">
+            <div class="section-header-left">
+                <div class="section-icon section-emoji" aria-hidden="true">&#128273;</div>
+                <div>
+                    <h2 class="section-title" id="apiKeysSectionTitle" data-i18n="config.sections.apiKeysTitle">API Keys</h2>
+                    <p class="section-description" id="apiKeysSectionDescription" data-i18n="config.sections.apiKeysDescription">Add and validate your keys for subtitle providers and translation services.</p>
                 </div>
-                <button type="button" class="collapse-btn collapsed" data-collapse="subtitle-api"></button>
             </div>
-            <div class="card-content">
-                <!-- OpenSubtitles -->
-                <div class="form-group" style="padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
-                    <div
-                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                        <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="font-size: 1.5rem;">📄</span>
-                            <div>
-                                <strong style="display: block;">OpenSubtitles</strong>
-                                <span id="opensubsImplDescription" class="label-description" data-i18n="config.opensubs.implDescription" style="margin: 0;">Choose your preferred OpenSubtitles
-                                    implementation below.</span>
+            <button type="button" class="collapse-btn section-collapse-btn collapsed" data-collapse-section="api-keys"></button>
+        </div>
+        <div class="section-grid">
+            <!-- Subtitle API Providers -->
+                    <div class="card collapsed" data-card="subtitle-api">
+                        <div class="card-header">
+                            <div class="card-title-group">
+                                <div class="card-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                        <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <rect x="9" y="14" width="14" height="12" rx="2.5" ry="2.5" />
+                                            <path d="M12 14v-2a4 4 0 0 1 8 0v2" />
+                                            <circle cx="16" cy="20" r="2" />
+                                            <path d="M16 22v2" />
+                                        </g>
+                                    </svg>
+                                </div>
+                                <h2 class="card-title" id="subtitleApiTitle" data-i18n="config.sections.subtitleApiTitle">Subtitles API Keys</h2>
                             </div>
-                        </label>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="enableOpenSubtitles" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div id="opensubtitlesConfig">
-                        <!-- Implementation Type Selection -->
-                        <div
-                            style="margin-bottom: 1rem; padding: 1rem; background: var(--surface-light); border-radius: 8px;">
-                            <label id="opensubsImplTypeLabel" data-i18n="config.opensubs.implementationType" style="display: block; margin-bottom: 0.75rem; font-weight: 600;">Implementation
-                                Type</label>
-                            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                                <label
-                                    style="display: flex; align-items: start; gap: 0.5rem; cursor: pointer; padding: 0.75rem; background: white; border: 2px solid var(--border); border-radius: 8px; transition: all 0.2s;">
-                                    <input type="radio" name="opensubtitlesImplementation" id="opensubtitlesImplV3"
-                                        value="v3" checked style="margin-top: 0.25rem;">
-                                    <div style="flex: 1;">
-                                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                            <strong id="opensubsV3Title" data-i18n="config.opensubs.v3Title" style="margin-bottom: 0.25rem;">V3 (Default)</strong>
-                                            <div class="v3-warning-tooltip">
-                                                <span class="warning-icon" tabindex="0"
-                                                    aria-label="OpenSubtitles V3 limitations" data-i18n="config.opensubs.v3Tooltip" data-i18n-attr="aria-label">&#9888;&#65039;</span>
-                                                <div class="tooltip-bubble" role="tooltip" aria-hidden="true" id="opensubsV3Tooltip" data-i18n="config.opensubs.v3Tooltip">
-                                                    V3 doesn't show all OpenSubtitles results and rate-limiting may apply.
+                            <button type="button" class="collapse-btn collapsed" data-collapse="subtitle-api"></button>
+                        </div>
+                        <div class="card-content">
+                            <!-- OpenSubtitles -->
+            <div class="form-group" style="padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
+                                <div
+                                    style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                                    <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                        <span style="font-size: 1.5rem;">📄</span>
+                                        <div>
+                                            <strong id="opensubsTitle" data-i18n="config.opensubs.title" style="display: block;">OpenSubtitles</strong>
+                                            <span id="opensubsImplDescription" class="label-description" data-i18n="config.opensubs.implDescription" style="margin: 0;">Choose your preferred OpenSubtitles
+                                                implementation.</span>
+                                        </div>
+                                    </label>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="enableOpenSubtitles" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div id="opensubtitlesConfig">
+                                    <!-- Implementation Type Selection -->
+                                    <div
+                                        style="margin-bottom: 1rem; padding: 1rem; background: var(--surface-light); border-radius: 8px;">
+                                        <label id="opensubsImplTypeLabel" data-i18n="config.opensubs.implementationType" style="display: block; margin-bottom: 0.75rem; font-weight: 600;">Implementation
+                                            Type</label>
+                                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                            <label
+                                                style="display: flex; align-items: start; gap: 0.5rem; cursor: pointer; padding: 0.75rem; background: white; border: 2px solid var(--border); border-radius: 8px; transition: all 0.2s;">
+                                                <input type="radio" name="opensubtitlesImplementation" id="opensubtitlesImplV3"
+                                                    value="v3" checked style="margin-top: 0.25rem;">
+                                                <div style="flex: 1;">
+                                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                                        <strong id="opensubsV3Title" data-i18n="config.opensubs.v3Title" style="margin-bottom: 0.25rem;">V3 (Default)</strong>
+                                                        <div class="v3-warning-tooltip">
+                                                            <span class="warning-icon" tabindex="0"
+                                                                aria-label="OpenSubtitles V3 limitations" data-i18n="config.opensubs.v3Tooltip" data-i18n-attr="aria-label">&#9888;&#65039;</span>
+                                                            <div class="tooltip-bubble" role="tooltip" aria-hidden="true" id="opensubsV3Tooltip" data-i18n="config.opensubs.v3Tooltip">
+                                                                V3 doesn't show all OpenSubtitles results and rate-limiting may apply.
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <span id="opensubsV3Description" class="label-description" data-i18n="config.opensubs.v3Description" style="margin: 0; font-size: 0.875rem;">Uses the
+                                                        official Stremio OpenSubtitles V3 addon. No authentication required, simple setup.</span>
                                                 </div>
+                                            </label>
+                                            <label
+                                                style="display: flex; align-items: start; gap: 0.5rem; cursor: pointer; padding: 0.75rem; background: white; border: 2px solid var(--border); border-radius: 8px; transition: all 0.2s;">
+                                                <input type="radio" name="opensubtitlesImplementation" id="opensubtitlesImplAuth"
+                                                    value="auth" style="margin-top: 0.25rem;">
+                                                <div>
+                                                    <strong id="opensubsAuthTitle" data-i18n="config.opensubs.authTitle" style="display: block; margin-bottom: 0.25rem;">Auth
+                                                        (Recommended)</strong>
+                                                    <span id="opensubsAuthDescription" class="label-description" data-i18n="config.opensubs.authDescription" style="margin: 0; font-size: 0.875rem;">Uses your OpenSubtitles.com
+                                                        account. Requires username/password. <a href="https://www.opensubtitles.com/en/newuser" target="_blank" style="color: var(--primary-light);">Create
+                                                            account</a></span>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <!-- Auth Configuration (shown when Auth is selected) -->
+                            <div id="opensubtitlesAuthConfig" style="display: none;">
+                                <div class="opensubs-auth-layout">
+                                    <div class="opensubs-auth-fields">
+                                        <label id="opensubsUsernameLabel" data-i18n="config.opensubs.usernameLabel" style="display: block;">Username</label>
+                                        <input type="text" id="opensubtitlesUsername" name="opensubtitlesUsername"
+                                            placeholder="Enter OpenSubtitles Username" autocomplete="username"
+                                            data-i18n="config.opensubs.usernamePlaceholder" data-i18n-attr="placeholder"
+                                            autocapitalize="none" autocorrect="off" spellcheck="false">
+
+                                        <label id="opensubsPasswordLabel" data-i18n="config.opensubs.passwordLabel" style="display: block;">Password</label>
+                                        <div class="password-field-wrapper">
+                                            <input type="text" class="sensitive-input masked" id="opensubtitlesPassword"
+                                                name="opensubtitlesPassword" placeholder="Enter OpenSubtitles Password"
+                                                data-i18n="config.opensubs.passwordPlaceholder" data-i18n-attr="placeholder"
+                                                autocomplete="current-password" autocapitalize="none" autocorrect="off"
+                                                spellcheck="false" inputmode="text">
+                                            <span class="password-toggle-icon" id="toggleOpenSubsPassword"
+                                                title="Show/hide password" data-i18n="config.opensubs.showHidePassword" data-i18n-attr="title">&#128274;&#128065;</span>
+                                        </div>
+
+                                            <span id="opensubsRateNote" class="label-description" data-i18n="config.opensubs.rateNote">20 subtitles a day. <a
+                                                    href="https://www.opensubtitles.com/en/newuser" target="_blank"
+                                                    style="color: var(--primary-light);">Create a free account</a> if you don't
+                                                have one.</span>
+                                    </div>
+
+                                        <div class="validate-tile">
+                                            <div class="tile-eyebrow" style="text-align:center;" data-i18n="config.opensubs.pingHint">Run a quick ping before saving
+                                                to validate your credentials.</div>
+                                        <button type="button" class="validate-api-btn" id="validateOpenSubtitles"
+                                            title="Validate OpenSubtitles credentials" data-i18n="config.opensubs.validateTitle" data-i18n-attr="title">
+                                            <span class="validate-icon">&#10003;</span>
+                                            <span class="validate-text" data-i18n="config.opensubs.validateCta">Run Test</span>
+                                        </button>
                                             </div>
                                         </div>
-                                        <span id="opensubsV3Description" class="label-description" data-i18n="config.opensubs.v3Description" style="margin: 0; font-size: 0.875rem;">Uses the
-                                            official Stremio OpenSubtitles V3 addon. No authentication required, simple setup.</span>
+                                        <div class="validation-feedback" id="opensubtitlesValidationFeedback"></div>
                                     </div>
-                                </label>
-                                <label
-                                    style="display: flex; align-items: start; gap: 0.5rem; cursor: pointer; padding: 0.75rem; background: white; border: 2px solid var(--border); border-radius: 8px; transition: all 0.2s;">
-                                    <input type="radio" name="opensubtitlesImplementation" id="opensubtitlesImplAuth"
-                                        value="auth" style="margin-top: 0.25rem;">
-                                    <div>
-                                        <strong id="opensubsAuthTitle" data-i18n="config.opensubs.authTitle" style="display: block; margin-bottom: 0.25rem;">Auth
-                                            (Recommended)</strong>
-                                        <span id="opensubsAuthDescription" class="label-description" data-i18n="config.opensubs.authDescription" style="margin: 0; font-size: 0.875rem;">Uses
-                                            your OpenSubtitles account with API key authentication. Requires
-                                            username/password.</span>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Auth Configuration (shown when Auth is selected) -->
-                <div id="opensubtitlesAuthConfig" style="display: none;">
-                    <div class="opensubs-auth-layout">
-                        <div class="opensubs-auth-fields">
-                            <label id="opensubsUsernameLabel" data-i18n="config.opensubs.usernameLabel" style="display: block;">Username</label>
-                            <input type="text" id="opensubtitlesUsername" name="opensubtitlesUsername"
-                                placeholder="Enter OpenSubtitles Username" autocomplete="username"
-                                data-i18n="config.opensubs.usernamePlaceholder" data-i18n-attr="placeholder"
-                                autocapitalize="none" autocorrect="off" spellcheck="false">
-
-                            <label id="opensubsPasswordLabel" data-i18n="config.opensubs.passwordLabel" style="display: block;">Password</label>
-                            <div class="password-field-wrapper">
-                                <input type="text" class="sensitive-input masked" id="opensubtitlesPassword"
-                                    name="opensubtitlesPassword" placeholder="Enter OpenSubtitles Password"
-                                    data-i18n="config.opensubs.passwordPlaceholder" data-i18n-attr="placeholder"
-                                    autocomplete="current-password" autocapitalize="none" autocorrect="off"
-                                    spellcheck="false" inputmode="text">
-                                <span class="password-toggle-icon" id="toggleOpenSubsPassword"
-                                    title="Show/hide password" data-i18n="config.opensubs.showHidePassword" data-i18n-attr="title">&#128274;&#128065;</span>
-                            </div>
-
-                                <span id="opensubsRateNote" class="label-description" data-i18n="config.opensubs.rateNote">20 subtitles a day. <a
-                                        href="https://www.opensubtitles.com/en/newuser" target="_blank"
-                                        style="color: var(--primary-light);">Create a free account</a> if you don't
-                                    have one.</span>
-                        </div>
-
-                            <div class="validate-tile">
-                                <div class="tile-eyebrow" style="text-align:center;" data-i18n="config.opensubs.pingHint">Run a quick ping before saving
-                                    to validate your credentials.</div>
-                            <button type="button" class="validate-api-btn" id="validateOpenSubtitles"
-                                title="Validate OpenSubtitles credentials" data-i18n="config.opensubs.validateTitle" data-i18n-attr="title">
-                                <span class="validate-icon">&#10003;</span>
-                                <span class="validate-text" data-i18n="config.opensubs.validateCta">Run Test</span>
-                            </button>
                                 </div>
                             </div>
-                            <div class="validation-feedback" id="opensubtitlesValidationFeedback"></div>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- SubSource -->
-                <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
-                    <div
-                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                        <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="font-size: 1.5rem;">🎬</span>
-                            <div>
-                                <strong id="subsourceTitle" data-i18n="config.providers.subsource.title" style="display: block;">SubSource</strong>
-                                <span class="label-description" id="subsourceDescription" style="margin: 0;">Get your free API key from <a
-                                        id="subsourceLink" data-i18n="config.providers.subsource.linkLabel"
-                                        href="https://subsource.net/" target="_blank"
-                                        style="color: var(--primary-light);">SubSource.net</a></span>
+                            <!-- SubSource -->
+                            <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
+                                <div
+                                    style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                                    <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                        <span style="font-size: 1.5rem;">🎬</span>
+                                        <div>
+                                            <strong id="subsourceTitle" data-i18n="config.providers.subsource.title" style="display: block;">SubSource</strong>
+                                            <span class="label-description" id="subsourceDescription" style="margin: 0;">
+                                                <span data-i18n="config.providers.subsource.description">Get your free API key from</span>
+                                                <a
+                                                    id="subsourceLink" data-i18n="config.providers.subsource.linkLabel"
+                                                    href="https://subsource.net/" target="_blank"
+                                                    style="color: var(--primary-light);">SubSource.net</a>
+                                            </span>
+                                        </div>
+                                    </label>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="enableSubSource" aria-label="SubSource toggle" data-i18n="config.providers.subsource.toggleLabel" data-i18n-attr="aria-label" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div id="subsourceConfig">
+                                    <div style="display: flex; gap: 0.5rem; align-items: start;">
+                                        <input type="text" id="subsourceApiKey" data-i18n="config.providers.subsource.placeholder" data-i18n-attr="placeholder" placeholder="Enter SubSource API key"
+                                            style="flex: 1;">
+                                        <button type="button" class="validate-api-btn" id="validateSubSource"
+                                            data-i18n="config.providers.subsource.validateTitle" data-i18n-attr="title"
+                                            title="Validate API key">
+                                            <span class="validate-icon">✓</span>
+                                            <span class="validate-text" data-i18n="config.providers.subsource.validateCta">Test</span>
+                                        </button>
+                                    </div>
+                                    <div class="validation-feedback" id="subsourceValidationFeedback"></div>
+                                </div>
                             </div>
-                        </label>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="enableSubSource" aria-label="SubSource toggle" data-i18n="config.providers.subsource.toggleLabel" data-i18n-attr="aria-label" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div id="subsourceConfig">
-                        <div style="display: flex; gap: 0.5rem; align-items: start;">
-                            <input type="text" id="subsourceApiKey" data-i18n="config.providers.subsource.placeholder" data-i18n-attr="placeholder" placeholder="Enter SubSource API key"
-                                style="flex: 1;">
-                            <button type="button" class="validate-api-btn" id="validateSubSource"
-                                data-i18n="config.providers.subsource.validateTitle" data-i18n-attr="title"
-                                title="Validate API key">
-                                <span class="validate-icon">✓</span>
-                                <span class="validate-text" data-i18n="config.providers.subsource.validateCta">Test</span>
-                            </button>
-                        </div>
-                        <div class="validation-feedback" id="subsourceValidationFeedback"></div>
-                    </div>
-                </div>
 
-                <!-- SubDL -->
-                <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
-                    <div
-                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                        <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="font-size: 1.5rem;">📋</span>
-                            <div>
-                                <strong id="subdlTitle" data-i18n="config.providers.subdl.title" style="display: block;">SubDL</strong>
-                                <span class="label-description" id="subdlDescription" style="margin: 0;">Get your free API key from <a
-                                        id="subdlLink" data-i18n="config.providers.subdl.linkLabel"
-                                        href="https://subdl.com" target="_blank"
-                                        style="color: var(--primary-light);">SubDL.com</a></span>
+                            <!-- SubDL -->
+                            <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
+                                <div
+                                    style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                                    <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                        <span style="font-size: 1.5rem;">📋</span>
+                                        <div>
+                                            <strong id="subdlTitle" data-i18n="config.providers.subdl.title" style="display: block;">SubDL</strong>
+                                            <span class="label-description" id="subdlDescription" style="margin: 0;">
+                                                <span data-i18n="config.providers.subdl.description">Get your free API key from</span>
+                                                <a
+                                                    id="subdlLink" data-i18n="config.providers.subdl.linkLabel"
+                                                    href="https://subdl.com" target="_blank"
+                                                    style="color: var(--primary-light);">SubDL.com</a>
+                                            </span>
+                                        </div>
+                                    </label>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="enableSubDL" aria-label="SubDL toggle" data-i18n="config.providers.subdl.toggleLabel" data-i18n-attr="aria-label" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div id="subdlConfig">
+                                    <div style="display: flex; gap: 0.5rem; align-items: start;">
+                                        <input type="text" id="subdlApiKey" data-i18n="config.providers.subdl.placeholder" data-i18n-attr="placeholder" placeholder="Enter SubDL API key" style="flex: 1;">
+                                        <button type="button" class="validate-api-btn" id="validateSubDL" data-i18n="config.providers.subdl.validateTitle" data-i18n-attr="title" title="Validate API key">
+                                            <span class="validate-icon">✓</span>
+                                            <span class="validate-text" data-i18n="config.providers.subdl.validateCta">Test</span>
+                                        </button>
+                                    </div>
+                                    <div class="validation-feedback" id="subdlValidationFeedback"></div>
+                                </div>
                             </div>
-                        </label>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="enableSubDL" aria-label="SubDL toggle" data-i18n="config.providers.subdl.toggleLabel" data-i18n-attr="aria-label" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div id="subdlConfig">
-                        <div style="display: flex; gap: 0.5rem; align-items: start;">
-                            <input type="text" id="subdlApiKey" data-i18n="config.providers.subdl.placeholder" data-i18n-attr="placeholder" placeholder="Enter SubDL API key" style="flex: 1;">
-                            <button type="button" class="validate-api-btn" id="validateSubDL" data-i18n="config.providers.subdl.validateTitle" data-i18n-attr="title" title="Validate API key">
-                                <span class="validate-icon">✓</span>
-                                <span class="validate-text" data-i18n="config.providers.subdl.validateCta">Test</span>
-                            </button>
                         </div>
-                        <div class="validation-feedback" id="subdlValidationFeedback"></div>
                     </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- No-Translation Languages -->
-        <div class="card collapsed" id="noTranslationCard" style="display: none;" data-card="notranslation">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <div class="card-icon" aria-hidden="true">
-                        <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-                            <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
-                                stroke-linejoin="round">
-                                <circle cx="16" cy="16" r="10" />
-                                <path d="M16 6v20M6 16h20" />
-                                <path d="M10 10c2 4 4 6 6 6s4-2 6-6M10 22c2-4 4-6 6-6s4 2 6 6" />
-                            </g>
-                        </svg>
+        
+
+            <!-- Gemini API -->
+                    <div class="card collapsed" id="geminiCard" data-card="gemini">
+                        <div class="card-header">
+                            <div class="card-title-group">
+                                <div class="card-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                        <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="16" cy="16" r="10.5" stroke-width="2.2" />
+                                            <circle cx="16" cy="16" r="5" stroke-width="1.8" />
+                                            <path
+                                                d="M16 6v-2M22.5 8.2l1.4-1.4M26 15h2M22.5 23.8l1.4 1.4M16 26v2M9.5 23.8l-1.4 1.4M6 15H4M9.5 8.2 8.1 6.8"
+                                                stroke-width="1.15" />
+                                            <path d="M16 11v4.2l2.8 1.6" stroke-width="1.8" />
+                                            <path d="M12.8 21.4c0.7 1 1.9 1.6 3.2 1.6s2.5-0.6 3.2-1.6" stroke-width="1.2"
+                                                opacity="0.8" />
+                                        </g>
+                                    </svg>
+                                </div>
+                                <h2 class="card-title" data-i18n="config.gemini.title">AI Translation API Keys</h2>
+                            </div>
+                            <button type="button" class="collapse-btn collapsed" data-collapse="gemini"></button>
+                        </div>
+                        <div class="card-content">
+                            <div class="form-group">
+                                <label for="geminiApiKey">
+                                    <span data-i18n="config.gemini.apiKey.label">Gemini API Key</span>
+                                    <span class="label-description" id="geminiApiHelper">
+                                        <span data-i18n="config.gemini.apiKey.helper">Get your free API key from</span>
+                                        <a
+                                            data-i18n="config.gemini.apiKey.linkLabel"
+                                            href="https://makersuite.google.com/app/apikey" target="_blank"
+                                            style="color: var(--primary-light);">Google AI Studio</a>
+                                    </span>
+                                </label>
+                                <div style="display: flex; gap: 0.5rem; align-items: start;">
+                                    <input type="text" class="sensitive-input masked" id="geminiApiKey"
+                                        placeholder="Enter your Gemini API key" data-i18n="config.gemini.apiKey.placeholder" data-i18n-attr="placeholder" style="flex: 1;" autocomplete="off"
+                                        autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text">
+                                    <button type="button" class="validate-api-btn" id="validateGemini" title="Validate API key" data-i18n="config.gemini.apiKey.validateTitle" data-i18n-attr="title">
+                                        <span class="validate-icon">✓</span>
+                                        <span class="validate-text" data-i18n="config.gemini.apiKey.validateCta">Test</span>
+                                    </button>
+                                </div>
+                                <div class="validation-feedback" id="geminiValidationFeedback"></div>
+                                <div class="field-error" id="geminiApiKeyError" data-i18n="config.validation.geminiKeyRequired">API key is required</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="geminiModel">
+                                    <span data-i18n="config.gemini.model.label">Translation Model</span>
+                                    <span class="label-description" data-i18n="config.gemini.model.helper">AI model for translations</span>
+                                </label>
+                                <select id="geminiModel" required>
+                                    <option value="gemini-flash-lite-latest" data-i18n="config.gemini.model.options.flashLite">Gemini 2.5 Flash-Lite</option>
+                                    <option value="gemini-flash-latest" data-i18n="config.gemini.model.options.flash" selected>Gemini 2.5 Flash</option>
+                                    <option value="gemini-2.5-pro" data-i18n="config.gemini.model.options.pro">Gemini 2.5 Pro (Slow)</option>
+                                </select>
+                                <div class="field-error" id="geminiModelError" data-i18n="config.validation.geminiModelRequired">Please select a model</div>
+                                <div style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-secondary);">
+                                    <strong style="margin-left: 2px;" data-i18n="config.gemini.model.hintTitle">Bad/broken or out-of-sync translation?</strong> <span data-i18n="config.gemini.model.hintBody">Quickly
+                                    triple-click the subtitle to force a re-translation.</span>
+                                </div>
+                                <div
+                                    style="margin-top: 0.6rem; padding: 0.75rem; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; font-size: 0.875rem; color: var(--text-secondary);">
+                                    <strong style="color: var(--warning);" data-i18n="config.gemini.model.betaTitle">⚡ 2.5 Pro usage is still in Beta.</strong> <span data-i18n="config.gemini.model.betaAdvice">If you have
+                                    translation problems, use Flash-Lite.</span>
+                                </div>
+                                <div id="proRateLimitWarning"
+                                    style="display: none; margin-top: 0.75rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; font-size: 0.875rem; color: var(--text-secondary);">
+                                    <strong style="color: #ef4444;" data-i18n="config.gemini.model.rateWarningTitle">⚠️ Free Tier Limitation:</strong> <span data-i18n="config.gemini.model.rateWarningBody">If using a free API key,
+                                    Gemini 2.5 Pro may trigger rate limits (HTTP 429). You'll likely only be able to translate one
+                                    subtitle at a time.</span>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="display: none;">
+                                <label for="promptStyle">
+                                    <span data-i18n="config.translationSettings.promptStyle.label">Prompt Style</span>
+                                    <span class="label-description" data-i18n="config.translationSettings.promptStyle.description">Choose between strict structure preservation or natural flow
+                                        adaptation</span>
+                                </label>
+                                <select id="promptStyle">
+                                    <option value="natural" disabled title="Temporarily unavailable" data-i18n="config.translationSettings.promptStyle.options.natural">Natural - Adapts structure for
+                                        natural target language flow</option>
+                                    <option value="strict" data-i18n="config.translationSettings.promptStyle.options.strict">Strict - Preserves exact timing and structure</option>
+                                </select>
+                            </div>
+
+                            <!-- Advanced Settings removed by request -->
+                            <div class="form-group" id="multiProvidersGroup"
+                                style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                                <label style="display:flex; align-items:center; gap:0.5rem;">
+                                    <input type="checkbox" id="enableMultiProviders">
+                                    <span data-i18n="config.multiProvider.label">Multiple providers (beta)</span>
+                                </label>
+                                <span class="label-description" data-i18n="config.multiProvider.description">Enables multiple AI providers.</span>
+                            </div>
+
+                            <div id="multiProvidersContainer"
+                                style="display: none; background: var(--surface-light); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-top: 0.5rem; flex-direction: column; gap: 1rem;">
+                                <div style="display: grid; gap: 1rem;">
+                                    <div class="provider-block" data-provider="openai">
+                                        <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                            <label
+                                                style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                                <input type="checkbox" id="provider-openai-enabled"> OpenAI
+                                            </label>
+                                            <button type="button" class="validate-api-btn" data-provider="openai"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
+                                            </button>
+                                        </div>
+                                        <div id="provider-openai-fields" class="provider-fields"
+                                            style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                            <input type="text" id="provider-openai-key" placeholder="OpenAI API key"
+                                                data-i18n="config.providersUi.placeholders.openai" data-i18n-attr="placeholder"
+                                                class="sensitive-input masked">
+                                            <select id="provider-openai-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="provider-block" data-provider="anthropic">
+                                        <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                            <label
+                                                style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                                <input type="checkbox" id="provider-anthropic-enabled"> Anthropic
+                                            </label>
+                                            <button type="button" class="validate-api-btn" data-provider="anthropic"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
+                                            </button>
+                                        </div>
+                                        <div id="provider-anthropic-fields" class="provider-fields"
+                                            style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                            <input type="text" id="provider-anthropic-key" placeholder="Anthropic API key"
+                                                data-i18n="config.providersUi.placeholders.anthropic" data-i18n-attr="placeholder"
+                                                class="sensitive-input masked">
+                                            <select id="provider-anthropic-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="provider-block" data-provider="xai">
+                                        <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                            <label
+                                                style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                                <input type="checkbox" id="provider-xai-enabled"> XAI (Grok)
+                                            </label>
+                                            <button type="button" class="validate-api-btn" data-provider="xai" title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
+                                            </button>
+                                        </div>
+                                        <div id="provider-xai-fields" class="provider-fields"
+                                            style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                            <input type="text" id="provider-xai-key" placeholder="XAI API key"
+                                                data-i18n="config.providersUi.placeholders.xai" data-i18n-attr="placeholder"
+                                                class="sensitive-input masked">
+                                            <select id="provider-xai-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="provider-block" data-provider="deepseek">
+                                        <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                            <label
+                                                style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                                <input type="checkbox" id="provider-deepseek-enabled"> DeepSeek
+                                            </label>
+                                            <button type="button" class="validate-api-btn" data-provider="deepseek"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
+                                            </button>
+                                        </div>
+                                        <div id="provider-deepseek-fields" class="provider-fields"
+                                            style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                            <input type="text" id="provider-deepseek-key" placeholder="DeepSeek API key"
+                                                data-i18n="config.providersUi.placeholders.deepseek" data-i18n-attr="placeholder"
+                                                class="sensitive-input masked">
+                                            <select id="provider-deepseek-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="provider-block" data-provider="deepl">
+                                        <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                            <label
+                                                style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                                <input type="checkbox" id="provider-deepl-enabled"> DeepL
+                                            </label>
+                                            <button type="button" class="validate-api-btn" data-provider="deepl"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
+                                            </button>
+                                        </div>
+                                        <div id="provider-deepl-fields" class="provider-fields"
+                                            style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                            <input type="text" id="provider-deepl-key" placeholder="DeepL Auth Key"
+                                                data-i18n="config.providersUi.placeholders.deepl" data-i18n-attr="placeholder"
+                                                class="sensitive-input masked">
+                                            <select id="provider-deepl-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
+                                            </select>
+                                            <span class="label-description" data-i18n="config.providersUi.deeplHint">Free keys auto-use api-free.deepl.com. Language codes
+                                                are auto-mapped from your selections.</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="provider-block" data-provider="mistral">
+                                        <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                            <label
+                                                style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                                <input type="checkbox" id="provider-mistral-enabled"> Mistral
+                                            </label>
+                                            <button type="button" class="validate-api-btn" data-provider="mistral"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
+                                            </button>
+                                        </div>
+                                        <div id="provider-mistral-fields" class="provider-fields"
+                                            style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                            <input type="text" id="provider-mistral-key" placeholder="Mistral API key"
+                                                data-i18n="config.providersUi.placeholders.mistral" data-i18n-attr="placeholder"
+                                                class="sensitive-input masked">
+                                            <select id="provider-mistral-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="provider-block" data-provider="cfworkers">
+                                        <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                            <label
+                                                style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                                <input type="checkbox" id="provider-cfworkers-enabled"> Cloudflare Workers AI
+                                            </label>
+                                            <button type="button" class="validate-api-btn" data-provider="cfworkers"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
+                                            </button>
+                                        </div>
+                                        <div id="provider-cfworkers-fields" class="provider-fields"
+                                            style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                            <input type="text" id="provider-cfworkers-key" placeholder="ACCOUNT_ID|TOKEN"
+                                                data-i18n="config.providersUi.placeholders.cfworkers" data-i18n-attr="placeholder"
+                                                class="sensitive-input">
+                                            <select id="provider-cfworkers-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
+                                            </select>
+                                            <span class="label-description" data-i18n="config.providersUi.cfworkersHint">Use ACCOUNT|TOKEN to set account ID explicitly.</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="provider-block" data-provider="openrouter">
+                                        <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                            <label
+                                                style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                                <input type="checkbox" id="provider-openrouter-enabled"> OpenRouter
+                                            </label>
+                                            <button type="button" class="validate-api-btn" data-provider="openrouter"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
+                                            </button>
+                                        </div>
+                                        <div id="provider-openrouter-fields" class="provider-fields"
+                                            style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                            <input type="text" id="provider-openrouter-key" placeholder="OpenRouter API key"
+                                                data-i18n="config.providersUi.placeholders.openrouter" data-i18n-attr="placeholder"
+                                                class="sensitive-input masked">
+                                            <select id="provider-openrouter-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="provider-block" data-provider="googletranslate">
+                                        <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
+                                            <label
+                                                style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
+                                                <input type="checkbox" id="provider-googletranslate-enabled"> Google Translate
+                                                (unofficial)
+                                            </label>
+                                            <div style="font-size:0.85rem; color: var(--text-secondary);" data-i18n="config.providersUi.noKeyNeeded">No API key needed</div>
+                                        </div>
+                                        <div id="provider-googletranslate-fields" class="provider-fields"
+                                            style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
+                                            <input type="hidden" id="provider-googletranslate-key" value="">
+                                            <select id="provider-googletranslate-model" disabled>
+                                                <option value="web" selected data-i18n="config.providersUi.googleWeb">web (fixed)</option>
+                                            </select>
+                                            <div style="font-size:0.9rem; color: var(--text-secondary);" data-i18n="config.providersUi.googleHint">Uses the public Google
+                                                Translate web endpoint (may be unstable).</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
                     </div>
-                    <h2 class="card-title" data-i18n="config.noTranslationCard.title">Languages</h2>
-                </div>
-                <button type="button" class="collapse-btn collapsed" data-collapse="notranslation"></button>
+
+        
+
+            <!-- Other API Keys -->
+                    <div class="card collapsed" id="otherApiKeysCard" data-card="other-api" style="display: none;">
+                        <div class="card-header">
+                            <div class="card-title-group">
+                                <div class="card-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                                        <g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <path d="M12 5.5h8l6 5v11l-6 5h-8l-6-5v-11z" />
+                                            <circle cx="16" cy="12.25" r="3" />
+                                            <path d="M16 15.5v3.75l-2 1.8" />
+                                            <path d="M18.25 22.5H13.8" />
+                                            <path d="M4.25 16h3.6m16.3 0h3.6" />
+                                            <circle cx="4.25" cy="16" r="1.35" />
+                                            <circle cx="27.75" cy="16" r="1.35" />
+                                            <path d="M16 5.5V3m0 26v-3" />
+                                            <circle cx="16" cy="2.75" r="1.25" />
+                                            <circle cx="16" cy="27.25" r="1.25" />
+                                        </g>
+                                    </svg>
+                                </div>
+                                <h2 class="card-title" data-i18n="config.otherApiKeys.title">Other API Keys</h2>
+                            </div>
+                            <button type="button" class="collapse-btn collapsed" data-collapse="other-api"></button>
+                        </div>
+                        <div class="card-content">
+                            <div class="form-group">
+                                <label for="assemblyAiApiKey">
+                                    <span data-i18n="config.otherApiKeys.assembly.label">AssemblyAI API Key</span>
+                                    <span class="label-description" data-i18n="config.otherApiKeys.assembly.helper">Used for Automatic Subtitles via AssemblyAI.</span>
+                                </label>
+                                <div style="display: flex; gap: 0.5rem; align-items: start;">
+                                    <input type="text" class="sensitive-input masked" id="assemblyAiApiKey"
+                                        placeholder="Enter your AssemblyAI API key" data-i18n="config.otherApiKeys.assembly.placeholder" data-i18n-attr="placeholder"
+                                        style="flex: 1;" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text">
+                                    <button type="button" class="validate-api-btn" id="validateAssemblyAi" title="Validate AssemblyAI API key" data-i18n="config.otherApiKeys.assembly.validateTitle" data-i18n-attr="title">
+                                        <span class="validate-icon">✓</span>
+                                        <span class="validate-text" data-i18n="config.otherApiKeys.assembly.validateCta">Test</span>
+                                    </button>
+                                </div>
+                                <div class="validation-feedback" id="assemblyAiValidationFeedback"></div>
+                                <div class="field-error" id="assemblyAiApiKeyError" data-i18n="config.validation.assemblyAiKeyRequired">API key is required for AssemblyAI mode</div>
+                            </div>
+                        </div>
+                    </div>
+
+            <div class="section-footer">
+                <button type="button" class="section-close-link collapsed" data-section-close="api-keys">
+                    <span class="section-close-icon" aria-hidden="true">×</span>
+                    <span data-i18n="config.sections.closeLink">Close section</span>
+                </button>
             </div>
-                    <div class="card-content">
-                        <div class="form-group">
-                            <label>
-                                <span data-i18n="config.noTranslationCard.label">Subtitle Languages</span>
+            </div>
+        </section>
+
+        <!-- Languages Section -->
+        <section id="languagesSection" class="section-block collapsed">
+            <div class="section-header">
+                <div class="section-header-left">
+                    <div class="section-icon section-emoji language-emoji" aria-hidden="true">&#127760;</div>
+                    <div>
+                        <h2 class="section-title" id="languagesSectionTitle" data-i18n="config.sections.languagesTitle">Languages</h2>
+                        <p class="section-description" id="languagesSectionDescription" data-i18n="config.sections.languagesDescription">Choose your source and target languages for fetching and translations.</p>
+                    </div>
+                </div>
+                <button type="button" class="collapse-btn section-collapse-btn collapsed" data-collapse-section="languages"></button>
+            </div>
+            <div class="section-grid">
+
+        <!-- No-Translation Languages (flat, shown only in Just Fetch mode) -->
+        <div class="card" id="noTranslationCard" style="display: none;" data-card="notranslation">
+            <div class="card-content">
+                <div class="form-group">
+                    <label>
+                        <span data-i18n="config.noTranslationCard.label">Subtitle Languages</span>
                         <span class="label-description" id="noTranslationLanguagesDescription" data-i18n="config.limits.noTranslationDescription">Select which languages
                             you want to fetch subtitles in.</span>
-                            </label>
+                    </label>
 
-                            <div class="language-search">
-                                <span class="language-search-icon">🔍</span>
+                    <div class="language-search">
+                        <span class="language-search-icon">&#x1F50D;</span>
                         <input type="text" id="noTranslationSearch" data-i18n="config.noTranslationCard.search" data-i18n-attr="placeholder" placeholder="Search languages...">
                     </div>
 
-                        <div id="selectedNoTranslationLanguages" class="selected-languages empty"></div>
-                        <div class="field-error" id="noTranslationLanguagesError" data-i18n="config.validation.noTranslationRequired"></div>
+                    <div id="selectedNoTranslationLanguages" class="selected-languages empty"></div>
+                    <div class="field-error" id="noTranslationLanguagesError" data-i18n="config.validation.noTranslationRequired"></div>
 
-                            <div class="quick-actions">
-                                <button type="button" class="quick-btn" data-action="select-popular-notranslation">
-                                    <span aria-hidden="true">⭐</span>
-                                    <span data-i18n="config.noTranslationCard.quickPopular">Popular</span>
-                                </button>
-                                <button type="button" class="quick-btn" data-action="select-all-notranslation">
-                                    <span aria-hidden="true">✓</span>
-                                    <span data-i18n="config.noTranslationCard.quickAll">All</span>
-                                </button>
-                                <button type="button" class="quick-btn" data-action="clear-notranslation">
-                                    <span aria-hidden="true">✗</span>
-                                    <span data-i18n="config.noTranslationCard.quickClear">Clear</span>
-                                </button>
-                            </div>
-
-                            <div id="noTranslationLanguages" class="language-grid"></div>
-                        </div>
-                    </div>
-        </div>
-
-        <!-- Gemini API -->
-        <div class="card collapsed" id="geminiCard" data-card="gemini">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <div class="card-icon" aria-hidden="true">
-                        <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-                            <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="16" cy="16" r="10.5" stroke-width="2.2" />
-                                <circle cx="16" cy="16" r="5" stroke-width="1.8" />
-                                <path
-                                    d="M16 6v-2M22.5 8.2l1.4-1.4M26 15h2M22.5 23.8l1.4 1.4M16 26v2M9.5 23.8l-1.4 1.4M6 15H4M9.5 8.2 8.1 6.8"
-                                    stroke-width="1.15" />
-                                <path d="M16 11v4.2l2.8 1.6" stroke-width="1.8" />
-                                <path d="M12.8 21.4c0.7 1 1.9 1.6 3.2 1.6s2.5-0.6 3.2-1.6" stroke-width="1.2"
-                                    opacity="0.8" />
-                            </g>
-                        </svg>
-                    </div>
-                    <h2 class="card-title" data-i18n="config.gemini.title">AI Translation API Keys</h2>
-                </div>
-                <button type="button" class="collapse-btn collapsed" data-collapse="gemini"></button>
-            </div>
-            <div class="card-content">
-                <div class="form-group">
-                    <label for="geminiApiKey">
-                        <span data-i18n="config.gemini.apiKey.label">Gemini API Key</span>
-                        <span class="label-description" id="geminiApiHelper">Get your free API key from <a
-                                href="https://makersuite.google.com/app/apikey" target="_blank"
-                                style="color: var(--primary-light);">Google AI Studio</a></span>
-                    </label>
-                    <div style="display: flex; gap: 0.5rem; align-items: start;">
-                        <input type="text" class="sensitive-input masked" id="geminiApiKey"
-                            placeholder="Enter your Gemini API key" data-i18n="config.gemini.apiKey.placeholder" data-i18n-attr="placeholder" style="flex: 1;" autocomplete="off"
-                            autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text">
-                        <button type="button" class="validate-api-btn" id="validateGemini" title="Validate API key" data-i18n="config.gemini.apiKey.validateTitle" data-i18n-attr="title">
-                            <span class="validate-icon">✓</span>
-                            <span class="validate-text" data-i18n="config.gemini.apiKey.validateCta">Test</span>
+                    <div class="quick-actions">
+                        <button type="button" class="quick-btn" data-action="select-popular-notranslation">
+                            <span aria-hidden="true">&#x2B50;</span>
+                            <span data-i18n="config.noTranslationCard.quickPopular">Popular</span>
+                        </button>
+                        <button type="button" class="quick-btn" data-action="select-all-notranslation">
+                            <span aria-hidden="true">&#x2713;</span>
+                            <span data-i18n="config.noTranslationCard.quickAll">All</span>
+                        </button>
+                        <button type="button" class="quick-btn" data-action="clear-notranslation">
+                            <span aria-hidden="true">&#x2717;</span>
+                            <span data-i18n="config.noTranslationCard.quickClear">Clear</span>
                         </button>
                     </div>
-                    <div class="validation-feedback" id="geminiValidationFeedback"></div>
-                    <div class="field-error" id="geminiApiKeyError" data-i18n="config.validation.geminiKeyRequired">API key is required</div>
-                </div>
 
-                <div class="form-group">
-                    <label for="geminiModel">
-                        <span data-i18n="config.gemini.model.label">Translation Model</span>
-                        <span class="label-description" data-i18n="config.gemini.model.helper">AI model for translations</span>
-                    </label>
-                    <select id="geminiModel" required>
-                        <option value="gemini-flash-lite-latest" data-i18n="config.gemini.model.options.flashLite">Gemini 2.5 Flash-Lite</option>
-                        <option value="gemini-flash-latest" data-i18n="config.gemini.model.options.flash" selected>Gemini 2.5 Flash</option>
-                        <option value="gemini-2.5-pro" data-i18n="config.gemini.model.options.pro">Gemini 2.5 Pro (Slow)</option>
-                    </select>
-                    <div class="field-error" id="geminiModelError" data-i18n="config.validation.geminiModelRequired">Please select a model</div>
-                    <div style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-secondary);">
-                        <strong style="margin-left: 2px;" data-i18n="config.gemini.model.hintTitle">Bad/broken or out-of-sync translation?</strong> <span data-i18n="config.gemini.model.hintBody">Quickly
-                        triple-click the subtitle to force a re-translation.</span>
-                    </div>
-                    <div
-                        style="margin-top: 0.6rem; padding: 0.75rem; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; font-size: 0.875rem; color: var(--text-secondary);">
-                        <strong style="color: var(--warning);" data-i18n="config.gemini.model.betaTitle">⚡ 2.5 Pro usage is still in Beta.</strong> <span data-i18n="config.gemini.model.betaAdvice">If you have
-                        translation problems, use Flash-Lite.</span>
-                    </div>
-                    <div id="proRateLimitWarning"
-                        style="display: none; margin-top: 0.75rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; font-size: 0.875rem; color: var(--text-secondary);">
-                        <strong style="color: #ef4444;" data-i18n="config.gemini.model.rateWarningTitle">⚠️ Free Tier Limitation:</strong> <span data-i18n="config.gemini.model.rateWarningBody">If using a free API key,
-                        Gemini 2.5 Pro may trigger rate limits (HTTP 429). You'll likely only be able to translate one
-                        subtitle at a time.</span>
-                    </div>
-                </div>
-
-                <div class="form-group" style="display: none;">
-                    <label for="promptStyle">
-                        <span data-i18n="config.translationSettings.promptStyle.label">Prompt Style</span>
-                        <span class="label-description" data-i18n="config.translationSettings.promptStyle.description">Choose between strict structure preservation or natural flow
-                            adaptation</span>
-                    </label>
-                    <select id="promptStyle">
-                        <option value="natural" disabled title="Temporarily unavailable" data-i18n="config.translationSettings.promptStyle.options.natural">Natural - Adapts structure for
-                            natural target language flow</option>
-                        <option value="strict" data-i18n="config.translationSettings.promptStyle.options.strict">Strict - Preserves exact timing and structure</option>
-                    </select>
-                </div>
-
-                <!-- Advanced Settings removed by request -->
-                <div class="form-group" id="multiProvidersGroup"
-                    style="display: none; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
-                    <label style="display:flex; align-items:center; gap:0.5rem;">
-                        <input type="checkbox" id="enableMultiProviders">
-                        <span data-i18n="config.multiProvider.label">Multiple providers (beta)</span>
-                    </label>
-                    <span class="label-description" data-i18n="config.multiProvider.description">Enables multiple providers and advanced parameters settings.</span>
-                </div>
-
-                <div id="multiProvidersContainer"
-                    style="display: none; background: var(--surface-light); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-top: 0.5rem; flex-direction: column; gap: 1rem;">
-                    <div style="display: grid; gap: 1rem;">
-                        <div class="provider-block" data-provider="openai">
-                            <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
-                                <label
-                                    style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
-                                    <input type="checkbox" id="provider-openai-enabled"> OpenAI
-                                </label>
-                                <button type="button" class="validate-api-btn" data-provider="openai"
-                                    title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
-                                    <span class="validate-icon">&#8635;</span>
-                                    <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
-                                </button>
-                            </div>
-                            <div id="provider-openai-fields" class="provider-fields"
-                                style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
-                                <input type="text" id="provider-openai-key" placeholder="OpenAI API key"
-                                    data-i18n="config.providersUi.placeholders.openai" data-i18n-attr="placeholder"
-                                    class="sensitive-input masked">
-                                <select id="provider-openai-model">
-                                    <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="provider-block" data-provider="anthropic">
-                            <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
-                                <label
-                                    style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
-                                    <input type="checkbox" id="provider-anthropic-enabled"> Anthropic
-                                </label>
-                                <button type="button" class="validate-api-btn" data-provider="anthropic"
-                                    title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
-                                    <span class="validate-icon">&#8635;</span>
-                                    <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
-                                </button>
-                            </div>
-                            <div id="provider-anthropic-fields" class="provider-fields"
-                                style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
-                                <input type="text" id="provider-anthropic-key" placeholder="Anthropic API key"
-                                    data-i18n="config.providersUi.placeholders.anthropic" data-i18n-attr="placeholder"
-                                    class="sensitive-input masked">
-                                <select id="provider-anthropic-model">
-                                    <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="provider-block" data-provider="xai">
-                            <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
-                                <label
-                                    style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
-                                    <input type="checkbox" id="provider-xai-enabled"> XAI (Grok)
-                                </label>
-                                <button type="button" class="validate-api-btn" data-provider="xai" title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
-                                    <span class="validate-icon">&#8635;</span>
-                                    <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
-                                </button>
-                            </div>
-                            <div id="provider-xai-fields" class="provider-fields"
-                                style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
-                                <input type="text" id="provider-xai-key" placeholder="XAI API key"
-                                    data-i18n="config.providersUi.placeholders.xai" data-i18n-attr="placeholder"
-                                    class="sensitive-input masked">
-                                <select id="provider-xai-model">
-                                    <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="provider-block" data-provider="deepseek">
-                            <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
-                                <label
-                                    style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
-                                    <input type="checkbox" id="provider-deepseek-enabled"> DeepSeek
-                                </label>
-                                <button type="button" class="validate-api-btn" data-provider="deepseek"
-                                    title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
-                                    <span class="validate-icon">&#8635;</span>
-                                    <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
-                                </button>
-                            </div>
-                            <div id="provider-deepseek-fields" class="provider-fields"
-                                style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
-                                <input type="text" id="provider-deepseek-key" placeholder="DeepSeek API key"
-                                    data-i18n="config.providersUi.placeholders.deepseek" data-i18n-attr="placeholder"
-                                    class="sensitive-input masked">
-                                <select id="provider-deepseek-model">
-                                    <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="provider-block" data-provider="deepl">
-                            <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
-                                <label
-                                    style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
-                                    <input type="checkbox" id="provider-deepl-enabled"> DeepL
-                                </label>
-                                <button type="button" class="validate-api-btn" data-provider="deepl"
-                                    title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
-                                    <span class="validate-icon">&#8635;</span>
-                                    <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
-                                </button>
-                            </div>
-                            <div id="provider-deepl-fields" class="provider-fields"
-                                style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
-                                <input type="text" id="provider-deepl-key" placeholder="DeepL Auth Key"
-                                    data-i18n="config.providersUi.placeholders.deepl" data-i18n-attr="placeholder"
-                                    class="sensitive-input masked">
-                                <select id="provider-deepl-model">
-                                    <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
-                                </select>
-                                <span class="label-description" data-i18n="config.providersUi.deeplHint">Free keys auto-use api-free.deepl.com. Language codes
-                                    are auto-mapped from your selections.</span>
-                            </div>
-                        </div>
-
-                        <div class="provider-block" data-provider="mistral">
-                            <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
-                                <label
-                                    style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
-                                    <input type="checkbox" id="provider-mistral-enabled"> Mistral
-                                </label>
-                                <button type="button" class="validate-api-btn" data-provider="mistral"
-                                    title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
-                                    <span class="validate-icon">&#8635;</span>
-                                    <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
-                                </button>
-                            </div>
-                            <div id="provider-mistral-fields" class="provider-fields"
-                                style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
-                                <input type="text" id="provider-mistral-key" placeholder="Mistral API key"
-                                    data-i18n="config.providersUi.placeholders.mistral" data-i18n-attr="placeholder"
-                                    class="sensitive-input masked">
-                                <select id="provider-mistral-model">
-                                    <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="provider-block" data-provider="cfworkers">
-                            <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
-                                <label
-                                    style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
-                                    <input type="checkbox" id="provider-cfworkers-enabled"> Cloudflare Workers AI
-                                </label>
-                                <button type="button" class="validate-api-btn" data-provider="cfworkers"
-                                    title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
-                                    <span class="validate-icon">&#8635;</span>
-                                    <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
-                                </button>
-                            </div>
-                            <div id="provider-cfworkers-fields" class="provider-fields"
-                                style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
-                                <input type="text" id="provider-cfworkers-key" placeholder="ACCOUNT_ID|TOKEN"
-                                    data-i18n="config.providersUi.placeholders.cfworkers" data-i18n-attr="placeholder"
-                                    class="sensitive-input">
-                                <select id="provider-cfworkers-model">
-                                    <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
-                                </select>
-                                <span class="label-description" data-i18n="config.providersUi.cfworkersHint">Use ACCOUNT|TOKEN to set account ID explicitly.</span>
-                            </div>
-                        </div>
-
-                        <div class="provider-block" data-provider="openrouter">
-                            <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
-                                <label
-                                    style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
-                                    <input type="checkbox" id="provider-openrouter-enabled"> OpenRouter
-                                </label>
-                                <button type="button" class="validate-api-btn" data-provider="openrouter"
-                                    title="Fetch models" data-i18n="config.providersUi.loadModelsTitle" data-i18n-attr="title">
-                                    <span class="validate-icon">&#8635;</span>
-                                    <span class="validate-text" data-i18n="config.providersUi.loadModels">Load Models</span>
-                                </button>
-                            </div>
-                            <div id="provider-openrouter-fields" class="provider-fields"
-                                style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
-                                <input type="text" id="provider-openrouter-key" placeholder="OpenRouter API key"
-                                    data-i18n="config.providersUi.placeholders.openrouter" data-i18n-attr="placeholder"
-                                    class="sensitive-input masked">
-                                <select id="provider-openrouter-model">
-                                    <option value="" data-i18n="config.providersUi.selectModel">Select model</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="provider-block" data-provider="googletranslate">
-                            <div style="display:flex; align-items:center; justify-content: space-between; gap:0.75rem;">
-                                <label
-                                    style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
-                                    <input type="checkbox" id="provider-googletranslate-enabled"> Google Translate
-                                    (unofficial)
-                                </label>
-                                <div style="font-size:0.85rem; color: var(--text-secondary);" data-i18n="config.providersUi.noKeyNeeded">No API key needed</div>
-                            </div>
-                            <div id="provider-googletranslate-fields" class="provider-fields"
-                                style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
-                                <input type="hidden" id="provider-googletranslate-key" value="">
-                                <select id="provider-googletranslate-model" disabled>
-                                    <option value="web" selected data-i18n="config.providersUi.googleWeb">web (fixed)</option>
-                                </select>
-                                <div style="font-size:0.9rem; color: var(--text-secondary);" data-i18n="config.providersUi.googleHint">Uses the public Google
-                                    Translate web endpoint (may be unstable).</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group" id="mainProviderGroup" style="display: none; margin-top: 1rem;">
-                    <label for="mainProviderSelect">
-                        <span data-i18n="config.providersUi.main.label">Main Provider</span>
-                        <span class="label-description" data-i18n="config.providersUi.main.description">Choose which enabled AI provider to use when multiple are
-                            configured.</span>
-                    </label>
-                    <select id="mainProviderSelect">
-                        <option value="gemini">Gemini</option>
-                    </select>
-                </div>
-
-                <div class="form-group" id="secondaryProviderGroup" style="display: none;">
-                    <label style="display: flex; align-items: flex-start; gap: 0.5rem;">
-                        <input type="checkbox" id="enableSecondaryProvider" style="margin-top: 0.3rem;">
-                        <div data-i18n="config.providersUi.secondary.label" data-i18n-attr="innerHTML">
-                            Secondary Provider
-                            <span class="label-description">If the main provider errors (429/503/prohibited/other),
-                                retry the failed batch with this provider, then continue with the main provider.</span>
-                        </div>
-                    </label>
-                    <div id="secondaryProviderSelectRow" style="margin-top: 0.5rem; display: none;">
-                        <label for="secondaryProviderSelect">
-                            <span data-i18n="config.providersUi.fallback.label">Fallback Provider</span>
-                            <span class="label-description" data-i18n="config.providersUi.fallback.description">Used only when the main provider returns an error. Falls
-                                back seamlessly.</span>
-                        </label>
-                        <select id="secondaryProviderSelect" disabled>
-                            <option value="" data-i18n="config.providersUi.selectProvider">Select provider</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Other API Keys -->
-        <div class="card collapsed" id="otherApiKeysCard" data-card="other-api" style="display: none;">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <div class="card-icon" aria-hidden="true">
-                        <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-                            <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 18l-2 2 2 2-2 2h-4l-2-2 2-2-2-2 2-2h4z" />
-                                <circle cx="21" cy="11" r="6" />
-                                <path d="M21 8v3l2 1" stroke-width="1.8" />
-                            </g>
-                        </svg>
-                    </div>
-                    <h2 class="card-title" data-i18n="config.otherApiKeys.title">Other API Keys</h2>
-                </div>
-                <button type="button" class="collapse-btn collapsed" data-collapse="other-api"></button>
-            </div>
-            <div class="card-content">
-                <div class="form-group">
-                    <label for="assemblyAiApiKey">
-                        <span data-i18n="config.otherApiKeys.assembly.label">AssemblyAI API Key</span>
-                        <span class="label-description" data-i18n="config.otherApiKeys.assembly.helper">Used for Automatic Subtitles via AssemblyAI.</span>
-                    </label>
-                    <div style="display: flex; gap: 0.5rem; align-items: start;">
-                        <input type="text" class="sensitive-input masked" id="assemblyAiApiKey"
-                            placeholder="Enter your AssemblyAI API key" data-i18n="config.otherApiKeys.assembly.placeholder" data-i18n-attr="placeholder"
-                            style="flex: 1;" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text">
-                        <button type="button" class="validate-api-btn" id="validateAssemblyAi" title="Validate AssemblyAI API key" data-i18n="config.otherApiKeys.assembly.validateTitle" data-i18n-attr="title">
-                            <span class="validate-icon">✓</span>
-                            <span class="validate-text" data-i18n="config.otherApiKeys.assembly.validateCta">Test</span>
-                        </button>
-                    </div>
-                    <div class="validation-feedback" id="assemblyAiValidationFeedback"></div>
-                    <div class="field-error" id="assemblyAiApiKeyError" data-i18n="config.validation.assemblyAiKeyRequired">API key is required for AssemblyAI mode</div>
+                    <div id="noTranslationLanguages" class="language-grid"></div>
                 </div>
             </div>
         </div>
@@ -858,6 +870,29 @@
             </div>
         </div>
 
+            <div class="section-footer">
+                <button type="button" class="section-close-link collapsed" data-section-close="languages">
+                    <span class="section-close-icon" aria-hidden="true">×</span>
+                    <span data-i18n="config.sections.closeLink">Close section</span>
+                </button>
+            </div>
+            </div>
+        </section>
+
+        <!-- Settings Section -->
+        <section id="settingsSection" class="section-block collapsed">
+            <div class="section-header">
+                <div class="section-header-left">
+                    <div class="section-icon section-emoji settings-emoji" aria-hidden="true">&#9881;</div>
+                    <div>
+                        <h2 class="section-title" id="settingsSectionTitle" data-i18n="config.sections.settingsTitle">Settings</h2>
+                        <p class="section-description" id="settingsSectionDescription" data-i18n="config.sections.settingsDescription">Adjust translation behavior and other preferences.</p>
+                    </div>
+                </div>
+                <button type="button" class="collapse-btn section-collapse-btn collapsed" data-collapse-section="settings"></button>
+            </div>
+            <div class="section-grid">
+
         <!-- Translation Settings -->
         <div class="card collapsed" data-card="translation" id="translationSettingsCard">
             <div class="card-header">
@@ -897,6 +932,38 @@
                 <button type="button" class="collapse-btn collapsed" data-collapse="translation"></button>
             </div>
             <div class="card-content">
+                <div class="form-group" id="mainProviderGroup" style="margin-bottom: 1rem;">
+                    <label for="mainProviderSelect">
+                        <span data-i18n="config.providersUi.main.label">Main Provider</span>
+                        <span class="label-description" data-i18n="config.providersUi.main.description">Choose which enabled AI provider to use when multiple are
+                            configured.</span>
+                    </label>
+                    <select id="mainProviderSelect">
+                        <option value="gemini" data-i18n="config.providersUi.main.defaultGemini">Gemini</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="secondaryProviderGroup" style="margin-bottom: 1.25rem;">
+                    <label style="display: flex; align-items: flex-start; gap: 0.5rem;">
+                        <input type="checkbox" id="enableSecondaryProvider" style="margin-top: 0.3rem;">
+                        <div data-i18n="config.providersUi.secondary.label" data-i18n-attr="innerHTML">
+                            Secondary Provider
+                            <span class="label-description">If the main provider errors (429/503/prohibited/other),
+                                retry the failed batch with this provider, then continue with the main provider.</span>
+                        </div>
+                    </label>
+                    <div id="secondaryProviderSelectRow" style="margin-top: 0.5rem; display: none;">
+                        <label for="secondaryProviderSelect">
+                            <span data-i18n="config.providersUi.fallback.label">Fallback Provider</span>
+                            <span class="label-description" data-i18n="config.providersUi.fallback.description">Used only when the main provider returns an error. Falls
+                                back seamlessly.</span>
+                        </label>
+                        <select id="secondaryProviderSelect" disabled>
+                            <option value="" data-i18n="config.providersUi.selectProvider">Select provider</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label for="sendTimestampsToAI" class="form-label">
                         <span class="label-title" data-i18n="config.translationSettings.workflow.label">Translation Workflow</span>
@@ -930,25 +997,27 @@
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="singleBatchMode" class="form-label">
-                        <span class="label-title" data-i18n="config.translationSettings.chunking.label">Chunking Strategy</span>
-                        <span class="label-description" data-i18n="config.translationSettings.chunking.description">Multiple Batches sends subtitles in separate requests (chunks).
-                            Single-Batch translates the whole subtitle file in one go (still auto-splits into 2 or 3
-                            chunks at 50k and 100k+ tokens). Single-Batch still streams partial outputs while processing
-                            (through token streaming) and delivers better contextual translations. Might cause
-                            MAX_OUTPUT errors. Long titles may have more sync problems.</span>
-                    </label>
-                    <select id="singleBatchMode" class="styled-select">
-                        <option value="multiple" data-i18n="config.translationSettings.chunking.multiple">Multiple Batches (Default)</option>
-                        <option value="single" data-i18n="config.translationSettings.chunking.single">Single-Batch</option>
-                    </select>
-                </div>
             </div>
         </div>
 
+        <div class="form-group" id="subToolboxNoTranslationGroup" style="display: none;">
+            <label>
+                <input type="checkbox" id="subToolboxEnabledNoTranslation">
+                <span data-i18n="config.otherSettings.subToolbox.label">Enable "Sub Toolbox" (Alpha)</span>
+                <span class="label-description" id="subToolboxDescriptionNoTranslation">
+                    <span data-i18n="config.otherSettings.subToolbox.description">Shows the Sub Toolbox entry in Stremio subtitles for brower access to all tools.</span>
+                    <span id="subToolboxInstructionsWrapperNoTranslation" class="subtoolbox-instructions">
+                        (<a id="subToolboxInstructionsLinkNoTranslation" class="link-button subtle-link" href="#" style="font-size: 0.9rem;">
+                            <span data-i18n="config.otherSettings.subToolbox.instructionsLink">Read instructions</span>
+                        </a>)
+                    </span>
+                </span>
+                <span class="label-description subtoolbox-tools-note" data-i18n="config.otherSettings.subToolbox.tools">Tools: SRT Files Translation, Embedded Subs Extraction, AutoSync and AutoSubbing.</span>
+            </label>
+        </div>
+
         <!-- Other Settings -->
-        <div class="card collapsed" data-card="cache">
+        <div class="card collapsed" data-card="cache" id="otherSettingsCard">
             <div class="card-header">
                 <div class="card-title-group">
                     <div class="card-icon" aria-hidden="true">
@@ -971,22 +1040,18 @@
             <div class="card-content">
                 <div class="form-group">
                     <label>
-                        <input type="checkbox" id="otherApiKeysEnabled">
-                        <span data-i18n="config.otherSettings.autosubsKeys.label">Autosubs API Keys</span>
-                        <span class="label-description" data-i18n="config.otherSettings.autosubsKeys.description">Show the AssemblyAI key section for automatic subtitles.</span>
-                    </label>
-                </div>
-
-                <div class="form-group">
-                    <label>
                         <input type="checkbox" id="subToolboxEnabled">
                         <span data-i18n="config.otherSettings.subToolbox.label">Enable "Sub Toolbox" (Alpha)</span>
-                        <span class="label-description" data-i18n="config.otherSettings.subToolbox.description">Shows the Sub Toolbox entry in Stremio subtitles for brower
-                            access to all tools. (Read instructions after enabling)</span>
+                        <span class="label-description" id="subToolboxDescription">
+                            <span data-i18n="config.otherSettings.subToolbox.description">Shows the Sub Toolbox entry in Stremio subtitles for brower access to all tools.</span>
+                            <span id="subToolboxInstructionsWrapper" class="subtoolbox-instructions">
+                                (<a id="subToolboxInstructionsLink" class="link-button subtle-link" href="#" style="font-size: 0.9rem;">
+                                    <span data-i18n="config.otherSettings.subToolbox.instructionsLink">Read instructions</span>
+                                </a>)
+                            </span>
+                        </span>
+                        <span class="label-description subtoolbox-tools-note" data-i18n="config.otherSettings.subToolbox.tools">Tools: SRT Files Translation, Embedded Subs Extraction, AutoSync and AutoSubbing.</span>
                     </label>
-                    <button type="button" id="subToolboxInstructionsLink" class="link-button subtle-link" style="display: none; margin-left: 1.75rem; margin-top: 0.25rem; font-size: 0.9rem;">
-                        <span data-i18n="config.otherSettings.subToolbox.instructionsLink">Read instructions for using the Toolbox</span>
-                    </button>
                 </div>
 
                 <div class="form-group">
@@ -1034,9 +1099,9 @@
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="betaMode">
-                        <span data-i18n="config.otherSettings.betaMode.label">Beta Mode</span>
-                        <span class="label-description" data-i18n="config.otherSettings.betaMode.description">Unlocks experimental features like Multiple Providers and
-                            Advanced Settings.</span>
+                        <span data-i18n="config.otherSettings.betaMode.label">Advanced Mode</span>
+                        <span class="label-description" data-i18n="config.otherSettings.betaMode.description">Unlocks Advanced Parameters Settings for Gemini and other
+                            providers.</span>
                     </label>
                 </div>
 
@@ -1078,9 +1143,67 @@
                             </g>
                         </svg>
                     </div>
-                    <h2 class="card-title" data-i18n="config.advancedGemini.title">Advanced Settings (Gemini)</h2>
+                    <h2 class="card-title" data-i18n="config.advancedGemini.title">Advanced Settings</h2>
                 </div>
                 <button type="button" class="collapse-btn collapsed" data-collapse="advanced"></button>
+            </div>
+            <div class="card-content">
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="enableBatchContext">
+                        <span data-i18n="config.advancedGemini.batchContext.label">Enable Batch Context</span>
+                        <span class="label-description" data-i18n="config.advancedGemini.batchContext.description">Include original surrounding context and previous translations
+                            when processing batches. Improves translation coherence but may break outputs and increases
+                            token usage.</span>
+                    </label>
+                </div>
+
+                <div class="form-group" id="contextSizeGroup" style="display: none;">
+                    <label for="contextSize">
+                        <span data-i18n="config.advancedGemini.contextSize.label">Context Size</span>
+                        <span class="label-description" data-i18n="config.advancedGemini.contextSize.description">Number of surrounding entries to include as context (1-10).
+                            Default: 3</span>
+                    </label>
+                    <input type="number" id="contextSize" min="1" max="10" step="1" value="3" placeholder="3">
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="singleBatchMode">
+                        <span data-i18n="config.translationSettings.chunking.label">Enable Single Batch</span>
+                        <span class="label-description" data-i18n="config.translationSettings.chunking.description">Translate the whole subtitle in one go (still auto-splits at very large sizes). Improves contextual coherence but can hit provider limits more easily.</span>
+                    </label>
+                </div>
+
+            </div>
+        </div>
+
+            <div class="section-footer">
+                <button type="button" class="section-close-link collapsed" data-section-close="settings">
+                    <span class="section-close-icon" aria-hidden="true">×</span>
+                    <span data-i18n="config.sections.closeLink">Close section</span>
+                </button>
+            </div>
+            </div>
+        </section>
+
+        <!-- Gemini Advanced Parameters -->
+        <div class="card collapsed" id="geminiAdvancedCard" data-card="gemini-advanced" style="display: none;">
+            <div class="card-header">
+                <div class="card-title-group">
+                    <div class="card-icon" aria-hidden="true">
+                        <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                            <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="16" cy="16" r="10.5" stroke-width="2.2" />
+                                <path d="M10 12c1.3-2 3.2-3 6-3s4.7 1 6 3" stroke-width="1.6" />
+                                <path d="M10 20c1.3 2 3.2 3 6 3s4.7-1 6-3" stroke-width="1.6" />
+                                <circle cx="16" cy="16" r="2.2" stroke-width="1.6" />
+                            </g>
+                        </svg>
+                    </div>
+                    <h2 class="card-title" data-i18n="config.advancedGemini.cardTitle">Gemini Advanced Parameters</h2>
+                </div>
+                <button type="button" class="collapse-btn collapsed" data-collapse="gemini-advanced"></button>
             </div>
             <div class="card-content">
                 <div class="info-box" style="margin-bottom: 0.75rem;">
@@ -1129,7 +1252,7 @@
                         placeholder="0.8">
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom: 0;">
                     <label for="advancedTopP">
                         <span data-i18n="config.advancedGemini.topP.label">Top-P (Nucleus Sampling)</span>
                         <span class="label-description" data-i18n="config.advancedGemini.topP.description">Probability threshold (0.0-1.0). Lower = more focused, Higher =
@@ -1137,30 +1260,10 @@
                     </label>
                     <input type="number" id="advancedTopP" min="0" max="1" step="0.05" value="0.95" placeholder="0.95">
                 </div>
-
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="enableBatchContext">
-                        <span data-i18n="config.advancedGemini.batchContext.label">Enable Batch Context (Experimental)</span>
-                        <span class="label-description" data-i18n="config.advancedGemini.batchContext.description">Include original surrounding context and previous translations
-                            when processing batches. Improves translation coherence but may break outputs and increases
-                            token usage. Disabled by default.</span>
-                    </label>
-                </div>
-
-                <div class="form-group" id="contextSizeGroup" style="display: none;">
-                    <label for="contextSize">
-                        <span data-i18n="config.advancedGemini.contextSize.label">Context Size</span>
-                        <span class="label-description" data-i18n="config.advancedGemini.contextSize.description">Number of surrounding entries to include as context (1-10).
-                            Default: 3</span>
-                    </label>
-                    <input type="number" id="contextSize" min="1" max="10" step="1" value="3" placeholder="3">
-                </div>
-
             </div>
         </div>
 
-        <!-- Advanced Parameters -->
+        <!-- Other Advanced Parameters -->
         <div class="card collapsed" id="providerAdvancedCard" data-card="provider-advanced" style="display: none;">
             <div class="card-header">
                 <div class="card-title-group">
@@ -1174,7 +1277,7 @@
                             </g>
                         </svg>
                     </div>
-                    <h2 class="card-title" data-i18n="config.providerAdvanced.title">Advanced Parameters</h2>
+                    <h2 class="card-title" data-i18n="config.providerAdvanced.title">Other Advanced Parameters</h2>
                 </div>
                 <button type="button" class="collapse-btn collapsed" data-collapse="provider-advanced"></button>
             </div>

@@ -762,6 +762,7 @@ This release implements comprehensive automatic recovery for corrupted, missing,
 
 **Bug Fixes:**
 - **User-Isolated Subtitle Search Cache**: Fixed a problem of cache sharing between users with different configurations (API keys, providers, languages)
+- **RTL Translations**: Added RTL embedding markers for translated subtitles so punctuation renders correctly for Hebrew/Arabic outputs
 - Various major and minor bug fixes.
 
 ## SubMaker v1.1.1

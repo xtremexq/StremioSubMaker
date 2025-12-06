@@ -22,6 +22,39 @@ const { DEFAULT_TRANSLATION_PROMPT } = GeminiService;
 const crypto = require('crypto');
 const log = require('../utils/logger');
 
+// RTL language detection (codes and human-readable names)
+function isRtlLanguage(lang) {
+  const value = String(lang || '').trim().toLowerCase();
+  if (!value) return false;
+  const rtlCodes = new Set([
+    'ar', 'ara', 'arabic',
+    'he', 'heb', 'hebrew',
+    'fa', 'fas', 'per', 'persian', 'farsi',
+    'ur', 'urd', 'urdu',
+    'ps', 'pus', 'pushto', 'pashto',
+    'ku', 'ckb', 'kur', 'kurdish', 'sorani',
+    'dv', 'div', 'dhivehi',
+    'yi', 'yid', 'yiddish'
+  ]);
+  if (rtlCodes.has(value)) return true;
+  // Also catch longer descriptive labels like "arabic (saudi arabia)"
+  return Array.from(rtlCodes).some(code => value.includes(code));
+}
+
+function wrapRtlText(text) {
+  const str = String(text || '');
+  // Skip if already contains bidi markers
+  if (/(?:\u200e|\u200f|\u202a|\u202b|\u202c|\u202d|\u202e)/u.test(str)) {
+    return str;
+  }
+  const start = '\u202B'; // RLE - start RTL embedding
+  const end = '\u202C';   // PDF - pop directional formatting
+  return str
+    .split('\n')
+    .map(line => (line ? `${start}${line}${end}` : line))
+    .join('\n');
+}
+
 // Entry-level cache for translated subtitle entries
 const entryCache = new Map();
 const MAX_ENTRY_CACHE_SIZE = parseInt(process.env.ENTRY_CACHE_SIZE) || 100000;
@@ -105,6 +138,9 @@ class TranslationEngine {
    * @returns {Promise<string>} - Translated SRT content
    */
   async translateSubtitle(srtContent, targetLanguage, customPrompt = null, onProgress = null) {
+    // Track per-run RTL so all cleanups (including streaming) can apply markers consistently
+    this.isRtlTarget = isRtlLanguage(targetLanguage);
+
     // Step 1: Parse SRT into structured entries
     const entries = parseSRT(srtContent);
     if (!entries || entries.length === 0) {
@@ -981,6 +1017,11 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
 
     // Normalize line endings (CRLF → LF)
     cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    // For RTL targets, wrap lines with embedding markers so punctuation renders on the correct side
+    if (this.isRtlTarget) {
+      cleaned = wrapRtlText(cleaned);
+    }
 
     return cleaned;
   }

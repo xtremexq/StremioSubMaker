@@ -697,14 +697,12 @@
         },
         "toolbox": {
           "title": "🧰 Instrucciones de Sub Toolbox",
-          "beta": "BETA: Llegarán nuevas funciones pronto.<br>Por ahora, disfruta traducciones por lotes de SRT con todos tus proveedores y ajustes configurados.",
           "howTitle": "🚀 Cómo usar Sub Toolbox:",
-          "step1": "Activa <strong>\"Sub Toolbox\"</strong> en la página de configuración antes de instalar.",
-          "step2": "En Stremio, abre la lista de subtítulos y haz clic en <strong>\"Sub Toolbox\"</strong>.",
-          "step3": "Haz clic derecho en el stream/video en Stremio y elige <strong>\"Download Subtitles\"</strong> para abrir el toolbox en tu navegador.",
-          "step4": "Elige una herramienta: Extraer y traducir incrustados, traducir archivos de subtítulos, sincronizar subtítulos o subtítulos automáticos.",
-          "step5": "Cada herramienta usa tu sesión SubMaker y ajustes de proveedores guardados.",
-          "step6": "Sigue los pasos en pantalla y arrastra el resultado a Stremio si es necesario."
+          "step1": "En Stremio, abre la lista de subtítulos y haz clic en <strong>\"Sub Toolbox\"</strong>.",
+          "step2": "Haz clic derecho en el stream/video en reproducción en Stremio y elige <strong>\"Download Subtitles\"</strong> para abrir el toolbox en tu navegador.",
+          "step3": "Elige una herramienta: Extraer y traducir subtítulos incrustados, traducir archivos de subtítulos, sincronizar subtítulos o subtítulos automáticos.",
+          "step4": "Cada herramienta se abre en tu navegador usando tu sesión de SubMaker y ajustes de proveedor de IA guardados.",
+          "step5": "Sigue los pasos en pantalla y arrastra el resultado a Stremio si es necesario."
         },
         "reset": {
           "title": "Restablecer toda la configuración",
@@ -722,16 +720,25 @@
         "description": "Omite la traducción con IA y solo obtén subtítulos en tus idiomas elegidos"
       },
       "sections": {
-        "subtitleApiTitle": "Claves de la API de subtítulos"
+        "apiKeysTitle": "Claves de API",
+        "apiKeysDescription": "Agrega y valida tus claves para proveedores de subtítulos y servicios de traducción con IA.",
+        "subtitleApiTitle": "Claves de la API de subtítulos",
+        "languagesTitle": "Idiomas",
+        "languagesDescription": "Elige tus idiomas de origen y destino para búsqueda y traducciones.",
+        "languagesDescriptionNoTranslation": "Elige en qué idiomas quieres buscar subtítulos.",
+        "settingsTitle": "Ajustes",
+        "settingsDescription": "Ajusta el comportamiento de traducción y otras preferencias."
       },
       "opensubs": {
-        "implDescription": "Elige tu implementación preferida de OpenSubtitles abajo.",
+        "title": "OpenSubtitles",
+        "implDescription": "Elige tu implementación preferida de OpenSubtitles.",
         "implementationType": "Tipo de implementación",
         "v3Title": "V3 (Predeterminado)",
         "v3Tooltip": "V3 no muestra todos los resultados y puede aplicar límites de uso.",
         "v3Description": "Usa el addon oficial de OpenSubtitles V3 de Stremio. No requiere autenticación, configuración sencilla.",
         "authTitle": "Auth (Recomendado)",
-        "authDescription": "Usa tu cuenta de OpenSubtitles con autenticación por clave API. Requiere usuario/contraseña.",
+        "authDescription": "Usa tu cuenta de OpenSubtitles.com. Requiere usuario/contraseña.",
+        "authLink": "Crear cuenta",
         "usernameLabel": "Usuario",
         "passwordLabel": "Contraseña",
         "usernamePlaceholder": "Introduce usuario de OpenSubtitles",
@@ -758,11 +765,12 @@
         "credentialsRequired": "Ingresa usuario y contraseña",
         "apiKeyRequired": "Ingresa una clave de API",
         "apiKeyValid": "La clave de API es válida",
-        "testResults": "({count} resultados de prueba)",
-        "connectionError": "Error de conexión. Vuelve a intentar.",
-        "validationFailed": "Validación fallida",
-        "testing": "Probando...",
-        "valid": "Válida",
+      "testResults": "({count} resultados de prueba)",
+      "connectionError": "Error de conexión. Vuelve a intentar.",
+      "validationFailed": "Validación fallida",
+      "testing": "Probando...",
+      "validating": "Validando...",
+      "valid": "Válida",
         "invalid": "Inválida",
         "error": "Error",
         "testCredentials": "Probar credenciales",
@@ -850,7 +858,8 @@
         "useDefaultModel": "Usar modelo predeterminado",
         "main": {
           "label": "Proveedor principal",
-          "description": "Elige qué proveedor habilitado usar cuando tengas varios configurados."
+          "description": "Elige qué proveedor habilitado usar cuando tengas varios configurados.",
+          "defaultGemini": "Gemini"
         },
         "secondary": {
           "label": "Proveedor secundario<br><span class=\"label-description\">Si el principal falla (429/503/prohibido/u otro), reintenta con este proveedor y luego continúa con el principal.</span>"
@@ -913,7 +922,7 @@
         }
       },
       "noTranslationCard": {
-        "title": "Idiomas",
+        "title": "Idiomas de subtítulos",
         "label": "Idiomas de subtítulos",
         "search": "Buscar idiomas...",
         "quickPopular": "Populares",
@@ -965,41 +974,39 @@
           "noteTitle": "⚠️ Se requiere omitir caché:"
         },
         "chunking": {
-          "label": "Estrategia de bloques",
-          "description": "Múltiples bloques envían los subtítulos en varias solicitudes. Un solo bloque traduce el archivo completo de una vez (igual se divide en 2-3 bloques en 50k y 100k+ tokens). Un solo bloque sigue transmitiendo parciales y da mejor contexto, pero puede causar errores MAX_OUTPUT. Títulos largos pueden desincronizar.",
+          "label": "Activar lote único",
+          "description": "Traduce toda la pista de subtítulos de una vez (solo se divide cuando es extremadamente grande). Mejora la coherencia contextual pero puede alcanzar los límites del proveedor con mayor facilidad.",
           "multiple": "Múltiples bloques (por defecto)",
           "single": "Un solo bloque"
         }
       },
       "multiProvider": {
         "label": "Múltiples proveedores (beta)",
-        "description": "Activa múltiples proveedores y ajustes avanzados."
+        "description": "Activa múltiples proveedores de IA."
       },
       "otherSettings": {
         "title": "Otros ajustes",
-        "autosubsKeys": {
-          "label": "Claves API de autosubs",
-          "description": "Muestra la sección de la clave de AssemblyAI para subtítulos automáticos."
-        },
         "subToolbox": {
           "label": "Activar \"Sub Toolbox\" (Alpha)",
-          "description": "Muestra Sub Toolbox en la lista de subtítulos de Stremio para acceder a todas las herramientas. (Lee las instrucciones tras activarlo)",
-          "instructionsLink": "Leer instrucciones para usar el Toolbox"
+          "description": "Muestra la entrada Sub Toolbox en los subtítulos de Stremio para acceder desde el navegador a todas las herramientas.",
+          "instructionsLink": "Leer instrucciones",
+          "tools": "Herramientas: Traducción de archivos SRT, Extracción de subtítulos incrustados, AutoSync y AutoSubbing."
         },
         "mobileMode": {
           "label": "Modo móvil (arreglo/mitigación)",
           "description": "Stremio hace solo 1 petición y la cachea, así que en Android no se pueden entregar subtítulos parciales. Modo móvil retiene la traducción y envía el subtítulo final cuando esté listo. Úsalo si ves en Android/iOS. Sin traducciones parciales ni mensajes de carga. Puede congelar el stream hasta que esté listo. Flash-lite recomendado. Espera 1-3 min; si no carga, cambia de subtítulo y vuelve."
         },
         "betaMode": {
-          "label": "Modo Beta",
-          "description": "Desbloquea funciones experimentales como múltiples proveedores y ajustes avanzados."
+          "label": "Modo Avanzado",
+          "description": "Desbloquea la configuración de parámetros avanzados para Gemini y otros proveedores."
         },
         "devMode": {
           "label": "Modo Dev"
         }
       },
       "advancedGemini": {
-        "title": "Ajustes avanzados (Gemini)",
+        "cardTitle": "Parámetros avanzados de Gemini",
+        "title": "Ajustes avanzados",
         "infoTitle": "Ajusta el comportamiento de Gemini:",
         "infoBody": "Sobrescribe el modelo y parámetros de muestreo predeterminados.",
         "cacheNotePrefix": "Si cambias cualquier ajuste de Gemini,",
@@ -1023,7 +1030,7 @@
           "description": "Umbral de probabilidad (0.0-1.0). Bajo = más enfocado, Alto = más diverso. Por defecto: 0.95"
         },
         "batchContext": {
-          "label": "Activar contexto por lote (experimental)",
+          "label": "Activar contexto por lote",
           "description": "Incluye contexto y traducciones previas al procesar lotes. Mejora coherencia pero puede romper salidas y aumentar tokens. Desactivado por defecto."
         },
         "contextSize": {
@@ -1032,7 +1039,7 @@
         }
       },
       "providerAdvanced": {
-        "title": "Parámetros avanzados",
+        "title": "Otros parámetros avanzados",
         "intro": "Ajusta la generación para cada proveedor habilitado. Solo aplica en modo multiproveedor.",
         "empty": "Activa un proveedor arriba para ver sus parámetros.",
         "labels": {
