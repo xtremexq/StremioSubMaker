@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.18
+
+- **Config page experience:** Config UI copy reorganized (new Cloudflare Workers auto-subs field + validator, refreshed toolbox instructions, advanced settings split, icon/section styling, mobile preview), and Cloudflare/Assembly keys are preserved for auto-subs flows.
+- **Auto-subs AssemblyAI path:** Added a server-side AssemblyAI mode (with optional full-video uploads up to 5GB, timeout/polling guards, and speaker-labeled SRT fallbacks) that auto-selects when Cloudflare keys are missing; diarization is now forced for all auto-subs engines and speaker labels are preserved in outputs.
+- **Auto-subs UX polish:** Toolbox pills now track decode/transcribe/translate states with a dedicated FFmpeg decode badge, long previews are truncated safely, downloads are proper links, duplicate logs are suppressed, and auto-sub requests use longer, refreshed timeouts with clearer hash mismatch copy.
+- **Auto-subs providers:** Cloudflare Workers keys get stricter parsing/validation in the config and toolbox, translation provider resolution prefers Gemini and falls back to any available provider when the chosen one is missing, and Gemini provider creation is fixed.
+- **Embedded/linked streams:** Linked stream titles avoid placeholder collisions and episode tags now render correctly; extraction hash-mismatch messaging explicitly calls out Linked Stream vs Stream URL alignment; autosubs Step 2 layout/text is left-aligned for readability.
+
+- **RTL translations:** Translated subtitles now wrap RTL targets with embedding markers so punctuation renders correctly for Hebrew/Arabic outputs.
+
 ## SubMaker v1.4.17
 
 - **Auto-subs via xSync:** Auto-subtitles now relies on the xSync extension for Cloudflare transcription; the server only accepts client-provided transcripts, logs CF status/snippets, and uses the official "Whisper" / "Whisper Large V3 Turbo" labels (diarization toggle removed).
