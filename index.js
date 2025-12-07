@@ -1502,6 +1502,10 @@ function isStremioUserAgent(userAgent) {
     const ua = userAgent.toLowerCase();
     return STREMIO_USER_AGENT_HINTS.some(hint => ua.includes(hint));
 }
+function isLocalhostOrigin(origin) {
+    const host = extractHostnameFromOrigin(origin);
+    return host === 'localhost' || host === '127.0.0.1';
+}
 function extractHostnameFromOrigin(origin) {
     if (!origin) return '';
     const normalized = normalizeOrigin(origin);
@@ -2015,6 +2019,11 @@ app.use((req, res, next) => {
         // Allow requests from known Stremio origins (web app, capacitor, etc.)
         if (isStremioOrigin(origin)) {
             log.debug(() => `[Security] Allowed addon API request (known origin): origin=${origin}, user-agent=${userAgent}`);
+            return cors()(req, res, next);
+        }
+        // Allow localhost origins (development/browser on same machine), any port
+        if (isLocalhostOrigin(origin)) {
+            log.debug(() => `[Security] Allowed addon API request (localhost origin): origin=${origin}, user-agent=${userAgent}`);
             return cors()(req, res, next);
         }
         // Allow if user-agent identifies as Stremio (mobile apps, etc.)

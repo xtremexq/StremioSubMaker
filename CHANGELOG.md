@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - **Embedded/linked streams:** Linked stream titles avoid placeholder collisions and episode tags now render correctly; extraction hash-mismatch messaging explicitly calls out Linked Stream vs Stream URL alignment; autosubs Step 2 layout/text is left-aligned for readability.
 
 - **RTL translations:** Translated subtitles now wrap RTL targets with embedding markers so punctuation renders correctly for Hebrew/Arabic outputs.
+- **Addon localhost access:** Addon API routes now allow localhost origins (any port) so local browser requests—including macOS Safari/Chrome—can fetch subtitles without being blocked.
 
 ## SubMaker v1.4.17
 
