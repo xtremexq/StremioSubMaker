@@ -545,22 +545,25 @@ function splitLongEntry(entry, opts = {}) {
     const maxDuration = Number.isFinite(opts.maxEntryDurationMs) ? opts.maxEntryDurationMs : 9000;
     const duration = (entry.endMs || 0) - (entry.startMs || 0);
     const text = (entry.text || '').trim();
-    if (!text || (text.length <= maxChars && duration <= maxDuration)) {
+    const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+    const parts = sentences.length ? sentences : text.split(/\s+(?=[A-Z])/).filter(Boolean);
+    const needsSentenceSplit = parts.length > 1 && (duration > 1500 || text.length > 80);
+    if (!text || ((text.length <= maxChars && duration <= maxDuration) && !needsSentenceSplit)) {
         return [entry];
     }
 
-    const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
-    const parts = sentences.length ? sentences : text.split(/\s+(?=[A-Z])/).filter(Boolean);
-    if (!parts.length) return [entry];
-
-    const sliceCount = Math.max(1, parts.length);
-    const sliceDuration = Math.max(1200, Math.round(duration / sliceCount));
+    const segments = parts.length ? parts : [text];
+    const totalWeight = segments.reduce((sum, part) => sum + (part.length || 1), 0);
     const result = [];
     let cursor = entry.startMs || 0;
-    parts.forEach((part, idx) => {
+    segments.forEach((part, idx) => {
+        const weight = part.length || 1;
+        let slice = totalWeight ? Math.round((duration || 0) * (weight / totalWeight)) : Math.round((duration || 0) / segments.length);
+        slice = Math.max(slice || 0, 1200);
         const start = cursor;
-        let end = start + sliceDuration;
-        if (idx === parts.length - 1 || end > (entry.endMs || end)) {
+        let end = start + slice;
+        const last = idx === segments.length - 1;
+        if (last || end > (entry.endMs || end)) {
             end = entry.endMs || end;
         }
         cursor = end;
