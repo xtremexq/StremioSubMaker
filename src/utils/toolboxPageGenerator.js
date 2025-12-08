@@ -7745,7 +7745,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     #translationStep {
       max-width: 700px;
       width: 100%;
-      margin: 0 auto;
+      margin: 18px auto 0;
     }
     #translationStep .row {
       display: flex;
@@ -7865,12 +7865,14 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       align-items: center;
       gap: 10px;
       margin-top: 10px;
+      justify-content: center;
       color: var(--text-secondary);
       font-size: 14px;
       font-weight: 600;
     }
     .log-header .label { font-weight: 800; color: var(--text-primary); display: block; }
     .log-header .muted { font-weight: 600; color: var(--text-secondary); display: block; }
+    .log-header .log-header-text { text-align: left; }
     .log-header .pulse {
       width: 10px;
       height: 10px;
@@ -8210,14 +8212,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         <div class="step-card locked" id="autoStep3Card" data-locked-label="${escapeHtml(copy.locks.needContinue)}">
           <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.three)}</span><span>${escapeHtml(copy.steps.runPipelineTitle)}</span></div>
           <div class="step-body">
-            <p style="margin:0 0 8px; color: var(--text-secondary);">${escapeHtml(copy.steps.pipelineDesc)}</p>
-            <div class="controls">
-              <button class="btn" id="startAutoSubs">${escapeHtml(copy.steps.start)}</button>
-            </div>
-            <div class="progress" aria-label="${escapeHtml(copy.steps.progressAria)}">
-              <div class="progress-fill" id="progressFill"></div>
-            </div>
-            <div class="status" id="statusText">${escapeHtml(copy.steps.awaiting)}</div>
             <div class="chips" style="margin-top:10px;">
               <div class="status-badge pill-badge warn" id="stepFetch" data-label="${escapeHtml(copy.steps.pills.fetch)}" style="gap:8px;">
                 <span class="status-dot warn" id="stepFetchDot"></span>
@@ -8261,6 +8255,13 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                   <strong class="pill-value">${escapeHtml(copy.badges.pending)}</strong>
                 </div>
               </div>
+            </div>
+            <div class="progress" aria-label="${escapeHtml(copy.steps.progressAria)}">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="status" id="statusText">${escapeHtml(copy.steps.awaiting)}</div>
+            <div class="controls">
+              <button class="btn" id="startAutoSubs">${escapeHtml(copy.steps.start)}</button>
             </div>
             <div class="log-block">
               <div class="log-header" aria-hidden="true">
