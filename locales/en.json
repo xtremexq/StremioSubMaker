@@ -404,8 +404,6 @@
           "step2Chip": "Step 2",
           "step2Title": "Mode & audio",
           "modeLabel": "Auto-subtitles mode",
-          "modeHelper": "Cloudflare runs via the xSync extension. The server will not fetch your stream.",
-          "modeHelperAssembly": "AssemblyAI uploads from this server (no extension needed).",
           "modeLocal": "Local (xSync)",
           "modeRemote": "Cloudflare Workers AI",
           "modeAssembly": "AssemblyAI",

@@ -407,8 +407,6 @@
           "step2Chip": "Passo 2",
           "step2Title": "Modo e áudio",
           "modeLabel": "Modo de legendas automáticas",
-          "modeHelper": "Cloudflare roda via extensão xSync. O servidor não buscará seu stream.",
-          "modeHelperAssembly": "AssemblyAI faz o upload a partir deste servidor (sem extensão).",
           "modeLocal": "Local (xSync)",
           "modeRemote": "Cloudflare Workers AI",
           "modeAssembly": "AssemblyAI",

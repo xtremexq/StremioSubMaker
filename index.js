@@ -20,7 +20,7 @@ const os = require('os');
 const { pipeline } = require('stream/promises');
 
 const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits, getDefaultProviderParameters, mergeProviderParameters } = require('./src/utils/config');
-const { srtPairToWebVTT } = require('./src/utils/subtitle');
+const { parseSRT, toSRT, sanitizeSubtitleText, srtPairToWebVTT } = require('./src/utils/subtitle');
 const { version } = require('./src/utils/version');
 const { redactToken } = require('./src/utils/security');
 const { getAllLanguages, getLanguageName, toISO6392, findISO6391ByName, canonicalSyncLanguageCode } = require('./src/utils/languages');
@@ -490,6 +490,95 @@ function stripSpeakerLabelsFromSrt(srt = '') {
     if (typeof srt !== 'string' || !srt) return srt || '';
     const lines = srt.split(/\r?\n/);
     return lines.map(stripSpeakerLabelPrefix).join('\n');
+}
+
+function srtTimecodeToMs(tc = '') {
+    const m = /^\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})/.exec(String(tc || '').trim());
+    if (!m) return null;
+    const toMs = (h, mm, s, ms) => (((parseInt(h, 10) || 0) * 60 + (parseInt(mm, 10) || 0)) * 60 + (parseInt(s, 10) || 0)) * 1000 + (parseInt(ms, 10) || 0);
+    return {
+        startMs: toMs(m[1], m[2], m[3], m[4]),
+        endMs: toMs(m[5], m[6], m[7], m[8])
+    };
+}
+
+function wrapSrtText(text = '', maxLineLength = 42, maxLines = 2) {
+    const clean = sanitizeSubtitleText(text).replace(/\s+/g, ' ').trim();
+    if (!clean) return '';
+    const words = clean.split(/\s+/);
+    const lines = [''];
+    words.forEach((word) => {
+        const current = lines[lines.length - 1];
+        const candidate = current ? `${current} ${word}` : word;
+        if (candidate.length > maxLineLength && lines.length < maxLines) {
+            lines.push(word);
+        } else {
+            lines[lines.length - 1] = candidate;
+        }
+    });
+    return lines.join('\n');
+}
+
+function shouldMergeAutoSubEntries(prev, next, opts = {}) {
+    if (!prev || !next) return false;
+    const gap = (next.startMs ?? 0) - (prev.endMs ?? 0);
+    const mergeGapMs = Number.isFinite(opts.mergeGapMs) ? opts.mergeGapMs : 700;
+    if (gap > mergeGapMs || gap < -500) return false;
+    const prevText = (prev.text || '').trim();
+    const nextText = (next.text || '').trim();
+    if (!prevText || !nextText) return false;
+    if (/[.!?…]['"]?$/.test(prevText)) return false;
+    if (/^[-–—♪]/.test(nextText)) return false;
+    const combinedLength = (prevText + ' ' + nextText).length;
+    const maxChars = Number.isFinite(opts.maxMergedChars) ? opts.maxMergedChars : 220;
+    if (combinedLength > maxChars) return false;
+    const mergedDuration = Math.max(prev.endMs || 0, next.endMs || 0) - Math.min(prev.startMs || 0, next.startMs || 0);
+    const maxDuration = Number.isFinite(opts.maxMergedDurationMs) ? opts.maxMergedDurationMs : 14000;
+    if (mergedDuration > maxDuration) return false;
+    return true;
+}
+
+function normalizeAutoSubSrt(srt = '', opts = {}) {
+    try {
+        const parsed = parseSRT(stripSpeakerLabelsFromSrt(srt || ''));
+        const entries = parsed
+            .map((entry) => {
+                const times = srtTimecodeToMs(entry.timecode);
+                if (!times) return null;
+                const text = sanitizeSubtitleText(entry.text || '').replace(/\s+/g, ' ').trim();
+                if (!text) return null;
+                return {
+                    startMs: times.startMs,
+                    endMs: times.endMs,
+                    text
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => (a.startMs - b.startMs) || (a.endMs - b.endMs));
+
+        if (!entries.length) return stripSpeakerLabelsFromSrt(srt || '').trim();
+
+        const merged = [];
+        for (const entry of entries) {
+            const last = merged[merged.length - 1];
+            if (last && shouldMergeAutoSubEntries(last, entry, opts)) {
+                last.endMs = Math.max(last.endMs, entry.endMs);
+                last.text = `${last.text} ${entry.text}`.replace(/\s+/g, ' ').trim();
+            } else {
+                merged.push({ ...entry });
+            }
+        }
+
+        const finalEntries = merged.map((entry, idx) => ({
+            id: idx + 1,
+            timecode: `${formatTimestamp((entry.startMs || 0) / 1000)} --> ${formatTimestamp((entry.endMs || entry.startMs || 0) / 1000)}`,
+            text: wrapSrtText(entry.text, opts.maxLineLength || 42, opts.maxLines || 2)
+        }));
+
+        return toSRT(finalEntries).trim();
+    } catch (_) {
+        return stripSpeakerLabelsFromSrt(srt || '').trim();
+    }
 }
 
 function safeModelKey(model) {
@@ -978,7 +1067,7 @@ async function transcribeWithAssemblyAi(streamUrl, opts = {}, logger = null) {
         if (!srt && assemblySrt) {
             srt = stripSpeakerLabelsFromSrt(assemblySrt);
         }
-        srt = stripSpeakerLabelsFromSrt(srt || '');
+        srt = normalizeAutoSubSrt(srt || '');
         const language = (transcriptionData?.language_code || transcriptionData?.language || transcriptionData?.detected_language || '').toString().toLowerCase();
         return {
             transcription: {
@@ -4805,7 +4894,7 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
         const transcriptSrtRaw = (typeof transcriptPayload.srt === 'string' && transcriptPayload.srt.trim())
             ? transcriptPayload.srt
             : ((typeof req.body?.transcriptSrt === 'string' && req.body.transcriptSrt.trim()) ? req.body.transcriptSrt : '');
-        const transcriptSrt = stripSpeakerLabelsFromSrt(transcriptSrtRaw);
+        const transcriptSrt = normalizeAutoSubSrt(transcriptSrtRaw);
         const transcriptLang = (transcriptPayload.languageCode || transcriptPayload.language || req.body?.transcriptLanguage || sourceLanguage || '').toString().trim();
         const cfStatus = Number.isFinite(transcriptPayload.cfStatus) ? transcriptPayload.cfStatus : (Number.isFinite(req.body?.cfStatus) ? req.body.cfStatus : null);
         const cfBody = (transcriptPayload.cfBody || req.body?.cfBody || '').toString();
@@ -4899,7 +4988,7 @@ app.post('/api/auto-subtitles/run', autoSubLimiter, async (req, res) => {
                 logTrail
             });
         }
-        const originalSrt = stripSpeakerLabelsFromSrt((transcription && transcription.srt) ? transcription.srt : '');
+        const originalSrt = normalizeAutoSubSrt((transcription && transcription.srt) ? transcription.srt : '');
         if (!originalSrt || !originalSrt.trim()) {
             logStep('Transcription returned no content', 'error');
             return respond(500, {

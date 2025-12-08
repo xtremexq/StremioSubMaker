@@ -5302,7 +5302,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         step4Card: document.getElementById('autoStep4Card'),
         assemblySendFullVideo: document.getElementById('assemblySendFullVideo'),
         assemblyOptions: document.getElementById('assemblyOptions'),
-        modeHelperText: document.getElementById('modeHelperText'),
         assemblyModeHelper: document.getElementById('assemblyModeHelper'),
         decodeBadge: document.getElementById('decodeBadge'),
         decodeBadgeDot: document.getElementById('decodeBadgeDot'),
@@ -6136,18 +6135,14 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           els.assemblyOptions.style.display = mode === 'assemblyai' ? '' : 'none';
         }
         const isAssembly = mode === 'assemblyai';
+        const langAudioRow = els.modeDetails ? els.modeDetails.querySelector('.row') : null;
         const sourceLangRow = els.sourceLang ? els.sourceLang.closest('div') : null;
         const modelRow = els.model ? els.model.closest('div') : null;
+        if (langAudioRow) langAudioRow.style.display = isAssembly ? 'none' : '';
         if (sourceLangRow) sourceLangRow.style.display = isAssembly ? 'none' : '';
         if (modelRow) modelRow.style.display = isAssembly ? 'none' : '';
         if (els.sourceLang) els.sourceLang.disabled = isAssembly;
         if (els.model) els.model.disabled = isAssembly;
-        if (els.modeHelperText) {
-          const helper = isAssembly
-            ? (copy.steps.modeHelperAssembly || copy.steps.modeHelper)
-            : copy.steps.modeHelper;
-          els.modeHelperText.textContent = helper;
-        }
       }
 
       function toggleTranslationStep() {
@@ -6502,7 +6497,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           setProgress(Math.max(current, Math.min(95, msg.progress)));
         }
         if (msg.stage === 'fetch') {
-          markDecodeWorking(copy?.badges?.decodeWorking || decodeLabels.working);
           markStep('fetch', logTone === 'error' ? 'danger' : 'warn');
           if (statusText) setPillLabel('fetch', statusText);
         } else if (msg.stage === 'transcribe') {
@@ -6619,7 +6613,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         resetAutoSubWait();
         refreshStepLocks(lockReasons.needRun);
         clearLog();
-        markDecodeWorking(copy?.badges?.decodeWorking || decodeLabels.working);
         appendLog(tt('toolbox.autoSubs.logs.previewPlan', {}, 'Pipeline: fetch -> transcribe -> align -> translate -> deliver.'), 'info');
         setInFlight(true);
         resetPills();
@@ -6645,9 +6638,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
             stopLiveLogs = startAssemblyLiveLogStream(assemblyJobId);
             markStep('fetch', 'warn');
             markStep('transcribe', 'warn');
-            const transcribeLabel = tt('toolbox.autoSubs.status.transcribing', { model: 'AssemblyAI' }, 'Transcribing with AssemblyAI');
-            setStatus(transcribeLabel);
-            setPillLabel('transcribe', getTranscribeStatusLabel(transcribeLabel));
             const messageId = assemblyJobId || ('autosub_' + Date.now());
             const waitForTranscript = waitForAutoSubResponse(messageId);
             window.postMessage({
@@ -7085,8 +7075,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       streamPlaceholder: t('toolbox.embedded.step1.streamPlaceholder', {}, t('toolbox.autoSubs.steps.streamPlaceholder', {}, 'Paste the video/stream URL from Stremio or your browser')),
       langModelTitle: t('toolbox.autoSubs.steps.step2Title', {}, 'Mode & audio'),
       modeLabel: t('toolbox.autoSubs.steps.modeLabel', {}, 'Auto-subtitles mode'),
-      modeHelper: t('toolbox.autoSubs.steps.modeHelper', {}, 'Cloudflare runs via the xSync extension. The server will not fetch your stream.'),
-      modeHelperAssembly: t('toolbox.autoSubs.steps.modeHelperAssembly', {}, 'AssemblyAI uploads from this server (no extension needed).'),
       modeLocal: t('toolbox.autoSubs.steps.modeLocal', {}, 'Local (xSync)'),
       modeRemote: t('toolbox.autoSubs.steps.modeRemote', {}, 'Cloudflare Workers AI'),
       modeAssembly: t('toolbox.autoSubs.steps.modeAssembly', {}, 'AssemblyAI'),
@@ -7634,7 +7622,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 14px;
-      align-items: stretch;
+      align-items: flex-start;
     }
     @media (min-width: 1024px) {
       .section-joined .joined-grid::before {
@@ -7724,8 +7712,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       text-align: center;
       gap: 10px;
     }
-    #autoStep2Card .step-body > * { width: auto; max-width: 640px; }
-    #autoStep2Card .row { width: 100%; justify-items: center; }
+    #autoStep2Card .step-body > * { width: auto; max-width: 640px; margin: 0 auto; }
+    #autoStep2Card .row { width: auto; max-width: 640px; margin: 0 auto; justify-items: center; }
     #autoStep2Card .row > div { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
     #autoStep2Card label { text-align: center; }
     #autoStep2Card .controls.wrap { justify-content: center; }
@@ -8115,7 +8103,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
               <option value="cloudflare"${cloudflareEnabled ? '' : ' disabled'}>${escapeHtml(copy.steps.modeRemote)}</option>
               <option value="assemblyai"${assemblyEnabled ? '' : ' disabled'}>${escapeHtml(copy.steps.modeAssembly)}</option>
             </select>
-            <p class="muted mode-helper" id="modeHelperText">${escapeHtml(copy.steps.modeHelper)}</p>
             <div id="modeDetails" class="mode-details">
               <div class="row">
                 <div>

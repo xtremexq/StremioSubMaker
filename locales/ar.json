@@ -407,8 +407,6 @@
           "step2Chip": "الخطوة 2",
           "step2Title": "الوضع والصوت",
           "modeLabel": "وضع الترجمات التلقائية",
-          "modeHelper": "Cloudflare يعمل عبر إضافة xSync. الخادم لن يجلب البث الخاص بك.",
-          "modeHelperAssembly": "AssemblyAI يرفع من هذا الخادم (لا حاجة للإضافة).",
           "modeLocal": "محلي (xSync)",
           "modeRemote": "Cloudflare Workers AI",
           "modeAssembly": "AssemblyAI",
