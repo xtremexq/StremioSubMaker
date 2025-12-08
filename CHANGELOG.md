@@ -4,9 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.20
 
-- **Learn Mode clarity:** Learn-mode validation now surfaces the correct error instead of the Just Fetch message, and the config description reminds users to pick target learn languages.
-- **Config copy refresh:** Translation workflow/database descriptions and multi-provider help text are clearer across the config UI, with consistent icons and footer copy updates in all locales (en/es/pt-br/ar).
-- **UI polish:** True-dark themes now restyle section close links for better contrast, and config labels use clearer symbols (e.g., ≤5GB for full Assembly uploads).
+- **Learn Mode clarity:** Learn-mode validation now surfaces the correct error, and the config description reminds users to pick target learn languages.
+- **Config copy refresh:** Translation workflow/database descriptions and multi-provider help text are clearer across the config UI, with consistent icons and copy updates in all locales (en/es/pt-br/ar).
+- **UI polish:** True-dark themes now restyle section close links for better contrast, and config labels use clearer symbols.
 
 ## SubMaker v1.4.19
 
