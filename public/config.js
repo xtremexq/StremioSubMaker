@@ -2793,6 +2793,13 @@ Translate to {target_language}.`;
         return Object.keys(PROVIDERS).filter(k => k !== 'gemini');
     }
 
+    function isProviderEnabled(key) {
+        const toggleEl = document.getElementById(`provider-${key}-enabled`);
+        const uiEnabled = toggleEl ? toggleEl.checked === true : false;
+        const stateEnabled = currentConfig?.providers?.[key]?.enabled;
+        return uiEnabled || stateEnabled === true || stateEnabled === 'true';
+    }
+
     function toggleBetaModeUI(enabled, options = {}) {
         const betaEnabled = enabled === true;
         const prev = currentConfig.betaModeEnabled === true;
@@ -2914,8 +2921,7 @@ Translate to {target_language}.`;
         ensureProvidersInState();
         const opts = ['gemini'];
         getProviderKeys().forEach(key => {
-            const cfg = currentConfig.providers?.[key];
-            if (cfg && cfg.enabled) opts.push(key);
+            if (isProviderEnabled(key)) opts.push(key);
         });
         const prevValue = select.value;
         const desiredOptions = opts.map(key => ({
@@ -2943,11 +2949,9 @@ Translate to {target_language}.`;
         const mainKey = (mainSelect?.value || currentConfig.mainProvider || 'gemini').toLowerCase();
         const opts = ['gemini'];
         getProviderKeys().forEach(key => {
-            const toggleEl = document.getElementById(`provider-${key}-enabled`);
-            const uiEnabled = toggleEl ? toggleEl.checked === true : false;
-            const stateEnabled = currentConfig.providers?.[key]?.enabled === true;
-            const isEnabled = uiEnabled || stateEnabled;
-            if (isEnabled && key.toLowerCase() !== mainKey) opts.push(key);
+            if (isProviderEnabled(key) && key.toLowerCase() !== mainKey) {
+                opts.push(key);
+            }
         });
         const filtered = opts.filter(key => key.toLowerCase() !== mainKey);
 
@@ -2963,10 +2967,11 @@ Translate to {target_language}.`;
         }
 
         toggle.disabled = false;
-        const desiredOptions = filtered.map(key => ({
+        const placeholderText = tConfig('config.providersUi.selectProvider', {}, 'Select provider');
+        const desiredOptions = [{ value: '', text: placeholderText }].concat(filtered.map(key => ({
             value: key,
             text: PROVIDERS[key]?.label || key
-        }));
+        })));
         syncSelectOptions(select, desiredOptions);
 
         // Prefer the caller's requested key (case-insensitive), otherwise preserve current selection when valid
