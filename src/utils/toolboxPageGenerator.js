@@ -7714,11 +7714,13 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       align-items: stretch;
       justify-content: center;
       text-align: center;
+      align-self: start;
     }
     #autoStep2Card .step-title { justify-content: flex-start; width: 100%; text-align: left; }
     #autoStep2Card .step-body {
+      flex: 0 0 auto;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       text-align: center;
       gap: 10px;
     }
@@ -8152,7 +8154,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     <div class="section" id="translationStep">
       <h2><span class="section-number">2.5</span> ${escapeHtml(copy.steps.translationStepTitle)}</h2>
       <div class="step-card locked" id="autoTranslationCard" data-locked-label="${escapeHtml(copy.locks.needContinue)}">
-        <div class="step-title"><span class="step-chip">${escapeHtml(copy.steps.translationStepChip)}</span><span>${escapeHtml(copy.steps.translationStepTitle)}</span></div>
         <div class="step-body">
           <div class="row">
             <div>
