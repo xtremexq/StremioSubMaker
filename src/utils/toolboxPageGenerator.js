@@ -5534,6 +5534,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         state.step2Confirmed = false;
         state.autoSubsCompleted = false;
         resetOutputs();
+        resetPills();
         refreshStepLocks(reason || lockReasons.needContinue);
       }
       let videoMetaRequestId = 0;
@@ -6707,6 +6708,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         state.step2Confirmed = false;
         state.autoSubsCompleted = false;
         resetOutputs();
+        resetPills();
         const preferredMode = (BOOTSTRAP.defaults?.mode || 'cloudflare').toLowerCase();
         if (els.modeSelect) {
           const options = Array.from(els.modeSelect.options || []);
@@ -7641,18 +7643,18 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     .step-body .chips,
     .step-body .log-area { width: 100%; align-self: center; }
     #autoStep2Card {
-      align-items: center;
+      align-items: stretch;
       justify-content: center;
       text-align: center;
     }
-    #autoStep2Card .step-title { justify-content: center; width: 100%; text-align: center; }
+    #autoStep2Card .step-title { justify-content: flex-start; width: 100%; text-align: left; }
     #autoStep2Card .step-body {
       align-items: center;
       justify-content: center;
       text-align: center;
-      gap: 14px;
+      gap: 10px;
     }
-    #autoStep2Card .step-body > * { width: min(100%, 640px); }
+    #autoStep2Card .step-body > * { width: auto; max-width: 640px; }
     #autoStep2Card .row { width: 100%; justify-items: center; }
     #autoStep2Card .row > div { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
     #autoStep2Card label { text-align: center; }
