@@ -7670,6 +7670,27 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       width: 100%;
       margin: 0 auto;
     }
+    #translationStep {
+      max-width: 700px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    #translationStep .row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+    }
+    #translationStep .row > div {
+      flex: 1 1 260px;
+      min-width: 240px;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      text-align: center;
+    }
     #autoStep1Card .field-block {
       width: min(720px, 100%);
       display: flex;
