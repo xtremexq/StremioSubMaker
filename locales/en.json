@@ -452,13 +452,14 @@
         },
         "actions": {
           "start": "Start auto-subtitles",
-        "preview": "Preview plan",
-        "progress": "Progress",
-        "downloadSrt": "Download SRT",
-        "downloadVtt": "Download VTT",
-        "downloadRawTranscript": "Download raw transcript",
-        "downloadTranslation": "Download {lang}",
-        "continue": "Continue"
+          "preview": "Preview plan",
+          "progress": "Progress",
+          "downloadSrt": "Download SRT",
+          "downloadVtt": "Download VTT",
+          "downloadRawTranscript": "Download raw transcript",
+          "downloadTranslation": "Download {lang}",
+          "retranslate": "Retranslate {lang}",
+          "continue": "Continue"
       },
         "options": {
           "addTargets": "Add target languages in Configure"

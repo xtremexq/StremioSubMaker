@@ -5271,6 +5271,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         modeSelect: document.getElementById('autoSubsMode'),
         modeDetails: document.getElementById('modeDetails'),
         sourceLang: document.getElementById('detectedLang'),
+        cfWindowSize: document.getElementById('cfWindowSizeMb'),
         targetLang: document.getElementById('targetLang'),
         model: document.getElementById('whisperModel'),
         translateToggle: document.getElementById('translateOutput'),
@@ -5343,7 +5344,9 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         audioTracks: [],
         selectedAudioTrack: null,
         awaitingTrackChoice: false,
-        rawTranscript: null
+        rawTranscript: null,
+        originalOutput: null,
+        translationOutputs: []
       };
       const AUTO_SUB_TIMEOUT_MS = 15 * 60 * 1000;
       const escapeHtmlClient = (value) => {
@@ -6194,14 +6197,22 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           els.assemblyOptions.style.display = mode === 'assemblyai' ? '' : 'none';
         }
         const isAssembly = mode === 'assemblyai';
+        const isCloudflare = mode === 'cloudflare';
         const langAudioRow = els.modeDetails ? els.modeDetails.querySelector('.row') : null;
         const sourceLangRow = els.sourceLang ? els.sourceLang.closest('div') : null;
         const modelRow = els.model ? els.model.closest('div') : null;
+        const cfWindowRow = els.cfWindowSize ? els.cfWindowSize.closest('.cf-window-row') || els.cfWindowSize.closest('div') : null;
         if (langAudioRow) langAudioRow.style.display = isAssembly ? 'none' : '';
         if (sourceLangRow) sourceLangRow.style.display = isAssembly ? 'none' : '';
         if (modelRow) modelRow.style.display = isAssembly ? 'none' : '';
         if (els.sourceLang) els.sourceLang.disabled = isAssembly;
         if (els.model) els.model.disabled = isAssembly;
+        if (cfWindowRow) {
+          cfWindowRow.style.display = isCloudflare ? '' : 'none';
+        }
+        if (els.cfWindowSize) {
+          els.cfWindowSize.disabled = !isCloudflare;
+        }
       }
 
       function toggleTranslationStep() {
@@ -6303,6 +6314,20 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                 btn.download = (PAGE.videoHash || 'video') + '_' + (entry.languageCode || 'lang') + '_autosub.srt';
                 btn.textContent = tt('toolbox.autoSubs.actions.downloadTranslation', { lang: entry.languageCode || 'subtitle' }, 'Download ' + (entry.languageCode || 'subtitle'));
                 actions.appendChild(btn);
+
+                const reBtn = document.createElement('button');
+                reBtn.type = 'button';
+                reBtn.className = 'btn ghost';
+                const safeLang = entry.languageCode || 'subtitle';
+                reBtn.textContent = tt('toolbox.autoSubs.actions.retranslate', { lang: safeLang }, 'Retranslate ' + safeLang);
+                reBtn.addEventListener('click', (ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  if (!safeLang) return;
+                  retranslateLanguage(safeLang);
+                });
+                actions.appendChild(reBtn);
+
                 card.appendChild(actions);
               }
               els.translations.appendChild(card);
@@ -6320,6 +6345,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         appendServerLogs(serverLogs);
         handleHashStatus(data?.hashes || {}, data?.cacheBlocked);
         state.rawTranscript = transcript || state.rawTranscript || null;
+        state.originalOutput = data?.original || null;
+        state.translationOutputs = Array.isArray(data?.translations) ? data.translations.slice() : [];
         markStep('align', 'check');
         const okLabel = tt('toolbox.autoSubs.status.ok', {}, 'OK');
         setPillLabel('align', okLabel);
@@ -6366,6 +6393,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         state.autoSubsCompleted = false;
         state.rawTranscript = null;
         state.selectedAudioTrack = null;
+        state.originalOutput = null;
+        state.translationOutputs = [];
         hideAudioTrackPrompt();
         resetDecodeBadge();
         setPreview('');
@@ -6588,6 +6617,89 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           }
         }
         return { resp, data };
+      }
+
+      async function retranslateLanguage(languageCode) {
+        const lang = (languageCode || '').toString().trim();
+        if (!lang) return;
+        if (state.autoSubsInFlight) {
+          const message = tt('toolbox.autoSubs.logs.retranslateInFlight', {}, 'Automatic subtitles are already running. Please wait for them to finish.');
+          appendLog(message, 'warn');
+          setStatus(message);
+          return;
+        }
+        if (!state.rawTranscript || !state.rawTranscript.srt) {
+          const message = tt('toolbox.autoSubs.logs.retranslateMissingTranscript', {}, 'Cannot retranslate: transcript unavailable. Run auto-subtitles first.');
+          appendLog(message, 'warn');
+          setStatus(message);
+          return;
+        }
+        const stream = (els.streamUrl?.value || '').trim();
+        if (!stream) {
+          const message = tt('toolbox.autoSubs.logs.noStream', {}, 'Paste a stream URL first.');
+          appendLog(message, 'warn');
+          setStatus(message);
+          return;
+        }
+
+        const targets = [lang];
+        const translateEnabled = true;
+        const startMsg = tt('toolbox.autoSubs.logs.retranslateStart', { target: lang }, 'Retranslating to ' + lang + '...');
+        appendLog(startMsg, 'info');
+        setStatus(startMsg);
+        setInFlight(true);
+        markStep('translate', 'warn');
+
+        let serverLogs = [];
+        try {
+          const { resp, data } = await submitTranscriptToServer(state.rawTranscript, stream, targets, translateEnabled);
+          serverLogs = Array.isArray(data?.logTrail) ? data.logTrail : [];
+          appendServerLogs(serverLogs);
+          if (!resp.ok || data.success !== true) {
+            const msg = data?.error || data?.message || data?.details || `Request failed (${resp.status})`;
+            throw new Error(msg);
+          }
+
+          const freshTranslations = Array.isArray(data.translations) ? data.translations : [];
+          if (!freshTranslations.length) {
+            const warnMsg = tt('toolbox.autoSubs.logs.retranslateEmpty', { target: lang }, 'No translated output was returned for ' + lang + '.');
+            appendLog(warnMsg, 'warn');
+            setStatus(warnMsg);
+          } else {
+            const updated = Array.isArray(state.translationOutputs) ? state.translationOutputs.slice() : [];
+            freshTranslations.forEach((t) => {
+              if (!t || !t.languageCode) return;
+              const idx = updated.findIndex((existing) => existing && existing.languageCode === t.languageCode);
+              if (idx >= 0) {
+                updated[idx] = t;
+              } else {
+                updated.push(t);
+              }
+            });
+            state.translationOutputs = updated;
+            const original = state.originalOutput || data.original || null;
+            if (original) state.originalOutput = original;
+            setDownloads(original, updated, state.rawTranscript);
+
+            const okLabel = tt('toolbox.autoSubs.status.ok', {}, 'OK');
+            markStep('translate', 'check');
+            setPillLabel('translate', okLabel);
+            const doneMsg = tt('toolbox.autoSubs.logs.retranslateDone', { target: lang }, 'Retranslation finished for ' + lang + '.');
+            appendLog(doneMsg, 'success');
+            setStatus(tt('toolbox.autoSubs.status.done', {}, 'Done. Ready to download.'));
+          }
+          state.autoSubsCompleted = true;
+          refreshStepLocks();
+        } catch (error) {
+          const failMsg = tt('toolbox.autoSubs.logs.retranslateFailed', { target: lang }, 'Retranslation failed for ' + lang + ': ') + (error.message || error);
+          appendLog(failMsg, 'error');
+          setStatus(failMsg);
+          markStep('translate', 'danger');
+          setPillLabel('translate', failMsg);
+          appendServerLogs(serverLogs);
+        } finally {
+          setInFlight(false);
+        }
       }
 
       function handleAutoSubProgressMessage(msg) {
@@ -6818,6 +6930,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
             const cfCreds = getCfCredentials();
             const messageId = 'autosub_' + Date.now();
             const waitForTranscript = waitForAutoSubResponse(messageId);
+            const cfWindowRaw = els.cfWindowSize ? parseFloat(els.cfWindowSize.value) : NaN;
+            const cfWindowSizeMb = Number.isFinite(cfWindowRaw) && cfWindowRaw > 0 ? Math.min(cfWindowRaw, 25) : null;
             window.postMessage({
               type: 'SUBMAKER_AUTOSUB_REQUEST',
               source: 'webpage',
@@ -6829,7 +6943,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                 sourceLanguage: els.sourceLang?.value || '',
                 diarization: true,
                 cfAccountId: cfCreds.accountId,
-                cfToken: cfCreds.token
+                cfToken: cfCreds.token,
+                cfWindowSizeMb: cfWindowSizeMb
               }
             }, '*');
             appendLog('Sent auto-sub request to extension (Cloudflare path)', 'info');
@@ -6931,6 +7046,9 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         }
         if (els.assemblySendFullVideo) {
           els.assemblySendFullVideo.checked = BOOTSTRAP.defaults?.assemblySendFullVideo === true;
+        }
+        if (els.cfWindowSize) {
+          els.cfWindowSize.value = '';
         }
         hydrateVideoMeta({
           title: BOOTSTRAP.linkedTitle || '',
@@ -7218,6 +7336,9 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       modeLocal: t('toolbox.autoSubs.steps.modeLocal', {}, 'Local (xSync)'),
       modeRemote: t('toolbox.autoSubs.steps.modeRemote', {}, 'Cloudflare Workers AI'),
       modeAssembly: t('toolbox.autoSubs.steps.modeAssembly', {}, 'AssemblyAI'),
+      cfWindowLabel: t('toolbox.autoSubs.steps.cfWindowLabel', {}, 'Cloudflare window size'),
+      cfWindowHelper: t('toolbox.autoSubs.steps.cfWindowHelper', {}, 'Approximate audio per chunk (MB). Leave empty to use the default (~3 MB / ~90 seconds).'),
+      cfWindowPlaceholder: t('toolbox.autoSubs.steps.cfWindowPlaceholder', {}, 'e.g., 3 (MB, max 25)'),
       sourceLabel: t('toolbox.autoSubs.steps.sourceLabel', {}, 'Source audio language'),
       autoDetect: t('toolbox.autoSubs.steps.autoDetect', {}, 'Auto-detect'),
       modelLabel: t('toolbox.autoSubs.steps.modelLabel', {}, 'Whisper model'),
@@ -8275,6 +8396,13 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                     <option value="@cf/openai/whisper">${escapeHtml(copy.steps.model.standard)}</option>
                     <option value="@cf/openai/whisper-large-v3-turbo">${escapeHtml(copy.steps.model.turbo)}</option>
                   </select>
+                </div>
+              </div>
+              <div class="row cf-window-row">
+                <div>
+                  <label for="cfWindowSizeMb">${escapeHtml(copy.steps.cfWindowLabel)}</label>
+                  <input type="number" id="cfWindowSizeMb" min="1" max="25" step="0.5" placeholder="${escapeHtml(copy.steps.cfWindowPlaceholder)}">
+                  <p class="muted" style="margin-top:4px;">${escapeHtml(copy.steps.cfWindowHelper)}</p>
                 </div>
               </div>
               <div class="controls wrap">
