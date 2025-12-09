@@ -6732,9 +6732,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           if (statusText) setPillLabel('fetch', statusText);
         } else if (msg.stage === 'transcribe') {
           markFetchComplete();
-          if (state.decodeStatus !== 'done') {
-            markDecodeDone(copy?.badges?.decodeReady || decodeLabels.ready);
-          }
           markStep('transcribe', logTone === 'error' ? 'danger' : 'warn');
           setPillLabel('transcribe', getTranscribeStatusLabel(statusText));
         } else if (msg.stage === 'package') {
@@ -6744,9 +6741,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         } else if (msg.stage === 'select-track') {
           markFetchComplete();
           if (statusText) setPillLabel('fetch', statusText);
-          if (state.decodeStatus !== 'done') {
-            markDecodeDone(copy?.badges?.decodeReady || decodeLabels.ready);
-          }
         } else if (msg.stage === 'error') {
           markStep('fetch', 'danger');
           markStep('transcribe', 'danger');
@@ -7739,9 +7733,10 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       background: linear-gradient(135deg, rgba(8,164,213,0.14), rgba(255,255,255,0.08));
       border: 1px solid rgba(8,164,213,0.25);
       box-shadow: 0 12px 30px rgba(8,164,213,0.16);
-      padding: 10px 12px;
+      /* 20% smaller than base status-badge padding */
+      padding: 8px 10px;
     }
-    .pill-badge .pill-value { font-size: 14px; }
+    .pill-badge .pill-value { font-size: 11px; }
     .pill-badge.warn {
       border-color: rgba(251,191,36,0.45);
       background: linear-gradient(135deg, rgba(251,191,36,0.14), rgba(255,255,255,0.08));
