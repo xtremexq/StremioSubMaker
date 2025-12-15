@@ -312,7 +312,7 @@
         "step1": {
           "chip": "Passo 1",
           "title": "Forneça as informações do stream",
-          "helper": "",
+          "helper": "Cole uma URL de stream que corresponda ao seu stream vinculado.\nDica: clique com o botão direito no stream no Stremio e escolha \"Copiar link do stream\".",
           "streamLabel": "URL do stream:",
           "streamPlaceholder": "Cole a URL do vídeo/stream do Stremio ou do navegador",
           "mkvTitle": "Dica MKV",
@@ -323,7 +323,7 @@
           "modeComplete": "Completo (arquivo inteiro)",
           "modeHelper": "Inteligente faz uma tentativa rápida e falha se ficar incompleto. Completo sempre baixa todo o stream e executa um demux do FFmpeg sem novas tentativas.",
           "extractButton": "Extrair legendas",
-          "extractBlocked": "",
+          "extractBlocked": "A extração está bloqueada até que a URL do stream corresponda ao stream vinculado.",
           "hashMismatchInline": "Os hashes não coincidem. A extração fica bloqueada até que a URL colada corresponda ao seu stream vinculado.",
           "hashMismatchLine1": "Os hashes precisam coincidir (Linked Stream e Stream URL) antes que a extração comece.",
           "hashMismatchLine2": "Copie o link do stream direto do Stremio para liberar a extração.",
@@ -461,6 +461,7 @@
           "downloadVtt": "Baixar VTT",
           "downloadRawTranscript": "Baixar transcrição bruta",
           "downloadTranslation": "Baixar {lang}",
+          "retranslate": "Retraduzir {lang}",
           "continue": "Continuar"
         },
         "options": {

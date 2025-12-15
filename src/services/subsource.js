@@ -17,6 +17,7 @@ const { appendHiddenInformationalNote } = require('../utils/subtitle');
 const zlib = require('zlib');
 const log = require('../utils/logger');
 const { waitForDownloadSlot, currentDownloadLimit } = require('../utils/downloadLimiter');
+const { isTrueishFlag } = require('../utils/subtitleFlags');
 
 const SUBSOURCE_API_URL = 'https://api.subsource.net/api/v1';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -669,7 +670,7 @@ class SubSourceService {
           format: sub.format || 'srt',
           fileId: fileId,
           downloadLink: directUrl,
-          hearing_impaired: sub.hearingImpaired || sub.hearing_impaired || sub.hi || false,
+          hearing_impaired: isTrueishFlag(sub.hearingImpaired) || isTrueishFlag(sub.hearing_impaired) || isTrueishFlag(sub.hi),
           foreign_parts_only: sub.foreignParts || false,
           machine_translated: false,
           uploader: sub.uploader || sub.author || sub.user || 'Unknown',

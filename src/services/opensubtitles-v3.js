@@ -7,6 +7,7 @@ const { version } = require('../utils/version');
 const { appendHiddenInformationalNote } = require('../utils/subtitle');
 const { waitForDownloadSlot, currentDownloadLimit } = require('../utils/downloadLimiter');
 const log = require('../utils/logger');
+const { isTrueishFlag, inferHearingImpairedFromName } = require('../utils/subtitleFlags');
 
 const OPENSUBTITLES_V3_BASE_URL = 'https://opensubtitles-v3.strem.io/subtitles/';
 const USER_AGENT = `SubMaker v${version}`;
@@ -330,7 +331,7 @@ class OpenSubtitlesV3Service {
         format: detectedFormat || 'srt',
         fileId: fileId,
         downloadLink: sub.url,
-        hearing_impaired: sub.hearing_impaired || sub.hi || false,
+        hearing_impaired: isTrueishFlag(sub.hearing_impaired) || isTrueishFlag(sub.hi) || inferHearingImpairedFromName(extracted || finalName),
         foreign_parts_only: false,
         machine_translated: false,
         uploader: 'OpenSubtitles V3',

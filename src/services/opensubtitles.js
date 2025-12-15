@@ -8,6 +8,7 @@ const { version } = require('../utils/version');
 const { appendHiddenInformationalNote } = require('../utils/subtitle');
 const log = require('../utils/logger');
 const { waitForDownloadSlot, currentDownloadLimit } = require('../utils/downloadLimiter');
+const { isTrueishFlag } = require('../utils/subtitleFlags');
 
 const OPENSUBTITLES_API_URL = 'https://api.opensubtitles.com/api/v1';
 const USER_AGENT = `SubMaker v${version}`;
@@ -373,7 +374,7 @@ class OpenSubtitlesService {
         }
       }
 
-      const { imdb_id, type, season, episode, languages } = params;
+      const { imdb_id, type, season, episode, languages, excludeHearingImpairedSubtitles } = params;
 
       // Convert imdb_id to numeric format (remove 'tt' prefix)
       const imdbId = imdb_id.replace('tt', '');
@@ -418,6 +419,10 @@ class OpenSubtitlesService {
         queryParams.episode_number = episode;
       }
 
+      if (excludeHearingImpairedSubtitles === true) {
+        queryParams.hearing_impaired = 'exclude';
+      }
+
       log.debug(() => ['[OpenSubtitles] Searching with params:', JSON.stringify(queryParams)]);
       if (this.token) {
         log.debug(() => '[OpenSubtitles] Using user account authentication');
@@ -457,7 +462,7 @@ class OpenSubtitlesService {
           fileId: String(fileId),
           downloadLink: sub.attributes.url,
           originalFilename: fileName || null,
-          hearing_impaired: sub.attributes.hearing_impaired || false,
+          hearing_impaired: isTrueishFlag(sub.attributes.hearing_impaired),
           foreign_parts_only: sub.attributes.foreign_parts_only || false,
           machine_translated: sub.attributes.machine_translated || false,
           uploader: sub.attributes.uploader?.name || 'Unknown',

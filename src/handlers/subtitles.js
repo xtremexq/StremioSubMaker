@@ -17,6 +17,7 @@ const embeddedCache = require('../utils/embeddedCache');
 const { StorageFactory, StorageAdapter } = require('../storage');
 const { getCached: getDownloadCached, saveCached: saveDownloadCached } = require('../utils/downloadCache');
 const log = require('../utils/logger');
+const { isHearingImpairedSubtitle } = require('../utils/subtitleFlags');
 const { generateCacheKeys } = require('../utils/cacheKeys');
 const { version } = require('../../package.json');
 
@@ -2196,9 +2197,7 @@ function createSubtitleHandler(config) {
       // Optional: exclude SDH/HI (hearing impaired) subtitles from results
       if (config.excludeHearingImpairedSubtitles === true) {
         const beforeCount = filteredFoundSubtitles.length;
-        filteredFoundSubtitles = filteredFoundSubtitles.filter(sub => {
-          return !(sub && (sub.hearing_impaired === true || sub.hearingImpaired === true || sub.hi === true || sub.hi === 1));
-        });
+        filteredFoundSubtitles = filteredFoundSubtitles.filter(sub => !isHearingImpairedSubtitle(sub));
         const removed = beforeCount - filteredFoundSubtitles.length;
         if (removed > 0) {
           log.debug(() => `[Subtitles] Excluded ${removed} hearing impaired subtitles (SDH/HI)`);
@@ -3943,7 +3942,7 @@ async function getAvailableSubtitlesForTranslation(videoId, config) {
 
     if (config && config.excludeHearingImpairedSubtitles === true && Array.isArray(subtitles)) {
       const beforeCount = subtitles.length;
-      const filtered = subtitles.filter(sub => !(sub && (sub.hearing_impaired === true || sub.hearingImpaired === true || sub.hi === true || sub.hi === 1)));
+      const filtered = subtitles.filter(sub => !isHearingImpairedSubtitle(sub));
       const removed = beforeCount - filtered.length;
       if (removed > 0) {
         log.debug(() => `[Translation Selector] Excluded ${removed} hearing impaired subtitles (SDH/HI)`);

@@ -367,7 +367,7 @@
         const codeLabelMap = {
             'en': 'EN',
             'es': 'ES',
-            'pt-br': 'PT',
+            'pt-br': 'BR',
             'pt-pt': 'PT',
             'ar': 'AR'
         };
