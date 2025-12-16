@@ -25,16 +25,46 @@ function preprocessASS(content, format = 'ass') {
   // 2. Normalize line endings to \n
   processed = processed.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
-  // 3. Remove ASS drawing commands that shouldn't be in text
+  // 3. Fix subsrt-ts bug: library consumes first char of text field in Dialogue lines
+  // Solution: Add leading space before text field (after 9th comma in ASS format)
+  // ASS Dialogue format: Dialogue: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+  // We find lines starting with "Dialogue:" and insert a space after the 9th comma
+  processed = processed.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (/^Dialogue\s*:/i.test(trimmed)) {
+      // Count commas and find the 9th one (after Effect field, before Text)
+      let commaCount = 0;
+      let insertPos = -1;
+      for (let i = 0; i < line.length; i++) {
+        if (line[i] === ',') {
+          commaCount++;
+          if (commaCount === 9) {
+            insertPos = i + 1;
+            break;
+          }
+        }
+      }
+      if (insertPos > 0 && insertPos < line.length) {
+        // Check if there's already a space after the comma
+        if (line[insertPos] !== ' ') {
+          // Insert a space to protect the first character of text
+          line = line.slice(0, insertPos) + ' ' + line.slice(insertPos);
+        }
+      }
+    }
+    return line;
+  }).join('\n');
+
+  // 4. Remove ASS drawing commands that shouldn't be in text
   // Drawing commands start with {\p1} or higher and end with {\p0}
   // Format: {\p1}m 0 0 l 100 0 100 100 0 100{\p0}
   processed = processed.replace(/\{\\p\d+\}[^{]*\{\\p0\}/g, '');
 
-  // 4. Handle malformed tags - ensure tags are properly closed
+  // 5. Handle malformed tags - ensure tags are properly closed
   // Sometimes tags are not properly closed, causing text loss
   processed = fixMalformedTags(processed);
 
-  // 5. Remove comment lines (lines starting with ;)
+  // 6. Remove comment lines (lines starting with ;)
   processed = processed.split('\n')
     .filter(line => !line.trim().startsWith(';'))
     .join('\n');
@@ -157,7 +187,7 @@ function postprocessVTT(vttContent) {
       filtered[firstIdx] = 'WEBVTT';
     }
     processed = filtered.join('\n');
-  } catch (_) {}
+  } catch (_) { }
 
   // Defensive cleanup before deeper processing:
   // - Remove stray lines that are exactly 'undefined' (should never appear in valid VTT)
@@ -170,7 +200,7 @@ function postprocessVTT(vttContent) {
       filtered[firstIdx] = 'WEBVTT';
     }
     processed = filtered.join('\n');
-  } catch (_) {}
+  } catch (_) { }
 
   // 1. Ensure WEBVTT header is present and properly formatted
   if (!processed.startsWith('WEBVTT')) {
@@ -193,7 +223,7 @@ function postprocessVTT(vttContent) {
 
       while (j < lines.length && lines[j].trim() !== '') {
         if (lines[j].trim().length > 0 &&
-            !/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(lines[j])) {
+          !/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(lines[j])) {
           hasText = true;
           break;
         }
@@ -205,7 +235,7 @@ function postprocessVTT(vttContent) {
         cleanedLines.push(line);
         i++;
         while (i < lines.length && lines[i].trim() !== '' &&
-               !/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(lines[i])) {
+          !/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(lines[i])) {
           cleanedLines.push(lines[i]);
           i++;
         }
@@ -230,10 +260,10 @@ function postprocessVTT(vttContent) {
   processed = processed.split('\n').map(line => {
     // Only clean subtitle text lines (not timestamps or headers)
     if (line.trim() &&
-        !line.startsWith('WEBVTT') &&
-        !/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(line) &&
-        !/^NOTE\s/.test(line) &&
-        !/^\d+$/.test(line.trim())) {
+      !line.startsWith('WEBVTT') &&
+      !/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(line) &&
+      !/^NOTE\s/.test(line) &&
+      !/^\d+$/.test(line.trim())) {
 
       let cleaned = line;
 
@@ -262,9 +292,9 @@ function postprocessVTT(vttContent) {
       cleaned = cleaned.replace(/\\([a-z]{2,})\}/gi, (match, letters) => {
         // Whitelist of known ASS tags that might appear without digits
         const knownTags = ['fn', 'fe', 'an', 'fs', 'fscx', 'fscy', 'fsp', 'frx', 'fry', 'frz',
-                          'clip', 'iclip', 'pos', 'move', 'org', 'fad', 'fade',
-                          'blur', 'bord', 'xbord', 'ybord', 'shad', 'xshad', 'yshad',
-                          'alpha', 'pbo', 'q', 'be', 'kf', 'ko', 'k', 'kt'];
+          'clip', 'iclip', 'pos', 'move', 'org', 'fad', 'fade',
+          'blur', 'bord', 'xbord', 'ybord', 'shad', 'xshad', 'yshad',
+          'alpha', 'pbo', 'q', 'be', 'kf', 'ko', 'k', 'kt'];
 
         // Check if letters match or start with a known tag
         const lowerLetters = letters.toLowerCase();
@@ -355,9 +385,9 @@ function validateVTT(vttContent) {
     const line = lines[i].trim();
     // If line has text and is not a header, timestamp, or empty
     if (line.length > 0 &&
-        !line.startsWith('WEBVTT') &&
-        !/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(line) &&
-        !/^NOTE\s/.test(line)) {
+      !line.startsWith('WEBVTT') &&
+      !/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(line) &&
+      !/^NOTE\s/.test(line)) {
       hasTextContent = true;
       break;
     }

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.24
+
+- **ASS/SSA subtitle first letter fix:** Fixed a bug where converting ASS/SSA subtitles to VTT caused the first letter of each subtitle line to be lost. The issue was in the `subsrt-ts` library's parsing, which consumed the first character of the text field. The fix adds a protective leading space before the text field in Dialogue lines during preprocessing.
+
 ## SubMaker v1.4.23
 
 - **Target language prompt normalization:** Translation providers now use consistent, canonical target language labels across config codes (e.g., `por`/`pob` Portuguese variants, `spa`/`spn` Spanish variants, `chi`/`zhs`/`zht` Chinese variants) to reduce dialect mismatches and improve prompt reliability.
