@@ -4,9 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.24
 
-- **Gemini 3.0 Flash (Preview):** Added the new Gemini 3.0 Flash preview model to the translation model dropdown. Also updated the Gemini 2.5 Flash option to use the `gemini-2.5-flash-preview-09-2025` model version.
-- **ASS/SSA subtitle first letter fix:** Fixed a bug where converting ASS/SSA subtitles to VTT caused the first letter of each subtitle line to be lost. The issue was in the `subsrt-ts` library's parsing, which consumed the first character of the text field. The fix adds a protective leading space before the text field in Dialogue lines during preprocessing.
-- **Stream hash mismatch fix:** Fixed hash mismatch errors on AutoSubs/Sync pages when pasting Comet, Torrentio, or debrid stream URLs. The issue occurred because the `name` query parameter (used for display) often contained a short title different from the actual filename in the URL pathname. The fix now prioritizes the pathname when it contains a valid filename with extension, falling back to `name` only when needed.
+- **Gemini API key rotation:** Config now supports multiple Gemini keys with per-request or per-batch rotation, encrypted storage, and a compact UI for managing extra keys.
+- **Gemini 3.0 Flash (Preview):** Added the new Gemini 3.0 Flash preview model to the translation dropdown and refreshed the Gemini 2.5 Flash version label.
+- **ASS/SSA subtitle first letter fix:** Prevented VTT conversions from dropping the first character of each line by guarding the Dialogue text parsing in `subsrt-ts`.
+- **Stream hash mismatch fix:** AutoSubs/Sync now prefer real filenames from URLs (path before name param) to stop hash mismatches on pasted Comet/Torrentio/debrid links.
 
 ## SubMaker v1.4.23
 
