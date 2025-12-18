@@ -4,6 +4,7 @@ const { getSessionManager } = require('./sessionManager');
 const { StorageUnavailableError } = require('../storage/errors');
 const log = require('./logger');
 const { getTranslator } = require('./i18n');
+const { redactApiKey } = require('./security');
 
 // Language selection limits (configurable via environment)
 const DEFAULT_SOURCE_LANGUAGE_LIMIT = 3;
@@ -1214,7 +1215,7 @@ async function selectGeminiApiKey(config) {
       // Sequential round-robin: counter modulo number of keys
       const keyIndex = (counter - 1) % keys.length;
       const selectedKey = keys[keyIndex];
-      log.debug(() => `[Config] Gemini key rotation: selected key ${keyIndex + 1} of ${keys.length} (counter=${counter}, user=${configHash.substring(0, 8)})`);
+      log.info(() => `[Gemini] Key rotation: using key ${keyIndex + 1} of ${keys.length} (${redactApiKey(selectedKey)})`);
       return selectedKey;
     }
   }

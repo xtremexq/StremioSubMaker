@@ -50,6 +50,19 @@ function redactApiKey(apiKey) {
 }
 
 /**
+ * Redact an API key for concise logging (shows first 3 chars only)
+ * Used for identifying which key is being used in rotation logs
+ * @param {string} apiKey - API key to redact
+ * @returns {string} - Redacted API key in format "abc[REDACTED]"
+ */
+function redactKeyShort(apiKey) {
+  if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 3) {
+    return '[REDACTED]';
+  }
+  return `${apiKey.substring(0, 3)}[REDACTED]`;
+}
+
+/**
  * Sanitize an error object to remove sensitive data
  * @param {Error} error - Error object to sanitize
  * @param {Array<string>} sensitiveValues - Array of sensitive strings to redact (e.g., API keys)
