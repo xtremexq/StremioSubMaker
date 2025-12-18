@@ -851,7 +851,11 @@
         "secondaryProvidersCount": "يتطلب المزود الثانوي تكوين اثنين من مزودي الذكاء الاصطناعي (رئيسي واحتياطي)",
         "subdlKeyRequired": "SubDL ممكّن لكن مفتاح API مفقود",
         "subsourceKeyRequired": "SubSource ممكّن لكن مفتاح API مفقود",
-        "subtitleProviderRequired": "يرجى تمكين مزود ترجمة واحد على الأقل"
+        "subtitleProviderRequired": "يرجى تمكين مزود ترجمة واحد على الأقل",
+        "geminiKeysRequired": "مطلوب مفتاح API واحد على الأقل للتدوير",
+        "geminiKeysFillEmpty": "يُرجى ملء جميع حقول مفاتيح API قبل إضافة مفتاح جديد",
+        "apiKeyInvalid": "مفتاح API غير صالح",
+        "apiError": "خطأ في API: {reason}"
       },
       "alerts": {
         "sessionLost": "تم فقدان جلسة التكوين. يرجى إعادة التكوين والحفظ لإنشاء جلسة جديدة.",
@@ -878,7 +882,8 @@
         "sessionExpiredCreating": "انتهت صلاحية الجلسة. جاري إنشاء جلسة جديدة...",
         "sessionNetworkError": "خطأ في الشبكة أثناء تحديث الجلسة. جاري إنشاء جلسة جديدة...",
         "sessionUpdateFailed": "فشل تحديث الجلسة. جاري إنشاء جلسة جديدة...",
-        "targetsTrimmed": "تم الاحتفاظ بأول {limit} لغات هدف فقط (مجتمعة مع وضع التعلم)."
+        "targetsTrimmed": "تم الاحتفاظ بأول {limit} لغات هدف فقط (مجتمعة مع وضع التعلم).",
+        "maxKeysReached": "الحد الأقصى المسموح به هو {max} مفاتيح API"
       },
       "providers": {
         "subsource": {
@@ -941,7 +946,10 @@
           "linkLabel": "Google AI Studio",
           "placeholder": "أدخل مفتاح Gemini API الخاص بك",
           "validateTitle": "التحقق من مفتاح API",
-          "validateCta": "اختبار"
+          "validateCta": "اختبار",
+          "showHideKey": "إظهار/إخفاء مفتاح API",
+          "showKey": "إظهار مفتاح API",
+          "hideKey": "إخفاء مفتاح API"
         },
         "model": {
           "label": "نموذج الترجمة",
@@ -958,6 +966,20 @@
           "betaAdvice": "إذا واجهت مشاكل في الترجمة، استخدم Flash-Lite.",
           "rateWarningTitle": "⚠️ قيود الفئة المجانية:",
           "rateWarningBody": "إذا كنت تستخدم مفتاح API مجاني، قد يطلق Gemini 2.5 Pro حدود المعدل (HTTP 429). على الأرجح ستتمكن فقط من ترجمة ترجمة واحدة في كل مرة."
+        },
+        "keyRotation": {
+          "label": "????? ????? ?????? Gemini API",
+          "description": "??? ????? ????? API ??? ??? ?????? ????? ???? ???? ?????????.",
+          "additionalKeysLabel": "?????? API ??????",
+          "additionalKeys": "??????",
+          "addKey": "????? ?????",
+          "testKey": "?????? ??? ???????",
+          "removeKey": "????? ??? ???????",
+          "keyPlaceholder": "???? ????? API",
+          "modeLabel": "????? ???????",
+          "modeDescription": "??? ????? ??????? ??? ?????? API",
+          "modePerRequest": "??? ??? (??? ????? ??? ???)",
+          "modePerBatch": "??? ???? (?? ???? ?????)"
         }
       },
       "otherApiKeys": {

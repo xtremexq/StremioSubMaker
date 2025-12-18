@@ -366,10 +366,16 @@
                                 </span>
                             </label>
                             <div class="gemini-key-input-wrapper">
-                                <input type="text" class="sensitive-input masked" id="geminiApiKey"
-                                    placeholder="Enter your Gemini API key" data-i18n="config.gemini.apiKey.placeholder"
-                                    data-i18n-attr="placeholder" autocomplete="off" autocapitalize="none"
-                                    autocorrect="off" spellcheck="false" inputmode="text">
+                                <div class="password-field-wrapper" style="flex: 1; min-width: 0;">
+                                    <input type="text" class="sensitive-input masked" id="geminiApiKey"
+                                        placeholder="Enter your Gemini API key"
+                                        data-i18n="config.gemini.apiKey.placeholder" data-i18n-attr="placeholder"
+                                        autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
+                                        inputmode="text">
+                                    <span class="password-toggle-icon" id="toggleGeminiApiKey" title="Show/hide API key"
+                                        data-i18n="config.gemini.apiKey.showHideKey"
+                                        data-i18n-attr="title">&#128274;&#128065;</span>
+                                </div>
                                 <button type="button" class="validate-api-btn compact" id="validateGemini"
                                     title="Validate API key" data-i18n="config.gemini.apiKey.validateTitle"
                                     data-i18n-attr="title">
@@ -393,10 +399,11 @@
                             <div id="geminiApiKeysList" class="dynamic-keys-list">
                                 <!-- Dynamic key inputs will be added here -->
                             </div>
-                            <button type="button" id="addGeminiKeyBtn" class="btn btn-secondary btn-sm"
-                                style="margin-top: 0.5rem;">
-                                <span>+</span> <span data-i18n="config.gemini.keyRotation.addKey">Add Key</span>
-                            </button>
+                            <div style="display: flex; justify-content: flex-end; margin-top: 0.5rem;">
+                                <button type="button" id="addGeminiKeyBtn" class="btn btn-secondary btn-sm">
+                                    <span>+</span> <span data-i18n="config.gemini.keyRotation.addKey">Add Key</span>
+                                </button>
+                            </div>
                             <div class="field-error" id="geminiApiKeysError"
                                 data-i18n="config.validation.geminiKeysRequired" style="display: none;">At least one
                                 API key is required for rotation</div>
@@ -433,24 +440,21 @@
                                 <option value="gemini-2.5-flash-preview-09-2025"
                                     data-i18n="config.gemini.model.options.flash" selected>Gemini 2.5 Flash</option>
                                 <option value="gemini-3-flash-preview" data-i18n="config.gemini.model.options.flash3">
-                                    Gemini 3.0 Flash (Preview)</option>
+                                    Gemini 3.0 Flash (beta)</option>
                                 <option value="gemini-2.5-pro" data-i18n="config.gemini.model.options.pro">Gemini 2.5
-                                    Pro (Slow)</option>
+                                    Pro (beta)</option>
+                                <option value="gemini-3-pro-preview" data-i18n="config.gemini.model.options.pro3">
+                                    Gemini 3.0 Pro (beta)</option>
                             </select>
                             <div class="field-error" id="geminiModelError"
                                 data-i18n="config.validation.geminiModelRequired">Please select a model</div>
-                            <div style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-secondary);">
-                                <strong style="margin-left: 2px;" data-i18n="config.gemini.model.hintTitle">Bad/broken
-                                    or out-of-sync translation?</strong> <span
-                                    data-i18n="config.gemini.model.hintBody">Quickly
-                                    triple-click the subtitle to force a re-translation.</span>
-                            </div>
                             <div
                                 style="margin-top: 0.6rem; padding: 0.75rem; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; font-size: 0.875rem; color: var(--text-secondary);">
-                                <strong style="color: var(--warning);" data-i18n="config.gemini.model.betaTitle">⚡ 2.5
-                                    Pro usage is still in Beta.</strong> <span
-                                    data-i18n="config.gemini.model.betaAdvice">If you have
-                                    translation problems, use Flash-Lite.</span>
+                                <strong style="color: var(--warning);"
+                                    data-i18n="config.gemini.model.retranslationHintTitle">Bad/broken or out-of-sync
+                                    translation?</strong> <span
+                                    data-i18n="config.gemini.model.retranslationHintBody">Quickly triple-click the
+                                    subtitle to force a re-translation.</span>
                             </div>
                             <div id="proRateLimitWarning"
                                 style="display: none; margin-top: 0.75rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; font-size: 0.875rem; color: var(--text-secondary);">

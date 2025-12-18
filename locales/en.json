@@ -946,7 +946,10 @@
           "linkLabel": "Google AI Studio",
           "placeholder": "Enter your Gemini API key",
           "validateTitle": "Validate API key",
-          "validateCta": "Test"
+          "validateCta": "Test",
+          "showHideKey": "Show/hide API key",
+          "showKey": "Show API key",
+          "hideKey": "Hide API key"
         },
         "model": {
           "label": "Translation Model",
@@ -954,11 +957,14 @@
           "options": {
             "flashLite": "Gemini 2.5 Flash-Lite",
             "flash": "Gemini 2.5 Flash",
-            "flash3": "Gemini 3.0 Flash (Preview)",
-            "pro": "Gemini 2.5 Pro (Slow)"
+            "flash3": "Gemini 3.0 Flash (beta)",
+            "pro": "Gemini 2.5 Pro (beta)",
+            "pro3": "Gemini 3.0 Pro (beta)"
           },
           "hintTitle": "Bad/broken or out-of-sync translation?",
           "hintBody": "Quickly triple-click the subtitle to force a re-translation.",
+          "retranslationHintTitle": "Bad/broken or out-of-sync translation?",
+          "retranslationHintBody": "Quickly triple-click the subtitle to force a re-translation.",
           "betaTitle": "⚡ 2.5 Pro usage is still in Beta.",
           "betaAdvice": "If you have translation problems, use Flash-Lite.",
           "rateWarningTitle": "⚠️ Free Tier Limitation:",

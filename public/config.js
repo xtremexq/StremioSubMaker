@@ -554,6 +554,10 @@ Translate to {target_language}.`;
         'gemini-2.5-pro': {
             thinkingBudget: 1000,
             temperature: 0.5
+        },
+        'gemini-3-pro-preview': {
+            thinkingBudget: -1,
+            temperature: 0.5
         }
     };
 
@@ -2271,6 +2275,21 @@ Translate to {target_language}.`;
             });
         }
 
+        // Gemini API key visibility toggle
+        const toggleGeminiKeyBtn = document.getElementById('toggleGeminiApiKey');
+        if (toggleGeminiKeyBtn) {
+            toggleGeminiKeyBtn.addEventListener('click', () => {
+                const keyInput = document.getElementById('geminiApiKey');
+                if (!keyInput) return;
+
+                const isMasked = keyInput.classList.toggle('masked');
+                toggleGeminiKeyBtn.textContent = isMasked ? '🔒👁' : '👁';
+                toggleGeminiKeyBtn.title = isMasked
+                    ? tConfig('config.gemini.apiKey.showKey', {}, 'Show API key')
+                    : tConfig('config.gemini.apiKey.hideKey', {}, 'Hide API key');
+            });
+        }
+
         // Database mode dropdown - handles cache/bypass selection
         const databaseModeEl = document.getElementById('databaseMode');
         if (databaseModeEl) {
@@ -3543,14 +3562,35 @@ Translate to {target_language}.`;
         row.className = 'gemini-key-row';
         row.style.cssText = 'display: flex; gap: 0.5rem; align-items: center;';
 
+        // Create wrapper for input and toggle (similar to password-field-wrapper)
+        const inputWrapper = document.createElement('div');
+        inputWrapper.className = 'password-field-wrapper';
+        inputWrapper.style.cssText = 'flex: 1; min-width: 0; position: relative;';
+
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'sensitive-input masked gemini-api-key-input';
         input.placeholder = tConfig('config.gemini.keyRotation.keyPlaceholder', {}, 'Enter API key');
         input.value = value;
-        input.style.flex = '1';
+        input.style.width = '100%';
         input.autocomplete = 'off';
         input.spellcheck = false;
+
+        // Toggle icon for show/hide
+        const toggleIcon = document.createElement('span');
+        toggleIcon.className = 'password-toggle-icon';
+        toggleIcon.textContent = '🔒👁';
+        toggleIcon.title = tConfig('config.gemini.apiKey.showHideKey', {}, 'Show/hide API key');
+        toggleIcon.addEventListener('click', () => {
+            const isMasked = input.classList.toggle('masked');
+            toggleIcon.textContent = isMasked ? '🔒👁' : '👁';
+            toggleIcon.title = isMasked
+                ? tConfig('config.gemini.apiKey.showKey', {}, 'Show API key')
+                : tConfig('config.gemini.apiKey.hideKey', {}, 'Hide API key');
+        });
+
+        inputWrapper.appendChild(input);
+        inputWrapper.appendChild(toggleIcon);
 
         // Sync first key to single input when keys change
         input.addEventListener('input', (e) => {
@@ -3577,7 +3617,7 @@ Translate to {target_language}.`;
         removeBtn.title = tConfig('config.gemini.keyRotation.removeKey', {}, 'Remove this key');
         removeBtn.addEventListener('click', () => removeGeminiKeyInput(row));
 
-        row.appendChild(input);
+        row.appendChild(inputWrapper);
         row.appendChild(testBtn);
         row.appendChild(removeBtn);
         keysList.appendChild(row);
@@ -3585,6 +3625,7 @@ Translate to {target_language}.`;
         updateGeminiKeysCount();
         input.focus();
     }
+
 
     /**
      * Remove a Gemini API key input row
@@ -4535,8 +4576,9 @@ Translate to {target_language}.`;
         const hardcodedModels = [
             { name: 'gemini-flash-lite-latest', displayName: 'Gemini 2.5 Flash-Lite' },
             { name: 'gemini-2.5-flash-preview-09-2025', displayName: 'Gemini 2.5 Flash' },
-            { name: 'gemini-3-flash-preview', displayName: 'Gemini 3.0 Flash (Preview)' },
-            { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro (Slow)' }
+            { name: 'gemini-3-flash-preview', displayName: 'Gemini 3.0 Flash (beta)' },
+            { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro (beta)' },
+            { name: 'gemini-3-pro-preview', displayName: 'Gemini 3.0 Pro (beta)' }
         ];
 
         // Track added models to avoid duplicates

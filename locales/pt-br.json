@@ -851,7 +851,11 @@
         "secondaryProvidersCount": "O Provedor Secundário requer dois provedores de IA configurados (principal e fallback)",
         "subdlKeyRequired": "SubDL está habilitado, mas a chave da API está faltando",
         "subsourceKeyRequired": "SubSource está habilitado, mas a chave da API está faltando",
-        "subtitleProviderRequired": "Por favor, habilite pelo menos um provedor de legendas"
+        "subtitleProviderRequired": "Por favor, habilite pelo menos um provedor de legendas",
+        "geminiKeysRequired": "Pelo menos uma chave de API é necessária para rotação",
+        "geminiKeysFillEmpty": "Preencha todos os campos de chave de API antes de adicionar uma nova",
+        "apiKeyInvalid": "Chave de API inválida",
+        "apiError": "Erro de API: {reason}"
       },
       "alerts": {
         "sessionLost": "Sessão de configuração foi perdida. Por favor, reconfigure e salve para criar uma nova sessão.",
@@ -878,7 +882,8 @@
         "sessionExpiredCreating": "Sessão expirada. Criando nova sessão...",
         "sessionNetworkError": "Erro de rede ao atualizar sessão. Criando nova sessão...",
         "sessionUpdateFailed": "Atualização de sessão falhou. Criando nova sessão...",
-        "targetsTrimmed": "Apenas os primeiros {limit} idiomas de destino foram mantidos (combinados com Learn Mode)."
+        "targetsTrimmed": "Apenas os primeiros {limit} idiomas de destino foram mantidos (combinados com Learn Mode).",
+        "maxKeysReached": "Máximo de {max} chaves de API permitidas"
       },
       "providers": {
         "subsource": {
@@ -941,7 +946,10 @@
           "linkLabel": "Google AI Studio",
           "placeholder": "Digite sua chave da API Gemini",
           "validateTitle": "Validar chave da API",
-          "validateCta": "Teste"
+          "validateCta": "Teste",
+          "showHideKey": "Mostrar/ocultar chave da API",
+          "showKey": "Mostrar chave da API",
+          "hideKey": "Ocultar chave da API"
         },
         "model": {
           "label": "Modelo de Tradução",
@@ -958,6 +966,20 @@
           "betaAdvice": "Se tiver problemas de tradução, use o Flash-Lite.",
           "rateWarningTitle": "⚠️ Limitação da Camada Gratuita:",
           "rateWarningBody": "Se estiver usando uma chave de API gratuita, o Gemini 2.5 Pro pode acionar limites de taxa (HTTP 429). Você provavelmente só conseguirá traduzir uma legenda por vez."
+        },
+        "keyRotation": {
+          "label": "Ativar rotação de chaves de API do Gemini",
+          "description": "Distribua as chamadas de API entre várias chaves para evitar limites de taxa.",
+          "additionalKeysLabel": "Chaves de API adicionais",
+          "additionalKeys": "adicionais",
+          "addKey": "Adicionar chave",
+          "testKey": "Testar esta chave",
+          "removeKey": "Remover esta chave",
+          "keyPlaceholder": "Insira a chave de API",
+          "modeLabel": "Frequência de rotação",
+          "modeDescription": "Com que frequência alternar entre as chaves de API",
+          "modePerRequest": "Por solicitação (uma vez por arquivo)",
+          "modePerBatch": "Por lote (cada lote de tradução)"
         }
       },
       "otherApiKeys": {
