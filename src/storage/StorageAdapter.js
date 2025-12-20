@@ -45,6 +45,16 @@ class StorageAdapter {
   }
 
   /**
+   * Delete a value from alternate prefix variants (optional; Redis only).
+   * @param {string} key - The cache key
+   * @param {string} cacheType - Cache type
+   * @returns {Promise<number>} Number of deleted keys
+   */
+  async deleteFromAlternatePrefixes(_key, _cacheType) {
+    return 0;
+  }
+
+  /**
    * Check if a key exists
    * @param {string} key - The cache key
    * @param {string} cacheType - Cache type

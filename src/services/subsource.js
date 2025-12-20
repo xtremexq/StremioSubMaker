@@ -85,6 +85,113 @@ Please pick another subtitle or provider.`;
   return appendHiddenInformationalNote(message);
 }
 
+/**
+ * Analyze response content to determine what was actually received
+ * @param {Buffer} buffer - Response buffer
+ * @returns {Object} - { type: string, hint: string, isRetryable: boolean }
+ */
+function analyzeResponseContent(buffer) {
+  if (!buffer || buffer.length === 0) {
+    return { type: 'empty', hint: 'Empty response received', isRetryable: true };
+  }
+
+  // Check for common file signatures
+  const isZip = buffer.length >= 4 &&
+    buffer[0] === 0x50 && buffer[1] === 0x4B &&
+    buffer[2] === 0x03 && buffer[3] === 0x04;
+  if (isZip) return { type: 'zip', hint: 'Valid ZIP file', isRetryable: false };
+
+  // Check for gzip (might be compressed response that wasn't decompressed)
+  const isGzip = buffer.length >= 2 && buffer[0] === 0x1F && buffer[1] === 0x8B;
+  if (isGzip) return { type: 'gzip', hint: 'Gzip-compressed content (possibly not decompressed)', isRetryable: true };
+
+  // Try to interpret as text for further analysis
+  let textContent = '';
+  try {
+    textContent = buffer.slice(0, Math.min(2000, buffer.length)).toString('utf8').trim();
+  } catch (_) {
+    return { type: 'binary', hint: 'Unknown binary content', isRetryable: false };
+  }
+
+  const textLower = textContent.toLowerCase();
+
+  // Check for HTML (error pages, CAPTCHA, etc.)
+  if (textLower.includes('<!doctype html') || textLower.includes('<html') || textLower.includes('<head')) {
+    // Try to extract useful info from HTML
+    if (textLower.includes('cloudflare') || textLower.includes('cf-ray')) {
+      return { type: 'html_cloudflare', hint: 'Cloudflare challenge/block page', isRetryable: true };
+    }
+    if (textLower.includes('captcha') || textLower.includes('challenge')) {
+      return { type: 'html_captcha', hint: 'CAPTCHA or security challenge page', isRetryable: true };
+    }
+    if (textLower.includes('404') || textLower.includes('not found')) {
+      return { type: 'html_404', hint: 'Page not found (404)', isRetryable: false };
+    }
+    if (textLower.includes('500') || textLower.includes('internal server error')) {
+      return { type: 'html_500', hint: 'Server error page (500)', isRetryable: true };
+    }
+    if (textLower.includes('503') || textLower.includes('service unavailable')) {
+      return { type: 'html_503', hint: 'Service unavailable (503)', isRetryable: true };
+    }
+    if (textLower.includes('rate limit') || textLower.includes('too many requests')) {
+      return { type: 'html_429', hint: 'Rate limit exceeded', isRetryable: true };
+    }
+    return { type: 'html', hint: 'HTML page instead of subtitle file', isRetryable: true };
+  }
+
+  // Check for JSON error responses
+  if (textContent.startsWith('{') || textContent.startsWith('[')) {
+    try {
+      const json = JSON.parse(textContent);
+      if (json.error || json.message || json.status === 'error') {
+        const errorMsg = json.error || json.message || 'Unknown API error';
+        return { type: 'json_error', hint: `API error: ${String(errorMsg).slice(0, 100)}`, isRetryable: true };
+      }
+      return { type: 'json', hint: 'JSON response (unexpected for download)', isRetryable: false };
+    } catch (_) {
+      // Not valid JSON, maybe truncated
+    }
+  }
+
+  // Check for plain text error messages
+  if (textLower.includes('error') || textLower.includes('failed') || textLower.includes('denied')) {
+    return { type: 'text_error', hint: 'Text error message received', isRetryable: true };
+  }
+
+  // Check if it looks like subtitle content (SRT/VTT)
+  if (/^\d+\s*[\r\n]+\d{2}:\d{2}/.test(textContent) || textContent.startsWith('WEBVTT')) {
+    return { type: 'subtitle', hint: 'Direct subtitle content (not ZIP)', isRetryable: false };
+  }
+
+  // Very short response
+  if (buffer.length < 50) {
+    return { type: 'truncated', hint: `Very short response (${buffer.length} bytes)`, isRetryable: true };
+  }
+
+  return { type: 'unknown', hint: `Unrecognized content (${buffer.length} bytes)`, isRetryable: false };
+}
+
+/**
+ * Create an informative SRT when a response declared as ZIP contains invalid content
+ * @param {string} contentType - The Content-Type header
+ * @param {Object} analysis - Result from analyzeResponseContent()
+ * @param {number} size - Response size in bytes
+ * @returns {string} - SRT subtitle content
+ */
+function createInvalidZipSubtitle(contentType, analysis, size) {
+  const sizeInfo = size > 0 ? ` (${size} bytes)` : '';
+  const retryHint = analysis.isRetryable
+    ? 'This may be temporary - try again in a few minutes.'
+    : 'Try a different subtitle or provider.';
+
+  const message = `1
+00:00:00,000 --> 04:00:00,000
+SubSource download failed: ${analysis.hint}${sizeInfo}
+${retryHint}`;
+
+  return appendHiddenInformationalNote(message);
+}
+
 class SubSourceService {
   constructor(apiKey = null) {
     this.apiKey = apiKey;
@@ -994,11 +1101,19 @@ class SubSourceService {
       const responseBody = response.data;
       const responseBuffer = Buffer.isBuffer(responseBody) ? responseBody : Buffer.from(responseBody);
 
+      // Analyze response content to understand what we received
+      const contentAnalysis = analyzeResponseContent(responseBuffer);
+
       // Check for ZIP file by magic bytes (PK signature) in addition to content-type
       // This handles cases where content-type header is missing or incorrect
-      const isZipByMagicBytes = responseBuffer.length > 4 &&
-        responseBuffer[0] === 0x50 && responseBuffer[1] === 0x4B && // PK
-        responseBuffer[2] === 0x03 && responseBuffer[3] === 0x04;   // \x03\x04
+      const isZipByMagicBytes = contentAnalysis.type === 'zip';
+
+      // If the response is actually direct subtitle content but was mis-labeled as ZIP
+      if (contentAnalysis.type === 'subtitle' && (contentType.includes('application/zip') || contentType.includes('application/x-zip'))) {
+        log.debug(() => `[SubSource] Response declared as ZIP but contains direct subtitle content; processing as subtitle`);
+        const content = detectAndConvertEncoding(responseBuffer, 'SubSource');
+        return content;
+      }
 
       if (isZipByMagicBytes || contentType.includes('application/zip') ||
         contentType.includes('application/x-zip')) {
@@ -1009,10 +1124,16 @@ class SubSourceService {
           return createZipTooLargeSubtitle(MAX_ZIP_BYTES, zipSize);
         }
 
-        // Validate ZIP signature before parsing
+        // Validate ZIP signature before parsing - use content analysis for better error messages
         if (!isZipByMagicBytes) {
-          log.error(() => '[SubSource] Response declared as ZIP but missing PK signature');
-          throw new Error('Invalid ZIP file from SubSource (missing ZIP header)');
+          log.error(() => `[SubSource] Response declared as ZIP but missing PK signature. Content analysis: ${contentAnalysis.type} - ${contentAnalysis.hint}`);
+          // Log the first few bytes for debugging
+          if (responseBuffer.length > 0) {
+            const hexBytes = responseBuffer.slice(0, Math.min(16, responseBuffer.length)).toString('hex').match(/.{2}/g)?.join(' ') || '';
+            log.debug(() => `[SubSource] First bytes: ${hexBytes}`);
+          }
+          // Return an informative subtitle instead of throwing
+          return createInvalidZipSubtitle(contentType, contentAnalysis, responseBuffer.length);
         }
 
         // Handle ZIP file

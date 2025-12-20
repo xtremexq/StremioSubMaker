@@ -109,7 +109,16 @@
         "subtitleUnavailable": "ERROR: Subtitle unavailable",
         "translationUnavailable": "ERROR: Translation unavailable",
         "fileTranslationPageFailed": "Failed to load file translation page",
-        "internalServerError": "Internal server error"
+        "internalServerError": "Internal server error",
+        "missingSourceFileId": "Missing sourceFileId parameter",
+        "missingTargetLanguage": "Missing targetLanguage parameter",
+        "retranslateConcurrencyLimit": "Cannot retranslate: you have too many translations in progress. Please wait for them to complete.",
+        "retranslateInProgress": "Cannot retranslate: translation is already in progress for this subtitle. Please wait for it to complete.",
+        "retranslateRateLimit": "Rate limit reached: you can only retranslate {limit} times per {window} minutes.",
+        "retranslateFailed": "Retranslation failed: {reason}"
+      },
+      "retranslate": {
+        "success": "Cache cleared. Translation will restart on next load."
       },
       "session": {
         "configRequired": "Configuration is required",
@@ -672,6 +681,21 @@
         "updated": "Updated {time}",
         "justNow": "just now",
         "secondsAgo": "{seconds}s ago"
+      }
+    },
+    "history": {
+      "eyebrow": "Sub toolbox",
+      "title": "Translation History",
+      "subtitle": "Review translations performed across your tools",
+      "retranslate": {
+        "button": "Retranslate",
+        "tooltip": "Clear cache and retranslate this subtitle",
+        "loading": "Clearing...",
+        "done": "Done!",
+        "failed": "Failed",
+        "successHint": "Cache cleared! Reload the subtitle in Stremio or click Download to get the fresh translation.",
+        "missingParams": "Missing required parameters.",
+        "errorGeneric": "Retranslation failed. Please try again."
       }
     },
     "config": {

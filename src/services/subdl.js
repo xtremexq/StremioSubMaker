@@ -484,7 +484,19 @@ class SubDLService {
 
       // Extract subtitle from ZIP (support multiple formats)
       const JSZip = require('jszip');
-      const zip = await JSZip.loadAsync(subtitleResponse.data);
+      let zip;
+      try {
+        zip = await JSZip.loadAsync(subtitleResponse.data);
+      } catch (zipErr) {
+        log.error(() => ['[SubDL] Failed to parse ZIP file:', zipErr.message]);
+        // Return informative subtitle instead of throwing
+        const message = `1
+00:00:00,000 --> 04:00:00,000
+SubDL download failed: Corrupted ZIP file
+The subtitle file appears to be damaged or incomplete.
+Try selecting a different subtitle.`;
+        return appendHiddenInformationalNote(message);
+      }
 
       const entries = Object.keys(zip.files);
 

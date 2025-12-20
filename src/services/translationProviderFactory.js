@@ -328,6 +328,10 @@ async function createTranslationProvider(config) {
     const matchKey = Object.keys(mergedProviderParams || {}).find(k => String(k).toLowerCase() === lower);
     return matchKey ? mergedProviderParams[matchKey] : (mergedProviderParams?.[lower] || {});
   };
+  const getGeminiAdvancedSettings = () => {
+    const settings = config?.advancedSettings || {};
+    return settings.enabled === true ? settings : {};
+  };
   const findSecondaryConfig = async (key) => {
     if (!secondaryEnabled) return null;
     const normalized = String(key || '').toLowerCase();
@@ -355,7 +359,7 @@ async function createTranslationProvider(config) {
     provider: new GeminiService(
       await selectGeminiApiKey(config),
       config?.geminiModel,
-      config?.advancedSettings || {}
+      getGeminiAdvancedSettings()
     ),
     model: config?.geminiModel
   });
@@ -408,7 +412,7 @@ async function createTranslationProvider(config) {
       provider: new GeminiService(
         await selectGeminiApiKey(config),
         config?.geminiModel,
-        config?.advancedSettings || {}
+        getGeminiAdvancedSettings()
       ),
       model: config?.geminiModel
     };
@@ -423,7 +427,7 @@ async function createTranslationProvider(config) {
       provider: new GeminiService(
         await selectGeminiApiKey(config),
         config?.geminiModel,
-        config?.advancedSettings || {}
+        getGeminiAdvancedSettings()
       ),
       model: config?.geminiModel
     };
@@ -440,7 +444,7 @@ async function createTranslationProvider(config) {
         fallbackProvider = new GeminiService(
           secondaryConfig.apiKey,
           secondaryConfig.model,
-          config?.advancedSettings || {}
+          getGeminiAdvancedSettings()
         );
         fallbackName = 'gemini';
         fallbackModel = secondaryConfig.model;

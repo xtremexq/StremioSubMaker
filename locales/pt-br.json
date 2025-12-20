@@ -109,7 +109,16 @@
         "subtitleUnavailable": "ERRO: Legenda indisponível",
         "translationUnavailable": "ERRO: Tradução indisponível",
         "fileTranslationPageFailed": "Falha ao carregar página de tradução de arquivo",
-        "internalServerError": "Erro interno do servidor"
+        "internalServerError": "Erro interno do servidor",
+        "missingSourceFileId": "Parâmetro sourceFileId ausente",
+        "missingTargetLanguage": "Parâmetro targetLanguage ausente",
+        "retranslateConcurrencyLimit": "Não é possível retraduzir: você tem traduções demais em andamento. Aguarde a conclusão delas.",
+        "retranslateInProgress": "Não é possível retraduzir: a tradução já está em andamento para esta legenda. Aguarde a conclusão.",
+        "retranslateRateLimit": "Limite atingido: você só pode retraduzir {limit} vezes a cada {window} minutos.",
+        "retranslateFailed": "Retradução falhou: {reason}"
+      },
+      "retranslate": {
+        "success": "Cache limpo. A tradução será reiniciada no próximo carregamento."
       },
       "session": {
         "configRequired": "Configuração é obrigatória",
@@ -672,6 +681,21 @@
         "updated": "Atualizado {time}",
         "justNow": "agora mesmo",
         "secondsAgo": "{seconds}s atrás"
+      }
+    },
+    "history": {
+      "eyebrow": "Sub toolbox",
+      "title": "Histórico de Traduções",
+      "subtitle": "Revise as traduções realizadas em suas ferramentas",
+      "retranslate": {
+        "button": "Retraduzir",
+        "tooltip": "Limpar cache e retraduzir esta legenda",
+        "loading": "Limpando...",
+        "done": "Pronto!",
+        "failed": "Falhou",
+        "successHint": "Cache limpo! Recarregue a legenda no Stremio ou clique em Download para obter a tradução atualizada.",
+        "missingParams": "Parâmetros obrigatórios ausentes.",
+        "errorGeneric": "Retradução falhou. Por favor, tente novamente."
       }
     },
     "config": {

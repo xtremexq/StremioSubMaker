@@ -3986,6 +3986,127 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
     }
 });
 
+// API endpoint to trigger retranslation (mirrors the 3-click cache reset mechanism)
+// This allows the history page to offer a "Retranslate" button that does exactly
+// what triple-clicking a subtitle does: purge cache and re-trigger translation
+app.get('/api/retranslate', searchLimiter, async (req, res) => {
+    try {
+        setNoStore(res);
+        let t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const { config: configStr, sourceFileId, targetLanguage } = req.query;
+
+        if (!configStr) {
+            return res.status(400).json({ success: false, error: t('server.errors.missingConfig', {}, 'Missing config') });
+        }
+        if (!sourceFileId) {
+            return res.status(400).json({ success: false, error: t('server.errors.missingSourceFileId', {}, 'Missing sourceFileId') });
+        }
+        if (!targetLanguage) {
+            return res.status(400).json({ success: false, error: t('server.errors.missingTargetLanguage', {}, 'Missing targetLanguage') });
+        }
+
+        const config = await resolveConfigGuarded(configStr, req, res, '[Retranslate API] config', t);
+        if (!config) return;
+        if (isInvalidSessionConfig(config)) {
+            return res.status(401).json({ success: false, error: t('server.errors.invalidSessionToken', {}, 'Invalid or expired session token') });
+        }
+        t = getTranslatorFromRequest(req, res, config);
+        const configKey = ensureConfigHash(config, configStr);
+        const userHash = config.__configHash || config.userHash || '';
+
+        // SAFETY CHECK 1: Block if user is at concurrency limit
+        if (!canUserStartTranslation(userHash)) {
+            log.warn(() => `[Retranslate API] BLOCKED: User at concurrency limit (user: ${userHash || 'anonymous'})`);
+            return res.status(429).json({
+                success: false,
+                error: t('server.errors.retranslateConcurrencyLimit', {}, 'Cannot retranslate: you have too many translations in progress. Please wait for them to complete.')
+            });
+        }
+
+        // SAFETY CHECK 2: Block if translation is currently in progress for this subtitle
+        const { cacheKey, runtimeKey, bypass, bypassEnabled } = generateCacheKeys(config, sourceFileId, targetLanguage);
+        const translationInProgress = (() => {
+            if (bypassEnabled && userHash) {
+                const status = translationStatus.get(cacheKey);
+                const inFlight = inFlightTranslations.has(cacheKey);
+                return (status && status.inProgress) || inFlight;
+            } else {
+                // For permanent cache, check both user-scoped and base keys
+                const status = translationStatus.get(runtimeKey) || translationStatus.get(cacheKey);
+                const inFlight = inFlightTranslations.has(runtimeKey) || inFlightTranslations.has(cacheKey);
+                return (status && status.inProgress) || inFlight;
+            }
+        })();
+
+        if (translationInProgress) {
+            log.warn(() => `[Retranslate API] BLOCKED: Translation already in progress for ${sourceFileId}/${targetLanguage} (user: ${userHash})`);
+            return res.status(409).json({
+                success: false,
+                error: t('server.errors.retranslateInProgress', {}, 'Cannot retranslate: translation is already in progress for this subtitle. Please wait for it to complete.')
+            });
+        }
+
+        // RATE LIMIT CHECK (dry-run first to give user feedback)
+        const rateLimitStatus = checkCacheResetRateLimit(config, { consume: false });
+        if (rateLimitStatus.blocked) {
+            log.warn(() => `[Retranslate API] BLOCKED: Rate limit reached for ${rateLimitStatus.cacheType} cache (${rateLimitStatus.limit}/${Math.round(CACHE_RESET_WINDOW_MS / 60000)}m) (user: ${userHash})`);
+            return res.status(429).json({
+                success: false,
+                error: t('server.errors.retranslateRateLimit', {
+                    limit: rateLimitStatus.limit,
+                    window: Math.round(CACHE_RESET_WINDOW_MS / 60000)
+                }, `Rate limit reached: you can only retranslate ${rateLimitStatus.limit} times per ${Math.round(CACHE_RESET_WINDOW_MS / 60000)} minutes.`)
+            });
+        }
+
+        // Check if there's actually something to purge
+        const hadCache = await hasCachedTranslation(sourceFileId, targetLanguage, config);
+        const partial = (!hadCache) ? await readFromPartialCache(runtimeKey) : null;
+        const hasResetTarget = hadCache || (partial && typeof partial.content === 'string' && partial.content.length > 0);
+
+        if (!hasResetTarget) {
+            log.debug(() => `[Retranslate API] No cache found for ${sourceFileId}/${targetLanguage} - proceeding without purge`);
+        } else {
+            // Consume rate limit slot and purge cache
+            const consumeStatus = checkCacheResetRateLimit(config);
+            if (consumeStatus.blocked) {
+                // Race condition: limit was reached between dry-run and consume
+                return res.status(429).json({
+                    success: false,
+                    error: t('server.errors.retranslateRateLimit', {
+                        limit: consumeStatus.limit,
+                        window: Math.round(CACHE_RESET_WINDOW_MS / 60000)
+                    }, `Rate limit reached.`)
+                });
+            }
+
+            log.debug(() => `[Retranslate API] Purging cache for ${sourceFileId}/${targetLanguage}. Remaining resets this window: ${consumeStatus.remaining}`);
+            await purgeTranslationCache(sourceFileId, targetLanguage, config);
+        }
+
+        // Build the translation URL that the client should redirect to
+        const translateUrl = `/addon/${encodeURIComponent(configStr)}/translate/${encodeURIComponent(sourceFileId)}/${encodeURIComponent(targetLanguage)}`;
+
+        log.info(() => `[Retranslate API] Cache purged for ${sourceFileId}/${targetLanguage}, remaining resets: ${rateLimitStatus.remaining - 1}`);
+
+        return res.json({
+            success: true,
+            message: t('server.retranslate.success', {}, 'Cache cleared. Translation will restart on next load.'),
+            translateUrl,
+            remaining: Math.max(0, rateLimitStatus.remaining - 1)
+        });
+
+    } catch (error) {
+        log.error(() => ['[Retranslate API] Error:', error]);
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[Retranslate API]', t)) return;
+        res.status(500).json({
+            success: false,
+            error: t('server.errors.retranslateFailed', { reason: error.message }, `Retranslation failed: ${error.message}`)
+        });
+    }
+});
+
 // Create addon builder with config
 function createAddonWithConfig(config, baseUrl = '') {
     const manifest = buildManifest(config, baseUrl);

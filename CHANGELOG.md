@@ -12,11 +12,24 @@ All notable changes to this project will be documented in this file.
 - **OpenSubtitles V3 filename extraction:** Subtitle fetching is now significantly faster (3-6 seconds saved) by skipping slow HEAD requests for filename extraction. The fast URL-based extraction is enabled by default; set `V3_EXTRACT_FILENAMES=true` to re-enable accurate Content-Disposition filename extraction if needed.
 - **Reduced default subtitles per language:** Changed `MAX_SUBTITLES_PER_LANGUAGE` default from 12 to 8 for faster subtitle loading and reduced UI overhead.
 
+**Improved ZIP Handling & Error Detection:**
+
+- **SubSource intelligent content analysis:** When SubSource returns a response declared as ZIP but containing other content (HTML error pages, JSON errors, Cloudflare blocks, CAPTCHA pages, etc.), the addon now analyzes the response and returns a user-friendly error subtitle instead of crashing. Handles: Cloudflare challenges, CAPTCHA pages, 404/500/503 HTML errors, rate limit pages, truncated responses, and direct subtitle content mis-labeled as ZIP.
+- **Corrupted ZIP handling:** All providers (SubSource, SubDL, OpenSubtitles Auth, OpenSubtitles V3) now catch JSZip parsing errors and return informative error subtitles instead of throwing when a ZIP file passes the magic byte check but fails to parse.
+- **Enhanced "too small" detection:** Subtitle content validation now uses intelligent analysis to distinguish between valid short subtitles (credits-only files with timecodes) and actual errors (HTML pages, JSON errors, truncated responses), providing specific feedback based on what was detected.
+- **Shared response analyzer utility:** Added `src/utils/responseAnalyzer.js` with reusable functions for analyzing HTTP response content across all providers, supporting consistent error detection and user-friendly messages.
+
 **Other Changes:**
 
-- **Gemini 3.0 Pro default thinking budget:** Changed the default thinking budget for Gemini 3.0 Pro from dynamic (-1) to a fixed value of 1000.
+- **Gemini Pro default thinking budget:** Set Gemini 2.5 Pro and 3.0 Pro defaults to a fixed thinking budget of 1000 (aligned with config UI).
+- **Advanced settings gating for Gemini:** Advanced settings are now applied only when explicitly enabled, so disabled advanced settings no longer leak prior tuning values into Gemini requests.
 - **Mobile responsive fix for API key rotation:** Fixed layout issues on mobile devices where Gemini API key rotation fields had misaligned icons, oversized buttons, and broken input containers.
 - **Fixed Kitsu/anime ID parsing:** Corrected episode tag display for anime streams from Kitsu, AniDB, MAL, and AniList. Previously, video IDs like `kitsu:10941:1` were incorrectly parsed to show "S10941E01" (treating the anime ID as the season number). Now correctly shows "E01" for seasonless anime episodes, and "S01E05" for anime with explicit seasons (e.g., `kitsu:10941:1:5`). Fixed across all toolbox pages (Sub Toolbox, Sync, Auto-subs) and stream notification toasts.
+- **Legacy session cleanup across Redis prefixes:** Invalid sessions loaded via cross-prefix migration are now deleted in all known prefix variants, preventing repeated migration loops and noisy logs.
+
+**Translation History Improvements:**
+
+- **Retranslate button:** The Translation History page (`/sub-history`) now includes a "Retranslate" button on each history entry. Clicking it clears the cached translation and allows you to trigger a fresh retranslation the next time the subtitle is loaded in Stremio. This provides the same functionality as the 3-click cache reset mechanism, with the same rate limits and safety checks.
 
 
 ## SubMaker v1.4.24

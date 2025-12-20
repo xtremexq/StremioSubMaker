@@ -843,6 +843,88 @@ class RedisStorageAdapter extends StorageAdapter {
   }
 
   /**
+   * Delete a value from alternate prefix variants (legacy/colon mismatch cleanup)
+   * @returns {Promise<number>} Number of deleted keys
+   */
+  async deleteFromAlternatePrefixes(key, cacheType) {
+    if (!this.initialized) {
+      throw new StorageUnavailableError('Storage adapter not initialized', { operation: 'deleteFromAlternatePrefixes' });
+    }
+
+    try {
+      return await this._executeWithRetry(`delete alternate ${cacheType}`, async () => {
+        if (!this.prefixVariants || this.prefixVariants.length === 0) {
+          return 0;
+        }
+
+        const canonicalPrefix = this.options.keyPrefix || '';
+        const sanitizedKey = this._sanitizeKey(key);
+        const keySuffix = `${cacheType}:${sanitizedKey}`;
+
+        const altPrefixes = new Set(this.prefixVariants);
+        if (canonicalPrefix) {
+          for (const alt of this.prefixVariants) {
+            altPrefixes.add(`${alt}${canonicalPrefix}`);
+            altPrefixes.add(`${canonicalPrefix}${alt}`);
+          }
+        }
+        altPrefixes.delete(canonicalPrefix);
+
+        const migrationClient = await this._getMigrationClient('[RedisStorage] Alternate-prefix delete skipped: could not open raw client:');
+        if (!migrationClient) return 0;
+
+        let deleted = 0;
+
+        for (const altPrefix of altPrefixes) {
+          if (altPrefix === canonicalPrefix) continue;
+          const contentKey = `${altPrefix}${keySuffix}`;
+          const metaKey = `${contentKey}:meta`;
+          const lruKey = `${altPrefix}lru:${cacheType}`;
+          const sizeKey = `${altPrefix}size:${cacheType}`;
+          const indexKey = `${altPrefix}${SESSION_INDEX_KEY}`;
+
+          let size = 0;
+          try {
+            const meta = await migrationClient.hgetall(metaKey);
+            if (meta && meta.size) {
+              size = parseInt(meta.size, 10) || 0;
+            }
+          } catch (_) {
+            // best-effort cleanup
+          }
+
+          const pipeline = migrationClient.pipeline();
+          pipeline.del(contentKey);
+          pipeline.del(metaKey);
+          pipeline.zrem(lruKey, key);
+          pipeline.srem(indexKey, key);
+          if (size > 0) {
+            pipeline.decrby(sizeKey, size);
+          }
+
+          const results = await pipeline.exec();
+          if (Array.isArray(results)) {
+            const delResults = [results[0], results[1]];
+            for (const result of delResults) {
+              if (result && result[1]) {
+                deleted += result[1];
+              }
+            }
+          }
+        }
+
+        return deleted;
+      });
+    } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        throw error;
+      }
+      log.error(() => `Redis delete alternate prefixes error for key ${key}:`, error);
+      return 0;
+    }
+  }
+
+  /**
    * Check if a key exists
    */
   async exists(key, cacheType) {

@@ -1239,11 +1239,18 @@ class SessionManager extends EventEmitter {
                     return null;
                 }
 
+                const deleteFromStorage = async () => {
+                    try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) { }
+                    if (typeof adapter.deleteFromAlternatePrefixes === 'function') {
+                        try { await adapter.deleteFromAlternatePrefixes(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) { }
+                    }
+                };
+
                 const tokenValidation = ensureTokenMetadata(stored, token);
                 let needsPersist = false;
                 if (tokenValidation.status === 'missing_token') {
                     log.warn(() => `[SessionManager] loadSessionFromStorage: missing token metadata for ${redactToken(token)} - deleting session (cannot safely backfill)`);
-                    try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) { }
+                    await deleteFromStorage();
                     return null;
                 } else if (tokenValidation.status === 'missing_fingerprint') {
                     stored.tokenFingerprint = tokenValidation.expectedTokenFingerprint || computeTokenFingerprint(token);
@@ -1251,14 +1258,14 @@ class SessionManager extends EventEmitter {
                     log.warn(() => `[SessionManager] loadSessionFromStorage: missing token fingerprint for ${redactToken(token)} - backfilling`);
                 } else if (tokenValidation.status !== 'ok') {
                     log.warn(() => `[SessionManager] loadSessionFromStorage: token validation failed (${tokenValidation.status}) for ${redactToken(token)} - deleting session`);
-                    try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) { }
+                    await deleteFromStorage();
                     return null;
                 }
 
                 const payloadValidation = validateEncryptedSessionPayload(stored);
                 if (!payloadValidation.valid) {
                     log.warn(() => `[SessionManager] loadSessionFromStorage: invalid session payload (${payloadValidation.reason}) for ${redactToken(token)} - deleting session`);
-                    try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) { }
+                    await deleteFromStorage();
                     return null;
                 }
 
@@ -1295,7 +1302,7 @@ class SessionManager extends EventEmitter {
 
                     if (metadata?.token && metadata.token !== token) {
                         log.warn(() => `[SessionManager] Session token metadata mismatch on storage load for ${redactToken(token)} - deleting session`);
-                        try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) { }
+                        await deleteFromStorage();
                         this.cache.delete(token);
                         this.decryptedCache.delete(token);
                         return null;
@@ -1303,7 +1310,7 @@ class SessionManager extends EventEmitter {
 
                     if (metadata?.fingerprint && metadata.fingerprint !== fingerprint) {
                         log.warn(() => `[SessionManager] Session fingerprint metadata mismatch on storage load for ${redactToken(token)} - deleting session`);
-                        try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) { }
+                        await deleteFromStorage();
                         this.cache.delete(token);
                         this.decryptedCache.delete(token);
                         return null;
@@ -1311,7 +1318,7 @@ class SessionManager extends EventEmitter {
 
                     if (stored.fingerprint && fingerprint !== stored.fingerprint) {
                         log.warn(() => `[SessionManager] Fingerprint mismatch on storage load for ${redactToken(token)} - removing corrupted session`);
-                        try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) { }
+                        await deleteFromStorage();
                         this.cache.delete(token);
                         this.decryptedCache.delete(token);
                         return null;
@@ -1319,7 +1326,7 @@ class SessionManager extends EventEmitter {
                     const expectedIntegrity = computeIntegrityHash(token, stored.fingerprint || fingerprint);
                     if (stored.integrity && stored.integrity !== expectedIntegrity) {
                         log.warn(() => `[SessionManager] Integrity mismatch on storage load for ${redactToken(token)} - removing contaminated session`);
-                        try { await adapter.delete(token, StorageAdapter.CACHE_TYPES.SESSION); } catch (_) { }
+                        await deleteFromStorage();
                         this.cache.delete(token);
                         this.decryptedCache.delete(token);
                         return null;

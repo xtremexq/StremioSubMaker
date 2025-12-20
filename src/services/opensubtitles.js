@@ -649,7 +649,19 @@ class OpenSubtitlesService {
         }
 
         const JSZip = require('jszip');
-        const zip = await JSZip.loadAsync(buf, { base64: false });
+        let zip;
+        try {
+          zip = await JSZip.loadAsync(buf, { base64: false });
+        } catch (zipErr) {
+          log.error(() => ['[OpenSubtitles] Failed to parse ZIP file:', zipErr.message]);
+          // Return informative subtitle instead of throwing
+          const message = `1
+00:00:00,000 --> 04:00:00,000
+OpenSubtitles download failed: Corrupted ZIP file
+The subtitle file appears to be damaged or incomplete.
+Try selecting a different subtitle.`;
+          return appendHiddenInformationalNote(message);
+        }
         const entries = Object.keys(zip.files);
         // Season pack handling: select the requested episode inside the ZIP
         if (isSeasonPack && seasonPackSeason && seasonPackEpisode) {

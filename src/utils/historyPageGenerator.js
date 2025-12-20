@@ -4,41 +4,41 @@ const { quickNavStyles, quickNavScript, renderQuickNav } = require('./quickNav')
 const { buildClientBootstrap, loadLocale, getTranslator } = require('./i18n');
 
 function buildQuery(params) {
-    const entries = Object.entries(params || {}).filter(([, value]) => value !== undefined && value !== null && value !== '');
-    if (!entries.length) return '';
-    const query = entries
-        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
-        .join('&');
-    return query ? `?${query}` : '';
+  const entries = Object.entries(params || {}).filter(([, value]) => value !== undefined && value !== null && value !== '');
+  if (!entries.length) return '';
+  const query = entries
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .join('&');
+  return query ? `?${query}` : '';
 }
 
 function escapeHtml(value) {
-    if (value === undefined || value === null) return '';
-    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function truncateText(value, max = 64) {
-    const raw = value === undefined || value === null ? '' : String(value).trim();
-    if (!raw) return '';
-    if (raw.length <= max) return raw;
-    if (max <= 3) return raw.slice(0, max);
-    return `${raw.slice(0, max - 3)}...`;
+  const raw = value === undefined || value === null ? '' : String(value).trim();
+  if (!raw) return '';
+  if (raw.length <= max) return raw;
+  if (max <= 3) return raw.slice(0, max);
+  return `${raw.slice(0, max - 3)}...`;
 }
 
 function resolveUiLang(config) {
-    const lang = (config && config.uiLanguage) ? String(config.uiLanguage).toLowerCase() : 'en';
-    return escapeHtml(lang || 'en');
+  const lang = (config && config.uiLanguage) ? String(config.uiLanguage).toLowerCase() : 'en';
+  return escapeHtml(lang || 'en');
 }
 
 function themeToggleMarkup(label) {
-    // Reusing existing theme toggle markup
-    const aria = escapeHtml(label || 'Toggle theme');
-    return `
+  // Reusing existing theme toggle markup
+  const aria = escapeHtml(label || 'Toggle theme');
+  return `
    <button class="theme-toggle mario" id="themeToggle" aria-label="${aria}">
      <span class="theme-toggle-icon sun" aria-hidden="true">
          <svg viewBox="0 0 64 64" width="28" height="28" role="img">
@@ -99,7 +99,7 @@ function themeToggleMarkup(label) {
 }
 
 function themeToggleStyles() {
-    return `
+  return `
     /* Theme Toggle Button (configure copy) */
     .theme-toggle {
       position: fixed;
@@ -266,70 +266,76 @@ function themeToggleStyles() {
 }
 
 function buildToolLinks(configStr, videoId, filename) {
-    const query = buildQuery({
-        config: configStr,
-        videoId: videoId || 'Stream and Refresh',
-        filename: filename || 'Stream and Refresh'
-    });
-    return {
-        translateFiles: `/file-upload${query}`,
-        syncSubtitles: `/subtitle-sync${query}`,
-        embeddedSubs: `/embedded-subtitles${query}`,
-        automaticSubs: `/auto-subtitles${query}`,
-        subToolbox: `/sub-toolbox${query}`,
-        configure: `/configure${query}`,
-        history: `/sub-history${query}`
-    };
+  const query = buildQuery({
+    config: configStr,
+    videoId: videoId || 'Stream and Refresh',
+    filename: filename || 'Stream and Refresh'
+  });
+  return {
+    translateFiles: `/file-upload${query}`,
+    syncSubtitles: `/subtitle-sync${query}`,
+    embeddedSubs: `/embedded-subtitles${query}`,
+    automaticSubs: `/auto-subtitles${query}`,
+    subToolbox: `/sub-toolbox${query}`,
+    configure: `/configure${query}`,
+    history: `/sub-history${query}`
+  };
 }
 
 function generateHistoryPage(configStr, historyEntries, config, videoId, filename) {
-    const links = buildToolLinks(configStr, videoId, filename);
-    const t = getTranslator(config?.uiLanguage || 'en');
-    const devMode = (config || {}).devMode === true;
-    const themeToggleLabel = t('fileUpload.themeToggle', {}, 'Toggle theme');
-    const localeBootstrap = buildClientBootstrap(loadLocale(config?.uiLanguage || 'en'));
+  const links = buildToolLinks(configStr, videoId, filename);
+  const t = getTranslator(config?.uiLanguage || 'en');
+  const devMode = (config || {}).devMode === true;
+  const themeToggleLabel = t('fileUpload.themeToggle', {}, 'Toggle theme');
+  const localeBootstrap = buildClientBootstrap(loadLocale(config?.uiLanguage || 'en'));
 
-    // Sort history: newest first
-    const sortedHistory = [...(historyEntries || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  // Sort history: newest first
+  const sortedHistory = [...(historyEntries || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-    const historyRows = sortedHistory.map(entry => {
-        const statusClass = entry.status === 'completed' ? 'success' : (entry.status === 'failed' ? 'error' : 'processing');
-        const statusLabel = entry.status === 'completed' ? 'Completed' : (entry.status === 'failed' ? 'Failed' : 'Processing');
-        const dateStr = new Date(entry.createdAt).toLocaleString();
-        const sourceName = getLanguageName(entry.sourceLanguage) || entry.sourceLanguage || 'Auto';
-        const targetName = getLanguageName(entry.targetLanguage) || entry.targetLanguage;
+  const historyRows = sortedHistory.map(entry => {
+    const statusClass = entry.status === 'completed' ? 'success' : (entry.status === 'failed' ? 'error' : 'processing');
+    const statusLabel = entry.status === 'completed' ? 'Completed' : (entry.status === 'failed' ? 'Failed' : 'Processing');
+    const dateStr = new Date(entry.createdAt).toLocaleString();
+    const sourceName = getLanguageName(entry.sourceLanguage) || entry.sourceLanguage || 'Auto';
+    const targetName = getLanguageName(entry.targetLanguage) || entry.targetLanguage;
 
-        const providerLabel = entry.provider ? escapeHtml(entry.provider) : 'Unknown';
-        const modelLabel = entry.model ? escapeHtml(entry.model) : 'Default';
-        const cacheLabel = entry.cached === true ? '<span class="history-chip cached">Cached</span>' : '';
-        const downloadQueryParts = [];
-        if (entry.videoId) downloadQueryParts.push(`videoId=${encodeURIComponent(entry.videoId)}`);
-        if (entry.filename) downloadQueryParts.push(`filename=${encodeURIComponent(entry.filename)}`);
-        const downloadQuery = downloadQueryParts.length ? `?${downloadQueryParts.join('&')}` : '';
-        const downloadLink = (entry.scope !== 'embedded' && entry.sourceFileId && entry.targetLanguage && entry.status === 'completed')
-            ? `<span class="history-download-wrap"><a class="history-download" href="/addon/${encodeURIComponent(configStr)}/translate/${encodeURIComponent(entry.sourceFileId)}/${encodeURIComponent(entry.targetLanguage)}${downloadQuery}" title="Download translated subtitle">Download</a><span class="history-download-hint"> - or reload the subtitle in Stremio!</span></span>`
-            : '';
-        const seasonEpisode = (entry.season || entry.episode)
-            ? `S${entry.season || '?'}E${entry.episode || '?'}`
-            : '';
-        const rawTitle = entry.title || entry.filename || entry.videoId || 'Unknown title';
-        const titleText = escapeHtml(rawTitle);
-        const displayTitle = escapeHtml(truncateText(rawTitle, 96));
-        const titleLine = seasonEpisode ? `${displayTitle} · ${seasonEpisode}` : displayTitle;
-        const filenameFull = entry.filename ? escapeHtml(entry.filename) : '';
-        const filenameDisplay = entry.filename ? escapeHtml(truncateText(entry.filename, 80)) : '';
-        const fileIsId = entry.filename && entry.sourceFileId && entry.filename === entry.sourceFileId;
-        const idFull = entry.sourceFileId ? escapeHtml(entry.sourceFileId) : '';
-        const idDisplay = entry.sourceFileId ? escapeHtml(truncateText(entry.sourceFileId, 48)) : '';
-        const hashFull = entry.videoHash ? escapeHtml(entry.videoHash) : '';
-        const hashDisplay = entry.videoHash ? escapeHtml(truncateText(entry.videoHash, 32)) : '';
-        const subMetaParts = [
-            entry.filename && !fileIsId ? `File: <span title="${filenameFull}">${filenameDisplay}</span>` : '',
-            entry.sourceFileId ? `ID: <span title="${idFull}">${idDisplay}</span>` : '',
-            entry.videoHash ? `Hash: <span title="${hashFull}">${hashDisplay}</span>` : ''
-        ].filter(Boolean).join(' • ');
+    const providerLabel = entry.provider ? escapeHtml(entry.provider) : 'Unknown';
+    const modelLabel = entry.model ? escapeHtml(entry.model) : 'Default';
+    const cacheLabel = entry.cached === true ? '<span class="history-chip cached">Cached</span>' : '';
+    const downloadQueryParts = [];
+    if (entry.videoId) downloadQueryParts.push(`videoId=${encodeURIComponent(entry.videoId)}`);
+    if (entry.filename) downloadQueryParts.push(`filename=${encodeURIComponent(entry.filename)}`);
+    const downloadQuery = downloadQueryParts.length ? `?${downloadQueryParts.join('&')}` : '';
+    const downloadLink = (entry.scope !== 'embedded' && entry.sourceFileId && entry.targetLanguage && entry.status === 'completed')
+      ? `<span class="history-download-wrap"><a class="history-download" href="/addon/${encodeURIComponent(configStr)}/translate/${encodeURIComponent(entry.sourceFileId)}/${encodeURIComponent(entry.targetLanguage)}${downloadQuery}" title="Download translated subtitle">Download</a><span class="history-download-hint"> - or reload the subtitle in Stremio!</span></span>`
+      : '';
+    const seasonEpisode = (entry.season || entry.episode)
+      ? `S${entry.season || '?'}E${entry.episode || '?'}`
+      : '';
+    const rawTitle = entry.title || entry.filename || entry.videoId || 'Unknown title';
+    const titleText = escapeHtml(rawTitle);
+    const displayTitle = escapeHtml(truncateText(rawTitle, 96));
+    const titleLine = seasonEpisode ? `${displayTitle} · ${seasonEpisode}` : displayTitle;
+    const filenameFull = entry.filename ? escapeHtml(entry.filename) : '';
+    const filenameDisplay = entry.filename ? escapeHtml(truncateText(entry.filename, 80)) : '';
+    const fileIsId = entry.filename && entry.sourceFileId && entry.filename === entry.sourceFileId;
+    const idFull = entry.sourceFileId ? escapeHtml(entry.sourceFileId) : '';
+    const idDisplay = entry.sourceFileId ? escapeHtml(truncateText(entry.sourceFileId, 48)) : '';
+    const hashFull = entry.videoHash ? escapeHtml(entry.videoHash) : '';
+    const hashDisplay = entry.videoHash ? escapeHtml(truncateText(entry.videoHash, 32)) : '';
+    const subMetaParts = [
+      entry.filename && !fileIsId ? `File: <span title="${filenameFull}">${filenameDisplay}</span>` : '',
+      entry.sourceFileId ? `ID: <span title="${idFull}">${idDisplay}</span>` : '',
+      entry.videoHash ? `Hash: <span title="${hashFull}">${hashDisplay}</span>` : ''
+    ].filter(Boolean).join(' • ');
 
-        return `
+    // Retranslate button (available for all entries that have sourceFileId and targetLanguage)
+    const canRetranslate = entry.sourceFileId && entry.targetLanguage && entry.scope !== 'embedded';
+    const retranslateBtn = canRetranslate
+      ? `<button class="history-retranslate" data-source-file-id="${escapeHtml(entry.sourceFileId)}" data-target-language="${escapeHtml(entry.targetLanguage)}" title="${t('history.retranslate.tooltip', {}, 'Clear cache and retranslate this subtitle')}">${t('history.retranslate.button', {}, 'Retranslate')}</button>`
+      : '';
+
+    return `
       <div class="history-card">
         <div class="history-header">
           <div class="history-title" title="${titleText}">${titleLine}</div>
@@ -345,14 +351,15 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
           <span class="history-tag">${providerLabel}</span>
           <span class="history-tag">${modelLabel}</span>
           ${cacheLabel}
+          ${retranslateBtn}
           ${downloadLink}
         </div>
         ${entry.error ? `<div class="history-error">${escapeHtml(entry.error)}</div>` : ''}
       </div>
     `;
-    }).join('');
+  }).join('');
 
-    const emptyState = `
+  const emptyState = `
     <div class="empty-state">
       <div class="empty-icon">📜</div>
       <h3>No history yet</h3>
@@ -361,7 +368,7 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
     </div>
   `;
 
-    return `
+  return `
 <!DOCTYPE html>
 <html lang="${resolveUiLang(config)}">
 <head>
@@ -686,6 +693,31 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
       background: var(--success);
     }
 
+    .history-retranslate {
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--warning);
+      border: 1px solid var(--warning);
+      font-weight: 600;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .history-retranslate:hover {
+      background: var(--warning);
+      color: var(--surface);
+    }
+    .history-retranslate:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .history-retranslate.loading {
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
     .history-limit-note {
       margin-top: 0.35rem;
       color: var(--text-secondary);
@@ -770,6 +802,97 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
   <script src="/js/sw-register.js"></script>
   <script src="/js/subtitle-menu.js?v=${escapeHtml(appVersion || 'dev')}"></script>
   <script>
+    // Retranslate button handler
+    (function initRetranslateButtons() {
+      const CONFIG_STR = ${JSON.stringify(configStr || '')};
+      
+      function tt(key, vars, fallback) {
+        try {
+          if (typeof window.t === 'function') return window.t(key, vars || {}, fallback || key);
+        } catch (_) {}
+        return fallback || key;
+      }
+
+      function handleRetranslate(btn) {
+        if (btn.disabled || btn.classList.contains('loading')) return;
+        
+        const sourceFileId = btn.dataset.sourceFileId;
+        const targetLanguage = btn.dataset.targetLanguage;
+        
+        if (!sourceFileId || !targetLanguage) {
+          alert(tt('history.retranslate.missingParams', {}, 'Missing required parameters.'));
+          return;
+        }
+        
+        const originalText = btn.textContent;
+        btn.textContent = tt('history.retranslate.loading', {}, 'Clearing...');
+        btn.classList.add('loading');
+        btn.disabled = true;
+        
+        const url = '/api/retranslate?' + new URLSearchParams({
+          config: CONFIG_STR,
+          sourceFileId: sourceFileId,
+          targetLanguage: targetLanguage
+        }).toString();
+        
+        fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+          .then(function(resp) { return resp.json().then(function(data) { return { ok: resp.ok, data: data }; }); })
+          .then(function(result) {
+            if (result.ok && result.data.success) {
+              btn.textContent = tt('history.retranslate.done', {}, 'Done!');
+              btn.style.borderColor = 'var(--success)';
+              btn.style.color = 'var(--success)';
+              
+              // Show success message and hint
+              const hint = tt('history.retranslate.successHint', {}, 'Cache cleared! Reload the subtitle in Stremio or click Download to get the fresh translation.');
+              const card = btn.closest('.history-card');
+              if (card) {
+                let msgEl = card.querySelector('.retranslate-msg');
+                if (!msgEl) {
+                  msgEl = document.createElement('div');
+                  msgEl.className = 'retranslate-msg';
+                  msgEl.style.cssText = 'margin-top: 0.5rem; padding: 0.4rem 0.6rem; background: rgba(16,185,129,0.1); border-radius: 6px; font-size: 0.85rem; color: var(--success);';
+                  card.appendChild(msgEl);
+                }
+                msgEl.textContent = hint;
+              }
+              
+              // Re-enable after delay
+              setTimeout(function() {
+                btn.textContent = originalText;
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                btn.style.borderColor = '';
+                btn.style.color = '';
+              }, 3000);
+            } else {
+              throw new Error(result.data.error || 'Retranslation failed');
+            }
+          })
+          .catch(function(err) {
+            btn.textContent = tt('history.retranslate.failed', {}, 'Failed');
+            btn.style.borderColor = 'var(--error)';
+            btn.style.color = 'var(--error)';
+            alert(err.message || tt('history.retranslate.errorGeneric', {}, 'Retranslation failed. Please try again.'));
+            
+            setTimeout(function() {
+              btn.textContent = originalText;
+              btn.classList.remove('loading');
+              btn.disabled = false;
+              btn.style.borderColor = '';
+              btn.style.color = '';
+            }, 2000);
+          });
+      }
+
+      document.addEventListener('click', function(e) {
+        if (e.target && e.target.classList.contains('history-retranslate')) {
+          e.preventDefault();
+          handleRetranslate(e.target);
+        }
+      });
+    })();
+
     (function initSubtitleMenuBridge() {
       const HISTORY = {
         configStr: ${JSON.stringify(configStr || '')},
