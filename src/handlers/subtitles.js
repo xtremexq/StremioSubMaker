@@ -4275,21 +4275,58 @@ async function resolveHistoryTitle(videoId, fallbackTitle = '', seasonHint = nul
 
   try {
     const parsed = parseStremioId(videoId);
-    const metaType = parsed?.type === 'movie' ? 'movie' : 'series';
-    const metaId = parsed?.imdbId || parsed?.id || videoId;
-    if (parsed?.season) season = parsed.season;
-    if (parsed?.episode) episode = parsed.episode;
 
-    if (metaId) {
-      const url = `https://v3-cinemeta.strem.io/meta/${metaType}/${encodeURIComponent(metaId)}.json`;
-      const resp = await axios.get(url, { timeout: 7500 });
-      const meta = resp?.data?.meta;
-      if (meta?.name) title = meta.name;
-      if (!season && Number.isFinite(Number(meta?.season))) season = Number(meta.season);
-      if (!episode && Number.isFinite(Number(meta?.episode))) episode = Number(meta.episode);
+    // Handle anime IDs - use Kitsu API for Kitsu IDs
+    if (parsed?.isAnime && parsed?.animeId) {
+      if (parsed.episode) episode = parsed.episode;
+      if (parsed.season) season = parsed.season;
+
+      // Try to get title from Kitsu API if it's a Kitsu ID
+      if (parsed.animeIdType === 'kitsu') {
+        const numericIdMatch = parsed.animeId.match(/kitsu[:-]?(\d+)/i);
+        if (numericIdMatch) {
+          const numericId = numericIdMatch[1];
+          try {
+            const kitsuResp = await axios.get(`https://kitsu.io/api/edge/anime/${numericId}`, {
+              timeout: 7500,
+              headers: {
+                'Accept': 'application/vnd.api+json',
+                'User-Agent': 'StremioSubMaker/1.0'
+              }
+            });
+            const animeData = kitsuResp?.data?.data?.attributes;
+            if (animeData) {
+              title = animeData.canonicalTitle || animeData.titles?.en || animeData.titles?.en_us || title;
+            }
+          } catch (kitsuErr) {
+            log.debug(() => [`[History] Kitsu lookup failed for ${videoId}:`, kitsuErr.message]);
+          }
+        }
+      }
+      // For other anime platforms (anidb, mal, anilist), we don't have direct API access
+      // Fall back to filename/videoId as title
+
+    } else {
+      // Handle IMDB/TMDB IDs - use Cinemeta
+      const metaType = parsed?.type === 'movie' ? 'movie' : 'series';
+      let metaId = parsed?.imdbId;
+      if (!metaId && parsed?.tmdbId) {
+        metaId = 'tmdb:' + parsed.tmdbId;
+      }
+      if (parsed?.season) season = parsed.season;
+      if (parsed?.episode) episode = parsed.episode;
+
+      if (metaId) {
+        const url = `https://v3-cinemeta.strem.io/meta/${metaType}/${encodeURIComponent(metaId)}.json`;
+        const resp = await axios.get(url, { timeout: 7500 });
+        const meta = resp?.data?.meta;
+        if (meta?.name) title = meta.name;
+        if (!season && Number.isFinite(Number(meta?.season))) season = Number(meta.season);
+        if (!episode && Number.isFinite(Number(meta?.episode))) episode = Number(meta.episode);
+      }
     }
   } catch (err) {
-    log.debug(() => [`[History] Cinemeta lookup failed for ${videoId}:`, err.message]);
+    log.debug(() => [`[History] Metadata lookup failed for ${videoId}:`, err.message]);
   }
 
   const resolved = {
@@ -4300,6 +4337,7 @@ async function resolveHistoryTitle(videoId, fallbackTitle = '', seasonHint = nul
   historyTitleCache.set(videoId, resolved);
   return resolved;
 }
+
 
 function normalizeHistoryUserHash(rawHash) {
   if (!rawHash || typeof rawHash !== 'string') return '';
