@@ -3931,7 +3931,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       const episodeTag = formatEpisodeTag(videoId);
       const fallbackTitle = tt('sync.meta.linkedFallback', {}, 'linked stream');
       const baseTitle = movieTitle || fallbackTitle;
-      if (parsed && (parsed.type === 'episode' || parsed.type === 'anime')) {
+      if (parsed && (parsed.type === 'episode' || parsed.type === 'anime' || parsed.type === 'anime-episode')) {
         const suffix = episodeTag || tt('sync.meta.episodeFallback', {}, 'Episode');
         if (!suffix) return baseTitle;
         if (baseTitle && suffix && baseTitle.toUpperCase().includes(suffix.toUpperCase())) return baseTitle;
@@ -6158,12 +6158,18 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         const episodeLabel = formatEpisodeTagDisplay(source.videoId);
         const fallbackTitle = cleanDisplayNameClient(source.filename) || cleanDisplayNameClient(source.videoId) || copy.videoMeta.none;
         const resolvedTitle = source.title || fallbackTitle || copy.videoMeta.none;
+        // Detect if this is episode content (has episode tag means it's an episode)
+        const isEpisode = !!episodeLabel;
+        // Append episode tag to main title for episodes (if not already present)
+        const displayTitle = (isEpisode && episodeLabel && !resolvedTitle.toUpperCase().includes(episodeLabel.toUpperCase()))
+          ? resolvedTitle + ' - ' + episodeLabel
+          : resolvedTitle;
         const details = [];
         if (source.title) details.push('Title: ' + source.title);
         else if (source.videoId) details.push('Video ID: ' + source.videoId);
         if (episodeLabel) details.push('Episode: ' + episodeLabel);
         if (source.filename) details.push('File: ' + cleanDisplayNameClient(source.filename));
-        els.videoMetaTitle.textContent = resolvedTitle;
+        els.videoMetaTitle.textContent = displayTitle;
         els.videoMetaSubtitle.textContent = details.join(' - ') || copy.videoMeta.waiting;
       }
 

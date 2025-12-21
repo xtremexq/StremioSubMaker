@@ -2910,8 +2910,14 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
                 filename: payload.filename || CONFIG.streamFilename || '',
                 title: payload.title || CONFIG.linkedTitle || ''
             };
+            const parsed = parseVideoId(source.videoId);
             const episodeTag = formatEpisodeTag(source.videoId);
+            const isEpisode = parsed && (parsed.type === 'episode' || parsed.type === 'anime' || parsed.type === 'anime-episode');
             const fallbackTitle = source.title || cleanLinkedName(source.filename) || cleanLinkedName(source.videoId) || tt('sync.meta.noStream', {}, ${JSON.stringify(copy.meta.noStream)});
+            // Append episode tag to main title for episodes
+            const displayFallbackTitle = (isEpisode && episodeTag && !fallbackTitle.toUpperCase().includes(episodeTag.toUpperCase()))
+                ? fallbackTitle + ' - ' + episodeTag
+                : fallbackTitle;
             const fallbackDetails = [];
             if (source.title) {
                 fallbackDetails.push(tt('sync.meta.titleLabel', {}, ${JSON.stringify(copy.meta.titleLabel)}) + ': ' + source.title);
@@ -2920,7 +2926,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             }
             if (episodeTag) fallbackDetails.push(tt('sync.meta.episodeLabel', {}, ${JSON.stringify(copy.meta.episodeLabel)}) + ': ' + episodeTag);
             if (source.filename) fallbackDetails.push(tt('sync.meta.fileLabel', {}, ${JSON.stringify(copy.meta.fileLabel)}) + ': ' + source.filename);
-            LINKED_META.title.textContent = fallbackTitle;
+            LINKED_META.title.textContent = displayFallbackTitle;
             LINKED_META.subtitle.textContent = fallbackDetails.join(' • ') || tt('sync.meta.waiting', {}, ${JSON.stringify(copy.meta.waiting)});
 
             const requestId = ++linkedTitleRequestId;
@@ -2936,7 +2942,12 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             if (episodeTag) details.push(tt('sync.meta.episodeLabel', {}, ${JSON.stringify(copy.meta.episodeLabel)}) + ': ' + episodeTag);
             if (source.filename) details.push(tt('sync.meta.fileLabel', {}, ${JSON.stringify(copy.meta.fileLabel)}) + ': ' + source.filename);
 
-            LINKED_META.title.textContent = fetchedTitle || fallbackTitle;
+            // Append episode tag to main title for episodes
+            const resolvedTitle = fetchedTitle || fallbackTitle;
+            const displayTitle = (isEpisode && episodeTag && !resolvedTitle.toUpperCase().includes(episodeTag.toUpperCase()))
+                ? resolvedTitle + ' - ' + episodeTag
+                : resolvedTitle;
+            LINKED_META.title.textContent = displayTitle;
             LINKED_META.subtitle.textContent = details.join(' • ') || tt('sync.meta.waiting', {}, ${JSON.stringify(copy.meta.waiting)});
         }
 

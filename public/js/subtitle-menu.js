@@ -5,7 +5,7 @@
   const translate = (key, vars, fallback) => {
     try {
       if (typeof global.t === 'function') return global.t(key, vars, fallback);
-    } catch (_) {}
+    } catch (_) { }
     return fallback || key;
   };
   const DEFAULT_LABELS = {
@@ -81,78 +81,101 @@
       position: fixed;
       bottom: 24px;
       left: 24px;
-      width: 56px;
-      height: 56px;
+      width: 58px;
+      height: 58px;
       padding: 0;
       gap: 0;
       display: grid;
       place-items: center;
       border-radius: 50%;
-      border: 1px solid var(--sm-border);
-      background: var(--sm-surface);
+      border: 2px solid rgba(8, 164, 213, 0.5);
+      background: linear-gradient(145deg, rgba(8, 164, 213, 0.95) 0%, rgba(14, 165, 233, 0.9) 50%, rgba(99, 102, 241, 0.85) 100%);
       backdrop-filter: var(--sm-glass);
       -webkit-backdrop-filter: var(--sm-glass);
-      box-shadow: var(--sm-shadow);
+      box-shadow: 
+        0 8px 32px rgba(8, 164, 213, 0.4),
+        0 4px 16px rgba(0, 0, 0, 0.15),
+        inset 0 2px 4px rgba(255, 255, 255, 0.25),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.1);
       cursor: pointer;
       z-index: 12010;
       isolation: isolate;
-      animation: sm-toggle-breathe 6s ease-in-out infinite;
+      animation: sm-toggle-breathe 4s ease-in-out infinite;
       transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-      color: var(--sm-text);
+      color: #ffffff;
     }
 
+    /* Outer glow ring */
     .subtitle-menu-toggle::before {
       content: '';
       position: absolute;
-      inset: -8px;
+      inset: -10px;
       border-radius: 50%;
-      background: radial-gradient(circle at 50% 50%, var(--sm-primary-glow), transparent 65%);
-      opacity: 0.45;
-      transform: scale(0.94);
-      filter: blur(0.5px);
+      background: radial-gradient(circle at 50% 50%, rgba(8, 164, 213, 0.5) 0%, rgba(99, 102, 241, 0.3) 40%, transparent 70%);
+      opacity: 0.8;
+      transform: scale(1);
       z-index: -1;
       pointer-events: none;
-      animation: sm-toggle-pulse 3.4s ease-in-out infinite;
+      animation: sm-toggle-pulse 2.5s ease-in-out infinite;
+    }
+
+    /* Inner highlight ring */
+    .subtitle-menu-toggle::after {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      pointer-events: none;
     }
 
     .subtitle-menu-toggle:hover {
-      transform: translateY(-4px) scale(1.05);
-      border-color: var(--sm-primary);
-      box-shadow: 0 20px 40px -5px var(--sm-primary-glow);
-      color: var(--sm-primary);
+      transform: translateY(-5px) scale(1.08);
+      border-color: rgba(255, 255, 255, 0.6);
+      box-shadow: 
+        0 16px 48px rgba(8, 164, 213, 0.5),
+        0 8px 24px rgba(99, 102, 241, 0.3),
+        inset 0 2px 4px rgba(255, 255, 255, 0.3);
+      background: linear-gradient(145deg, rgba(8, 164, 213, 1) 0%, rgba(14, 165, 233, 1) 50%, rgba(99, 102, 241, 0.95) 100%);
     }
 
-    .subtitle-menu-toggle:hover::before,
-    .subtitle-menu-toggle:focus-visible::before {
-      animation-duration: 2.4s;
-      opacity: 0.6;
+    .subtitle-menu-toggle:hover::before {
+      animation-duration: 1.5s;
+      opacity: 1;
+      transform: scale(1.1);
+    }
+
+    .subtitle-menu-toggle:active {
+      transform: translateY(-2px) scale(1.02);
     }
 
     .subtitle-menu-toggle svg {
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
       fill: currentColor;
-      transition: transform 0.4s ease;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
 
     .subtitle-menu-toggle:hover svg {
-      transform: rotate(15deg);
+      transform: rotate(12deg) scale(1.05);
     }
 
-    .subtitle-menu-toggle.is-loading::after {
-      content: '';
-      position: absolute;
-      inset: -3px;
-      border-radius: 50%;
-      border: 2px solid transparent;
-      border-top-color: var(--sm-primary);
-      border-right-color: var(--sm-primary);
-      animation: sm-spin 1s linear infinite;
+    .subtitle-menu-toggle.is-loading {
+      animation: none;
     }
 
     .subtitle-menu-toggle.is-loading::before {
-      animation-play-state: paused;
-      opacity: 0.25;
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      border-top-color: #ffffff;
+      border-right-color: rgba(255, 255, 255, 0.6);
+      animation: sm-spin 0.8s linear infinite;
+      opacity: 1;
+      background: none;
     }
 
     .subtitle-menu-panel {
@@ -393,110 +416,323 @@
     .subtitle-menu-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
+      padding: 4px 0;
     }
 
+    /* ============================================
+       LANGUAGE CARDS - Premium Collapsible Groups
+       ============================================ */
     .subtitle-lang-card {
-      border: 1px solid var(--sm-border);
-      border-radius: 16px;
-      background: rgba(125, 125, 125, 0.03);
+      position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
       overflow: hidden;
-      transition: all 0.3s ease;
+      transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .subtitle-lang-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--sm-primary), #0ea5e9, #6366f1);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .subtitle-lang-card:hover {
+      border-color: rgba(8, 164, 213, 0.3);
+      box-shadow: 0 4px 16px rgba(8, 164, 213, 0.1);
+      transform: translateY(-1px);
+    }
+
+    .subtitle-lang-card:hover::before {
+      opacity: 0.5;
     }
 
     .subtitle-lang-card.open {
-      background: var(--sm-surface-hover);
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.08) 0%, rgba(99, 102, 241, 0.04) 100%);
       border-color: var(--sm-primary);
-      box-shadow: 0 8px 24px -6px var(--sm-primary-glow);
+      box-shadow: 
+        0 8px 32px -8px var(--sm-primary-glow),
+        0 0 0 1px rgba(8, 164, 213, 0.1);
     }
 
+    .subtitle-lang-card.open::before {
+      opacity: 1;
+    }
+
+    [data-theme="dark"] .subtitle-lang-card,
+    [data-theme="true-dark"] .subtitle-lang-card {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    [data-theme="dark"] .subtitle-lang-card.open,
+    [data-theme="true-dark"] .subtitle-lang-card.open {
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.12) 0%, rgba(99, 102, 241, 0.06) 100%);
+    }
+
+    /* ============================================
+       LANGUAGE CARD HEADER
+       ============================================ */
     .subtitle-lang-header {
       width: 100%;
-      padding: 14px 16px;
+      padding: 16px 18px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      background: none;
+      gap: 14px;
+      background: transparent;
       border: none;
       cursor: pointer;
       text-align: left;
+      transition: all 0.2s ease;
+    }
+
+    .subtitle-lang-header:hover {
+      background: rgba(8, 164, 213, 0.04);
+    }
+
+    .subtitle-lang-header:active {
+      transform: scale(0.995);
     }
 
     .subtitle-lang-meta {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 6px;
+      flex: 1;
+      min-width: 0;
     }
 
+    /* Language Name - Primary Typography */
     .subtitle-lang-label {
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 700;
       color: var(--sm-text);
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
+    .subtitle-lang-label::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--sm-primary), #0ea5e9);
+      flex-shrink: 0;
+      box-shadow: 0 0 6px var(--sm-primary-glow);
+    }
+
+    .subtitle-lang-card.open .subtitle-lang-label::before {
+      animation: sm-pulse-dot 2s ease-in-out infinite;
+    }
+
+    @keyframes sm-pulse-dot {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.8; }
+    }
+
+    /* Subtitle Type Summary - Secondary Typography */
     .subtitle-lang-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
       font-size: 12px;
       color: var(--sm-text-muted);
       font-weight: 500;
+      padding-left: 16px;
     }
 
+    .subtitle-lang-pill-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(125, 125, 125, 0.08);
+      border: 1px solid rgba(125, 125, 125, 0.08);
+      transition: all 0.2s ease;
+    }
+
+    .subtitle-lang-pill-tag.source {
+      background: rgba(59, 130, 246, 0.1);
+      border-color: rgba(59, 130, 246, 0.15);
+      color: #3b82f6;
+    }
+
+    .subtitle-lang-pill-tag.target {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+    }
+
+    .subtitle-lang-pill-tag.cached {
+      background: rgba(245, 158, 11, 0.1);
+      border-color: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+    }
+
+    .subtitle-lang-pill-tag.synced {
+      background: rgba(236, 72, 153, 0.1);
+      border-color: rgba(236, 72, 153, 0.15);
+      color: #ec4899;
+    }
+
+    .subtitle-lang-pill-tag.learn {
+      background: rgba(139, 92, 246, 0.1);
+      border-color: rgba(139, 92, 246, 0.15);
+      color: #8b5cf6;
+    }
+
+    /* Count Badge */
     .subtitle-lang-count {
-      padding: 4px 10px;
-      border-radius: 20px;
-      background: rgba(125, 125, 125, 0.1);
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--sm-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      height: 32px;
+      padding: 0 10px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%);
+      border: 1px solid rgba(8, 164, 213, 0.15);
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--sm-primary);
+      transition: all 0.25s ease;
     }
 
+    .subtitle-lang-card:hover .subtitle-lang-count {
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.18) 0%, rgba(99, 102, 241, 0.12) 100%);
+      transform: scale(1.05);
+    }
+
+    .subtitle-lang-card.open .subtitle-lang-count {
+      background: linear-gradient(135deg, var(--sm-primary) 0%, #0ea5e9 100%);
+      color: #fff;
+      box-shadow: 0 4px 12px var(--sm-primary-glow);
+    }
+
+    /* Chevron */
     .subtitle-lang-chevron {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(125, 125, 125, 0.06);
       color: var(--sm-text-muted);
-      transition: transform 0.3s ease;
-      font-size: 12px;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .subtitle-lang-card:hover .subtitle-lang-chevron {
+      background: rgba(8, 164, 213, 0.1);
+      color: var(--sm-primary);
     }
 
     .subtitle-lang-card.open .subtitle-lang-chevron {
       transform: rotate(90deg);
+      background: rgba(8, 164, 213, 0.15);
       color: var(--sm-primary);
     }
 
+    /* ============================================
+       SUBTITLE ITEMS DROPDOWN
+       ============================================ */
     .subtitle-lang-menu {
       display: none;
       flex-direction: column;
-      gap: 8px;
-      padding: 0 12px 12px;
-      animation: sm-slide-down 0.3s ease;
+      gap: 6px;
+      padding: 4px 14px 14px;
+      position: relative;
+      animation: sm-slide-down 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .subtitle-lang-menu::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 18px;
+      right: 18px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--sm-border), transparent);
     }
 
     .subtitle-lang-card.open .subtitle-lang-menu {
       display: flex;
     }
 
+    /* ============================================
+       INDIVIDUAL SUBTITLE ITEMS - Premium Cards
+       ============================================ */
     .subtitle-menu-item {
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 12px;
+      padding: 12px 14px;
       border-radius: 12px;
-      background: var(--sm-surface);
+      background: linear-gradient(135deg, var(--sm-surface) 0%, rgba(255, 255, 255, 0.6) 100%);
       border: 1px solid var(--sm-border);
-      transition: all 0.2s ease;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+    }
+
+    [data-theme="dark"] .subtitle-menu-item,
+    [data-theme="true-dark"] .subtitle-menu-item {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.6) 100%);
+    }
+
+    .subtitle-menu-item::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: linear-gradient(180deg, var(--sm-primary), #6366f1);
+      opacity: 0;
+      transition: opacity 0.2s ease;
     }
 
     .subtitle-menu-item:hover {
       transform: translateX(4px);
       border-color: var(--sm-primary);
+      box-shadow: 0 4px 16px rgba(8, 164, 213, 0.12);
     }
 
+    .subtitle-menu-item:hover::before {
+      opacity: 1;
+    }
+
+    .subtitle-menu-item:active {
+      transform: translateX(6px) scale(0.99);
+    }
+
+    /* Subtitle Item Meta */
     .subtitle-menu-item .meta {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 6px;
       min-width: 0;
+      flex: 1;
     }
 
+    /* Subtitle Label - With Index Number */
     .subtitle-menu-item .label {
       font-size: 14px;
       font-weight: 600;
@@ -504,51 +740,174 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      line-height: 1.3;
     }
 
-    .subtitle-menu-chip {
+    .subtitle-menu-item .label-index {
       display: inline-flex;
       align-items: center;
-      padding: 2px 8px;
+      justify-content: center;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 6px;
       border-radius: 6px;
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.15) 0%, rgba(99, 102, 241, 0.1) 100%);
+      border: 1px solid rgba(8, 164, 213, 0.2);
       font-size: 11px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.02em;
+      color: var(--sm-primary);
+      flex-shrink: 0;
     }
 
-    .subtitle-menu-chip.source { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-    .subtitle-menu-chip.target { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-    .subtitle-menu-chip.cached { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-    .subtitle-menu-chip.learn { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
-    .subtitle-menu-chip.synced { background: rgba(236, 72, 153, 0.1); color: #ec4899; }
-
-    .subtitle-menu-link {
-      padding: 8px 16px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, var(--sm-primary), #0ea5e9);
-      color: #fff;
-      font-size: 13px;
-      font-weight: 600;
-      text-decoration: none;
-      border: none;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px rgba(8, 164, 213, 0.3);
+    .subtitle-menu-item .label-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
 
+    /* ============================================
+       TYPE CHIPS - Polished Badges
+       ============================================ */
+    .subtitle-menu-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .subtitle-menu-chip::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .subtitle-menu-chip.source {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%);
+      border-color: rgba(59, 130, 246, 0.2);
+      color: #3b82f6;
+    }
+    .subtitle-menu-chip.source::before {
+      background: #3b82f6;
+      box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+    }
+
+    .subtitle-menu-chip.target {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.08) 100%);
+      border-color: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+    }
+    .subtitle-menu-chip.target::before {
+      background: #10b981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+    }
+
+    .subtitle-menu-chip.cached {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.08) 100%);
+      border-color: rgba(245, 158, 11, 0.2);
+      color: #f59e0b;
+    }
+    .subtitle-menu-chip.cached::before {
+      background: #f59e0b;
+      box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+    }
+
+    .subtitle-menu-chip.learn {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0.08) 100%);
+      border-color: rgba(139, 92, 246, 0.2);
+      color: #8b5cf6;
+    }
+    .subtitle-menu-chip.learn::before {
+      background: #8b5cf6;
+      box-shadow: 0 0 6px rgba(139, 92, 246, 0.5);
+    }
+
+    .subtitle-menu-chip.synced {
+      background: linear-gradient(135deg, rgba(236, 72, 153, 0.15) 0%, rgba(236, 72, 153, 0.08) 100%);
+      border-color: rgba(236, 72, 153, 0.2);
+      color: #ec4899;
+    }
+    .subtitle-menu-chip.synced::before {
+      background: #ec4899;
+      box-shadow: 0 0 6px rgba(236, 72, 153, 0.5);
+    }
+
+    .subtitle-menu-item:hover .subtitle-menu-chip {
+      transform: scale(1.02);
+    }
+
+    .subtitle-menu-link {
+      position: relative;
+      padding: 8px 14px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--sm-primary) 0%, #0ea5e9 100%);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 
+        0 4px 12px rgba(8, 164, 213, 0.25),
+        inset 0 1px rgba(255, 255, 255, 0.2);
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      overflow: hidden;
+    }
+
+    .subtitle-menu-link::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
     .subtitle-menu-link:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 16px rgba(8, 164, 213, 0.4);
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 
+        0 8px 20px rgba(8, 164, 213, 0.35),
+        inset 0 1px rgba(255, 255, 255, 0.25);
+    }
+
+    .subtitle-menu-link:active {
+      transform: translateY(0) scale(0.98);
+    }
+
+    /* Translate Button Variant */
+    .subtitle-menu-link.subtitle-menu-translate {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      box-shadow: 
+        0 4px 12px rgba(16, 185, 129, 0.25),
+        inset 0 1px rgba(255, 255, 255, 0.2);
+    }
+
+    .subtitle-menu-link.subtitle-menu-translate:hover {
+      box-shadow: 
+        0 8px 20px rgba(16, 185, 129, 0.35),
+        inset 0 1px rgba(255, 255, 255, 0.25);
     }
 
     .subtitle-menu-link:disabled {
-      opacity: 0.6;
+      opacity: 0.5;
       cursor: not-allowed;
       transform: none;
       box-shadow: none;
-      background: var(--sm-text-muted);
+      background: linear-gradient(135deg, #64748b 0%, #475569 100%);
     }
 
     .subtitle-menu-status {
@@ -1023,6 +1382,50 @@
       if (!hasValidStream()) return;
       streamMeta.parsed = parseStremioId(config.videoId);
       streamMeta.episodeTag = formatEpisodeTag(streamMeta.parsed);
+
+      // Handle anime IDs (Kitsu) - fetch from Kitsu API
+      if (streamMeta.parsed?.isAnime && streamMeta.parsed?.animeIdType === 'kitsu' && streamMeta.parsed?.animeId) {
+        const animeIdParts = streamMeta.parsed.animeId.split(':');
+        const numericId = animeIdParts.length >= 2 ? animeIdParts[1] : null;
+        if (numericId) {
+          try {
+            const resp = await fetch('https://kitsu.io/api/edge/anime/' + numericId, {
+              headers: { 'Accept': 'application/vnd.api+json' },
+              cache: 'force-cache'
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              const title = data?.data?.attributes?.canonicalTitle ||
+                data?.data?.attributes?.titles?.en ||
+                data?.data?.attributes?.titles?.en_us || '';
+              if (title) {
+                streamMeta.title = title;
+                if (els && els.footerTitle) {
+                  els.footerTitle.textContent = deriveStreamDisplayTitle();
+                  els.footerTitle.title = deriveStreamDisplayTitle();
+                }
+                if (els) {
+                  updateSubtitleMenuMeta(els);
+                  setSubtitleMenuStatus(els, '', 'muted', { persist: true });
+                }
+              }
+            }
+          } catch (_) {
+            // Ignore Kitsu API errors; fall back to filename/videoId
+          }
+        }
+        // For Kitsu, we don't fall through to Cinemeta
+        if (!streamMeta.title && els) {
+          updateSubtitleMenuMeta(els);
+          if (els.footerTitle) {
+            els.footerTitle.textContent = deriveStreamDisplayTitle();
+            els.footerTitle.title = deriveStreamDisplayTitle();
+          }
+        }
+        return;
+      }
+
+      // Handle IMDB/TMDB IDs - fetch from Cinemeta
       const imdbId = streamMeta.parsed?.imdbId;
       const metaType = streamMeta.parsed?.type === 'episode' ? 'series' : 'movie';
       if (!imdbId) {
@@ -1367,7 +1770,7 @@
       }
     }
 
-    function buildSubtitleMenuItem(item) {
+    function buildSubtitleMenuItem(item, index) {
       const row = document.createElement('div');
       row.className = 'subtitle-menu-item';
 
@@ -1375,7 +1778,20 @@
       meta.className = 'meta';
       const labelEl = document.createElement('div');
       labelEl.className = 'label';
-      labelEl.textContent = item.label;
+
+      // Add index badge if provided
+      if (typeof index === 'number' && index >= 0) {
+        const indexBadge = document.createElement('span');
+        indexBadge.className = 'label-index';
+        indexBadge.textContent = '#' + (index + 1);
+        labelEl.appendChild(indexBadge);
+      }
+
+      const labelText = document.createElement('span');
+      labelText.className = 'label-text';
+      labelText.textContent = item.label;
+      labelEl.appendChild(labelText);
+
       const chipData = subtitleChipForType(item.type, item);
       const chip = document.createElement('span');
       chip.className = 'subtitle-menu-chip ' + chipData.cls;
@@ -1431,13 +1847,26 @@
         acc[itm.type] = (acc[itm.type] || 0) + 1;
         return acc;
       }, {});
-      const summaryParts = [];
-      if (counts.cached) summaryParts.push(counts.cached + ' xEmbed');
-      if (counts.synced) summaryParts.push(counts.synced + ' xSync');
-      if (counts.learn) summaryParts.push(counts.learn + ' Learn');
-      if (counts.target) summaryParts.push(counts.target + ' target');
-      if (counts.source) summaryParts.push(counts.source + ' source');
-      pill.textContent = summaryParts.join(' - ') || 'Subtitles';
+
+      // Build styled pill tags instead of plain text
+      const tagOrder = ['source', 'target', 'cached', 'synced', 'learn'];
+      const tagLabels = { source: 'Source', target: 'Target', cached: 'xEmbed', synced: 'xSync', learn: 'Learn' };
+      let hasTags = false;
+      tagOrder.forEach(type => {
+        if (counts[type]) {
+          hasTags = true;
+          const tag = document.createElement('span');
+          tag.className = 'subtitle-lang-pill-tag ' + type;
+          tag.textContent = counts[type] + ' ' + tagLabels[type];
+          pill.appendChild(tag);
+        }
+      });
+      if (!hasTags) {
+        const defaultTag = document.createElement('span');
+        defaultTag.className = 'subtitle-lang-pill-tag';
+        defaultTag.textContent = 'Subtitles';
+        pill.appendChild(defaultTag);
+      }
       meta.appendChild(title);
       meta.appendChild(pill);
 
@@ -1465,13 +1894,13 @@
         return codeCandidate ? codeCandidate.toUpperCase() : 'SUB';
       })();
       let sourceCounter = 0;
-      sortedItems.forEach((item) => {
+      sortedItems.forEach((item, idx) => {
         const isSourceType = item.type === 'source';
         const displayItem = (groupType === 'primary' && isSourceType)
           ? Object.assign({}, item, { label: `${languageCodeLabel} - Subtitle ${sourceCounter + 1}` })
           : item;
         if (isSourceType) sourceCounter += 1;
-        menu.appendChild(buildSubtitleMenuItem(displayItem));
+        menu.appendChild(buildSubtitleMenuItem(displayItem, idx));
       });
 
       const toggle = () => {
@@ -1927,13 +2356,13 @@
     } catch (err) {
       console.warn('Subtitle menu markup creation failed', err, { options });
       return {
-        prefetch: () => {},
-        refresh: () => {},
-        toggle: () => {},
-        updateStream: () => {},
-        notify: () => {},
+        prefetch: () => { },
+        refresh: () => { },
+        toggle: () => { },
+        updateStream: () => { },
+        notify: () => { },
         getTargets: () => config.targetOptions.slice(),
-        destroy: () => {}
+        destroy: () => { }
       };
     }
 

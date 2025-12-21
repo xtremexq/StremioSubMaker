@@ -4,13 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.25
 
-**Performance Optimizations:**
 
-- **Early provider timeout:** New `PROVIDER_SEARCH_TIMEOUT_MS` environment variable (default 7 seconds) returns available subtitle results after the timeout, instead of waiting for all providers. Slow or unresponsive providers no longer block the entire response.
-- **Reduced provider timeouts:** OpenSubtitles and SubDL API timeouts reduced from 15 seconds to 10 seconds for faster failure detection on slow providers.
-- **Reduced results per language:** Each provider now returns a maximum of 14 subtitles per language (was 20), reducing processing overhead and response size.
-- **OpenSubtitles V3 filename extraction:** Subtitle fetching is now significantly faster (3-6 seconds saved) by skipping slow HEAD requests for filename extraction. The fast URL-based extraction is enabled by default; set `V3_EXTRACT_FILENAMES=true` to re-enable accurate Content-Disposition filename extraction if needed.
-- **Reduced default subtitles per language:** Changed `MAX_SUBTITLES_PER_LANGUAGE` default from 12 to 8 for faster subtitle loading and reduced UI overhead.
+**Translation History Improvements:**
+
+- **Retranslate button:** The Translation History page (`/sub-history`) now includes a "Retranslate" button on each history entry. Clicking it clears the cached translation and allows you to trigger a fresh retranslation the next time the subtitle is loaded in Stremio. This provides the same functionality as the 3-click cache reset mechanism, with the same rate limits and safety checks.
+- **Seasonless episode tags:** History entries now show `E##` for anime-style IDs without seasons, instead of forcing a fake season number.
 
 **Improved ZIP Handling & Error Detection:**
 
@@ -19,20 +17,24 @@ All notable changes to this project will be documented in this file.
 - **Enhanced "too small" detection:** Subtitle content validation now uses intelligent analysis to distinguish between valid short subtitles (credits-only files with timecodes) and actual errors (HTML pages, JSON errors, truncated responses), providing specific feedback based on what was detected.
 - **Shared response analyzer utility:** Added `src/utils/responseAnalyzer.js` with reusable functions for analyzing HTTP response content across all providers, supporting consistent error detection and user-friendly messages.
 
+**Performance Optimizations:**
+
+- **Early provider timeout:** New `PROVIDER_SEARCH_TIMEOUT_MS` environment variable (default 7 seconds) returns available subtitle results after the timeout, instead of waiting for all providers. Slow or unresponsive providers no longer block the entire response.
+- **Reduced provider timeouts:** OpenSubtitles and SubDL API timeouts reduced from 15 seconds to 10 seconds for faster failure detection on slow providers.
+- **Reduced results per language:** Each provider now returns a maximum of 14 subtitles per language (was 20), reducing processing overhead and response size.
+- **OpenSubtitles V3 filename extraction:** Subtitle fetching is now significantly faster (3-6 seconds saved) by skipping slow HEAD requests for filename extraction. The fast URL-based extraction is enabled by default; set `V3_EXTRACT_FILENAMES=true` to re-enable accurate Content-Disposition filename extraction if needed.
+- **Reduced default subtitles per language:** Changed `MAX_SUBTITLES_PER_LANGUAGE` default from 12 to 8 for faster subtitle loading and reduced UI overhead.
+
 **Other Changes:**
 
 - **Gemini Pro default thinking budget:** Set Gemini 2.5 Pro and 3.0 Pro defaults to a fixed thinking budget of 1000 (aligned with config UI).
 - **Advanced settings gating for Gemini:** Advanced settings are now applied only when explicitly enabled, so disabled advanced settings no longer leak prior tuning values into Gemini requests.
 - **Mobile responsive fix for API key rotation:** Fixed layout issues on mobile devices where Gemini API key rotation fields had misaligned icons, oversized buttons, and broken input containers.
 - **Fixed Kitsu/anime ID parsing:** Corrected episode tag display for anime streams from Kitsu, AniDB, MAL, and AniList. Previously, video IDs like `kitsu:10941:1` were incorrectly parsed to show "S10941E01" (treating the anime ID as the season number). Now correctly shows "E01" for seasonless anime episodes, and "S01E05" for anime with explicit seasons (e.g., `kitsu:10941:1:5`). Fixed across all toolbox pages (Sub Toolbox, Sync, Auto-subs) and stream notification toasts.
-- **Kitsu title lookups:** Toolbox, Sync, and History now query the Kitsu API for Kitsu anime IDs to display proper titles (IMDB/TMDB continues to use Cinemeta).
+- **Kitsu title lookups:** Toolbox, Sync, Auto-subs, and the floating subtitle menu now query the Kitsu API for Kitsu anime IDs to display proper anime titles (e.g., "Elfen Lied - E12" instead of filenames). IMDB/TMDB continues to use Cinemeta. Episode tags (E## or S##E##) are now consistently appended to the main title display across all tools pages.
 - **Legacy session cleanup across Redis prefixes:** Invalid sessions loaded via cross-prefix migration are now deleted in all known prefix variants, preventing repeated migration loops and noisy logs.
-
-**Translation History Improvements:**
-
-- **Retranslate button:** The Translation History page (`/sub-history`) now includes a "Retranslate" button on each history entry. Clicking it clears the cached translation and allows you to trigger a fresh retranslation the next time the subtitle is loaded in Stremio. This provides the same functionality as the 3-click cache reset mechanism, with the same rate limits and safety checks.
-- **Seasonless episode tags:** History entries now show `E##` for anime-style IDs without seasons, instead of forcing a fake season number.
-
+- **Subtitle menu redesign:** The floating subtitle menu now features a completely redesigned interior with premium styling—gradient backgrounds, animated accent borders, polished language cards with colored type badges, numbered subtitle entries, enhanced chips with glowing indicators, and smooth micro-animations throughout.
+- **Subtitle menu toggle visibility:** The floating toggle button is now much more visible with a vibrant gradient background (blue-to-purple), stronger glow effects, inner/outer highlight rings, and improved contrast against any background.
 
 ## SubMaker v1.4.24
 
