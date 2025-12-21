@@ -3569,6 +3569,56 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       };
     }
 
+    // Cache for resolved redirect URLs to avoid repeated fetches
+    const resolvedUrlCache = new Map();
+    const REDIRECT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+    /**
+     * Resolve a stream URL by following redirects to get the final URL.
+     * Many debrid/stremio addon URLs (e.g., /resolve/realdebrid/...) redirect
+     * to the actual CDN URL which contains the real filename.
+     * @param {string} url - The URL to resolve
+     * @returns {Promise<string>} - The final URL after following redirects
+     */
+    async function resolveStreamUrlRedirect(url) {
+      if (!url) return url;
+      try {
+        // Check cache first
+        const cached = resolvedUrlCache.get(url);
+        if (cached && (Date.now() - cached.timestamp < REDIRECT_CACHE_TTL)) {
+          return cached.resolved;
+        }
+
+        // Use HEAD request with redirect: 'follow' to get final URL
+        // Use a short timeout to avoid blocking UI
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+        const response = await fetch(url, {
+          method: 'HEAD',
+          redirect: 'follow',
+          signal: controller.signal,
+          // Don't send credentials/cookies for cross-origin requests
+          credentials: 'omit'
+        });
+
+        clearTimeout(timeoutId);
+
+        // The response.url contains the final URL after all redirects
+        const resolved = response.url || url;
+
+        // Cache the result
+        resolvedUrlCache.set(url, { resolved, timestamp: Date.now() });
+
+        return resolved;
+      } catch (err) {
+        // On error (CORS, timeout, network), try with no-cors mode to at least
+        // check if URL is valid, then fall back to original URL
+        console.warn('[resolveStreamUrlRedirect] Failed to resolve URL, using original:', err.message);
+        return url;
+      }
+    }
+
     function syncVideoHash(payload = {}) {
       const next = normalizeStreamValue(payload.videoHash) || computeLocalVideoHash(payload) || BOOTSTRAP.videoHash || '';
       if (next) {
@@ -6752,15 +6802,60 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         }
       }
 
-      function updateHashStatusFromInput() {
+      // Track pending hash resolution to debounce and avoid races
+      let hashResolutionPending = null;
+
+      async function updateHashStatusFromInput() {
         if (!els.streamUrl) return;
         const url = (els.streamUrl.value || '').trim();
         if (!url) {
           handleHashStatus({ linked: PAGE.videoHash, stream: '' }, false);
           return;
         }
-        const derived = deriveStreamHashFromUrl(url, { filename: PAGE.filename, videoId: PAGE.videoId });
-        handleHashStatus({ linked: PAGE.videoHash, stream: derived.hash }, state.cacheBlocked);
+
+        // Generate a unique ID for this resolution to handle races
+        const resolutionId = Date.now() + Math.random();
+        hashResolutionPending = resolutionId;
+
+        // First, immediately compute hash from the input URL as-is
+        // This gives instant feedback while we resolve redirects
+        const immediateDerived = deriveStreamHashFromUrl(url, { filename: PAGE.filename, videoId: PAGE.videoId });
+
+        // If immediate hash matches, no need to resolve redirects
+        if (immediateDerived.hash === PAGE.videoHash) {
+          handleHashStatus({ linked: PAGE.videoHash, stream: immediateDerived.hash }, state.cacheBlocked);
+          return;
+        }
+
+        // Show a "resolving" state while we fetch the redirect
+        if (els.hashStatus) {
+          els.hashStatus.textContent = tt('toolbox.autoSubs.hash.resolving', {}, 'Resolving stream URL...');
+          els.hashStatus.classList.remove('success', 'danger');
+          els.hashStatus.classList.add('warn');
+        }
+
+        try {
+          // Resolve redirects to get the final URL (where the real filename is)
+          const resolvedUrl = await resolveStreamUrlRedirect(url);
+
+          // Check if this resolution is still current (no newer input)
+          if (hashResolutionPending !== resolutionId) return;
+
+          // Compute hash from the resolved URL
+          const derived = deriveStreamHashFromUrl(resolvedUrl, { filename: PAGE.filename, videoId: PAGE.videoId });
+
+          // If resolved URL gave a different result, use it; otherwise fall back to immediate
+          const finalHash = derived.hash || immediateDerived.hash;
+
+          handleHashStatus({ linked: PAGE.videoHash, stream: finalHash }, state.cacheBlocked);
+        } catch (err) {
+          // Check if this resolution is still current
+          if (hashResolutionPending !== resolutionId) return;
+
+          // On error, use the immediate hash
+          console.warn('[updateHashStatusFromInput] Redirect resolution failed:', err);
+          handleHashStatus({ linked: PAGE.videoHash, stream: immediateDerived.hash }, state.cacheBlocked);
+        }
       }
 
       function getCfCredentials() {

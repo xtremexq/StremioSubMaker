@@ -4,20 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.27
 
-- **Parallel Cloudflare transcription:** Auto-subs now transcribes audio windows in parallel (up to 4 concurrent requests) instead of sequentially, significantly reducing total transcription time. For an 8-window video, this can reduce transcription time from ~2+ minutes to ~30 seconds. Cloudflare's Whisper API supports 720 requests/minute, making parallel processing safe and efficient.
-- **Cloudflare language detection fix:** Fixed an issue where Cloudflare Whisper auto-subs would incorrectly fall back to Japanese (`lang=ja`) when processing English content, causing "different languages in a single request" errors. The fix removes Japanese from the default language fallback candidates (now English-only unless explicitly set), prioritizes auto-detection first before trying any forced language, and ignores non-English language detections when no source language was explicitly configured. This prevents wrong language detection on one audio window from polluting subsequent windows.
-- **Graceful window failure handling:** Cloudflare auto-subs now gracefully skips individual failed audio windows instead of failing the entire transcription. Failed windows are logged with warnings, and the transcription continues with segments from successful windows. This improves resilience when specific audio segments have problematic content (silence, music, mixed languages, etc.).
-- **Model-aware Cloudflare window sizes:** Audio window sizes are now automatically adjusted based on the selected Whisper model. The base `@cf/openai/whisper` model uses 30-second windows (its documented maximum), while the `whisper-large-v3-turbo` model uses 90-second windows by default with support for up to 25 minutes via the UI slider (leaving a 5-minute safety margin from the 30-minute API limit). This prevents failures when using the base model with windows that exceed its 30-second limit.
-- **Cloudflare Whisper API fix:** Fixed "AiError: Type mismatch" and "Unknown error" failures in auto-subs. The Cloudflare REST API only accepts `array` or `binary` audio data (despite documentation suggesting Base64 for the turbo model). Both `@cf/openai/whisper` and `@cf/openai/whisper-large-v3-turbo` now use JSON with array-of-integers format. Invalid parameters like `diarization` were removed. The turbo model now correctly receives optional `language`, `task`, and `vad_filter` parameters.
-- **VAD filter option for Turbo model:** Added a "Enable VAD filter" checkbox to auto-subs Step 2 (visible when Cloudflare mode + Turbo model is selected). Voice Activity Detection preprocessing removes silence from audio for cleaner transcription results. The Whisper Large V3 Turbo model is now selected by default when Cloudflare mode is active, so the VAD filter option is visible by default.
-- **Anime season pack episode matching fix:** Fixed episode matching for anime subtitle filenames that use opening brackets after the episode number (e.g., `Berserk - 01[1080 BD X265].ass`). The regex patterns now correctly recognize `[` and `(` as valid episode number terminators, matching common anime naming conventions across SubSource, SubDL, OpenSubtitles, and OpenSubtitles V3 providers.
-- **SubSource API key header sanitization:** Fixed "Invalid character in header content" errors when SubSource API keys contain control characters (from corrupted config decryption, copy-paste artifacts, or encoding issues). API keys are now sanitized before being added to HTTP headers, preventing crashes and logging a warning if the key appears corrupted.
-- **Locale refresh and fixes:** Repaired corrupted Arabic strings and synced missing locale keys (ar/es/pt-br/pt-pt) with the latest English entries.
-- **Sub Toolbox localization cleanup:** Removed remaining hardcoded English strings across Sub Toolbox, History, and Sync pages by wiring them to i18n keys in all locales.
-- **Rate limit error handling fix:** Fixed a bug where OpenSubtitles login rate limit errors (429) were being re-classified as `type: 'unknown'` with `isRetryable: false` instead of preserving the original `rate_limit` classification. The `parseApiError()` utility now preserves pre-existing `statusCode`, `type`, and `isRetryable` properties on manually-created errors, ensuring proper error handling and user-facing messages for rate-limited login attempts.
-- **Manifest request logging:** Added detailed manifest request metadata logging, including best-effort client IP resolution and forwarded headers, to help debug host/config access issues.
-- **Auto-subs retry UX:** Renamed the "Retranslate" action to "Retry translation," improved button fallbacks when language codes are missing, and only show download actions when SRT output exists.
-- **Auto-subs layout tweaks:** Adjusted joined step card alignment for cleaner layout on larger screens.
+**Cloudflare Auto-subs Improvements:**
+
+- **Parallel transcription:** Audio windows now transcribe in parallel (up to 4 concurrent requests), reducing an 8-window video from ~2+ minutes to ~30 seconds.
+- **Whisper Large V3 Turbo Base64 fix:** Fixed "Request body is not valid json" error when using the Turbo model. The Cloudflare API requires Base64-encoded audio in JSON payloads for the Turbo model (not raw binary or array format like the base model).
+- **Duration estimation fix for TS streams:** Fixed incomplete subtitle coverage where only half the video was transcribed. For TS (transport stream) containers where duration probing fails, the byte-based estimation now uses 0.8 Mbps (down from 2 Mbps), ensuring full coverage for lower-bitrate streams. It's now better to have extra windows at the end than miss final content.
+- **Language detection fix:** Fixed incorrect Japanese fallback (`lang=ja`) causing "different languages in a single request" errors. Now prioritizes auto-detection first and uses English-only as a fallback.
+- **Graceful window failures:** Individual failed audio windows are now skipped instead of failing the entire transcription—improves resilience for problematic segments (silence, music, etc.).
+- **Model-aware window sizes:** Base Whisper model uses 30s windows (its max), Turbo model uses 90s by default with UI slider support up to 25 minutes.
+- **VAD filter option:** Added "Enable VAD filter" checkbox for Turbo model to remove silence from audio for cleaner transcription. Turbo is now the default model.
+
+
+**Bug Fixes:**
+
+- **Stream hash mismatch resolution:** Fixed hash mismatch errors when pasting debrid/addon stream URLs (e.g., `/resolve/realdebrid/...`). These URLs redirect to CDN URLs containing the actual filename, but the hash was being computed from the redirect URL path instead. Now, the client follows redirects with a HEAD request to get the final URL before computing the hash, ensuring it matches the linked stream hash.
+- **Anime season pack matching:** Fixed episode matching for filenames like `Berserk - 01[1080 BD X265].ass`—regex now recognizes `[` and `(` as valid episode terminators.
+- **SubSource API key sanitization:** Fixed "Invalid character in header content" errors by sanitizing API keys containing control characters.
+- **Rate limit error handling:** Fixed OpenSubtitles login 429 errors being misclassified as `type: 'unknown'`. The `parseApiError()` utility now preserves original error properties.
+- **Locale fixes:** Repaired corrupted Arabic strings and synced missing keys (ar/es/pt-br/pt-pt) with English.
+
+**Other Improvements:**
+
+- **Localization cleanup:** Removed hardcoded English strings in Sub Toolbox, History, and Sync pages.
+- **Manifest logging:** Added detailed request metadata logging (client IP, forwarded headers) for debugging.
+- **Auto-subs retry UX:** Renamed "Retranslate" to "Retry translation," improved button fallbacks, and only show download actions when SRT exists.
+- **Layout tweaks:** Adjusted step card alignment for cleaner auto-subs layout on larger screens.
 
 ## SubMaker v1.4.26
 
