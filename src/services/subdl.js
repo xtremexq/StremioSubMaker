@@ -6,7 +6,7 @@ const { detectAndConvertEncoding } = require('../utils/encodingDetector');
 const { appendHiddenInformationalNote } = require('../utils/subtitle');
 const { redactSensitiveData } = require('../utils/logger');
 const log = require('../utils/logger');
-const { waitForDownloadSlot, currentDownloadLimit } = require('../utils/downloadLimiter');
+
 
 const SUBDL_API_URL = 'https://api.subdl.com/api/v1';
 const USER_AGENT = 'StremioSubtitleTranslator v1.0';
@@ -430,11 +430,6 @@ class SubDLService {
         }
       }
 
-      const waitedMs = await waitForDownloadSlot('SubDL');
-      if (waitedMs > 0) {
-        const { maxPerMinute } = currentDownloadLimit();
-        log.debug(() => `[SubDL] Throttling download (${maxPerMinute}/min) waited ${waitedMs}ms`);
-      }
 
       // Construct download URL according to SubDL API documentation
       // Format: https://dl.subdl.com/subtitle/<sd_id>-<subtitles_id>.zip
@@ -532,10 +527,10 @@ Try selecting a different subtitle.`;
         const animeEpisodePatterns = [
           // E01 / EP01 / Episode 01 / Ep 01
           new RegExp(`(?<=\\b|\\s|\\[|\\(|-|_)e(?:p(?:isode)?)?[\\s._-]*0*${episode}(?:v\\d+)?(?=\\b|\\s|\\]|\\)|\\.|-|_|$)`, 'i'),
-          // [01] / (01) / - 01 / _01 / .01. (with boundaries)
-          new RegExp(`(?:^|[\\s\\[\\(\\-_.])0*${episode}(?:v\\d+)?(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+          // [01] / (01) / - 01 / _01 / .01. / - 01[1080p] (with boundaries)
+          new RegExp(`(?:^|[\\s\\[\\(\\-_.])0*${episode}(?:v\\d+)?(?=$|[\\s\\[\\]\\(\\)\\-_.])`, 'i'),
           // 01en / 01eng (language suffix immediately after episode number before extension)
-          new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}(?:v\\d+)?[a-z]{2,3}(?=\\.|[\\s\\]\\)\\-_.]|$)`, 'i'),
+          new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}(?:v\\d+)?[a-z]{2,3}(?=\\.|[\\s\\[\\]\\(\\)\\-_.]|$)`, 'i'),
           // Episode 01 / Episodio 01 / Capitulo 01
           new RegExp(`(?:episode|episodio|ep|cap(?:itulo)?)\\s*0*${episode}(?![0-9])`, 'i'),
           // Japanese/Chinese/Korean: 第01話 / 01話 / 01集 / 1화

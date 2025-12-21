@@ -7,7 +7,6 @@ const { detectAndConvertEncoding } = require('../utils/encodingDetector');
 const { version } = require('../utils/version');
 const { appendHiddenInformationalNote } = require('../utils/subtitle');
 const log = require('../utils/logger');
-const { waitForDownloadSlot, currentDownloadLimit } = require('../utils/downloadLimiter');
 const { isTrueishFlag } = require('../utils/subtitleFlags');
 
 const OPENSUBTITLES_API_URL = 'https://api.opensubtitles.com/api/v1';
@@ -16,6 +15,42 @@ const MAX_ZIP_BYTES = 25 * 1024 * 1024; // hard cap for ZIP downloads (~25MB) to
 
 const AUTH_FAILURE_TTL_MS = 5 * 60 * 1000; // Keep invalid credentials blocked for 5 minutes
 const credentialFailureCache = new Map();
+
+// Static token cache: shared across all instances with the same credentials
+// Key: credentialsCacheKey (hash of username:password), Value: { token, expiry }
+const tokenCache = new Map();
+
+// Login mutex: prevents multiple concurrent /login calls for the same credentials
+// Key: credentialsCacheKey, Value: Promise that resolves when login completes
+const loginMutex = new Map();
+
+/**
+ * Get cached token for credentials (if valid)
+ * @param {string} cacheKey - Credentials cache key
+ * @returns {{ token: string, expiry: number } | null}
+ */
+function getCachedToken(cacheKey) {
+  if (!cacheKey) return null;
+  const cached = tokenCache.get(cacheKey);
+  if (!cached) return null;
+  // Check if token is still valid (with 1 minute buffer)
+  if (Date.now() >= cached.expiry - 60000) {
+    tokenCache.delete(cacheKey);
+    return null;
+  }
+  return cached;
+}
+
+/**
+ * Store token in static cache
+ * @param {string} cacheKey - Credentials cache key
+ * @param {string} token - JWT token
+ * @param {number} expiry - Expiry timestamp
+ */
+function setCachedToken(cacheKey, token, expiry) {
+  if (!cacheKey || !token) return;
+  tokenCache.set(cacheKey, { token, expiry });
+}
 
 function inferFormatFromFilename(filename) {
   if (!filename) return null;
@@ -185,8 +220,15 @@ class OpenSubtitlesService {
 
     this.credentialsCacheKey = getCredentialsCacheKey(this.config.username, this.config.password);
 
-    this.token = null;
-    this.tokenExpiry = null;
+    // Load token from static cache if available (shared across instances)
+    const cached = getCachedToken(this.credentialsCacheKey);
+    if (cached) {
+      this.token = cached.token;
+      this.tokenExpiry = cached.expiry;
+    } else {
+      this.token = null;
+      this.tokenExpiry = null;
+    }
 
     // Read API key at runtime (not at module load time)
     const apiKey = getOpenSubtitlesApiKey();
@@ -254,6 +296,12 @@ class OpenSubtitlesService {
     // Add request interceptor to handle token refresh for user authentication
     const addAuthInterceptor = (axiosInstance) => {
       axiosInstance.interceptors.request.use((config) => {
+        // Always check static cache for fresh token
+        const cachedToken = getCachedToken(this.credentialsCacheKey);
+        if (cachedToken) {
+          this.token = cachedToken.token;
+          this.tokenExpiry = cachedToken.expiry;
+        }
         if (this.token && !this.isTokenExpired()) {
           config.headers['Authorization'] = `Bearer ${this.token}`;
         }
@@ -265,10 +313,16 @@ class OpenSubtitlesService {
   }
 
   /**
-   * Check if token is expired
+   * Check if token is expired (also checks static cache)
    * @returns {boolean}
    */
   isTokenExpired() {
+    // First check static cache for a fresh token
+    const cached = getCachedToken(this.credentialsCacheKey);
+    if (cached) {
+      this.token = cached.token;
+      this.tokenExpiry = cached.expiry;
+    }
     return !this.tokenExpiry || Date.now() >= this.tokenExpiry;
   }
 
@@ -294,6 +348,9 @@ class OpenSubtitlesService {
       this.token = response.data.token;
       // Token is valid for 24 hours
       this.tokenExpiry = Date.now() + (24 * 60 * 60 * 1000);
+
+      // Store in static cache for reuse by other instances
+      setCachedToken(this.credentialsCacheKey, this.token, this.tokenExpiry);
 
       log.debug(() => '[OpenSubtitles] User authentication successful');
       clearCachedAuthFailure(this.credentialsCacheKey);
@@ -323,19 +380,78 @@ class OpenSubtitlesService {
   }
 
   /**
- * Login to OpenSubtitles REST API (optional, for higher download limits)
- * @returns {Promise<string|null>} - JWT token if credentials provided, null otherwise
- */
+   * Login to OpenSubtitles REST API (optional, for higher download limits)
+   * Uses mutex to serialize concurrent login attempts for the same credentials.
+   * @returns {Promise<string|null>} - JWT token if credentials provided, null otherwise
+   */
   async login() {
-    if (this.config.username && this.config.password) {
-      if (hasCachedAuthFailure(this.credentialsCacheKey)) {
-        log.warn(() => '[OpenSubtitles] Authentication blocked: cached invalid credentials detected');
+    if (!this.config.username || !this.config.password) {
+      // No credentials provided, use basic API access
+      return null;
+    }
+
+    if (hasCachedAuthFailure(this.credentialsCacheKey)) {
+      log.warn(() => '[OpenSubtitles] Authentication blocked: cached invalid credentials detected');
+      return null;
+    }
+
+    // Check if there's already a valid token in cache
+    const cached = getCachedToken(this.credentialsCacheKey);
+    if (cached) {
+      this.token = cached.token;
+      this.tokenExpiry = cached.expiry;
+      log.debug(() => '[OpenSubtitles] Using cached token (shared across instances)');
+      return this.token;
+    }
+
+    // Check if another request is already logging in with these credentials
+    const existingMutex = loginMutex.get(this.credentialsCacheKey);
+    if (existingMutex) {
+      log.debug(() => '[OpenSubtitles] Waiting for existing login to complete (mutex)');
+      try {
+        const result = await existingMutex;
+        // After mutex resolves, check cache again
+        const freshCached = getCachedToken(this.credentialsCacheKey);
+        if (freshCached) {
+          this.token = freshCached.token;
+          this.tokenExpiry = freshCached.expiry;
+          return this.token;
+        }
+        return result;
+      } catch (err) {
+        // If the original login failed, we might need to retry
+        // But only if it wasn't an auth failure
+        if (!hasCachedAuthFailure(this.credentialsCacheKey)) {
+          throw err;
+        }
         return null;
       }
-      return await this.loginWithCredentials(this.config.username, this.config.password);
     }
-    // No credentials provided, use basic API access
-    return null;
+
+    // Create a mutex promise for this login attempt
+    let resolveMutex;
+    let rejectMutex;
+    const mutexPromise = new Promise((resolve, reject) => {
+      resolveMutex = resolve;
+      rejectMutex = reject;
+    });
+    loginMutex.set(this.credentialsCacheKey, mutexPromise);
+
+    try {
+      const result = await this.loginWithCredentials(this.config.username, this.config.password);
+      resolveMutex(result);
+      return result;
+    } catch (err) {
+      rejectMutex(err);
+      throw err;
+    } finally {
+      // Clean up mutex after a short delay to handle race conditions
+      setTimeout(() => {
+        if (loginMutex.get(this.credentialsCacheKey) === mutexPromise) {
+          loginMutex.delete(this.credentialsCacheKey);
+        }
+      }, 100);
+    }
   }
 
   /**
@@ -609,12 +725,6 @@ class OpenSubtitlesService {
         }
       }
 
-      const waitedMs = await waitForDownloadSlot('OpenSubtitles');
-      if (waitedMs > 0) {
-        const { maxPerMinute } = currentDownloadLimit();
-        log.debug(() => `[OpenSubtitles] Throttling download (${maxPerMinute}/min) waited ${waitedMs}ms`);
-      }
-
       // First, request download link
       // Use the primary client so Api-Key is sent (required by OpenSubtitles for /download)
       const downloadResponse = await this.client.post('/download', {
@@ -688,8 +798,8 @@ Try selecting a different subtitle.`;
           const findEpisodeFileAnime = (files, episode) => {
             const patterns = [
               new RegExp(`(?<=\\b|\\s|\\[|\\(|-|_)e(?:p(?:isode)?)?[\\s._-]*0*${episode}(?:v\\d+)?(?=\\b|\\s|\\]|\\)|\\.|-|_|$)`, 'i'),
-              new RegExp(`(?:^|[\\s\\[\\(\\-_.])0*${episode}(?:v\\d+)?(?=$|[\\s\\]\\)\\-_.])`, 'i'),
-              new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}(?:v\\d+)?[a-z]{2,3}(?=\\.|[\\s\\]\\)\\-_.]|$)`, 'i'),
+              new RegExp(`(?:^|[\\s\\[\\(\\-_.])0*${episode}(?:v\\d+)?(?=$|[\\s\\[\\]\\(\\)\\-_.])`, 'i'),
+              new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}(?:v\\d+)?[a-z]{2,3}(?=\\.|[\\s\\[\\]\\(\\)\\-_.]|$)`, 'i'),
               new RegExp(`(?:episode|episodio|ep|cap(?:itulo)?)\\s*0*${episode}(?![0-9])`, 'i'),
               new RegExp(`第?\\s*0*${episode}\\s*(?:話|集|화)`, 'i'),
               new RegExp(`^(?!.*(?:720|1080|480|2160)p).*[\\[\\(\\-_\\s]0*${episode}[\\]\\)\\-_\\s\\.]`, 'i')

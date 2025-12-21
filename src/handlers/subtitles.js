@@ -225,6 +225,8 @@ async function resolveImdbIdFromTmdb(videoInfo, stremioType) {
     })();
 
     let mapped = null;
+
+    // Step 1: Try Cinemeta first (Stremio's metadata addon)
     for (const stremioMetaType of stremioTypesToTry) {
       const url = `https://v3-cinemeta.strem.io/meta/${stremioMetaType}/tmdb:${videoInfo.tmdbId}.json`;
       try {
@@ -245,6 +247,13 @@ async function resolveImdbIdFromTmdb(videoInfo, stremioType) {
       }
     }
 
+    // Step 2: If Cinemeta failed, try Wikidata (free, no API key required)
+    // Wikidata has TMDB property P4947 (film) and P5607 (TV series) mapped to IMDB P345
+    if (!mapped) {
+      log.debug(() => [`[Subtitles] Cinemeta miss, trying Wikidata fallback for TMDB ${videoInfo.tmdbId}`]);
+      mapped = await queryWikidataTmdbToImdb(videoInfo.tmdbId, mediaType);
+    }
+
     tmdbToImdbCache.set(cacheKey, mapped || null);
 
     if (mapped) {
@@ -258,6 +267,62 @@ async function resolveImdbIdFromTmdb(videoInfo, stremioType) {
   } catch (error) {
     tmdbToImdbCache.set(cacheKey, null);
     log.error(() => [`[Subtitles] TMDB → IMDB mapping failed for ${videoInfo.tmdbId} (${mediaType}):`, error.message]);
+    return null;
+  }
+}
+
+/**
+ * Query Wikidata to get IMDB ID from TMDB ID
+ * Wikidata is completely free and requires no API key
+ * Uses SPARQL query to find entities with both TMDB and IMDB IDs
+ * @param {string} tmdbId - The TMDB ID to look up
+ * @param {string} mediaType - 'movie' or 'tv'
+ * @returns {Promise<string|null>} - IMDB ID if found, null otherwise
+ */
+async function queryWikidataTmdbToImdb(tmdbId, mediaType) {
+  try {
+    // Wikidata properties:
+    // P4947 = TMDB movie ID
+    // P5607 = TMDB TV series ID  
+    // P345 = IMDB ID
+    // Try both properties since sometimes the mediaType inference can be wrong
+    const tmdbMovieProp = 'wdt:P4947';  // TMDB movie ID
+    const tmdbTvProp = 'wdt:P5607';     // TMDB TV series ID
+    const imdbProp = 'wdt:P345';        // IMDB ID
+
+    // Build SPARQL query that tries both movie and TV properties
+    // This handles cases where mediaType might be incorrectly inferred
+    const sparqlQuery = `
+      SELECT ?imdb WHERE {
+        { ?item ${tmdbMovieProp} "${tmdbId}". }
+        UNION
+        { ?item ${tmdbTvProp} "${tmdbId}". }
+        ?item ${imdbProp} ?imdb.
+      } LIMIT 1
+    `.trim().replace(/\s+/g, ' ');
+
+    const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;
+
+    const response = await axios.get(url, {
+      timeout: 8000,
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'StremioSubMaker/1.0 (subtitle addon; contact via GitHub)'
+      }
+    });
+
+    const bindings = response?.data?.results?.bindings;
+    if (bindings && bindings.length > 0 && bindings[0]?.imdb?.value) {
+      const imdbId = bindings[0].imdb.value;
+      log.info(() => [`[Subtitles] Wikidata found IMDB ${imdbId} for TMDB ${mediaType} ${tmdbId}`]);
+      return normalizeImdbId(imdbId);
+    }
+
+    log.debug(() => [`[Subtitles] Wikidata has no mapping for TMDB ${mediaType} ${tmdbId}`]);
+    return null;
+  } catch (error) {
+    // Don't log as error since Wikidata is a fallback - some content won't be there
+    log.debug(() => [`[Subtitles] Wikidata lookup failed for TMDB ${tmdbId}:`, error.message]);
     return null;
   }
 }

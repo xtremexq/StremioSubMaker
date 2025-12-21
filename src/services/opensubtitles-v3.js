@@ -5,7 +5,6 @@ const { httpAgent, httpsAgent, dnsLookup } = require('../utils/httpAgents');
 const { detectAndConvertEncoding } = require('../utils/encodingDetector');
 const { version } = require('../utils/version');
 const { appendHiddenInformationalNote } = require('../utils/subtitle');
-const { waitForDownloadSlot, currentDownloadLimit } = require('../utils/downloadLimiter');
 const log = require('../utils/logger');
 const { isTrueishFlag, inferHearingImpairedFromName } = require('../utils/subtitleFlags');
 
@@ -162,20 +161,20 @@ class OpenSubtitlesV3Service {
             new RegExp(`season\\s*0*${effectiveSeason}.*episode\\s*0*${episode}\\b`, 'i')  // Season 3 Episode 2
           ];
 
-          // Anime-friendly episode patterns (commonly no season)
+          // Anime-friendly episode patterns (commonly no season, handle cases like "- 01[1080p]")
           const animeEpisodePatterns = [
-            new RegExp(`(?<=\\b|\\s|\\[|\\(|-|_)e?p?\\s*0*${episode}(?:v\\d+)?(?=\\b|\\s|\\]|\\)|\\.|-|_|$)`, 'i'),
-            new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}(?:v\\d+)?(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+            new RegExp(`(?<=\\b|\\s|\\[|\\(|-|_)e?p?\\s*0*${episode}(?:v\\d+)?(?=\\b|\\s|\\[\\]|\\(\\)|\\.|-|_|$)`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}(?:v\\d+)?(?=$|[\\s\\[\\]\\(\\)\\-_.])`, 'i'),
             // 01en / 01eng (language suffix immediately after episode number before extension)
-            new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}(?:v\\d+)?[a-z]{2,3}(?=\\.|[\\s\\]\\)\\-_.]|$)`, 'i'),
-            new RegExp(`(?:^|[\\s\\[\\(\\-_])episode\\s*0*${episode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
-            new RegExp(`(?:^|[\\s\\[\\(\\-_])ep\\s*0*${episode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
-            new RegExp(`(?:^|[\\s\\[\\(\\-_])cap(?:itulo|\\.)?\\s*0*${episode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
-            new RegExp(`(?:^|[\\s\\[\\(\\-_])epis[oó]dio\\s*0*${episode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}(?:v\\d+)?[a-z]{2,3}(?=\\.|[\\s\\[\\]\\(\\)\\-_.]|$)`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])episode\\s*0*${episode}(?=$|[\\s\\[\\]\\(\\)\\-_.])`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])ep\\s*0*${episode}(?=$|[\\s\\[\\]\\(\\)\\-_.])`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])cap(?:itulo|\\.)?\\s*0*${episode}(?=$|[\\s\\[\\]\\(\\)\\-_.])`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])epis[oó]dio\\s*0*${episode}(?=$|[\\s\\[\\]\\(\\)\\-_.])`, 'i'),
             new RegExp(`第\\s*0*${episode}\\s*(?:話|集)`, 'i'),
-            new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}\\s*(?:話|集|화)(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}\\s*(?:話|集|화)(?=$|[\\s\\[\\]\\(\\)\\-_.])`, 'i'),
             new RegExp(`(?:^|[\\s\\[\\(\\-_])0*${episode}\\s*[-~](?=\\s*\\d)`, 'i'),
-            new RegExp(`(?:^|[\\s\\[\\(\\-_])\\d+\\s*[-~]\\s*0*${episode}(?=$|[\\s\\]\\)\\-_.])`, 'i'),
+            new RegExp(`(?:^|[\\s\\[\\(\\-_])\\d+\\s*[-~]\\s*0*${episode}(?=$|[\\s\\[\\]\\(\\)\\-_.])`, 'i'),
           ];
 
           // If ANY pattern matches the correct episode, keep this subtitle
@@ -364,11 +363,6 @@ class OpenSubtitlesV3Service {
 
     log.debug(() => '[OpenSubtitles V3] Decoded download URL');
 
-    const waitedMs = await waitForDownloadSlot('OpenSubtitles V3');
-    if (waitedMs > 0) {
-      const { maxPerMinute } = currentDownloadLimit();
-      log.debug(() => `[OpenSubtitles V3] Throttling download (${maxPerMinute}/min) waited ${waitedMs}ms`);
-    }
 
     // Retry logic with exponential backoff
     let lastError;

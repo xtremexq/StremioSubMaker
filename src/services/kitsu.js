@@ -215,7 +215,7 @@ class KitsuService {
 
   /**
    * Get IMDB ID from TMDB ID using Cinemeta (Stremio's metadata addon)
-   * This is more reliable than TMDB API and doesn't require an API key
+   * Falls back to Wikidata if Cinemeta doesn't have the mapping
    * @param {string} tmdbId - TMDB ID
    * @param {string} mediaType - 'movie' or 'tv'
    * @returns {Promise<string|null>} - IMDB ID if found
@@ -223,7 +223,9 @@ class KitsuService {
   async getImdbFromTmdb(tmdbId, mediaType = 'tv') {
     const retryDelays = [2000, 6000]; // milliseconds
     let lastError = null;
+    let imdbId = null;
 
+    // Step 1: Try Cinemeta first
     for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
       try {
         // Use Cinemeta (Stremio's official metadata addon) to get IMDB ID from TMDB ID
@@ -239,13 +241,13 @@ class KitsuService {
           }
         );
 
-        const imdbId = response.data?.meta?.imdb_id;
+        imdbId = response.data?.meta?.imdb_id;
         if (imdbId) {
           log.debug(() => [`[Kitsu] Mapped TMDB ${mediaType} ${tmdbId} to IMDB ${imdbId} via Cinemeta`]);
           return imdbId;
         }
 
-        return null;
+        break; // Got response but no IMDB ID, try Wikidata
       } catch (error) {
         lastError = error;
 
@@ -268,8 +270,71 @@ class KitsuService {
       }
     }
 
-    log.warn(() => [`[Kitsu] Failed to get IMDB from TMDB ${mediaType} ${tmdbId} after ${retryDelays.length} retries:`, lastError?.message]);
+    // Step 2: If Cinemeta failed or has no mapping, try Wikidata (free, no API key)
+    log.debug(() => [`[Kitsu] Cinemeta miss for TMDB ${tmdbId}, trying Wikidata fallback`]);
+    imdbId = await this.queryWikidataTmdbToImdb(tmdbId, mediaType);
+    if (imdbId) {
+      return imdbId;
+    }
+
+    if (lastError) {
+      log.warn(() => [`[Kitsu] Failed to get IMDB from TMDB ${mediaType} ${tmdbId} after retries:`, lastError?.message]);
+    } else {
+      log.debug(() => [`[Kitsu] No IMDB mapping found for TMDB ${mediaType} ${tmdbId}`]);
+    }
     return null;
+  }
+
+  /**
+   * Query Wikidata to get IMDB ID from TMDB ID
+   * Wikidata is completely free and requires no API key
+   * @param {string} tmdbId - The TMDB ID to look up
+   * @param {string} mediaType - 'movie' or 'tv'
+   * @returns {Promise<string|null>} - IMDB ID if found, null otherwise
+   */
+  async queryWikidataTmdbToImdb(tmdbId, mediaType) {
+    try {
+      // Wikidata properties:
+      // P4947 = TMDB movie ID
+      // P5607 = TMDB TV series ID  
+      // P345 = IMDB ID
+      const tmdbMovieProp = 'wdt:P4947';
+      const tmdbTvProp = 'wdt:P5607';
+      const imdbProp = 'wdt:P345';
+
+      // SPARQL query that tries both movie and TV properties
+      const sparqlQuery = `
+        SELECT ?imdb WHERE {
+          { ?item ${tmdbMovieProp} "${tmdbId}". }
+          UNION
+          { ?item ${tmdbTvProp} "${tmdbId}". }
+          ?item ${imdbProp} ?imdb.
+        } LIMIT 1
+      `.trim().replace(/\s+/g, ' ');
+
+      const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;
+
+      const response = await axios.get(url, {
+        timeout: 8000,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'StremioSubMaker/1.0 (subtitle addon; contact via GitHub)'
+        }
+      });
+
+      const bindings = response?.data?.results?.bindings;
+      if (bindings && bindings.length > 0 && bindings[0]?.imdb?.value) {
+        const imdbId = bindings[0].imdb.value;
+        log.info(() => [`[Kitsu] Wikidata found IMDB ${imdbId} for TMDB ${mediaType} ${tmdbId}`]);
+        return imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`;
+      }
+
+      log.debug(() => [`[Kitsu] Wikidata has no mapping for TMDB ${mediaType} ${tmdbId}`]);
+      return null;
+    } catch (error) {
+      log.debug(() => [`[Kitsu] Wikidata lookup failed for TMDB ${tmdbId}:`, error.message]);
+      return null;
+    }
   }
 
   /**
@@ -340,8 +405,8 @@ class KitsuService {
 
           // Check for exact match or very close match
           if (metaName === searchTitleLower ||
-              metaName?.includes(searchTitleLower) ||
-              searchTitleLower.includes(metaName)) {
+            metaName?.includes(searchTitleLower) ||
+            searchTitleLower.includes(metaName)) {
 
             if (meta.imdb_id) {
               log.debug(() => [`[Kitsu] Found match: "${meta.name}" (${meta.imdb_id})`]);

@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 - **Linked stream refresh button:** Added a refresh action on Sync, Embedded Subtitles, and Auto-subs pages so users can pull the latest linked stream metadata without leaving the page.
 - **Clearer hash mismatch guidance:** Updated the embedded tools helper copy to instruct users to refresh the linked stream before pasting the Stream URL.
+- **Wikidata TMDB→IMDB fallback:** When Cinemeta doesn't have a TMDB-to-IMDB mapping (previously causing "Could not map TMDB to IMDB" errors), the addon now queries Wikidata as a free, no-API-key fallback. This improves subtitle availability for content that Cinemeta hasn't indexed yet.
+- **OpenSubtitles Auth rate limit fix:** Fixed 429 rate limit errors when using OpenSubtitles Auth mode by implementing a static token cache and login mutex. Previously, each request created a new `OpenSubtitlesService` instance with its own token, causing multiple concurrent requests (e.g., Stremio prefetching subtitles) to all call `/login` simultaneously—exceeding OpenSubtitles' 1 request/second login limit. Now, JWT tokens are cached per credential and reused across instances, and concurrent login attempts for the same credentials are serialized via a mutex. Also removed the unnecessary global download rate limiter (12/min cap).
 
 ## SubMaker v1.4.25
 
