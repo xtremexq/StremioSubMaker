@@ -8302,16 +8302,23 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     #autoStep2Card .row { width: auto; max-width: 640px; margin: 0 auto; justify-items: center; }
     #autoStep2Card .row > div { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
     #autoStep2Card label { text-align: center; }
-    #autoStep2Card .controls.wrap { justify-content: center; background: yellow !important; }
-    #autoStep2Card .mode-details { background: lime !important; }
+    #autoStep2Card .controls.wrap { justify-content: center; margin-top: 0; }
+    #autoStep2Card .mode-details { 
+      height: auto;
+      align-content: start;
+      margin-top: 8px;
+    }
+    #autoStep2Card .mode-details .controls { margin-top: 0; }
     #autoStep2Card #assemblyOptions {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 6px;
       text-align: center;
-      margin-top: 8px;
-      background: cyan !important;
+      margin-top: 0;
+    }
+    #autoStep2Card #turboOptions {
+      margin-top: 0;
     }
     #autoTranslationCard {
       max-width: 600px;
@@ -8761,7 +8768,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                   <label for="whisperModel">${escapeHtml(copy.steps.modelLabel)}</label>
                   <select id="whisperModel">
                     <option value="@cf/openai/whisper">${escapeHtml(copy.steps.model.standard)}</option>
-                    <option value="@cf/openai/whisper-large-v3-turbo">${escapeHtml(copy.steps.model.turbo)}</option>
+                    <option value="@cf/openai/whisper-large-v3-turbo" selected>${escapeHtml(copy.steps.model.turbo)}</option>
                   </select>
                 </div>
               </div>
@@ -8770,7 +8777,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                   <input type="checkbox" id="translateOutput" checked> ${escapeHtml(copy.steps.translateOutput)}
                 </label>
               </div>
-              <div id="turboOptions" style="display:none; margin-top:8px;">
+              <div id="turboOptions" style="margin-top:8px; text-align:center;">
                 <label class="inline-checkbox">
                   <input type="checkbox" id="vadFilterEnabled" checked> ${escapeHtml(copy.steps.vadFilter)}
                 </label>
