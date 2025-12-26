@@ -2082,7 +2082,7 @@ function shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang) {
 
         // SAFETY CHECK 1: Check if the user is at their concurrency limit
         // If they are, don't allow the 3-click reset because re-translation would fail with rate limit error
-        if (!canUserStartTranslation(configHash)) {
+        if (!canUserStartTranslation(configHash, config)) {
             log.warn(() => `[SafetyBlock] BLOCKING 3-click reset: User at concurrency limit, re-translation would fail (user: ${configHash || 'anonymous'})`);
             return true;
         }
@@ -2700,6 +2700,21 @@ app.get('/', (req, res) => {
     // CRITICAL: Prevent caching to avoid cross-user config contamination
     setNoStore(res);
     res.sendFile(path.join(__dirname, 'public', 'configure.html'));
+});
+
+// Normalize trailing slashes on configure routes so relative assets resolve correctly.
+app.get('/configure/', (req, res) => {
+    const qs = new URLSearchParams(req.query || {}).toString();
+    res.redirect(302, `/configure${qs ? `?${qs}` : ''}`);
+});
+
+app.get('/configure/:config/', (req, res) => {
+    const params = new URLSearchParams(req.query || {});
+    if (req.params.config) {
+        params.set('config', req.params.config);
+    }
+    const qs = params.toString();
+    res.redirect(302, `/configure${qs ? `?${qs}` : ''}`);
 });
 
 app.get('/configure', (req, res) => {

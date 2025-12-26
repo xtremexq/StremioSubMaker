@@ -2695,6 +2695,31 @@ Translate to {target_language}.`;
             });
         }
 
+        const tryFetchAdvancedModels = async () => {
+            const apiKey = document.getElementById('geminiApiKey')?.value?.trim();
+            if (apiKey && apiKey.length >= 10 && apiKey !== lastFetchedApiKey) {
+                await autoFetchModels(apiKey);
+            }
+        };
+
+        // ComboBox replaces the select; use delegated handlers to catch real user opens.
+        document.addEventListener('click', (e) => {
+            const btn = e.target && e.target.closest ? e.target.closest('.combo-button') : null;
+            if (!btn) return;
+            const combo = btn.closest('.combo');
+            if (!combo || !combo.querySelector('#advancedModel')) return;
+            tryFetchAdvancedModels();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+            const btn = e.target && e.target.closest ? e.target.closest('.combo-button') : null;
+            if (!btn) return;
+            const combo = btn.closest('.combo');
+            if (!combo || !combo.querySelector('#advancedModel')) return;
+            tryFetchAdvancedModels();
+        });
+
         [advModelEl, advThinkingEl, advTempEl, advTopPEl, sendTimestampsEl].forEach(el => {
             if (el) {
                 el.addEventListener('change', updateBypassCacheForAdvancedSettings);

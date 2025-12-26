@@ -56,7 +56,35 @@ const userTranslationCounts = new LRUCache({
   ttl: 24 * 60 * 60 * 1000, // 24 hours - auto-cleanup stale entries
   updateAgeOnGet: false,
 });
-const MAX_CONCURRENT_TRANSLATIONS_PER_USER = 3;
+const DEFAULT_MAX_CONCURRENT_TRANSLATIONS_PER_USER = 3;
+const GEMMA_MAX_CONCURRENT_TRANSLATIONS_PER_USER = 2;
+
+function resolveProviderConfig(config, key) {
+  if (!config || !key) return null;
+  const providers = config.providers || {};
+  if (providers[key]) return providers[key];
+  const match = Object.keys(providers).find(k => String(k).toLowerCase() === String(key).toLowerCase());
+  return match ? providers[match] : null;
+}
+
+function resolveModelNameFromConfig(config) {
+  if (!config) return '';
+  const multiEnabled = config.multiProviderEnabled === true;
+  const mainProvider = String(multiEnabled ? (config.mainProvider || 'gemini') : 'gemini').toLowerCase();
+  if (mainProvider === 'gemini') {
+    return config.geminiModel || '';
+  }
+  const providerConfig = resolveProviderConfig(config, mainProvider);
+  return providerConfig?.model || '';
+}
+
+function getMaxConcurrentTranslationsForConfig(config) {
+  const modelName = resolveModelNameFromConfig(config);
+  if (String(modelName || '').toLowerCase().includes('gemma')) {
+    return GEMMA_MAX_CONCURRENT_TRANSLATIONS_PER_USER;
+  }
+  return DEFAULT_MAX_CONCURRENT_TRANSLATIONS_PER_USER;
+}
 
 // Security: LRU cache for in-progress translations (max 500 entries)
 const translationStatus = new LRUCache({
@@ -565,7 +593,7 @@ ${t('subtitle.providerDownloadFailBody', { reason }, `${reason}\nTry a different
 }
 
 // Create an SRT explaining concurrency limit reached, visible across the whole video timeline
-function createConcurrencyLimitSubtitle(limit = MAX_CONCURRENT_TRANSLATIONS_PER_USER, uiLanguage = 'en') {
+function createConcurrencyLimitSubtitle(limit = DEFAULT_MAX_CONCURRENT_TRANSLATIONS_PER_USER, uiLanguage = 'en') {
   const t = getTranslator(uiLanguage);
   return ensureInformationalSubtitleSize(`1
 00:00:00,000 --> 04:00:00,000
@@ -655,13 +683,14 @@ ${retryAdvice}`, null, uiLanguage);
  * @param {string} userHash - The user's config hash (for per-user limit tracking)
  * @returns {boolean} - True if the user can start a translation, false if at the limit
  */
-function canUserStartTranslation(userHash) {
+function canUserStartTranslation(userHash, config = null) {
   const effectiveUserHash = (userHash && userHash.length > 0) ? userHash : 'anonymous';
   const currentCount = userTranslationCounts.get(effectiveUserHash) || 0;
-  const canStart = currentCount < MAX_CONCURRENT_TRANSLATIONS_PER_USER;
+  const limit = getMaxConcurrentTranslationsForConfig(config);
+  const canStart = currentCount < limit;
 
   if (!canStart) {
-    log.debug(() => `[ConcurrencyCheck] User ${effectiveUserHash} cannot start translation: ${currentCount}/${MAX_CONCURRENT_TRANSLATIONS_PER_USER} concurrent translations already in progress`);
+    log.debug(() => `[ConcurrencyCheck] User ${effectiveUserHash} cannot start translation: ${currentCount}/${limit} concurrent translations already in progress`);
   }
 
   return canStart;
@@ -3431,9 +3460,10 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
     // Enforce per-user concurrency limit only when starting a new translation
     const effectiveUserHash = (userHash && userHash.length > 0) ? userHash : 'anonymous';
     const currentCount = userTranslationCounts.get(effectiveUserHash) || 0;
-    if (currentCount >= MAX_CONCURRENT_TRANSLATIONS_PER_USER) {
-      log.warn(() => `[Translation] Concurrency limit reached for user=${effectiveUserHash}: ${currentCount} in progress (limit ${MAX_CONCURRENT_TRANSLATIONS_PER_USER}).`);
-      return createConcurrencyLimitSubtitle(MAX_CONCURRENT_TRANSLATIONS_PER_USER, config.uiLanguage || 'en');
+    const maxConcurrent = getMaxConcurrentTranslationsForConfig(config);
+    if (currentCount >= maxConcurrent) {
+      log.warn(() => `[Translation] Concurrency limit reached for user=${effectiveUserHash}: ${currentCount} in progress (limit ${maxConcurrent}).`);
+      return createConcurrencyLimitSubtitle(maxConcurrent, config.uiLanguage || 'en');
     }
 
     // === PRE-FLIGHT VALIDATION ===
