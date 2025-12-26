@@ -106,6 +106,11 @@ function getBatchSizeForModel(model) {
   // Model-specific batch sizes (hardcoded, safe from client manipulation)
   const modelStr = String(model || '').toLowerCase();
 
+  // Gemma models: Lower batch size for stability
+  if (modelStr.includes('gemma')) {
+    return 200;
+  }
+
   // Flash-lite models: More conservative batch size for stability
   if (modelStr.includes('flash-lite')) {
     return 200;

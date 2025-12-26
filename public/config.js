@@ -6,6 +6,7 @@
     const RTL_LANGS = new Set(['ar', 'he', 'fa', 'ur']);
     const UI_LANGUAGE_STORAGE_KEY = 'submaker_ui_language';
     let locale = DEFAULT_LOCALE;
+    let localeReadyPromise = null; // Track when locale is ready
 
     function bootstrapTranslator(payload) {
         try {
@@ -65,7 +66,7 @@
             applyStaticCopy();
         }
     }
-    initLocale();
+    localeReadyPromise = initLocale();
 
     function tConfig(key, vars = {}, fallback = '') {
         try {
@@ -77,14 +78,20 @@
     function setText(id, key, fallback) {
         const el = typeof id === 'string' ? document.getElementById(id) : id;
         if (!el) return;
-        el.textContent = tConfig(key, {}, fallback || el.textContent || '');
+        const value = tConfig(key, {}, fallback || el.textContent || '');
+        // Skip update if translation returned the raw key (prevents showing i18n keys)
+        if (value === key) return;
+        el.textContent = value;
     }
 
     function setAttr(id, attr, key, fallback) {
         const el = typeof id === 'string' ? document.getElementById(id) : id;
         if (!el) return;
         const current = el.getAttribute(attr) || '';
-        el.setAttribute(attr, tConfig(key, {}, fallback || current || ''));
+        const value = tConfig(key, {}, fallback || current || '');
+        // Skip update if translation returned the raw key (prevents showing i18n keys)
+        if (value === key) return;
+        el.setAttribute(attr, value);
     }
 
     function applyDataI18n() {
@@ -114,6 +121,11 @@
                     }
                 }
                 const value = tConfig(key, vars, fallback || '');
+                // IMPORTANT: If translation returned the raw key (translation not loaded yet or missing),
+                // skip the update to prevent showing i18n keys to the user
+                if (value === key) {
+                    return;
+                }
                 if (attrList.includes('innerHTML')) {
                     node.innerHTML = value;
                 } else if (attrList.length > 0) {
@@ -248,22 +260,31 @@
 
     // If partials finished loading after config.js executed (e.g., slow fetch/timeout path),
     // re-apply translations once they are ready so late-inserted nodes get translated too.
+    // IMPORTANT: We must also wait for the locale to be ready to prevent showing raw i18n keys.
     let partialCopyApplied = false;
     function applyCopyAfterPartials() {
         if (partialCopyApplied) return;
-        const ready = (typeof window !== 'undefined' && (window.partialsReady || window.mainPartialReady));
-        if (ready && typeof ready.then === 'function') {
-            ready.then(() => {
-                if (partialCopyApplied) return;
-                partialCopyApplied = true;
-                try {
-                    applyUiLanguageCopy();
-                    applyStaticCopy();
-                } catch (err) {
-                    console.warn('[i18n] Failed to reapply copy after partials', err);
-                }
-            }).catch(() => { });
+        const partialsReady = (typeof window !== 'undefined' && (window.partialsReady || window.mainPartialReady));
+        // Build an array of promises to wait for
+        const waitFor = [];
+        if (partialsReady && typeof partialsReady.then === 'function') {
+            waitFor.push(partialsReady);
         }
+        if (localeReadyPromise && typeof localeReadyPromise.then === 'function') {
+            waitFor.push(localeReadyPromise);
+        }
+        if (waitFor.length === 0) return;
+        // Wait for BOTH partials and locale to be ready before applying translations
+        Promise.all(waitFor).then(() => {
+            if (partialCopyApplied) return;
+            partialCopyApplied = true;
+            try {
+                applyUiLanguageCopy();
+                applyStaticCopy();
+            } catch (err) {
+                console.warn('[i18n] Failed to reapply copy after partials', err);
+            }
+        }).catch(() => { });
     }
     applyCopyAfterPartials();
 
@@ -633,7 +654,7 @@ Translate to {target_language}.`;
         return merged;
     }
 
-    function getDefaultConfig(modelName = 'gemini-flash-latest') {
+    function getDefaultConfig(modelName = 'gemini-3-flash-preview') {
         const modelDefaults = getModelSpecificDefaults(modelName);
 
         return {
@@ -836,7 +857,7 @@ Translate to {target_language}.`;
         if (!currentConfig) {
             currentConfig = getDefaultConfig();
         }
-        const defaults = getDefaultConfig(currentConfig.geminiModel || 'gemini-flash-latest').autoSubs;
+        const defaults = getDefaultConfig(currentConfig.geminiModel || 'gemini-3-flash-preview').autoSubs;
         currentConfig.autoSubs = {
             ...defaults,
             ...(currentConfig.autoSubs || {})
@@ -1754,7 +1775,7 @@ Translate to {target_language}.`;
         if (!isBetaModeEnabled()) return false;
         // Get the currently selected base model to determine model-specific defaults
         const geminiModelEl = document.getElementById('geminiModel');
-        const currentBaseModel = geminiModelEl ? geminiModelEl.value : 'gemini-flash-latest';
+        const currentBaseModel = geminiModelEl ? geminiModelEl.value : 'gemini-3-flash-preview';
         const defaults = getDefaultConfig(currentBaseModel).advancedSettings;
 
         const advModelEl = document.getElementById('advancedModel');
@@ -5080,7 +5101,7 @@ Translate to {target_language}.`;
 
         // Load Gemini model
         const modelSelect = document.getElementById('geminiModel');
-        let modelToUse = currentConfig.geminiModel || 'gemini-flash-latest';
+        let modelToUse = currentConfig.geminiModel || 'gemini-3-flash-preview';
 
         // Migrate old Pro preview model ID to new stable ID
         if (modelToUse === 'gemini-2.5-pro-preview-05-06') {
@@ -5366,7 +5387,7 @@ Translate to {target_language}.`;
             },
             // Save the selected model from the dropdown
             // Advanced settings can override this if enabled
-            geminiModel: document.getElementById('geminiModel')?.value || 'gemini-flash-latest',
+            geminiModel: document.getElementById('geminiModel')?.value || 'gemini-3-flash-preview',
             promptStyle: promptStyle,
             translationPrompt: translationPrompt,
             betaModeEnabled: isBetaModeEnabled(),

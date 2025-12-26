@@ -37,6 +37,7 @@ class GeminiService {
     this.apiKey = apiKey;
     // Fallback to default if model not provided (config.js handles env var override)
     this.model = model || 'gemini-3-flash-preview';
+    this.isGemmaModel = String(this.model).toLowerCase().includes('gemma');
     this.baseUrl = GEMINI_API_URL;
 
     // Advanced settings with environment variable fallbacks
@@ -81,6 +82,15 @@ class GeminiService {
     this.topP = advancedSettings.topP !== undefined
       ? advancedSettings.topP
       : (process.env.GEMINI_TOP_P !== undefined ? parseFloat(process.env.GEMINI_TOP_P) : 0.95);
+
+    if (this.isGemmaModel) {
+      // Gemma models don't support thinkingConfig and have lower output limits.
+      this.maxOutputTokens = 8192;
+    }
+  }
+
+  getEffectiveThinkingBudget() {
+    return this.isGemmaModel ? 0 : this.thinkingBudget;
   }
 
   /**
@@ -160,9 +170,10 @@ class GeminiService {
       log.debug(() => `[Gemini] Model: ${this.model}, Output limit: ${limits.outputTokenLimit}, Input limit: ${limits.inputTokenLimit || 'unlimited'}`);
 
       // Log Gemini API configuration for debugging
-      const thinkingDisplay = this.thinkingBudget === -1 ? 'dynamic' :
-        this.thinkingBudget === 0 ? 'disabled' :
-          this.thinkingBudget;
+      const effectiveThinkingBudget = this.getEffectiveThinkingBudget();
+      const thinkingDisplay = effectiveThinkingBudget === -1 ? 'dynamic' :
+        effectiveThinkingBudget === 0 ? 'disabled' :
+          effectiveThinkingBudget;
       log.debug(() => `[Gemini] API config: temperature=${this.temperature}, topK=${this.topK}, topP=${this.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${this.maxOutputTokens}, timeout=${this.timeout / 1000}s, maxRetries=${this.maxRetries}`);
 
       this._modelLimits = limits;
@@ -238,7 +249,8 @@ class GeminiService {
 
     // Add thinking-specific rules only when thinking is enabled (thinkingBudget !== 0)
     // When thinking is disabled (thinkingBudget === 0), these rules are unnecessary
-    if (this.thinkingBudget !== 0) {
+    const effectiveThinkingBudget = this.getEffectiveThinkingBudget();
+    if (effectiveThinkingBudget !== 0) {
       // Find the last "Do NOT" line and add the thinking rules after it
       const doNotPattern = /(Do NOT include acknowledgements[^\n]+)\n/;
       if (doNotPattern.test(systemPrompt)) {
@@ -318,13 +330,14 @@ class GeminiService {
         const safetyMargin = Math.floor(modelOutputCap * 0.05); // 5% safety margin
 
         // Reserve tokens for thinking budget
-        const thinkingReserve = this.thinkingBudget > 0 ? this.thinkingBudget : 0;
+        const thinkingBudget = this.getEffectiveThinkingBudget();
+        const thinkingReserve = thinkingBudget > 0 ? thinkingBudget : 0;
         const availableForOutput = Math.max(1024, Math.min(this.maxOutputTokens, modelOutputCap - safetyMargin - thinkingReserve));
 
         // When thinking is enabled (dynamic or fixed budget), don't limit output based on subtitle size
         // Thinking can consume significant tokens, so we need the full available output capacity
         let estimatedOutputTokens;
-        if (this.thinkingBudget !== 0) {
+        if (thinkingBudget !== 0) {
           // Thinking enabled: use full available output (thinking will consume part of maxOutputTokens)
           estimatedOutputTokens = availableForOutput;
         } else {
@@ -345,15 +358,15 @@ class GeminiService {
 
         // Add thinking config based on thinking budget setting
         // -1 = dynamic thinking (null), 0 = disabled (omit), >0 = fixed budget
-        if (this.thinkingBudget === -1) {
+        if (thinkingBudget === -1) {
           // Dynamic thinking: let the model decide
           generationConfig.thinkingConfig = {
             thinkingBudget: null  // null means dynamic
           };
-        } else if (this.thinkingBudget > 0) {
+        } else if (thinkingBudget > 0) {
           // Fixed thinking budget
           generationConfig.thinkingConfig = {
-            thinkingBudget: this.thinkingBudget
+            thinkingBudget: thinkingBudget
           };
         }
         // If thinkingBudget is 0, don't add thinkingConfig at all (disabled)
@@ -479,11 +492,12 @@ class GeminiService {
         const modelOutputCap = typeof limits.outputTokenLimit === 'number' ? limits.outputTokenLimit : this.maxOutputTokens;
         const safetyMargin = Math.floor(modelOutputCap * 0.05);
 
-        const thinkingReserve = this.thinkingBudget > 0 ? this.thinkingBudget : 0;
+        const thinkingBudget = this.getEffectiveThinkingBudget();
+        const thinkingReserve = thinkingBudget > 0 ? thinkingBudget : 0;
         const availableForOutput = Math.max(1024, Math.min(this.maxOutputTokens, modelOutputCap - safetyMargin - thinkingReserve));
 
         let estimatedOutputTokens;
-        if (this.thinkingBudget !== 0) {
+        if (thinkingBudget !== 0) {
           estimatedOutputTokens = availableForOutput;
         } else {
           estimatedOutputTokens = Math.floor(Math.min(
@@ -499,10 +513,10 @@ class GeminiService {
           maxOutputTokens: estimatedOutputTokens + thinkingReserve
         };
 
-        if (this.thinkingBudget === -1) {
+        if (thinkingBudget === -1) {
           generationConfig.thinkingConfig = { thinkingBudget: null };
-        } else if (this.thinkingBudget > 0) {
-          generationConfig.thinkingConfig = { thinkingBudget: this.thinkingBudget };
+        } else if (thinkingBudget > 0) {
+          generationConfig.thinkingConfig = { thinkingBudget: thinkingBudget };
         }
 
         const response = await axios.post(
