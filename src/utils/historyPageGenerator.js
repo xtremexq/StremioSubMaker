@@ -787,7 +787,6 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
     }
   </style>
   <script src="/js/theme-toggle.js" defer></script>
-  <script src="/js/csrf.js" defer></script>
 </head>
 <body>
   ${themeToggleMarkup(themeToggleLabel)}

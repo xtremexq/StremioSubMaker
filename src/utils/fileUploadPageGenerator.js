@@ -273,7 +273,6 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
     <link rel="shortcut icon" href="/favicon-toolbox.svg">
     <link rel="apple-touch-icon" href="/favicon-toolbox.svg">
     <script src="/js/sw-register.js" defer></script>
-    <script src="/js/csrf.js" defer></script>
     <link rel="stylesheet" href="/css/combobox.css">
     <script>
       (function() {

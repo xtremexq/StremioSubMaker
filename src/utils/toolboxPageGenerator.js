@@ -539,7 +539,6 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
   <link rel="shortcut icon" href="/favicon-toolbox.svg">
   <link rel="apple-touch-icon" href="/favicon-toolbox.svg">
   <script src="/js/sw-register.js" defer></script>
-  <script src="/js/csrf.js" defer></script>
   <script>
     (function() {
       var html = document.documentElement;
@@ -1810,7 +1809,6 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   <link rel="shortcut icon" href="/favicon-toolbox.svg?_cb=${escapeHtml(appVersion || 'dev')}">
   <link rel="apple-touch-icon" href="/favicon-toolbox.svg?_cb=${escapeHtml(appVersion || 'dev')}">
   <script src="/js/sw-register.js?_cb=${escapeHtml(appVersion || 'dev')}" defer></script>
-  <script src="/js/csrf.js?_cb=${escapeHtml(appVersion || 'dev')}" defer></script>
   <link rel="stylesheet" href="/css/combobox.css?_cb=${escapeHtml(appVersion || 'dev')}">
   <script>
     (function() {
@@ -7870,7 +7868,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     <link rel="shortcut icon" href="/favicon-toolbox.svg">
     <link rel="apple-touch-icon" href="/favicon-toolbox.svg">
     <script src="/js/sw-register.js" defer></script>
-    <script src="/js/csrf.js" defer></script>
     <link rel="stylesheet" href="/css/combobox.css">
     <script>
       (function() {

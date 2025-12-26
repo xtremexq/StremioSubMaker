@@ -53,8 +53,6 @@ const { getSessionManager } = require('./src/utils/sessionManager');
 const { runStartupValidation } = require('./src/utils/startupValidation');
 const { StorageUnavailableError } = require('./src/storage/errors');
 const { loadLocale, getTranslator, DEFAULT_LANG } = require('./src/utils/i18n');
-const cookieParser = require('cookie-parser');
-const { csrfProtection, csrfTokenSetter, generateCsrfClientScript, ensureCsrfToken } = require('./src/utils/csrf');
 
 // Cache-buster path segment for temporary HA cache invalidation
 // Default to current package version so it auto-advances on releases
@@ -2472,21 +2470,10 @@ app.use((req, res, next) => {
 // NOTE: Embedded extraction uploads the entire SRT from the browser; keep this modest but above 5MB allowance.
 app.use(express.json({ limit: '6mb' }));
 
-// Parse cookies for CSRF token validation
-app.use(cookieParser());
-
-// Set CSRF token on page loads (GET requests for HTML)
-app.use(csrfTokenSetter());
-
-// Protect browser-facing POST endpoints from CSRF attacks
-// Stremio native clients (no Origin header) are exempted since they're not vulnerable
-app.use(csrfProtection({
-    skipRoutes: [
-        // Addon API routes are protected by Origin/CORS checks, not CSRF tokens
-        '/addon'
-    ],
-    skipStremioClients: true
-}));
+// Note: CSRF protection is not needed for this addon because:
+// 1. Authentication uses config tokens in URLs/request body, not session cookies
+// 2. CORS restrictions already block cross-origin browser requests
+// 3. CSRF attacks exploit session cookies, which this addon doesn't use
 
 // Install a request-scoped translator based on UI language hints (query/header)
 app.use((req, res, next) => {
