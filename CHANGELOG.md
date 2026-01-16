@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.31
+
 ## SubMaker v1.4.30
 
 **New Features:**
