@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.31
 
+**Improvements:**
+
+- **Centralized error reporting:** All `log.error()` and `console.error()` calls that include Error objects now automatically report to Sentry. This eliminates the need for manual `sentry.captureError()` calls throughout the codebase and ensures comprehensive error tracking.
+
+- **Removed error filtering:** Removed all error pattern filters from Sentry integration. Previously, operational errors (rate limits, auth failures, network issues) were filtered out. Now ALL errors are sent to Sentry for complete visibility into production issues.
+
+- **Enhanced Sentry diagnostics:** Added detailed diagnostic logging during Sentry initialization showing DSN presence, environment, and initialization status. Error captures now log event IDs for traceability.
+
 ## SubMaker v1.4.30
 
 **New Features:**

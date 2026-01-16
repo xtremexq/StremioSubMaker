@@ -2655,10 +2655,41 @@ app.get('/sw.js', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'sw.js'));
 });
 
-// Sentry debug endpoint - throws an error to verify Sentry is working
-// Visit /debug-sentry to trigger a test error that should appear in Sentry dashboard
+// Sentry debug endpoint - comprehensive diagnostics
+// Visit /debug-sentry to check Sentry status and trigger a test error
 app.get('/debug-sentry', (req, res) => {
-    throw new Error('SubMaker Sentry test error - if you see this in Sentry, it works!');
+    const diagnostics = {
+        timestamp: new Date().toISOString(),
+        sentry: {
+            dsnPresent: !!process.env.SENTRY_DSN,
+            dsnPrefix: process.env.SENTRY_DSN ? process.env.SENTRY_DSN.slice(0, 20) + '...' : null,
+            environment: process.env.SENTRY_ENVIRONMENT || 'not set',
+            enabled: process.env.SENTRY_ENABLED !== 'false',
+            initialized: sentry.isInitialized(),
+        },
+        test: {
+            errorThrown: false,
+            eventId: null,
+            error: null
+        }
+    };
+
+    // Try to capture a test error
+    try {
+        const testError = new Error('SubMaker Sentry test error - triggered via /debug-sentry');
+        const eventId = sentry.captureErrorForced(testError, {
+            module: 'DebugEndpoint',
+            test: true
+        });
+        diagnostics.test.errorThrown = true;
+        diagnostics.test.eventId = eventId;
+        diagnostics.test.success = !!eventId;
+    } catch (e) {
+        diagnostics.test.error = e.message;
+    }
+
+    // Return diagnostics as JSON
+    res.json(diagnostics);
 });
 
 // Serve static files with caching enabled
