@@ -30,8 +30,8 @@ All notable changes to this project will be documented in this file.
 
 **New Features:**
 
-- **Translation Burst Detection:** Added detection for when Stremio/libmpv prefetches ALL translation URLs simultaneously (common with Stremio Community). When 3+ translation requests arrive within 1 second from the same user, only the first request proceeds - the rest receive a "loading" message. This prevents starting multiple expensive AI translations during prefetch. Configurable via:
-  - `TRANSLATION_BURST_WINDOW_MS` (default: 1000ms)
+- **Translation Burst Detection:** Added detection for when Stremio/libmpv prefetches ALL translation URLs simultaneously (common with Stremio Community). When 3+ translation requests arrive within 300ms from the same user, only the first request proceeds - the rest receive a "loading" message. This prevents starting multiple expensive AI translations during prefetch. Configurable via:
+  - `TRANSLATION_BURST_WINDOW_MS` (default: 300ms)
   - `TRANSLATION_BURST_THRESHOLD` (default: 3 requests)
   - `DISABLE_TRANSLATION_BURST_DETECTION=true` to disable
 

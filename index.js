@@ -1528,11 +1528,11 @@ const KEEP_EMBEDDED_ORIGINALS = String(process.env.KEEP_EMBEDDED_ORIGINALS || 't
  * a burst (when user actually selects a subtitle) will trigger the translation.
  *
  * Environment variables:
- * - TRANSLATION_BURST_WINDOW_MS: Time window for burst detection (default: 1000ms)
+ * - TRANSLATION_BURST_WINDOW_MS: Time window for burst detection (default: 300ms)
  * - TRANSLATION_BURST_THRESHOLD: Number of requests to trigger burst mode (default: 3)
  * - DISABLE_TRANSLATION_BURST_DETECTION: Set to 'true' to disable this feature
  */
-const TRANSLATION_BURST_WINDOW_MS = parseInt(process.env.TRANSLATION_BURST_WINDOW_MS, 10) || 1000;
+const TRANSLATION_BURST_WINDOW_MS = parseInt(process.env.TRANSLATION_BURST_WINDOW_MS, 10) || 300;
 const TRANSLATION_BURST_THRESHOLD = parseInt(process.env.TRANSLATION_BURST_THRESHOLD, 10) || 3;
 const DISABLE_TRANSLATION_BURST_DETECTION = process.env.DISABLE_TRANSLATION_BURST_DETECTION === 'true';
 
