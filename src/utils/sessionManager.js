@@ -599,6 +599,17 @@ class SessionManager extends EventEmitter {
             this.isReady = true;
             log.debug(() => `[SessionManager] Ready to accept requests (instance: ${this.instanceId}, in-memory sessions: ${this.cache.size})`);
 
+            // DIAGNOSTIC: Log the Redis key prefix being used to help identify prefix mismatch issues
+            if (storageType === 'redis') {
+                try {
+                    const adapter = await getStorageAdapter();
+                    const prefix = adapter.options?.keyPrefix || '<none>';
+                    log.warn(() => `[SessionManager] Using Redis key prefix: "${prefix}" - sessions stored under this namespace`);
+                } catch (_) {
+                    // Ignore errors in diagnostic logging
+                }
+            }
+
             // In Redis lazy-load mode, add helpful message about cross-instance fallback
             if (storageType === 'redis' && !sessionPreloadEnabled) {
                 log.debug(() => '[SessionManager] Using lazy-load mode: sessions load from Redis on-demand via fallback');
@@ -1318,7 +1329,18 @@ class SessionManager extends EventEmitter {
 
             // Session not found in storage
             if (!stored) {
-                log.debug(() => `[SessionManager] loadSessionFromStorage: session token not found in storage: ${redactToken(token)}`);
+                // DIAGNOSTIC: Log at WARN level to help debug session disappearance issues
+                // This helps identify when sessions go missing after restarts
+                log.warn(() => `[SessionManager] loadSessionFromStorage: session token NOT FOUND in storage: ${redactToken(token)} - this may indicate Redis data loss, key prefix mismatch, or TTL expiration`);
+
+                // Try to provide more context by checking if the adapter has prefix info
+                try {
+                    if (adapter.options?.keyPrefix) {
+                        log.debug(() => `[SessionManager] Current Redis prefix: "${adapter.options.keyPrefix}", checking alternate prefixes...`);
+                    }
+                } catch (_) {
+                    // Ignore errors in diagnostic logging
+                }
                 return null;
             }
 
@@ -1894,6 +1916,25 @@ class SessionManager extends EventEmitter {
             if (indexedCount !== actualCount) {
                 const logFn = SESSION_INDEX_MISMATCH_LOG_LEVEL === 'error' ? log.error : log.warn;
                 logFn(() => `[SessionManager] Session index mismatch: index=${indexedCount} storage=${actualCount}. Rebuilding index.`);
+
+                // DIAGNOSTIC: Try to identify which tokens are in the index but not in storage
+                // This helps debug session disappearance issues
+                if (indexedCount > actualCount) {
+                    try {
+                        const indexedTokens = await adapter.client?.smembers(adapter.getSessionIndexKey());
+                        if (indexedTokens && Array.isArray(indexedTokens)) {
+                            const storageSet = new Set(validKeys);
+                            const missingTokens = indexedTokens.filter(t => !storageSet.has(t));
+                            if (missingTokens.length > 0) {
+                                const redactedMissing = missingTokens.slice(0, 5).map(t => redactToken(t));
+                                log.warn(() => `[SessionManager] Tokens in index but NOT in storage (showing up to 5): [${redactedMissing.join(', ')}] - these sessions may have been lost due to TTL expiration or storage issues`);
+                            }
+                        }
+                    } catch (diagErr) {
+                        log.debug(() => `[SessionManager] Could not retrieve indexed tokens for diagnostics: ${diagErr.message}`);
+                    }
+                }
+
                 try {
                     await adapter.resetSessionIndex(validKeys);
                     this.storageCountCache = { value: actualCount, ts: Date.now() };
