@@ -1720,13 +1720,23 @@ function setStremioCommunityPrefetchCooldown(configHash, subtitleCount = 0) {
  * @param {Object} req - Express request object (to check if it's libmpv)
  * @returns {{ blocked: boolean, reason: string, remainingMs: number }}
  */
-function checkStremioCommunityPrefetchCooldown(configHash, req) {
-    if (DISABLE_STREMIO_COMMUNITY_COOLDOWN || !configHash) {
+function checkStremioCommunityPrefetchCooldown(configStr, req) {
+    if (DISABLE_STREMIO_COMMUNITY_COOLDOWN || !configStr) {
         return { blocked: false, reason: null, remainingMs: 0 };
     }
 
-    const entry = stremioCommunityPrefetchTracker.get(configHash);
+    // DEBUG: Log request characteristics for diagnosing prefetch detection issues
+    const userAgent = (req?.get('user-agent') || 'none').toLowerCase();
+    const origin = (req?.get('origin') || 'none').toLowerCase();
+    const isLibmpv = isLibmpvRequest(req);
+
+    // Use configStr directly as the key (must match what setStremioCommunityPrefetchCooldown uses)
+    const entry = stremioCommunityPrefetchTracker.get(configStr);
     if (!entry) {
+        // DEBUG: Log when we don't find a cooldown entry for libmpv requests
+        if (isLibmpv) {
+            log.debug(() => `[Prefetch Cooldown] No cooldown entry for libmpv request (origin=${origin}, ua=${userAgent.substring(0, 60)})`);
+        }
         return { blocked: false, reason: null, remainingMs: 0 };
     }
 
@@ -1740,10 +1750,12 @@ function checkStremioCommunityPrefetchCooldown(configHash, req) {
 
     // Cooldown active - but only block libmpv requests (the prefetcher)
     // Allow non-libmpv requests (user actually selected a subtitle)
-    if (!isLibmpvRequest(req)) {
+    if (!isLibmpv) {
+        log.debug(() => `[Prefetch Cooldown] Non-libmpv request allowed during cooldown (origin=${origin}, ua=${userAgent.substring(0, 60)})`);
         return { blocked: false, reason: 'non-libmpv request allowed', remainingMs };
     }
 
+    log.debug(() => `[Prefetch Cooldown] BLOCKING libmpv request (origin=${origin}, remaining=${remainingMs}ms)`);
     return {
         blocked: true,
         reason: `prefetch cooldown (${remainingMs}ms remaining)`,
@@ -5136,7 +5148,8 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
 
         // Prefetch Cooldown: Block libmpv prefetch requests during cooldown window after subtitle list is served
         // This is more targeted than burst detection - specifically for Stremio Community clients
-        const prefetchCooldown = checkStremioCommunityPrefetchCooldown(configKey, req);
+        // IMPORTANT: Use configStr (the raw URL parameter) as the key to match setStremioCommunityPrefetchCooldown
+        const prefetchCooldown = checkStremioCommunityPrefetchCooldown(configStr, req);
         if (prefetchCooldown.blocked) {
             log.debug(() => `[Translation] Blocked by prefetch cooldown: ${prefetchCooldown.reason} for ${sourceFileId}`);
             const cooldownMsg = createLoadingSubtitle(config?.uiLanguage || 'en');
@@ -7568,11 +7581,11 @@ app.use('/addon/:config', (req, res, next) => {
         // to block the subsequent libmpv prefetch storm
         if (isSubtitlesRequest && isStremioCommunityRequest(req)) {
             try {
-                // Extract config hash from the request/response for cooldown tracking
-                const configHash = res.locals?.configHash || config || 'unknown';
+                // Use raw config from URL (req.params.config) for cooldown tracking
+                // This MUST match the key used in checkStremioCommunityPrefetchCooldown
                 const subtitleCount = parsed?.subtitles?.length || 0;
                 if (subtitleCount > 0) {
-                    setStremioCommunityPrefetchCooldown(configHash, subtitleCount);
+                    setStremioCommunityPrefetchCooldown(config, subtitleCount);
                 }
             } catch (e) {
                 log.warn(() => `[Prefetch Cooldown] Failed to set cooldown: ${e.message}`);
@@ -7601,10 +7614,9 @@ app.use('/addon/:config', (req, res, next) => {
             if (isSubtitlesRequest && isStremioCommunityRequest(req)) {
                 try {
                     const parsed = JSON.parse(chunk);
-                    const configHash = res.locals?.configHash || config || 'unknown';
                     const subtitleCount = parsed?.subtitles?.length || 0;
                     if (subtitleCount > 0) {
-                        setStremioCommunityPrefetchCooldown(configHash, subtitleCount);
+                        setStremioCommunityPrefetchCooldown(config, subtitleCount);
                     }
                 } catch (e) {
                     // Not JSON or parsing failed - ignore
@@ -7621,10 +7633,9 @@ app.use('/addon/:config', (req, res, next) => {
                 if (isSubtitlesRequest && isStremioCommunityRequest(req)) {
                     try {
                         const parsed = JSON.parse(str);
-                        const configHash = res.locals?.configHash || config || 'unknown';
                         const subtitleCount = parsed?.subtitles?.length || 0;
                         if (subtitleCount > 0) {
-                            setStremioCommunityPrefetchCooldown(configHash, subtitleCount);
+                            setStremioCommunityPrefetchCooldown(config, subtitleCount);
                         }
                     } catch (e) {
                         // Not JSON or parsing failed - ignore
