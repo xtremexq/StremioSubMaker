@@ -3229,6 +3229,7 @@ app.post('/api/validate-subsource', async (req, res) => {
             // and inherits robust headers and a ~7s timeout with retries.
             const resp = await subsource.client.get('/movies/search', {
                 params: { searchType: 'imdb', imdb: 'tt0133093' },
+                headers: subsource.defaultHeaders,
                 responseType: 'json'
             });
 
