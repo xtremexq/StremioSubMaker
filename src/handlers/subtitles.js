@@ -139,9 +139,11 @@ function getMaxConcurrentTranslationsForConfig(config) {
 }
 
 // Security: LRU cache for in-progress translations (max 500 entries)
+// TTL aligned with inFlightTranslations (30 min) to prevent duplicate translations
+// when status expires before the in-flight promise completes
 const translationStatus = new LRUCache({
   max: 500,
-  ttl: 10 * 60 * 1000, // 10 minutes
+  ttl: 30 * 60 * 1000, // 30 minutes (aligned with inFlightTranslations TTL)
   updateAgeOnGet: false,
 });
 
@@ -497,8 +499,8 @@ function buildPartialSrtWithTail(mergedSrt, uiLanguage = 'en') {
       const parts = last.timecode.split('-->');
       if (parts[1]) end = parts[1].trim();
     }
-    // Ensure tail starts at or after last end
-    const tailStartMs = srtTimeToMs(end);
+    // Ensure tail starts after last end with a small gap to prevent overlap on some players
+    const tailStartMs = srtTimeToMs(end) + 1000;
     const tailStart = msToSrtTime(tailStartMs);
     const tail = {
       id: reindexed.length + 1,
@@ -1055,13 +1057,13 @@ async function waitForFinalCachedTranslation(storageKey, bypassKey, cacheOptions
     if (result) {
       return result;
     }
-    await new Promise(res => setTimeout(res, 1000));
+    await new Promise(res => setTimeout(res, 5000));
   }
   return null;
 }
 
 // Save translation to storage (async)
-async function saveToStorage(cacheKey, cachedData, { allowPermanent = true } = {}) {
+async function saveToStorage(cacheKey, cachedData, { allowPermanent = true, ttl: overrideTtl } = {}) {
   try {
     if (!allowPermanent) {
       log.warn(() => `[Cache] Skipping permanent cache write (disabled) key=${shortKey(cacheKey)}`);
@@ -1074,7 +1076,8 @@ async function saveToStorage(cacheKey, cachedData, { allowPermanent = true } = {
     }
 
     const adapter = await getStorageAdapter();
-    const ttl = StorageAdapter.DEFAULT_TTL[StorageAdapter.CACHE_TYPES.TRANSLATION];
+    // Allow callers (e.g. error caching) to override the default TTL
+    const ttl = overrideTtl !== undefined ? overrideTtl : StorageAdapter.DEFAULT_TTL[StorageAdapter.CACHE_TYPES.TRANSLATION];
     await adapter.set(namespacedKey, cachedData, StorageAdapter.CACHE_TYPES.TRANSLATION, ttl);
 
     cacheMetrics.diskWrites++;
@@ -1146,8 +1149,10 @@ async function readFromPartialCache(cacheKey) {
 // Calculate total cache size
 async function calculateCacheSize() {
   try {
-    if (!fs.existsSync(CACHE_DIR)) {
-      return 0;
+    try {
+      await fs.promises.access(CACHE_DIR);
+    } catch (_) {
+      return 0; // Directory does not exist
     }
 
     const files = await fs.promises.readdir(CACHE_DIR);
@@ -1174,8 +1179,10 @@ async function calculateCacheSize() {
 
 async function enforceCacheSizeLimit() {
   try {
-    if (!fs.existsSync(CACHE_DIR)) {
-      return;
+    try {
+      await fs.promises.access(CACHE_DIR);
+    } catch (_) {
+      return; // Directory does not exist
     }
 
     const totalSize = await calculateCacheSize();
@@ -3783,6 +3790,25 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
       sharedLockInProgress = !!(sharedLock && sharedLock.inProgress !== false);
     } catch (_) { }
 
+    // Stale lock detection: if the shared lock is older than the translation timeout
+    // and there's no in-memory promise backing it, the original translation likely died
+    // without cleaning up. Clear the stale lock and let a new translation start.
+    const staleLockThresholdMs = Math.max(10 * 60 * 1000, (parseInt(config?.advancedSettings?.translationTimeout) || 600) * 1000);
+    if (sharedLockInProgress && sharedLock?.startedAt) {
+      const lockAge = Date.now() - sharedLock.startedAt;
+      const hasInMemoryBacking = inFlightTranslations.has(runtimeKey)
+        || (sharedInFlightKey && inFlightTranslations.has(sharedInFlightKey));
+      if (lockAge > staleLockThresholdMs && !hasInMemoryBacking) {
+        log.warn(() => `[Translation] Stale shared lock detected for key=${sharedLockKey} (age ${Math.floor(lockAge / 1000)}s > threshold ${Math.floor(staleLockThresholdMs / 1000)}s, no in-memory promise). Clearing stale lock.`);
+        sharedLockInProgress = false;
+        try {
+          await clearSharedTranslationInFlight(sharedLockKey);
+          translationStatus.delete(runtimeKey);
+          if (sharedInFlightKey) translationStatus.delete(sharedInFlightKey);
+        } catch (_) { }
+      }
+    }
+
     // Check if translation is in progress (for backward compatibility)
     const status = translationStatus.get(runtimeKey)
       || (sharedInFlightKey ? translationStatus.get(sharedInFlightKey) : null)
@@ -3793,33 +3819,47 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
       } : null);
     if (status && status.inProgress) {
       const elapsedTime = Math.floor((Date.now() - status.startedAt) / 1000);
-      log.debug(() => `[Translation] In-progress existing translation key=${sharedInFlightKey || runtimeKey} (elapsed ${elapsedTime}s); ${waitForFullTranslation ? 'waiting for final result (mobile mode)' : 'attempting partial SRT'}`);
-      if (waitForFullTranslation) {
-        const waitedResult = await waitForFinalCachedTranslation(
-          baseKey,
-          cacheKey,
-          { bypass, bypassEnabled, userHash, allowPermanent: allowPermanent && ENABLE_PERMANENT_TRANSLATIONS, uiLanguage: config.uiLanguage || 'en' },
-          mobileWaitTimeoutMs
-        );
 
-        if (waitedResult) {
-          log.debug(() => `[Translation] Mobile mode: returning final result after waiting for status-only path key=${cacheKey}`);
-          return waitedResult;
-        }
-
-        log.warn(() => `[Translation] Mobile mode wait timed out on status-only path for key=${cacheKey}`);
-        return createTranslationErrorSubtitle('other', 'Translation did not finish in time. Please retry.', config.uiLanguage || 'en');
-      } else {
+      // Also detect stale in-memory status entries with no backing promise
+      const hasInMemoryBacking = inFlightTranslations.has(runtimeKey)
+        || (sharedInFlightKey && inFlightTranslations.has(sharedInFlightKey));
+      if (elapsedTime * 1000 > staleLockThresholdMs && !hasInMemoryBacking) {
+        log.warn(() => `[Translation] Stale in-memory translation status detected for key=${runtimeKey} (elapsed ${elapsedTime}s, no in-flight promise). Clearing and retrying.`);
         try {
-          const partial = await readFromPartialCache(runtimeKey);
-          if (partial && typeof partial.content === 'string' && partial.content.length > 0) {
-            log.debug(() => '[Translation] Serving partial SRT from partial cache');
-            return partial.content;
-          }
+          translationStatus.delete(runtimeKey);
+          if (sharedInFlightKey) translationStatus.delete(sharedInFlightKey);
+          await clearSharedTranslationInFlight(sharedLockKey);
         } catch (_) { }
-        const loadingMsg = createLoadingSubtitle(config.uiLanguage || 'en');
-        log.debug(() => `[Translation] No partial available, returning loading SRT (size=${loadingMsg.length})`);
-        return loadingMsg;
+        // Fall through to start a new translation
+      } else {
+        log.debug(() => `[Translation] In-progress existing translation key=${sharedInFlightKey || runtimeKey} (elapsed ${elapsedTime}s); ${waitForFullTranslation ? 'waiting for final result (mobile mode)' : 'attempting partial SRT'}`);
+        if (waitForFullTranslation) {
+          const waitedResult = await waitForFinalCachedTranslation(
+            baseKey,
+            cacheKey,
+            { bypass, bypassEnabled, userHash, allowPermanent: allowPermanent && ENABLE_PERMANENT_TRANSLATIONS, uiLanguage: config.uiLanguage || 'en' },
+            mobileWaitTimeoutMs
+          );
+
+          if (waitedResult) {
+            log.debug(() => `[Translation] Mobile mode: returning final result after waiting for status-only path key=${cacheKey}`);
+            return waitedResult;
+          }
+
+          log.warn(() => `[Translation] Mobile mode wait timed out on status-only path for key=${cacheKey}`);
+          return createTranslationErrorSubtitle('other', 'Translation did not finish in time. Please retry.', config.uiLanguage || 'en');
+        } else {
+          try {
+            const partial = await readFromPartialCache(runtimeKey);
+            if (partial && typeof partial.content === 'string' && partial.content.length > 0) {
+              log.debug(() => '[Translation] Serving partial SRT from partial cache');
+              return partial.content;
+            }
+          } catch (_) { }
+          const loadingMsg = createLoadingSubtitle(config.uiLanguage || 'en');
+          log.debug(() => `[Translation] No partial available, returning loading SRT (size=${loadingMsg.length})`);
+          return loadingMsg;
+        }
       }
     }
 
@@ -4250,6 +4290,12 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
     // Track consecutive partial save failures to warn about persistent issues (Fix #7)
     let consecutivePartialSaveFailures = 0;
     const MAX_SILENT_PARTIAL_FAILURES = 3;
+    // Serialization guard: prevent concurrent partial saves from racing (Fix #6)
+    // If a save is in-flight, the next one waits for it to finish before starting.
+    // This prevents an older, slower write from overwriting a newer one.
+    let partialSaveChain = Promise.resolve();
+    // Track whether partial delivery has been permanently disabled for this translation
+    let partialDeliveryDisabled = false;
 
     try {
       translatedContent = await translationEngine.translateSubtitle(
@@ -4258,28 +4304,36 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
         config.translationPrompt,
         async (progress) => {
           const persistPartial = async (partialText, logThisProgress) => {
+            if (partialDeliveryDisabled) return false;
             const partialSrt = buildPartialSrtWithTail(partialText, config.uiLanguage || 'en');
             if (!partialSrt || partialSrt.length === 0) return false;
-            try {
-              await saveToPartialCacheAsync(runtimeKey, {
-                content: partialSrt,
-                isComplete: false,
-                expiresAt: Date.now() + 60 * 60 * 1000
-              });
-              consecutivePartialSaveFailures = 0; // Reset on success
-              if (logThisProgress) {
-                log.debug(() => `[Translation] Saved partial: batch ${progress.currentBatch}/${progress.totalBatches}, ${progress.completedEntries}/${progress.totalEntries} entries${progress.streaming ? ' (streaming)' : ''}`);
+
+            // Chain saves sequentially to prevent race conditions
+            let saved = false;
+            partialSaveChain = partialSaveChain.then(async () => {
+              try {
+                await saveToPartialCacheAsync(runtimeKey, {
+                  content: partialSrt,
+                  isComplete: false,
+                  expiresAt: Date.now() + 60 * 60 * 1000
+                });
+                consecutivePartialSaveFailures = 0; // Reset on success
+                if (logThisProgress) {
+                  log.debug(() => `[Translation] Saved partial: batch ${progress.currentBatch}/${progress.totalBatches}, ${progress.completedEntries}/${progress.totalEntries} entries${progress.streaming ? ' (streaming)' : ''}`);
+                }
+                saved = true;
+              } catch (saveErr) {
+                consecutivePartialSaveFailures++;
+                if (consecutivePartialSaveFailures <= MAX_SILENT_PARTIAL_FAILURES) {
+                  log.warn(() => `[Translation] Partial save failed (${consecutivePartialSaveFailures}/${MAX_SILENT_PARTIAL_FAILURES}): ${saveErr.message}`);
+                } else if (consecutivePartialSaveFailures === MAX_SILENT_PARTIAL_FAILURES + 1) {
+                  log.error(() => `[Translation] Partial save has failed ${consecutivePartialSaveFailures} consecutive times — disabling partial delivery for key=${runtimeKey}.`);
+                  partialDeliveryDisabled = true;
+                }
               }
-              return true;
-            } catch (saveErr) {
-              consecutivePartialSaveFailures++;
-              if (consecutivePartialSaveFailures <= MAX_SILENT_PARTIAL_FAILURES) {
-                log.warn(() => `[Translation] Partial save failed (${consecutivePartialSaveFailures}/${MAX_SILENT_PARTIAL_FAILURES}): ${saveErr.message}`);
-              } else if (consecutivePartialSaveFailures === MAX_SILENT_PARTIAL_FAILURES + 1) {
-                log.error(() => `[Translation] Partial save has failed ${consecutivePartialSaveFailures} consecutive times — partial delivery is not working for key=${runtimeKey}. Suppressing further warnings.`);
-              }
-              return false;
-            }
+            }).catch(() => {}); // Prevent unhandled rejection from breaking the chain
+            await partialSaveChain;
+            return saved;
           };
 
           // Smart partial delivery: save at strategic points to reduce Redis I/O
@@ -4413,22 +4467,43 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
       translationStatus.set(sharedInFlightKey, { inProgress: false, completedAt: Date.now() });
     }
 
-    // Clean up partial cache now that final translation is saved
-    // Partial cache is no longer needed and should be deleted to free disk space
-    // Retry once on failure to reduce orphaned partials (Fix #4)
+    // Verify the final translation is readable from cache before deleting partial.
+    // This closes the race window where a concurrent request could find neither
+    // the partial (just deleted) nor the final result (async write not yet flushed).
+    let finalCacheVerified = false;
     try {
-      const adapter = await getStorageAdapter();
-      await adapter.delete(runtimeKey, StorageAdapter.CACHE_TYPES.PARTIAL);
-      log.debug(() => `[Translation] Cleaned up partial cache for ${runtimeKey}`);
-    } catch (e) {
-      log.warn(() => `[Translation] Partial cache cleanup failed, retrying in 2s: ${e.message}`);
+      if (bypass && bypassEnabled) {
+        const verify = await readFromBypassStorage(cacheKey);
+        finalCacheVerified = !!(verify && (verify.content || verify.isComplete));
+      } else if (allowPermanent && ENABLE_PERMANENT_TRANSLATIONS) {
+        const verify = await readFromStorage(baseKey);
+        finalCacheVerified = !!(verify && (verify.content || verify.isComplete));
+      }
+    } catch (verifyErr) {
+      log.warn(() => `[Translation] Final cache verification failed for ${cacheKey}: ${verifyErr.message}`);
+    }
+
+    if (!finalCacheVerified) {
+      log.warn(() => `[Translation] Final cache not yet readable for ${cacheKey} — keeping partial cache as fallback`);
+    }
+
+    // Clean up partial cache now that final translation is confirmed in storage
+    // Retry once on failure to reduce orphaned partials (Fix #4)
+    if (finalCacheVerified) {
       try {
-        await new Promise(resolve => setTimeout(resolve, 2000));
         const adapter = await getStorageAdapter();
         await adapter.delete(runtimeKey, StorageAdapter.CACHE_TYPES.PARTIAL);
-        log.debug(() => `[Translation] Partial cache cleanup succeeded on retry for ${runtimeKey}`);
-      } catch (retryErr) {
-        log.error(() => `[Translation] Partial cache cleanup failed after retry for ${runtimeKey}: ${retryErr.message} — orphaned partial will expire via TTL`);
+        log.debug(() => `[Translation] Cleaned up partial cache for ${runtimeKey}`);
+      } catch (e) {
+        log.warn(() => `[Translation] Partial cache cleanup failed, retrying in 2s: ${e.message}`);
+        try {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const adapter = await getStorageAdapter();
+          await adapter.delete(runtimeKey, StorageAdapter.CACHE_TYPES.PARTIAL);
+          log.debug(() => `[Translation] Partial cache cleanup succeeded on retry for ${runtimeKey}`);
+        } catch (retryErr) {
+          log.error(() => `[Translation] Partial cache cleanup failed after retry for ${runtimeKey}: ${retryErr.message} — orphaned partial will expire via TTL`);
+        }
       }
     }
 
@@ -4509,8 +4584,16 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
         errorCache.configHash = userHash;  // Include user hash for isolation
         await saveToBypassStorage(cacheKey, errorCache);
         log.debug(() => '[Translation] Error cached to bypass storage');
+      } else if (allowPermanent && ENABLE_PERMANENT_TRANSLATIONS) {
+        // Save error to permanent storage with a short TTL so it auto-expires.
+        // Without an explicit TTL the TRANSLATION cache type has no expiry (null),
+        // which would cause the error entry to persist indefinitely and block the
+        // cache key until a user manually triggers the delete-on-read path.
+        const ERROR_TTL_SECONDS = 15 * 60; // 15 minutes — matches expiresAt above
+        await saveToStorage(baseKey, errorCache, { allowPermanent, ttl: ERROR_TTL_SECONDS });
+        log.debug(() => '[Translation] Error cached to permanent storage (TTL 15m)');
       } else {
-        log.debug(() => `[Translation] Skipping permanent error cache (allow=${allowPermanent}, flag=${ENABLE_PERMANENT_TRANSLATIONS})`);
+        log.debug(() => `[Translation] Skipping error cache (bypass=${bypass}, allow=${allowPermanent}, flag=${ENABLE_PERMANENT_TRANSLATIONS})`);
       }
     } catch (cacheError) {
       log.warn(() => ['[Translation] Failed to cache error:', cacheError.message]);

@@ -1471,22 +1471,11 @@
                                 </div>
                             </label>
                             <select id="sendTimestampsToAI" class="styled-select">
-                                <option value="xml" data-i18n="config.translationSettings.workflow.xml">XML Tags
-                                    (Default)</option>
+                                <option value="xml" data-i18n="config.translationSettings.workflow.xml">XML Tags (Default)</option>
                                 <option value="original" data-i18n="config.translationSettings.workflow.original">
                                     Original Timestamps (Legacy)</option>
-                                <option value="ai" data-i18n="config.translationSettings.workflow.ai">Send Timestamps to
-                                    AI</option>
+                                <option value="ai" data-i18n="config.translationSettings.workflow.ai">Send Timestamps to AI</option>
                             </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="enableJsonOutput">
-                                <span data-i18n="config.translationSettings.jsonOutput.label">Enable JSON Structured Output (Beta)</span>
-                                <span class="label-description"
-                                    data-i18n="config.translationSettings.jsonOutput.description">Request JSON array format from AI for unambiguous response parsing. May improve accuracy but not all providers support it. Disabled by default.</span>
-                            </label>
                         </div>
 
                         <div class="form-group">
@@ -1781,6 +1770,15 @@
                                     data-i18n="config.advancedGemini.mismatchRetries.description">When the AI returns a different number of subtitle entries than expected, retry the batch this many times before marking untranslated lines. (0-3, Default: 1)</span>
                             </label>
                             <input type="number" id="mismatchRetries" min="0" max="3" step="1" value="1" placeholder="1">
+                        </div>
+
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="enableJsonOutput">
+                                <span data-i18n="config.translationSettings.jsonOutput.label">Enable JSON Structured Output (Beta)</span>
+                                <span class="label-description"
+                                    data-i18n="config.translationSettings.jsonOutput.description">Request JSON array format from AI for unambiguous response parsing. May improve accuracy but not all providers support it. Disabled by default.</span>
+                            </label>
                         </div>
 
 

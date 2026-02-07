@@ -302,7 +302,8 @@ function createProviderInstance(providerKey, providerConfig = {}, providerParams
         maxOutputTokens: providerParams.maxOutputTokens,
         thinkingBudget: providerParams.thinkingBudget,
         translationTimeout: providerParams.translationTimeout,
-        maxRetries: providerParams.maxRetries
+        maxRetries: providerParams.maxRetries,
+        enableJsonOutput
       });
     case 'custom': {
       const baseUrl = providerConfig.baseUrl;

@@ -1829,14 +1829,11 @@ Translate to {target_language}.`;
         // Mismatch retries change
         const mismatchRetriesEl = document.getElementById('mismatchRetries');
         const mismatchRetriesChanged = mismatchRetriesEl ? (parseInt(mismatchRetriesEl.value) !== (defaults.mismatchRetries ?? 1)) : false;
-        // Translation workflow change
-        const workflowEl = document.getElementById('sendTimestampsToAI');
-        const workflowChanged = workflowEl ? (workflowEl.value !== (defaults.translationWorkflow || 'xml')) : false;
         // JSON output change
         const jsonOutputEl = document.getElementById('enableJsonOutput');
         const jsonOutputChanged = jsonOutputEl ? (jsonOutputEl.checked !== (defaults.enableJsonOutput === true)) : false;
 
-        return modelChanged || thinkingChanged || tempChanged || topPChanged || batchCtxChanged || ctxSizeChanged || mismatchRetriesChanged || workflowChanged || jsonOutputChanged;
+        return modelChanged || thinkingChanged || tempChanged || topPChanged || batchCtxChanged || ctxSizeChanged || mismatchRetriesChanged || jsonOutputChanged;
     }
 
     /**

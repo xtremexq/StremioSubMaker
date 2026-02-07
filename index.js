@@ -5181,11 +5181,11 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
             log.debug(() => `[Translation] Duplicate request detected for ${sourceFileId} to ${targetLang} - checking for partial results`);
 
             // Generate cache keys using shared utility (single source of truth for cache key scoping)
-            const { cacheKey } = generateCacheKeys(config, sourceFileId, targetLang);
+            const { cacheKey, runtimeKey } = generateCacheKeys(config, sourceFileId, targetLang);
 
             // For duplicate requests, check partial cache FIRST (in-flight translations)
-            // Both partial cache and bypass cache use the same scoped key (cacheKey)
-            const partialCached = await readFromPartialCache(cacheKey);
+            // Partials are saved under runtimeKey (see performTranslation), so read with the same key
+            const partialCached = await readFromPartialCache(runtimeKey);
             if (partialCached && typeof partialCached.content === 'string' && partialCached.content.length > 0) {
                 log.debug(() => `[Translation] Found in-flight partial in partial cache for ${sourceFileId} (${partialCached.content.length} chars)`);
                 res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -5375,13 +5375,15 @@ app.get('/addon/:config/learn/:sourceFileId/:targetLang', normalizeSubtitleForma
         } catch (_) { }
 
         // If we have partial translation, serve partial VTT immediately
-        const partial = await readFromPartialCache(cacheKey);
+        // Partials are saved under runtimeKey (see performTranslation), so read with the same key
+        const partial = await readFromPartialCache(runtimeKey);
         if (partial && partial.content) {
             const vtt = srtPairToWebVTT(sourceContent, partial.content, (config.learnOrder || 'source-top'), (config.learnPlacement || 'stacked'), { learnItalic: config.learnItalic, learnItalicTarget: config.learnItalicTarget });
             const output = maybeConvertToSRT(vtt, config);
             const isSrt = config.forceSRTOutput;
             res.setHeader('Content-Type', isSrt ? 'text/plain; charset=utf-8' : 'text/vtt; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="learn_${targetLang}.${isSrt ? 'srt' : 'vtt'}"`);
+            setSubtitleCacheHeaders(res, 'loading');
             return res.send(output);
         }
 

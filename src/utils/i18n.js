@@ -72,7 +72,7 @@ function getTranslator(lang) {
     if (!tpl || typeof tpl !== 'string') return tpl;
     return tpl.replace(/\{(\w+)\}/g, (match, key) => {
       return Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key]) : match;
-    });
+    }).replace(/\\n/g, '\n');
   };
 
   return function t(key, vars = {}, fallback = '') {
@@ -141,7 +141,7 @@ function buildClientBootstrap(localePayload) {
             }
             return String(template).replace(/\\{(\\w+)\\}/g, function(match, k) {
               return hasOwn.call(vars, k) ? vars[k] : match;
-            });
+            }).replace(/\\\\n/g, '\\n');
           };
           if (document && document.documentElement) {
             document.documentElement.lang = window.__LOCALE__.lang || 'en';

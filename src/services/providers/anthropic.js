@@ -31,6 +31,8 @@ class AnthropicProvider {
     this.maxRetries = Number.isFinite(parseInt(options.maxRetries, 10))
       ? Math.max(0, parseInt(options.maxRetries, 10))
       : 2;
+    // JSON structured output mode
+    this.enableJsonOutput = options.enableJsonOutput === true;
   }
 
   normalizeTargetName(name) {
@@ -80,6 +82,14 @@ class AnthropicProvider {
         budget_tokens: thinkingBudget
       };
     }
+
+    // JSON structured output: prefill assistant response with "[" to force JSON array output.
+    // Anthropic doesn't have response_format like OpenAI, but assistant prefill is the
+    // recommended approach. Skip when thinking is enabled (prefill conflicts with thinking).
+    if (this.enableJsonOutput && !thinkingEnabled) {
+      body.messages.push({ role: 'assistant', content: '[' });
+    }
+
     if (stream) {
       body.stream = true;
     }
@@ -186,7 +196,12 @@ class AnthropicProvider {
           throw new Error('No translation returned from Anthropic');
         }
 
-        return this.cleanTranslatedSubtitle(text);
+        // When JSON prefill was used, the response won't include the leading "["
+        // we sent as the assistant prefill — prepend it so downstream JSON parsing works.
+        const needsJsonPrefix = this.enableJsonOutput && !body.thinking;
+        const fullText = needsJsonPrefix ? `[${text}` : text;
+
+        return this.cleanTranslatedSubtitle(fullText);
       } catch (error) {
         lastError = error;
         if (attempt < this.maxRetries) {
@@ -321,7 +336,11 @@ class AnthropicProvider {
               finishReason = finishReason || recovered.finishReason;
             }
 
-            const cleaned = this.cleanTranslatedSubtitle(aggregated);
+            // Prepend the "[" prefill for JSON mode (same as non-stream path)
+            const needsJsonPrefix = this.enableJsonOutput && !body.thinking;
+            const fullAggregated = needsJsonPrefix ? `[${aggregated}` : aggregated;
+
+            const cleaned = this.cleanTranslatedSubtitle(fullAggregated);
 
             if (!cleaned) {
               if (finishReason === 'content_filter') {

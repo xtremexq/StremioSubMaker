@@ -130,6 +130,11 @@ function getBatchSizeForModel(model) {
   return 250;
 }
 
+// Module-level shared key health tracking across engine instances.
+// Keys with repeated errors are skipped by all engines within the same process,
+// preventing a bad key from being retried by a new translation request.
+const _sharedKeyHealthErrors = new Map(); // apiKey -> { count: number, lastError: number }
+
 class TranslationEngine {
   constructor(geminiService, model = null, advancedSettings = {}, options = {}) {
       this.gemini = geminiService?.primary || geminiService;
@@ -169,20 +174,48 @@ class TranslationEngine {
       }
 
       // JSON structured output mode (disabled by default, opt-in via config)
-      this.enableJsonOutput = this.advancedSettings.enableJsonOutput === true;
+      // Force-disable for non-LLM providers — they don't support structured output
+      const NON_LLM_PROVIDERS = new Set(['deepl', 'googletranslate']);
+      this.isNativeBatchProvider = NON_LLM_PROVIDERS.has(this.providerName);
+      this.enableJsonOutput = this.isNativeBatchProvider ? false : this.advancedSettings.enableJsonOutput === true;
 
-      // Key rotation configuration for per-batch rotation
+      // --- Fix #9: Warn (and disable) when JSON output is enabled with 'ai' workflow.
+      // JSON structured output is incompatible with 'ai' (timestamp/SRT) mode because the
+      // AI must return valid SRT, not a JSON array. Silently ignoring it is confusing.
+      if (this.enableJsonOutput && this.translationWorkflow === 'ai') {
+        log.warn(() => `[TranslationEngine] JSON structured output is not compatible with 'ai' (timestamp) workflow — disabling JSON output. Use 'original' or 'xml' workflow for JSON output.`);
+        this.enableJsonOutput = false;
+      }
+
+      // Cap batch size when JSON output is enabled — large JSON arrays (300-400 objects)
+      // are extremely error-prone for LLMs. Keep batches at ≤150 entries for reliable JSON.
+      const JSON_OUTPUT_MAX_BATCH_SIZE = 150;
+      if (this.enableJsonOutput && this.batchSize > JSON_OUTPUT_MAX_BATCH_SIZE) {
+        log.debug(() => `[TranslationEngine] Capping batch size from ${this.batchSize} to ${JSON_OUTPUT_MAX_BATCH_SIZE} for JSON output mode`);
+        this.batchSize = JSON_OUTPUT_MAX_BATCH_SIZE;
+      }
+
+      // Force workflow to 'original' for non-LLM providers — XML tags and AI timestamps are LLM-only features
+      if (this.isNativeBatchProvider && this.translationWorkflow !== 'original') {
+        log.debug(() => `[TranslationEngine] Forcing workflow to 'original' for non-LLM provider ${this.providerName} (was '${this.translationWorkflow}')`);
+        this.translationWorkflow = 'original';
+        this.sendTimestampsToAI = false;
+      }
+
+      // Key rotation configuration for per-batch and per-request rotation
       // keyRotationConfig: { enabled: boolean, mode: 'per-request' | 'per-batch', keys: string[], advancedSettings: {} }
       // SECURITY: Store keys in a non-enumerable property to prevent accidental serialization
       if (options.keyRotationConfig && Array.isArray(options.keyRotationConfig.keys)) {
+        const filteredKeys = options.keyRotationConfig.keys.filter(k => typeof k === 'string' && k.trim());
         const sanitizedConfig = {
           enabled: options.keyRotationConfig.enabled === true,
           mode: options.keyRotationConfig.mode || 'per-batch',
-          advancedSettings: options.keyRotationConfig.advancedSettings || {}
+          // Merge advancedSettings with engine-level settings so enableJsonOutput etc. are never lost
+          advancedSettings: { ...this.advancedSettings, ...(options.keyRotationConfig.advancedSettings || {}) }
         };
         // Make keys non-enumerable so they won't appear in JSON.stringify or Object.keys
         Object.defineProperty(sanitizedConfig, 'keys', {
-          value: options.keyRotationConfig.keys,
+          value: filteredKeys,
           enumerable: false,
           writable: false,
           configurable: false
@@ -191,22 +224,44 @@ class TranslationEngine {
       } else {
         this.keyRotationConfig = null;
       }
-      this.perBatchRotationEnabled = this.keyRotationConfig?.enabled === true &&
-        this.keyRotationConfig?.mode === 'per-batch' &&
+
+      // Rotation is available when enabled, we have >1 key, and provider is Gemini
+      const rotationAvailable = this.keyRotationConfig?.enabled === true &&
         Array.isArray(this.keyRotationConfig?.keys) &&
         this.keyRotationConfig.keys.length > 1 &&
         this.providerName === 'gemini';
 
+      // Per-batch: rotate before every batch. Per-request: single key per file but retry rotation still works.
+      this.perBatchRotationEnabled = rotationAvailable && this.keyRotationConfig?.mode === 'per-batch';
+      // Retry rotation: enabled for BOTH per-batch and per-request modes so error retries can try a different key
+      this.retryRotationEnabled = rotationAvailable;
+
+      // Global counter for round-robin key rotation (shared across batches and retries).
+      // Seed from the initial key's position so the first rotation advances to the next key
+      // instead of always restarting at index 0 (which would waste the initial selectGeminiApiKey call).
+      const initialApiKey = this.gemini?.apiKey;
+      const initialKeyIndex = initialApiKey
+        ? this.keyRotationConfig.keys.indexOf(initialApiKey)
+        : -1;
+      this._keyRotationCounter = initialKeyIndex >= 0 ? initialKeyIndex + 1 : 0;
+
+      // Cache model limits across key rotations to avoid redundant API calls
+      this._sharedModelLimits = null;
+
+      // Key health tracking: use module-level shared map so errors persist across engine instances.
+      // Keys with >= KEY_HEALTH_ERROR_THRESHOLD errors within KEY_HEALTH_COOLDOWN_MS are skipped.
+      this._keyHealthErrors = _sharedKeyHealthErrors;
+
       if (this.perBatchRotationEnabled) {
         log.debug(() => `[TranslationEngine] Per-batch key rotation enabled with ${this.keyRotationConfig.keys.length} keys`);
+      } else if (this.retryRotationEnabled) {
+        log.debug(() => `[TranslationEngine] Per-request key rotation enabled with ${this.keyRotationConfig.keys.length} keys (retry rotation active)`);
       }
 
-      // Non-LLM providers (DeepL, Google Translate) handle batching natively.
-      // Skip numbered-list prompt construction and send raw SRT directly.
-      const NON_LLM_PROVIDERS = new Set(['deepl', 'googletranslate']);
-      this.isNativeBatchProvider = NON_LLM_PROVIDERS.has(this.providerName);
+      // isNativeBatchProvider already set above during JSON/workflow normalization
 
-      log.debug(() => `[TranslationEngine] Initialized with model: ${model || 'unknown'}, batch size: ${this.batchSize}, batch context: ${this.enableBatchContext ? 'enabled' : 'disabled'}, workflow: ${this.translationWorkflow}, mode: ${this.singleBatchMode ? 'single-batch' : 'batched'}, mismatchRetries: ${this.mismatchRetries}, jsonOutput: ${this.enableJsonOutput}${this.perBatchRotationEnabled ? ', key-rotation: per-batch' : ''}${this.isNativeBatchProvider ? ', native-batch: true' : ''}`);
+      const rotationLabel = this.perBatchRotationEnabled ? 'per-batch' : (this.retryRotationEnabled ? 'per-request' : '');
+      log.debug(() => `[TranslationEngine] Initialized with model: ${model || 'unknown'}, batch size: ${this.batchSize}, batch context: ${this.enableBatchContext ? 'enabled' : 'disabled'}, workflow: ${this.translationWorkflow}, mode: ${this.singleBatchMode ? 'single-batch' : 'batched'}, mismatchRetries: ${this.mismatchRetries}, jsonOutput: ${this.enableJsonOutput}${rotationLabel ? `, key-rotation: ${rotationLabel}, keys: ${this.keyRotationConfig.keys.length}` : ''}${this.isNativeBatchProvider ? ', native-batch: true' : ''}`);
     }
 
   /**
@@ -216,19 +271,171 @@ class TranslationEngine {
   maybeRotateKeyForBatch(batchIndex) {
     if (!this.perBatchRotationEnabled) return;
 
-    const keys = this.keyRotationConfig.keys;
-    // Sequential (round-robin) selection based on batch index
-    const keyIndex = batchIndex % keys.length;
-    const selectedKey = keys[keyIndex];
+    // Skip rotation for the first batch — the initial GeminiService was already created
+    // with the key selected by selectGeminiApiKey(), so rotating here would waste that
+    // instance and create a duplicate. Subsequent batches rotate normally.
+    if (batchIndex === 0) return;
 
-    // Create a new GeminiService with the rotated key
+    // Use the global rotation counter so retries naturally advance to the next key
+    this._rotateToNextKey(`batch ${batchIndex + 1}`);
+  }
+
+  /**
+   * Key health tracking constants
+   */
+  static KEY_HEALTH_ERROR_THRESHOLD = 5;
+  static KEY_HEALTH_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+
+  /**
+   * Record an error for the current API key (for health tracking).
+   * @param {string} apiKey - The key that errored
+   */
+  _recordKeyError(apiKey) {
+    if (!this.retryRotationEnabled || !apiKey) return;
+    const now = Date.now();
+    const entry = this._keyHealthErrors.get(apiKey) || { count: 0, lastError: 0 };
+    // Reset counter if cooldown has elapsed since last error
+    if (now - entry.lastError > TranslationEngine.KEY_HEALTH_COOLDOWN_MS) {
+      entry.count = 0;
+    }
+    entry.count++;
+    entry.lastError = now;
+    this._keyHealthErrors.set(apiKey, entry);
+    if (entry.count >= TranslationEngine.KEY_HEALTH_ERROR_THRESHOLD) {
+      log.warn(() => `[TranslationEngine] Key ${this._redactKey(apiKey)} reached ${entry.count} errors, will be skipped for ~1h cooldown`);
+    }
+  }
+
+  /**
+   * Check if a key is currently in cooldown (unhealthy).
+   * @param {string} apiKey
+   * @returns {boolean}
+   */
+  _isKeyCoolingDown(apiKey) {
+    if (!apiKey) return false;
+    const entry = this._keyHealthErrors.get(apiKey);
+    if (!entry) return false;
+    const now = Date.now();
+    // If cooldown has elapsed, reset and allow the key
+    if (now - entry.lastError > TranslationEngine.KEY_HEALTH_COOLDOWN_MS) {
+      this._keyHealthErrors.delete(apiKey);
+      return false;
+    }
+    return entry.count >= TranslationEngine.KEY_HEALTH_ERROR_THRESHOLD;
+  }
+
+  /**
+   * Redact an API key for safe logging (first 4 + last 4 chars).
+   * @param {string} key
+   * @returns {string}
+   */
+  _redactKey(key) {
+    if (!key || key.length < 10) return '[REDACTED]';
+    return `${key.slice(0, 4)}...${key.slice(-4)}`;
+  }
+
+  /**
+   * Advance the global key rotation counter and swap to the next key.
+   * Every call (whether for a new batch or a retry) moves to the next key in round-robin order.
+   * Skips keys that are in cooldown (too many recent errors), falling back to the next healthy key.
+   * Preserves cached model limits across rotations to avoid redundant API calls.
+   * @param {string} reason - Human-readable reason for the rotation (used in debug logs)
+   */
+  _rotateToNextKey(reason) {
+    if (!this.retryRotationEnabled) return;
+
+    const keys = this.keyRotationConfig.keys;
+    const totalKeys = keys.length;
+
+    // Always capture the latest model limits from the current instance before replacing it.
+    // This ensures limits fetched after the first rotation (or updated from fallback to real values)
+    // are preserved for subsequent rotations.
+    if (this.gemini?._modelLimits) {
+      this._sharedModelLimits = this.gemini._modelLimits;
+    }
+
+    // Find the next healthy key, trying up to totalKeys candidates
+    let selectedKey = null;
+    let keyIndex = -1;
+    for (let attempt = 0; attempt < totalKeys; attempt++) {
+      const candidateIndex = this._keyRotationCounter % totalKeys;
+      this._keyRotationCounter++;
+      const candidate = keys[candidateIndex];
+      if (!this._isKeyCoolingDown(candidate)) {
+        selectedKey = candidate;
+        keyIndex = candidateIndex;
+        break;
+      }
+      log.debug(() => `[TranslationEngine] Skipping key ${candidateIndex + 1}/${totalKeys} (in cooldown) for ${reason}`);
+    }
+
+    // If all keys are in cooldown, use the next one anyway (best effort)
+    if (!selectedKey) {
+      keyIndex = (this._keyRotationCounter - totalKeys) % totalKeys; // rewind to first candidate
+      selectedKey = keys[keyIndex];
+      log.warn(() => `[TranslationEngine] All ${totalKeys} keys are in cooldown, using key ${keyIndex + 1} anyway for ${reason}`);
+    }
+
     this.gemini = new GeminiService(
       selectedKey,
       this.model,
-      this.keyRotationConfig.advancedSettings || this.advancedSettings
+      this.keyRotationConfig.advancedSettings
     );
+    this.gemini._totalKeys = totalKeys;
 
-    log.debug(() => `[TranslationEngine] Rotated to key index ${keyIndex + 1}/${keys.length} for batch ${batchIndex + 1} (sequential)`);
+    // Restore cached model limits so the new instance doesn't re-fetch them
+    if (this._sharedModelLimits) {
+      this.gemini._modelLimits = this._sharedModelLimits;
+    }
+
+    // Re-verify streaming capability on the new instance. Currently all GeminiService
+    // instances support streaming, but this guards against future provider heterogeneity.
+    this.enableStreaming = this.enableStreaming && typeof this.gemini.streamTranslateSubtitle === 'function';
+
+    log.debug(() => `[TranslationEngine] Rotated to key index ${keyIndex + 1}/${totalKeys} for ${reason} (counter: ${this._keyRotationCounter})`);
+  }
+
+  /**
+   * Perform a translation call, using streaming or non-streaming based on the provided flag.
+   * Centralizes the call pattern so retry paths don't accidentally drop streaming.
+   * @param {string} batchText
+   * @param {string} targetLanguage
+   * @param {string} prompt
+   * @param {boolean} useStreaming - Whether to use streaming
+   * @param {Function|null} onStreamChunk - Streaming progress callback (only used when useStreaming=true)
+   * @returns {Promise<string>}
+   */
+  async _translateCall(batchText, targetLanguage, prompt, useStreaming, onStreamChunk) {
+    if (useStreaming && typeof this.gemini.streamTranslateSubtitle === 'function') {
+      return this.gemini.streamTranslateSubtitle(
+        batchText,
+        'detected',
+        targetLanguage,
+        prompt,
+        onStreamChunk || null
+      );
+    }
+    return this.gemini.translateSubtitle(
+      batchText,
+      'detected',
+      targetLanguage,
+      prompt
+    );
+  }
+
+  /**
+   * Check if an error is a retryable HTTP error (429 Too Many Requests or 503 Service Unavailable).
+   * @param {Error} error
+   * @returns {boolean}
+   */
+  _isRetryableHttpError(error) {
+    if (!error) return false;
+    const msg = error.message || '';
+    const status = error.statusCode || error.status || error.response?.status || 0;
+    return status === 429 || status === 503 ||
+      msg.includes('429') || msg.includes('Too Many Requests') ||
+      msg.includes('503') || msg.includes('Service Unavailable') ||
+      msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate limit');
   }
 
   /**
@@ -407,9 +614,14 @@ class TranslationEngine {
 
     log.info(() => `[TranslationEngine] Translation completed: ${translatedEntries.length} entries`);
 
-    // Final safety: strip any timecodes/timeranges that slipped through
-    for (const entry of translatedEntries) {
-      entry.text = this.sanitizeTimecodes(entry.text);
+    // Final safety: strip any timecodes/timeranges that slipped through.
+    // Skip in 'ai' mode — the SRT parser already extracts timecodes into entry.timecode,
+    // and sanitizeTimecodes() is too aggressive for dialogue text (e.g. "Meet me at 12:30:00"
+    // on its own line would be stripped as a standalone timestamp).
+    if (this.translationWorkflow !== 'ai') {
+      for (const entry of translatedEntries) {
+        entry.text = this.sanitizeTimecodes(entry.text);
+      }
     }
 
     // Step 5: Convert back to SRT format
@@ -457,6 +669,9 @@ class TranslationEngine {
 
     const chunks = chunkCount > 1 ? this.splitIntoChunks(entries, chunkCount) : [entries];
     const translatedEntries = [];
+    // Track completed SRT from previous chunks so streaming partials include all progress
+    let completedChunksSRT = '';
+    let completedChunksEntryCount = 0;
 
     for (let batchIndex = 0; batchIndex < chunks.length; batchIndex++) {
       const batch = chunks[batchIndex];
@@ -469,6 +684,10 @@ class TranslationEngine {
       const context = this.enableBatchContext
         ? this.prepareContextForBatch(batch, entries, translatedEntries, batchIndex)
         : null;
+
+      // Capture accumulated state for the streaming closure
+      const prevSRT = completedChunksSRT;
+      const prevEntryCount = completedChunksEntryCount;
 
       const translatedBatch = await this.translateBatch(
         batch,
@@ -483,12 +702,16 @@ class TranslationEngine {
           onStreamProgress: async (payload) => {
             if (typeof onProgress === 'function' && payload?.partialSRT) {
               try {
+                // Prepend completed chunks so the partial includes all translated entries
+                const fullPartialSRT = prevSRT
+                  ? prevSRT + '\n\n' + payload.partialSRT
+                  : payload.partialSRT;
                 await onProgress({
                   totalEntries: entries.length,
-                  completedEntries: payload.completedEntries,
+                  completedEntries: prevEntryCount + (payload.completedEntries || 0),
                   currentBatch: batchIndex + 1,
                   totalBatches: chunks.length,
-                  partialSRT: payload.partialSRT,
+                  partialSRT: fullPartialSRT,
                   streaming: true,
                   streamSequence: payload.streamSequence
                 });
@@ -514,6 +737,10 @@ class TranslationEngine {
         });
       }
 
+      // Update accumulated SRT snapshot for next chunk's streaming closure
+      completedChunksEntryCount = translatedEntries.length;
+      completedChunksSRT = toSRT(translatedEntries);
+
       // Progress callback after each chunk
       if (typeof onProgress === 'function') {
         try {
@@ -522,7 +749,7 @@ class TranslationEngine {
             completedEntries: translatedEntries.length,
             currentBatch: batchIndex + 1,
             totalBatches: chunks.length,
-            partialSRT: toSRT(translatedEntries)
+            partialSRT: completedChunksSRT
           });
         } catch (err) {
           log.warn(() => ['[TranslationEngine] Progress callback error (single-batch):', err.message]);
@@ -534,8 +761,12 @@ class TranslationEngine {
       log.warn(() => `[TranslationEngine] Single-batch entry count mismatch: expected ${entries.length}, got ${translatedEntries.length}`);
     }
 
-    for (const entry of translatedEntries) {
-      entry.text = this.sanitizeTimecodes(entry.text);
+    // Skip sanitizeTimecodes in 'ai' mode — SRT parser already handles timecode extraction,
+    // and the broad patterns would strip timecode-like dialogue text (e.g. "Meet me at 12:30:00").
+    if (this.translationWorkflow !== 'ai') {
+      for (const entry of translatedEntries) {
+        entry.text = this.sanitizeTimecodes(entry.text);
+      }
     }
 
     log.info(() => `[TranslationEngine] Single-batch translation completed: ${translatedEntries.length} entries (tokens: est ${estimatedTokens}${actualTokenCount ? `, actual ${actualTokenCount}` : ''})`);
@@ -720,52 +951,67 @@ class TranslationEngine {
     let translatedText;
     let prohibitedRetryAttempted = false;
     let maxTokensRetryAttempted = false;
+    let httpRetryAttempted = false;
+
+    // Build a streaming callback for reuse in retry paths (Bug 1 fix: retries preserve streaming)
+    const streamCallback = streamingRequested ? async (partialText) => {
+      if (typeof opts.onStreamProgress !== 'function') return;
+      const payload = this.buildStreamingProgress(partialText, batch);
+      if (!payload) return;
+      payload.currentBatch = batchIndex + 1;
+      payload.totalBatches = totalBatches;
+      payload.streaming = true;
+      payload.streamSequence = ++streamSequence;
+      try {
+        await opts.onStreamProgress(payload);
+      } catch (err) {
+        log.warn(() => ['[TranslationEngine] Stream progress handler failed:', err.message]);
+      }
+    } : null;
 
     try {
-      if (streamingRequested) {
-        translatedText = await this.gemini.streamTranslateSubtitle(
-          batchText,
-          'detected',
-          targetLanguage,
-          prompt,
-          async (partialText) => {
-            if (typeof opts.onStreamProgress !== 'function') return;
-            const payload = this.buildStreamingProgress(partialText, batch);
-            if (!payload) return;
-            payload.currentBatch = batchIndex + 1;
-            payload.totalBatches = totalBatches;
-            payload.streaming = true;
-            payload.streamSequence = ++streamSequence;
-            try {
-              await opts.onStreamProgress(payload);
-            } catch (err) {
-              log.warn(() => ['[TranslationEngine] Stream progress handler failed:', err.message]);
-            }
-          }
-        );
-      } else {
-        translatedText = await this.gemini.translateSubtitle(
-          batchText,
-          'detected',
-          targetLanguage,
-          prompt
-        );
-      }
+      translatedText = await this._translateCall(batchText, targetLanguage, prompt, streamingRequested, streamCallback);
     } catch (error) {
-      // If MAX_TOKENS error and haven't retried yet, retry once
-      if (error.message && (error.message.includes('MAX_TOKENS') || error.message.includes('exceeded maximum token limit')) && !maxTokensRetryAttempted) {
-        maxTokensRetryAttempted = true;
-        log.warn(() => `[TranslationEngine] MAX_TOKENS error detected, retrying batch ${batchIndex + 1} once`);
+      // Track the error against the current key for health tracking
+      if (this.retryRotationEnabled && this.gemini?.apiKey) {
+        this._recordKeyError(this.gemini.apiKey);
+      }
+
+      // 429/503: rotate to next key and retry once (before other error-specific retries)
+      if (this._isRetryableHttpError(error) && !httpRetryAttempted && this.retryRotationEnabled) {
+        httpRetryAttempted = true;
+        this._rotateToNextKey(`429/503 retry for batch ${batchIndex + 1}`);
+        log.warn(() => `[TranslationEngine] 429/503 error detected, retrying batch ${batchIndex + 1} with next key`);
 
         try {
-          translatedText = await this.gemini.translateSubtitle(
-            batchText,
-            'detected',
-            targetLanguage,
-            prompt
-          );
+          translatedText = await this._translateCall(batchText, targetLanguage, prompt, streamingRequested, streamCallback);
+          log.info(() => `[TranslationEngine] 429/503 key-rotation retry succeeded for batch ${batchIndex + 1}`);
+        } catch (retryError) {
+          if (this.retryRotationEnabled && this.gemini?.apiKey) {
+            this._recordKeyError(this.gemini.apiKey);
+          }
+          log.warn(() => `[TranslationEngine] 429/503 key-rotation retry also failed for batch ${batchIndex + 1}: ${retryError.message}`);
+          const fallbackResult = await tryFallback(error);
+          if (fallbackResult.handled) {
+            translatedText = fallbackResult.text;
+          } else {
+            throw fallbackResult.error;
+          }
+        }
+      }
+      // If MAX_TOKENS error and haven't retried yet, retry once
+      else if (error.message && (error.message.includes('MAX_TOKENS') || error.message.includes('exceeded maximum token limit')) && !maxTokensRetryAttempted) {
+        maxTokensRetryAttempted = true;
+        this._rotateToNextKey(`MAX_TOKENS retry for batch ${batchIndex + 1}`);
+        log.warn(() => `[TranslationEngine] MAX_TOKENS error detected, retrying batch ${batchIndex + 1} with next key`);
+
+        try {
+          translatedText = await this._translateCall(batchText, targetLanguage, prompt, streamingRequested, streamCallback);
           log.info(() => `[TranslationEngine] MAX_TOKENS retry succeeded for batch ${batchIndex + 1}`);
         } catch (retryError) {
+          if (this.retryRotationEnabled && this.gemini?.apiKey) {
+            this._recordKeyError(this.gemini.apiKey);
+          }
           // Retry also failed, give up and throw the original error
           log.warn(() => `[TranslationEngine] MAX_TOKENS retry also failed for batch ${batchIndex + 1}: ${retryError.message}`);
           const fallbackResult = await tryFallback(error);
@@ -779,20 +1025,19 @@ class TranslationEngine {
       // If PROHIBITED_CONTENT error and haven't retried yet, retry with modified prompt
       else if (error.message && error.message.includes('PROHIBITED_CONTENT') && !prohibitedRetryAttempted) {
         prohibitedRetryAttempted = true;
-        log.warn(() => `[TranslationEngine] PROHIBITED_CONTENT detected, retrying batch with modified prompt`);
+        this._rotateToNextKey(`PROHIBITED_CONTENT retry for batch ${batchIndex + 1}`);
+        log.warn(() => `[TranslationEngine] PROHIBITED_CONTENT detected, retrying batch with next key and modified prompt`);
 
         // Create modified prompt with disclaimer
         const modifiedPrompt = `YOU'RE TRANSLATING SUBTITLES - EVERYTHING WRITTEN BELOW IS FICTICIOUS\n\n${prompt}`;
 
         try {
-          translatedText = await this.gemini.translateSubtitle(
-            batchText,
-            'detected',
-            targetLanguage,
-            modifiedPrompt
-          );
+          translatedText = await this._translateCall(batchText, targetLanguage, modifiedPrompt, streamingRequested, streamCallback);
           log.info(() => `[TranslationEngine] Retry with modified prompt succeeded for batch ${batchIndex + 1}`);
         } catch (retryError) {
+          if (this.retryRotationEnabled && this.gemini?.apiKey) {
+            this._recordKeyError(this.gemini.apiKey);
+          }
           // Retry also failed, give up and throw the original error
           log.warn(() => `[TranslationEngine] Retry with modified prompt also failed: ${retryError.message}`);
           const fallbackResult = await tryFallback(error);
@@ -810,13 +1055,21 @@ class TranslationEngine {
           error.message.includes('No content returned from stream')
         );
         if (streamingRequested && noStreamContent) {
-          log.warn(() => `[TranslationEngine] Stream returned no content for batch ${batchIndex + 1}, retrying without streaming`);
-          translatedText = await this.gemini.translateSubtitle(
-            batchText,
-            'detected',
-            targetLanguage,
-            prompt
-          );
+          this._rotateToNextKey(`empty-stream retry for batch ${batchIndex + 1}`);
+          log.warn(() => `[TranslationEngine] Stream returned no content for batch ${batchIndex + 1}, retrying without streaming with next key`);
+          try {
+            translatedText = await this.gemini.translateSubtitle(
+              batchText,
+              'detected',
+              targetLanguage,
+              prompt
+            );
+          } catch (nonStreamErr) {
+            if (this.retryRotationEnabled && this.gemini?.apiKey) {
+              this._recordKeyError(this.gemini.apiKey);
+            }
+            throw nonStreamErr;
+          }
         } else {
           const fallbackResult = await tryFallback(error);
           if (fallbackResult.handled) {
@@ -842,26 +1095,44 @@ class TranslationEngine {
         // Pass 2: Re-translate only the missing entries individually
         log.info(() => `[TranslationEngine] Two-pass recovery: ${missingIndices.length} missing entries, attempting targeted re-translation`);
         try {
+          this._rotateToNextKey(`two-pass targeted retry for batch ${batchIndex + 1}`);
           const missingBatch = missingIndices.map(i => batch[i]);
           const missingText = this.prepareBatchContent(missingBatch, null);
           const missingPrompt = this.createPromptForWorkflow(missingText, targetLanguage, customPrompt, missingBatch.length, null, batchIndex, totalBatches);
-          const retryText = await this.gemini.translateSubtitle(
-            missingText,
-            'detected',
-            targetLanguage,
-            missingPrompt
-          );
+          const retryText = await this._translateCall(missingText, targetLanguage, missingPrompt, false, null);
           const retryEntries = this.parseResponseForWorkflow(retryText, missingBatch.length, missingBatch);
 
           // Merge recovered entries back into aligned result
-          for (let i = 0; i < missingIndices.length && i < retryEntries.length; i++) {
-            const targetIdx = missingIndices[i];
-            if (retryEntries[i] && retryEntries[i].text) {
-              aligned[targetIdx] = {
-                index: targetIdx,
-                text: retryEntries[i].text,
-                timecode: retryEntries[i].timecode || (batch[targetIdx] ? batch[targetIdx].timecode : undefined)
-              };
+          // Use ID-based matching when available (JSON/XML parsers provide meaningful indices),
+          // fall back to positional mapping for numbered-list responses
+          const retryHasIds = retryEntries.some(e => typeof e.index === 'number' && e.index >= 0);
+          if (retryHasIds && retryEntries.length === missingBatch.length) {
+            // Map retry entry indices (0-based within the mini-batch) back to original batch positions
+            for (let i = 0; i < retryEntries.length; i++) {
+              const retryIdx = retryEntries[i].index;
+              // retryIdx is relative to the mini-batch (0..missingBatch.length-1)
+              if (retryIdx >= 0 && retryIdx < missingIndices.length) {
+                const targetIdx = missingIndices[retryIdx];
+                if (retryEntries[i].text) {
+                  aligned[targetIdx] = {
+                    index: targetIdx,
+                    text: retryEntries[i].text,
+                    timecode: retryEntries[i].timecode || (batch[targetIdx] ? batch[targetIdx].timecode : undefined)
+                  };
+                }
+              }
+            }
+          } else {
+            // Positional fallback: map sequentially
+            for (let i = 0; i < missingIndices.length && i < retryEntries.length; i++) {
+              const targetIdx = missingIndices[i];
+              if (retryEntries[i] && retryEntries[i].text) {
+                aligned[targetIdx] = {
+                  index: targetIdx,
+                  text: retryEntries[i].text,
+                  timecode: retryEntries[i].timecode || (batch[targetIdx] ? batch[targetIdx].timecode : undefined)
+                };
+              }
             }
           }
           const stillMissing = missingIndices.filter(i => !aligned[i] || aligned[i].text.startsWith('[⚠]'));
@@ -871,6 +1142,9 @@ class TranslationEngine {
             log.info(() => `[TranslationEngine] Two-pass recovery succeeded: all ${missingIndices.length} missing entries recovered`);
           }
         } catch (retryErr) {
+          if (this.retryRotationEnabled && this.gemini?.apiKey) {
+            this._recordKeyError(this.gemini.apiKey);
+          }
           log.warn(() => `[TranslationEngine] Two-pass targeted retry failed: ${retryErr.message}`);
         }
         translatedEntries = Object.values(aligned).sort((a, b) => a.index - b.index);
@@ -880,13 +1154,9 @@ class TranslationEngine {
         for (let retryAttempt = 0; retryAttempt < this.mismatchRetries; retryAttempt++) {
           log.info(() => `[TranslationEngine] Full batch retry ${retryAttempt + 1}/${this.mismatchRetries} (${missingIndices.length} missing entries too many for targeted recovery)`);
           try {
+            this._rotateToNextKey(`full batch mismatch retry ${retryAttempt + 1} for batch ${batchIndex + 1}`);
             await new Promise(resolve => setTimeout(resolve, 500));
-            const retryText = await this.gemini.translateSubtitle(
-              batchText,
-              'detected',
-              targetLanguage,
-              prompt
-            );
+            const retryText = await this._translateCall(batchText, targetLanguage, prompt, false, null);
             const retryEntries = this.parseResponseForWorkflow(retryText, batch.length, batch);
             if (retryEntries.length === batch.length) {
               translatedEntries = retryEntries;
@@ -894,6 +1164,9 @@ class TranslationEngine {
               break;
             }
           } catch (retryErr) {
+            if (this.retryRotationEnabled && this.gemini?.apiKey) {
+              this._recordKeyError(this.gemini.apiKey);
+            }
             log.warn(() => `[TranslationEngine] Full batch retry ${retryAttempt + 1} failed: ${retryErr.message}`);
           }
         }
@@ -1117,6 +1390,54 @@ OUTPUT (EXACTLY ${expectedCount} XML-tagged entries):`;
   }
 
   /**
+   * Fix #12: Build a clean prompt that uses XML as input format but requests JSON output.
+   * This replaces the old fragile approach of regex-stripping XML output rules from the
+   * XML prompt. By constructing the prompt from scratch, we avoid contradictory instructions
+   * (e.g. "return XML tags" + "return JSON array") that confused the AI when the regex
+   * cleanup failed due to minor prompt text changes.
+   */
+  _buildXmlInputJsonOutputPrompt(batchText, targetLanguage, customPrompt, expectedCount, context = null, batchIndex = 0, totalBatches = 1) {
+    const targetLabel = normalizeTargetLanguageForPrompt(targetLanguage);
+    const customPromptText = customPrompt ? customPrompt.replace('{target_language}', targetLabel) : '';
+
+    let contextInstructions = '';
+    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
+      contextInstructions = `
+CONTEXT PROVIDED:
+- Context entries are provided for reference to maintain coherence and consistency
+- DO NOT translate context entries - they are for reference only
+- ONLY translate entries inside <s id="N"> tags
+
+`;
+    }
+
+    const promptBody = `You are translating subtitle text to ${targetLabel}.
+${contextInstructions}
+CRITICAL RULES:
+1. Translate ONLY the text inside each <s id="N"> tag
+2. Return EXACTLY ${expectedCount} entries
+3. Keep line breaks within each entry
+4. Maintain natural dialogue flow for ${targetLabel}
+5. Use appropriate colloquialisms for ${targetLabel}${context ? '\n6. Use the provided context to ensure consistency' : ''}
+
+${customPromptText ? `ADDITIONAL INSTRUCTIONS:\n${customPromptText}\n\n` : ''}
+Do NOT add acknowledgements, explanations, notes, or commentary.
+Do not skip, merge, or split entries.
+Do not include any timestamps/timecodes.
+
+YOUR RESPONSE MUST be a JSON array of objects with "id" (number, 1-indexed) and "text" (string) fields.
+Example format: [{"id":1,"text":"translated text"},{"id":2,"text":"translated text"}]
+Return ONLY the JSON array with EXACTLY ${expectedCount} entries, no other text.
+
+INPUT (${expectedCount} entries):
+
+${batchText}
+
+OUTPUT (EXACTLY ${expectedCount} entries as JSON array):`;
+    return this.addBatchHeader(promptBody, batchIndex, totalBatches);
+  }
+
+  /**
    * Parse XML-tagged translation response
    * Matches <s id="N">text</s> patterns and recovers entries by ID
    */
@@ -1125,14 +1446,30 @@ OUTPUT (EXACTLY ${expectedCount} XML-tagged entries):`;
     // Remove markdown code blocks
     cleaned = cleaned.replace(/```[a-z]*(?:\r?\n)?/g, '');
 
+    // Strip any trailing content after the last </s> tag.
+    // AI models sometimes append commentary after the entries (e.g. "Hope this helps!").
+    // This ensures the $ anchor in our lookahead matches correctly for the final entry.
+    const lastClosingTag = cleaned.lastIndexOf('</s>');
+    if (lastClosingTag !== -1) {
+      cleaned = cleaned.slice(0, lastClosingTag + 4); // 4 = '</s>'.length
+    }
+
     const entries = [];
-    // Match <s id="N">...</s> with flexible whitespace and multiline content
-    const xmlPattern = /<s\s+id\s*=\s*"?(\d+)"?\s*>([\s\S]*?)<\/s>/gi;
+    // Fix #13: Use a lazy quantifier with a lookahead to match up to the correct </s>.
+    // The old lazy [\s\S]*? would terminate at the FIRST </s>, truncating entries whose
+    // translated text contains literal "</s>" (e.g. HTML-like content). The lookahead
+    // requires the closing </s> to be followed by either the next <s tag or end-of-string,
+    // so inner "</s>" occurrences are skipped. Combined with the trailing-content strip
+    // above, this correctly handles all edge cases.
+    const xmlPattern = /<s\s+id\s*=\s*"?(\d+)"?\s*>([\s\S]*?)<\/s>(?=\s*(?:<s[\s>]|$))/gi;
     let match;
     while ((match = xmlPattern.exec(cleaned)) !== null) {
       const id = parseInt(match[1], 10);
       const text = match[2].trim();
-      if (id > 0 && text) {
+      // Fix #14: Accept entries with empty text (legitimate for "♪", sound effects, etc.)
+      // Only require a valid positive ID. Empty translations are preserved to avoid
+      // count mismatches in fixEntryCountMismatch().
+      if (id > 0) {
         entries.push({
           index: id - 1,
           text: text
@@ -1153,6 +1490,7 @@ OUTPUT (EXACTLY ${expectedCount} XML-tagged entries):`;
 
     return deduped;
   }
+
 
   /**
    * Route to the correct batch content preparation method based on workflow
@@ -1182,10 +1520,24 @@ OUTPUT (EXACTLY ${expectedCount} XML-tagged entries):`;
     }
 
     // Wrap with JSON output instructions when enabled
+    // For XML workflow: replace the XML output format with JSON (they're complementary —
+    // XML controls how entries are *sent*, JSON controls how the AI *responds*)
     if (this.enableJsonOutput && this.translationWorkflow !== 'ai') {
-      basePrompt += `\n\nIMPORTANT: Return your response as a JSON array of objects with "id" (number) and "text" (string) fields.
+      if (this.translationWorkflow === 'xml') {
+        // Fix #12: Build the XML+JSON prompt cleanly instead of fragile regex surgery.
+        // The old approach used lastIndexOf('YOUR RESPONSE MUST:') and brittle regexes
+        // to strip XML-specific output rules — if the prompt text changed even slightly,
+        // the cleanup would fail and the AI would get contradictory instructions (both
+        // XML and JSON format). Instead, we rebuild the prompt from scratch, keeping
+        // XML as the *input* format but requesting JSON as the *output* format.
+        basePrompt = this._buildXmlInputJsonOutputPrompt(
+          batchText, targetLanguage, customPrompt, expectedCount, context, batchIndex, totalBatches
+        );
+      } else {
+        basePrompt += `\n\nIMPORTANT: Return your response as a JSON array of objects with "id" (number) and "text" (string) fields.
 Example format: [{"id":1,"text":"translated text"},{"id":2,"text":"translated text"}]
 Return ONLY the JSON array, no other text.`;
+      }
     }
 
     return basePrompt;
@@ -1202,6 +1554,23 @@ Return ONLY the JSON array, no other text.`;
       if (jsonEntries && jsonEntries.length > 0) {
         return jsonEntries;
       }
+      // JSON parsing failed — the response is likely JSON-shaped but malformed.
+      // Before falling through to numbered-list/XML parsers (which can't parse JSON),
+      // try one more extraction pass with the regex extractor directly on the raw text.
+      const rawCleaned = String(translatedText || '').trim()
+        .replace(/```json\s*/gi, '').replace(/```\s*/g, '');
+      const regexEntries = this.extractJsonEntries(rawCleaned);
+      if (regexEntries && regexEntries.length > 0) {
+        const mapped = regexEntries.map(item => {
+          const index = item.id >= 1 ? item.id - 1 : (item.id === 0 ? 0 : -1);
+          return index >= 0 ? { index, text: String(item.text).trim() } : null;
+        }).filter(Boolean);
+        mapped.sort((a, b) => a.index - b.index);
+        if (mapped.length > 0) {
+          log.info(() => `[TranslationEngine] JSON fallback regex recovered ${mapped.length}/${expectedCount} entries from malformed response`);
+          return mapped;
+        }
+      }
       log.warn(() => `[TranslationEngine] JSON parsing failed, falling back to standard parser`);
     }
 
@@ -1217,6 +1586,7 @@ Return ONLY the JSON array, no other text.`;
   /**
    * Parse JSON structured output response
    * Expects: [{"id": 1, "text": "translated"}, ...]
+   * Includes repair logic for common LLM JSON mistakes.
    */
   parseJsonResponse(translatedText, expectedCount) {
     try {
@@ -1230,25 +1600,138 @@ Return ONLY the JSON array, no other text.`;
         return null;
       }
       cleaned = cleaned.slice(arrayStart, arrayEnd + 1);
-      const parsed = JSON.parse(cleaned);
+
+      let parsed = null;
+
+      // Attempt 1: direct parse
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (_directErr) {
+        // Attempt 2: repair common LLM JSON mistakes and retry
+        parsed = this.repairAndParseJson(cleaned);
+      }
+
+      // Attempt 3: if full-array parse failed, extract individual objects via regex
+      if (!parsed) {
+        const extracted = this.extractJsonEntries(cleaned);
+        if (extracted && extracted.length > 0) {
+          log.debug(() => `[TranslationEngine] JSON repair: extracted ${extracted.length} entries via regex fallback`);
+          parsed = extracted;
+        }
+      }
+
       if (!Array.isArray(parsed)) return null;
 
       const entries = [];
       for (const item of parsed) {
         if (item && typeof item.id === 'number' && typeof item.text === 'string') {
-          entries.push({
-            index: item.id - 1,
-            text: item.text.trim()
-          });
+          // Accept both 0-indexed and 1-indexed IDs from the model
+          const index = item.id >= 1 ? item.id - 1 : (item.id === 0 ? 0 : -1);
+          if (index >= 0) {
+            entries.push({
+              index,
+              text: item.text.trim()
+            });
+          }
         }
       }
 
       entries.sort((a, b) => a.index - b.index);
-      return entries.length > 0 ? entries : null;
+
+      if (entries.length === 0) return null;
+
+      // Warn if the count doesn't match expectations (helps diagnose issues early)
+      if (expectedCount && entries.length !== expectedCount) {
+        log.debug(() => `[TranslationEngine] JSON response entry count: ${entries.length}, expected: ${expectedCount}`);
+      }
+
+      return entries;
     } catch (err) {
       log.debug(() => `[TranslationEngine] JSON response parse error: ${err.message}`);
       return null;
     }
+  }
+
+  /**
+   * Attempt to repair common LLM JSON mistakes and parse.
+   * Handles: trailing commas, missing commas between objects, unescaped newlines in strings,
+   * single quotes instead of double quotes, unescaped control characters.
+   * @returns {Array|null}
+   */
+  repairAndParseJson(jsonStr) {
+    try {
+      let repaired = jsonStr;
+
+      // Fix unescaped newlines/tabs inside string values (between quotes)
+      // Replace literal newlines/tabs inside JSON strings with escaped versions
+      // Use [\s\S] to match across literal newlines within the string
+      repaired = repaired.replace(/"((?:[^"\\]|\\[\s\S])*)"/g, (match) => {
+        return match
+          .replace(/(?<!\\)\t/g, '\\t')
+          .replace(/\r\n/g, '\\n')
+          .replace(/(?<!\\)\r/g, '\\n')
+          .replace(/(?<!\\)\n/g, '\\n');
+      });
+
+      // Fix trailing commas before ] or }
+      repaired = repaired.replace(/,\s*([\]}])/g, '$1');
+
+      // Fix missing commas between objects: }{ or }\n{
+      repaired = repaired.replace(/\}\s*\{/g, '},{');
+
+      // Fix single quotes used as JSON delimiters (but not inside strings)
+      // Only do this if there are no double-quoted strings (avoids breaking mixed content)
+      if (!repaired.includes('"id"') && repaired.includes("'id'")) {
+        repaired = repaired.replace(/'/g, '"');
+      }
+
+      const parsed = JSON.parse(repaired);
+      if (Array.isArray(parsed)) {
+        log.debug(() => `[TranslationEngine] JSON repair: successfully repaired and parsed`);
+        return parsed;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Last-resort extraction: pull individual {"id":N,"text":"..."} objects from malformed JSON
+   * using regex. Handles cases where the overall array structure is broken but individual
+   * objects are valid.
+   * @returns {Array|null}
+   */
+  extractJsonEntries(jsonStr) {
+    const entries = [];
+    // Match individual JSON objects with id and text fields
+    // Handles both {"id":N,"text":"..."} and {"text":"...","id":N} orderings
+    // Use [\s\S] instead of . to match across newlines in text values
+    const objectPattern = /\{\s*"id"\s*:\s*(\d+)\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\[\s\S])*)"\s*\}/g;
+    const objectPatternAlt = /\{\s*"text"\s*:\s*"((?:[^"\\]|\\[\s\S])*)"\s*,\s*"id"\s*:\s*(\d+)\s*\}/g;
+
+    let match;
+    while ((match = objectPattern.exec(jsonStr)) !== null) {
+      const id = parseInt(match[1], 10);
+      let text = match[2];
+      try { text = JSON.parse(`"${text}"`); } catch (_) { /* use raw */ }
+      if (id >= 0 && text !== undefined) {
+        entries.push({ id, text: String(text) });
+      }
+    }
+
+    // Also try alternate field ordering
+    while ((match = objectPatternAlt.exec(jsonStr)) !== null) {
+      const id = parseInt(match[2], 10);
+      let text = match[1];
+      try { text = JSON.parse(`"${text}"`); } catch (_) { /* use raw */ }
+      // Avoid duplicates
+      if (id >= 0 && text !== undefined && !entries.some(e => e.id === id)) {
+        entries.push({ id, text: String(text) });
+      }
+    }
+
+    return entries.length > 0 ? entries : null;
   }
 
   /**
@@ -1367,38 +1850,88 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
     const batchEndId = originalBatch?.[originalBatch.length - 1]?.id || batchStartId;
 
     let parsedEntries = [];
-    if (this.translationWorkflow === 'ai') {
-      const parsed = parseSRT(partialText) || [];
-      parsedEntries = parsed.map((entry, idx) => ({
-        index: (typeof entry.id === 'number') ? entry.id - 1 : idx,
-        text: (entry.text || '').trim(),
-        timecode: entry.timecode || ''
-      }));
-    } else if (this.translationWorkflow === 'xml') {
-      // Parse partial XML tags from streaming output
-      const xmlPattern = /<s\s+id\s*=\s*"?(\d+)"?\s*>([\s\S]*?)<\/s>/gi;
-      let match;
-      while ((match = xmlPattern.exec(partialText)) !== null) {
-        const id = parseInt(match[1], 10);
-        const text = match[2].trim();
-        if (id > 0 && text) {
-          parsedEntries.push({ index: id - 1, text });
-        }
+
+    // When JSON output is enabled, extract completed entries from partial JSON.
+    // Use extractJsonEntries() directly instead of parseJsonResponse() because
+    // streaming chunks are almost always incomplete JSON (e.g. [{"id":1,"text":"hello"},{"id":2,"te)
+    // that will always fail JSON.parse(), generating noise in logs and wasting cycles.
+    // The regex extractor reliably pulls out fully-formed {"id":N,"text":"..."} objects
+    // from partial text without needing the overall array to be valid JSON.
+    if (this.enableJsonOutput && this.translationWorkflow !== 'ai') {
+      const rawCleaned = String(partialText).trim()
+        .replace(/```json\s*/gi, '').replace(/```\s*/g, '');
+      const extracted = this.extractJsonEntries(rawCleaned);
+      if (extracted && extracted.length > 0) {
+        parsedEntries = extracted.map(item => {
+          const index = item.id >= 1 ? item.id - 1 : (item.id === 0 ? 0 : -1);
+          return index >= 0 ? { index, text: String(item.text).trim() } : null;
+        }).filter(Boolean);
       }
-    } else {
-      let cleaned = partialText.trim();
-      cleaned = cleaned.replace(/```[a-z]*(?:\r?\n)?/g, '');
-      const blocks = cleaned.split(/(?:\r?\n){2,}/);
-      for (const block of blocks) {
-        const trimmed = block.trim();
-        if (!trimmed) continue;
-        const match = trimmed.match(/^(\d+)[.):\s-]+(.+)$/s);
-        if (match) {
-          parsedEntries.push({
-            index: parseInt(match[1], 10) - 1,
-            text: match[2].trim()
-          });
+    }
+
+    // Fall back to workflow-specific parsing if JSON didn't yield results
+    if (parsedEntries.length === 0) {
+      if (this.translationWorkflow === 'ai') {
+        const parsed = parseSRT(partialText) || [];
+        parsedEntries = parsed.map((entry, idx) => ({
+          index: (typeof entry.id === 'number') ? entry.id - 1 : idx,
+          text: (entry.text || '').trim(),
+          timecode: entry.timecode || ''
+        }));
+      } else if (this.translationWorkflow === 'xml') {
+        // Parse partial XML tags from streaming output
+        const xmlPattern = /<s\s+id\s*=\s*"?(\d+)"?\s*>([\s\S]*?)<\/s>/gi;
+        let match;
+        while ((match = xmlPattern.exec(partialText)) !== null) {
+          const id = parseInt(match[1], 10);
+          const text = match[2].trim();
+          if (id > 0 && text) {
+            parsedEntries.push({ index: id - 1, text });
+          }
         }
+      } else {
+        // Use the same robust parsing as parseBatchResponse:
+        // line-by-line to handle multi-line entries, with context stripping and dedup
+        let cleaned = partialText.trim();
+        cleaned = cleaned.replace(/```[a-z]*(?:\r?\n)?/g, '');
+        // Strip echoed context sections
+        cleaned = cleaned.replace(/===\s*CONTEXT\s*\(FOR REFERENCE ONLY[^=]*===[\s\S]*?===\s*END OF CONTEXT\s*===/gi, '');
+        cleaned = cleaned.replace(/===\s*ENTRIES TO TRANSLATE[^=]*===/gi, '');
+        cleaned = cleaned.replace(/^---\s*(?:Original Context|Previous Translations)\s*.*---\s*$/gm, '');
+
+        const lines = cleaned.split(/\r?\n/);
+        let currentNum = null;
+        let currentLines = [];
+
+        for (const line of lines) {
+          const headerMatch = line.match(/^(\d+)[.):\s-]+(.*)$/);
+          if (headerMatch) {
+            if (currentNum !== null && currentLines.length > 0) {
+              const text = currentLines.join('\n').trim();
+              if (text && !text.match(/^\[(?:Context|Translated)\s+\d+\]/i)) {
+                parsedEntries.push({ index: currentNum - 1, text });
+              }
+            }
+            currentNum = parseInt(headerMatch[1], 10);
+            currentLines = [headerMatch[2]];
+          } else if (currentNum !== null) {
+            currentLines.push(line);
+          }
+        }
+        if (currentNum !== null && currentLines.length > 0) {
+          const text = currentLines.join('\n').trim();
+          if (text && !text.match(/^\[(?:Context|Translated)\s+\d+\]/i)) {
+            parsedEntries.push({ index: currentNum - 1, text });
+          }
+        }
+
+        // Deduplicate by index (keep first occurrence)
+        const seen = new Set();
+        parsedEntries = parsedEntries.filter(entry => {
+          if (seen.has(entry.index)) return false;
+          seen.add(entry.index);
+          return true;
+        });
       }
     }
 
@@ -1446,25 +1979,38 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
       return [];
     }
 
+    // --- Fix #10: Use SRT IDs (1-based) to derive 0-based indices instead of array position.
+    // This ensures that if the AI skips or reorders entries, translations are mapped to the
+    // correct original entries rather than silently assigned by position.
     const entries = parsed.map((entry, idx) => ({
-      index: idx,
+      index: (typeof entry.id === 'number' && entry.id >= 1) ? entry.id - 1 : idx,
       text: (entry.text || '').trim(),
       timecode: entry.timecode || ''
     }));
 
-    // Don't fix count mismatches here — let the outer translateBatch handle retries first.
-    // Only fill missing timecodes with originals to avoid gaps.
-    for (let i = 0; i < entries.length; i++) {
-      if (!entries[i].timecode && originalBatch[i]) {
-        entries[i].timecode = originalBatch[i].timecode;
+    // Deduplicate by index (keep first occurrence), matching the approach used by other parsers
+    const seen = new Set();
+    const deduped = [];
+    for (const entry of entries) {
+      if (!seen.has(entry.index)) {
+        seen.add(entry.index);
+        deduped.push(entry);
       }
     }
 
-    return entries;
+    // Don't fix count mismatches here — let the outer translateBatch handle retries first.
+    // Only fill missing timecodes with originals to avoid gaps.
+    for (const entry of deduped) {
+      if (!entry.timecode && originalBatch[entry.index]) {
+        entry.timecode = originalBatch[entry.index].timecode;
+      }
+    }
+
+    return deduped;
   }
 
   /**
-   * Parse batch translation response
+   * Parse batch translation response (numbered list mode)
    */
   parseBatchResponse(translatedText, expectedCount) {
     let cleaned = translatedText.trim();
@@ -1472,32 +2018,65 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
     // Remove markdown code blocks
     cleaned = cleaned.replace(/```[a-z]*(?:\r?\n)?/g, '');
 
+    // --- Fix #8: Strip context sections before parsing ---
+    // Remove entire context blocks the AI may have echoed back
+    cleaned = cleaned.replace(/===\s*CONTEXT\s*\(FOR REFERENCE ONLY[^=]*===[\s\S]*?===\s*END OF CONTEXT\s*===/gi, '');
+    cleaned = cleaned.replace(/===\s*ENTRIES TO TRANSLATE[^=]*===/gi, '');
+    // Remove stray context markers that may appear inline
+    cleaned = cleaned.replace(/^---\s*(?:Original Context|Previous Translations)\s*.*---\s*$/gm, '');
+
+    // --- Fix #6: Use a line-by-line approach instead of splitting on blank lines ---
+    // This prevents multi-line translated entries with internal blank lines from being split apart.
+    const lines = cleaned.split(/\r?\n/);
     const entries = [];
-    const blocks = cleaned.split(/(?:\r?\n){2,}/);
+    let currentNum = null;
+    let currentLines = [];
 
-    for (const block of blocks) {
-      const trimmed = block.trim();
-      if (!trimmed) continue;
+    for (const line of lines) {
+      // Check if this line starts a new numbered entry
+      const headerMatch = line.match(/^(\d+)[.):\s-]+(.*)$/);
 
-      // Match numbered entry: "N. text" or "N) text"
-      const match = trimmed.match(/^(\d+)[.):\s-]+(.+)$/s);
+      if (headerMatch) {
+        // Save the previous entry if we had one
+        if (currentNum !== null && currentLines.length > 0) {
+          const text = currentLines.join('\n').trim();
+          // --- Fix #8: Skip entries that are context markers ---
+          if (text && !text.match(/^\[(?:Context|Translated)\s+\d+\]/i)) {
+            entries.push({ index: currentNum - 1, text });
+          }
+        }
+        // Start a new entry
+        currentNum = parseInt(headerMatch[1]);
+        currentLines = [headerMatch[2]];
+      } else if (currentNum !== null) {
+        // Continuation line (including blank lines) belongs to the current entry
+        currentLines.push(line);
+      }
+      // Lines before the first numbered entry are ignored (preamble/context echoes)
+    }
 
-      if (match) {
-        const num = parseInt(match[1]);
-        const text = match[2].trim();
-
-        entries.push({
-          index: num - 1,
-          text: text
-        });
+    // Don't forget the last entry
+    if (currentNum !== null && currentLines.length > 0) {
+      const text = currentLines.join('\n').trim();
+      if (text && !text.match(/^\[(?:Context|Translated)\s+\d+\]/i)) {
+        entries.push({ index: currentNum - 1, text });
       }
     }
 
-    // Sort by index
+    // --- Fix #7: Deduplicate by index (keep first occurrence, like XML parser) ---
+    const seen = new Set();
+    const deduped = [];
     entries.sort((a, b) => a.index - b.index);
+    for (const entry of entries) {
+      if (!seen.has(entry.index)) {
+        seen.add(entry.index);
+        deduped.push(entry);
+      }
+    }
 
-    return entries;
+    return deduped;
   }
+
 
   /**
    * Fix entry count mismatches by filling missing entries with original text

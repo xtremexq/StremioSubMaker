@@ -2,6 +2,94 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.39
+
+**Improvements:**
+
+- **Mobile mode polling interval increased to 5 seconds:** `waitForFinalCachedTranslation` previously polled every 1 second, creating significant I/O pressure with multiple mobile clients. Now 5 seconds, reducing storage reads by ~80%.
+
+- **Partial delivery circuit breaker on persistent save failures:** After consecutive partial cache save failures exceed the threshold, partial delivery is now disabled entirely for that translation via a `partialDeliveryDisabled` flag, avoiding wasted I/O on a broken storage path.
+
+- **API key rotation improvements:** Key selection now uses a global monotonically increasing `_keyRotationCounter` instead of `batchIndex % keys.length`, so retries within the same batch no longer reuse the same key. Additionally, 429 (rate limit) and 503 (service unavailable) errors now trigger an automatic rotation to the next API key before falling through to the fallback provider.
+
+- **Key health tracking with automatic cooldown:** When key rotation is enabled, the engine now tracks errors per API key. After 5 errors on the same key within a 1-hour window, that key is automatically skipped during rotation for the remainder of the cooldown period. If all keys are in cooldown, the next key is used anyway (best effort). Error counts reset after the 1-hour cooldown elapses. This prevents repeatedly hitting a rate-limited or quota-exhausted key when healthy alternatives are available.
+
+- **Per-request rotation mode now benefits from retry key rotation:** Previously, `per-request` mode selected a single key at provider creation time and all error-retry paths (429/503, MAX_TOKENS, PROHIBITED_CONTENT, empty-stream, two-pass recovery, full batch mismatch) were gated behind `perBatchRotationEnabled`, which was `false` for `per-request` mode. Introduced a separate `retryRotationEnabled` flag that is `true` for both `per-batch` and `per-request` modes, so error retries can rotate to a different key regardless of the rotation mode. `maybeRotateKeyForBatch()` still only fires for `per-batch` mode.
+
+- **Redis key rotation counter TTL optimization:** `selectGeminiApiKey()` previously called `expire(redisKey, 86400)` on every single request, resetting the TTL and adding an extra Redis round-trip. The `expire` call now only fires when the counter is first created (`counter === 1`), eliminating the redundant round-trip on subsequent requests.
+
+**Bug Fixes:**
+
+- **Fixed error-retry paths dropping streaming on key rotation:** When a translation batch failed with a 429/503, MAX_TOKENS, or PROHIBITED_CONTENT error and key rotation retried the batch, the retry always used non-streaming `translateSubtitle()` even if the original request was streaming. Users lost real-time progress for the retried batch. Extracted the streaming callback into a reusable `streamCallback` closure and introduced `_translateCall()` which dispatches to streaming or non-streaming based on the original request mode. All retry paths now use `_translateCall()` so streaming is preserved across retries. The empty-stream fallback intentionally drops to non-streaming (that's the point of that retry).
+
+- **Fixed key rotation creating new GeminiService instances that lose cached model limits:** Every call to `_rotateToNextKey()` created a fresh `GeminiService`, discarding the previous instance's `_modelLimits` cache (fetched via an API call to `models/{model}`). For a file with 20 batches and 3 keys, this caused ~20 redundant HTTP requests. The engine now preserves model limits in `_sharedModelLimits` before replacing the instance and restores them onto the new one.
+
+- **Fixed `_rotateToNextKey` losing `enableJsonOutput` and other engine settings:** When creating a new `GeminiService`, `_rotateToNextKey` used `this.keyRotationConfig.advancedSettings || this.advancedSettings` — if `keyRotationConfig.advancedSettings` was set to `{}` explicitly, it wouldn't fall through to `this.advancedSettings`, losing settings like `enableJsonOutput`. The `keyRotationConfig.advancedSettings` is now built by merging engine-level `this.advancedSettings` as the base with the rotation config's settings as overrides during construction.
+
+- **Overhauled JSON response parsing and recovery:** `parseJsonResponse()` previously failed entirely on slightly malformed AI output (unescaped quotes, trailing commas, missing commas), and the numbered-list/XML fallback parsers couldn't handle JSON-shaped text at all — resulting in 0 recovered entries. Added a 3-tier recovery chain: (1) direct `JSON.parse()`, (2) `repairAndParseJson()` for common syntax issues, (3) `extractJsonEntries()` regex extraction of individual `{"id":N,"text":"..."}` objects. `parseResponseForWorkflow()` also now runs `extractJsonEntries()` as an intermediate step before the workflow-specific parser, so JSON-shaped responses are always recoverable. The regex patterns in both repair functions were also updated to use `\\[\s\S]` instead of `\\.` so they correctly match multi-line subtitle text containing `\n`.
+
+- **Fixed Anthropic provider ignoring `enableJsonOutput` setting:** The `AnthropicProvider` class never stored or used the flag. Added constructor storage, assistant prefill with `[` in `buildRequestBody()` (Anthropic's recommended JSON forcing approach), `[` prepending on response paths, and the missing pass-through in the provider factory. Skipped when thinking is enabled (prefill conflicts with thinking mode).
+
+- **Fixed large batch sizes causing frequent JSON parse failures:** When `enableJsonOutput` is true, batch size is now capped at 150 entries regardless of model (previously up to 400 for `gemini-3-flash`), reducing JSON syntax errors while maintaining throughput.
+
+- **Fixed contradictory prompt when XML workflow + JSON output were both enabled:** The XML and JSON instructions directly contradicted each other, and the previous regex-surgery fix was brittle. Replaced with a dedicated `_buildXmlInputJsonOutputPrompt()` method that constructs the prompt cleanly from scratch with no contradictory instructions.
+
+- **Fixed XML parser truncating entries containing literal `</s>` in text:** The lazy regex matched the first `</s>` encountered, truncating entries with `</s>` in their dialogue. Now uses a lookahead requiring the closing tag to be followed by the next `<s` tag or end-of-string.
+
+- **Fixed XML parser dropping entries with empty translated text:** The `if (id > 0 && text)` check treated `""` as falsy, silently dropping legitimate empty translations (e.g. "♪", sound effects). Now only checks `if (id > 0)`.
+
+- **Fixed streaming progress with JSON Structured Output:** `buildStreamingProgress()` had no JSON parser, so users saw no real-time progress until the full response arrived. The method now uses `extractJsonEntries()` directly for streaming chunks (bypassing the guaranteed-to-fail `JSON.parse()` on incomplete data) and falls back to the workflow-specific parser.
+
+- **Fixed Gemini `responseMimeType` conflicting with thinking mode:** `responseMimeType: 'application/json'` is now only set when thinking is disabled (`thinkingBudget === 0`). Prompt-level JSON instructions still apply when thinking is active.
+
+- **Fixed `parseJsonResponse` silently dropping entries with `id: 0`:** Zero-indexed IDs mapped to index `-1` and were lost. The parser now accepts both 0-indexed and 1-indexed IDs.
+
+- **Fixed `parseJsonResponse` not logging count mismatches:** The `expectedCount` parameter was accepted but never used. Now logs a debug message when parsed count doesn't match.
+
+- **Fixed two-pass mismatch recovery using positional merge instead of ID-based matching:** Recovered entries were merged by sequential position regardless of their actual IDs. Now uses ID-based matching from JSON/XML parsers when available, falling back to positional mapping only for numbered-list responses.
+
+- **Fixed non-LLM providers (DeepL, Google Translate) receiving LLM-only settings:** The engine now force-disables `enableJsonOutput` and forces `translationWorkflow` to `'original'` for non-LLM providers at initialization.
+
+- **Fixed `translationStatus` TTL mismatch causing duplicate translations:** The `translationStatus` LRU cache had a 10-minute TTL while `inFlightTranslations` and shared locks used 30 minutes. Translations exceeding 10 minutes could trigger duplicates. TTL is now aligned at 30 minutes across all three mechanisms.
+
+- **Fixed errors not cached for non-bypass users:** Failed translations were not persisted anywhere, so the next request silently re-triggered the same failure. Errors are now cached to permanent storage so users see the error message and can retry intentionally.
+
+- **Fixed race window between final cache write and partial cache deletion:** The partial cache was deleted before verifying the final write was readable, creating a window where concurrent requests found neither. Partial is now only deleted after verifying the final translation is readable from storage.
+
+- **Fixed concurrent partial saves racing and regressing progress:** Simultaneous `saveToPartialCacheAsync` calls could cause a slower write with older data to overwrite newer data. Partial saves are now serialized through a promise chain.
+
+- **Fixed `fs.existsSync` blocking the event loop in cache management:** Replaced synchronous `fs.existsSync` in `calculateCacheSize` and `enforceCacheSizeLimit` with `await fs.promises.access`.
+
+- **Fixed partial cache key mismatch in route handler:** Translation and learn mode routes read partials using `cacheKey` but they're saved under `runtimeKey`. Both routes now consistently use `runtimeKey`.
+
+- **Fixed learn mode partial delivery missing cache-control headers:** Partial translations for learn mode were sent without `Cache-Control: no-store`, allowing browsers to cache incomplete VTT and never poll for the complete version.
+
+- **Fixed single-batch streaming partials losing completed chunks:** In single-batch mode with auto-split, streaming callbacks only emitted the current chunk's partial SRT. Previously completed chunks would disappear during streaming. The method now accumulates `completedChunksSRT` across chunks.
+
+- **Fixed JSON Structured Output silently ignored for 'ai' workflow mode:** When both `enableJsonOutput` and "Send Timestamps to AI" were enabled, JSON output was silently skipped with no warning. The engine now detects this incompatible combination at initialization, logs a warning, and sets `enableJsonOutput = false`.
+
+- **Fixed `parseBatchSrtResponse()` using positional index instead of SRT entry IDs:** In 'ai' workflow mode, entries were mapped by array position rather than their actual SRT sequence number, causing translations to be silently assigned to wrong timecodes when the AI skipped or reordered entries. The parser now derives the index from the SRT ID, with `Set`-based deduplication and corrected timecode backfill. This also fixes two-pass mismatch recovery for 'ai' mode, which previously couldn't distinguish missing entries from shifted ones due to the positional indexing.
+
+- **Fixed `sanitizeTimecodes()` stripping timecode-like dialogue in 'ai' workflow mode:** The aggressive timecode cleanup ran unconditionally, but in 'ai' mode the SRT parser already separates timecodes from dialogue cleanly. `sanitizeTimecodes()` is now skipped when `translationWorkflow === 'ai'`; the narrower `cleanTranslatedText()` regex still runs as a defensive cleanup.
+
+- **Fixed partial SRT tail timecode overlapping with last translated entry:** The "TRANSLATION IN PROGRESS" status cue started at the exact end time of the last entry, causing overlap on some players. Now starts 1 second after.
+
+- **Fixed error entries persisting indefinitely in permanent cache:** Cached errors used the TRANSLATION type's default TTL of `null` (no expiry). `saveToStorage` now accepts an optional `ttl` override, and errors are saved with a 15-minute TTL.
+
+- **Numbered-list parser overhaul:** Replaced the split-on-double-newline approach with a line-by-line state machine, fixing multi-line subtitle entries with blank lines being silently dropped. Added `Set`-based deduplication to prevent duplicate entry numbers from inflating counts. Added filtering to strip context markers (`[Context N]` / `[Translated N]`) and section delimiters that the AI might echo back. The same fixes were applied to `buildStreamingProgress()`.
+
+- **Fixed literal `\n` showing in error subtitle text:** The `interpolate` function in `getTranslator()` and client-side `window.t` never converted the two-character literal `\n` from locale JSON files to actual newlines. Added `.replace(/\\n/g, '\n')` to both functions in `src/utils/i18n.js`.
+
+- **Fixed two-pass and mismatch retries bypassing `_translateCall()`:** The targeted two-pass recovery and full-batch mismatch retry paths called `this.gemini.translateSubtitle()` directly instead of routing through `_translateCall()`. While these retries intentionally don't use streaming (they're small recovery batches), bypassing `_translateCall()` meant they wouldn't benefit from any future enhancements to the centralized call path. Both now use `this._translateCall(text, lang, prompt, false, null)`.
+
+- **Fixed `_sharedModelLimits` only captured on first key rotation:** The `_rotateToNextKey()` method had a `!this._sharedModelLimits` guard that prevented updating the cached model limits after the first rotation. If the initial instance had conservative fallback limits and a later instance fetched real values from the API, the real values were never propagated to subsequent rotations. The guard is removed — every rotation now captures the latest `_modelLimits` from the outgoing instance.
+
+- **Key health errors now shared across engine instances:** `_keyHealthErrors` was previously a per-instance `Map`, so a key that repeatedly 429'd during one translation would be retried fresh by the next translation request. The health map is now module-level (`_sharedKeyHealthErrors`), shared across all `TranslationEngine` instances within the same process. A key that hits the error threshold is skipped by all subsequent translations until the 1-hour cooldown elapses.
+
+- **Fixed `_keyRotationCounter` always starting at 0 regardless of initial key:** In per-batch mode, `selectGeminiApiKey()` picked a key (e.g. index 2 via the global Redis/memory counter), but `_keyRotationCounter` started at 0, so `maybeRotateKeyForBatch(0)` immediately overwrote the initial key with `keys[0]` — wasting the initial `selectGeminiApiKey` call, its Redis INCR, and the GeminiService construction. The counter is now seeded to `initialKeyIndex + 1` by looking up the initial key's position in the keys array, and `maybeRotateKeyForBatch()` skips batch 0 since the initial instance already has the correct key. In per-request mode, this also ensures retry rotation starts from the next key after the initial one rather than always from index 0.
+
+- **Fixed `enableStreaming` not re-verified after key rotation:** `_rotateToNextKey()` replaces `this.gemini` with a new `GeminiService` instance but never re-checked whether the new instance supports `streamTranslateSubtitle`. Currently all `GeminiService` instances support it, but this guards against future provider heterogeneity. `enableStreaming` is now re-verified after every rotation.
+
 ## SubMaker v1.4.38
 
 **New Features:**

@@ -1343,8 +1343,11 @@ async function selectGeminiApiKey(config) {
           // Use Redis INCR for atomic sequential rotation
           const redisKey = `keyrotation:${configHash}`;
           counter = await adapter.client.incr(redisKey);
-          // Set a TTL of 24 hours to auto-cleanup old counters
-          await adapter.client.expire(redisKey, 86400);
+          // Set TTL only on first creation (when counter is 1) to avoid an extra
+          // Redis round-trip on every single request
+          if (counter === 1) {
+            await adapter.client.expire(redisKey, 86400);
+          }
         } else {
           // Filesystem mode: use in-memory counter per configHash
           counter = (memoryRotationCounters.get(configHash) || 0) + 1;

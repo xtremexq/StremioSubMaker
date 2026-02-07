@@ -184,7 +184,7 @@ class GeminiService {
       const thinkingDisplay = effectiveThinkingBudget === -1 ? 'dynamic' :
         effectiveThinkingBudget === 0 ? 'disabled' :
           effectiveThinkingBudget;
-      log.debug(() => `[Gemini] API config: temperature=${this.temperature}, topK=${this.topK}, topP=${this.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${this.maxOutputTokens}, timeout=${this.timeout / 1000}s, maxRetries=${this.maxRetries}`);
+      log.debug(() => `[Gemini] API config: temperature=${this.temperature}, topK=${this.topK}, topP=${this.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${this.maxOutputTokens}, timeout=${this.timeout / 1000}s, maxRetries=${this.maxRetries}${this._totalKeys ? `, keys=${this._totalKeys}` : ''}`);
 
       this._modelLimits = limits;
       return limits;
@@ -227,8 +227,8 @@ class GeminiService {
         const isTimeout = error.message.includes('timeout') || error.code === 'ECONNABORTED';
         const isNetworkError = error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND';
         const isSocketHangup = error.message.includes('socket hang up') || error.code === 'ECONNRESET';
-        const isRateLimit = error.response?.status === 429;
-        const isServiceUnavailable = error.response?.status === 503;
+        const isRateLimit = error.response?.status === 429 || error.statusCode === 429;
+        const isServiceUnavailable = error.response?.status === 503 || error.statusCode === 503;
         // Check for explicitly marked retryable errors (e.g., finishReason: OTHER)
         const isMarkedRetryable = error.isRetryable === true;
 
@@ -379,7 +379,9 @@ class GeminiService {
         };
 
         // JSON structured output mode
-        if (this.enableJsonOutput) {
+        // Note: responseMimeType is incompatible with thinkingConfig — when thinking
+        // is enabled the model needs free-form internal reasoning, so skip JSON mode.
+        if (this.enableJsonOutput && thinkingBudget === 0) {
           generationConfig.responseMimeType = 'application/json';
         }
 
@@ -476,8 +478,10 @@ class GeminiService {
         if (candidate.finishReason && candidate.finishReason !== 'STOP') {
           log.warn(() => ['[Gemini] Unusual finish reason:', candidate.finishReason]);
 
-          if (candidate.finishReason === 'SAFETY') {
-            throw new Error('Translation blocked by safety filters');
+          if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'PROHIBITED_CONTENT') {
+            const err = new Error(`PROHIBITED_CONTENT: ${candidate.finishReason}`);
+            err.translationErrorType = 'PROHIBITED_CONTENT';
+            throw err;
           } else if (candidate.finishReason === 'RECITATION') {
             throw new Error('Translation blocked due to recitation concerns');
           } else if (candidate.finishReason === 'MAX_TOKENS') {
@@ -554,8 +558,8 @@ class GeminiService {
           maxOutputTokens: estimatedOutputTokens + thinkingReserve
         };
 
-        // JSON structured output mode
-        if (this.enableJsonOutput) {
+        // JSON structured output mode (incompatible with thinking — see translateSubtitle)
+        if (this.enableJsonOutput && thinkingBudget === 0) {
           generationConfig.responseMimeType = 'application/json';
         }
 
@@ -696,10 +700,10 @@ class GeminiService {
 
               // Handle finish reasons like the non-stream path
               if (finishReason && finishReason !== 'STOP') {
-                if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+                if (finishReason === 'SAFETY' || finishReason === 'RECITATION' || finishReason === 'PROHIBITED_CONTENT') {
                   const err = new Error(finishReason === 'RECITATION'
                     ? 'RECITATION: Translation blocked due to recitation concerns'
-                    : 'PROHIBITED_CONTENT: SAFETY');
+                    : `PROHIBITED_CONTENT: ${finishReason}`);
                   err.translationErrorType = 'PROHIBITED_CONTENT';
                   reject(err);
                   return;
