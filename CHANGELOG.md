@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.41
+
+**Security:**
+
+- **SSRF DNS rebinding defense for custom AI provider endpoints:** Custom provider base URLs are now validated against DNS rebinding attacks. After the existing hostname string check passes, `validateCustomBaseUrl()` resolves the hostname (A + AAAA records) and verifies all resolved IPs are external. If DNS resolution fails entirely, the request is blocked (fail-closed). Added `isInternalIp()` covering RFC 1918, loopback, link-local, unique-local, IPv4-mapped IPv6, carrier-grade NAT (100.64/10), and 0.0.0.0. The `ALLOW_INTERNAL_CUSTOM_ENDPOINTS=true` escape hatch is preserved for self-hosters running local LLMs.
+
+- **Connection-time SSRF protection (TOCTOU gap closed):** Added `createSsrfSafeLookup()` which creates a Node.js-compatible DNS lookup function that re-validates resolved IPs at actual connection time, not just at URL validation time. This prevents attackers from using short-TTL DNS records that pass validation with an external IP but resolve to an internal IP when the HTTP connection is made. Custom providers now use dedicated HTTP agents with this safe lookup for all API calls (model listing, translation, streaming).
+
+- **Configurable `trust proxy` setting:** Express `trust proxy` is no longer hardcoded to `1`. It now reads from the `TRUST_PROXY` environment variable, defaulting to `false` (no proxy trust) when unset. This prevents IP spoofing when the server is directly exposed without a reverse proxy. Supports all Express formats: numeric depth (`1`, `2`), boolean (`true`/`false`), named values (`loopback`, `linklocal`, `uniquelocal`), and subnet strings. Docker deployments set `TRUST_PROXY=1` automatically via `docker-compose.yaml`.
+
 ## SubMaker v1.4.40
 
 **Improvements:**

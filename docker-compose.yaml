@@ -18,6 +18,10 @@ services:
       # Storage configuration - Use Redis for HA setup
       - STORAGE_TYPE=redis
 
+      # Reverse proxy trust - set to 1 for deployments behind nginx/Cloudflare/etc.
+      # Required for correct IP detection and rate limiting
+      - TRUST_PROXY=1
+
       # Redis configuration
       - REDIS_HOST=redis
       - REDIS_PORT=6379

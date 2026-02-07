@@ -200,8 +200,19 @@ function decrypt(encryptedData, returnRawOnError = true) {
       return decrypted; // Return as string if not JSON
     }
   } catch (error) {
+    // SECURITY: If the data matched our encrypted format (1:iv:authTag:ciphertext) but
+    // decryption failed (e.g. key mismatch), NEVER return the raw ciphertext. Returning
+    // it would leak ciphertext into API Authorization headers sent to third-party services.
+    // Instead, return null so callers can detect the failure and handle it gracefully.
+    const looksEncrypted = encryptedData && typeof encryptedData === 'string' && isEncrypted(encryptedData);
+
+    if (looksEncrypted) {
+      log.error(() => ['[Encryption] Decryption failed for encrypted data (key mismatch?). Returning null to prevent ciphertext leak:', error.message]);
+      return null;
+    }
+
     if (returnRawOnError) {
-      log.warn(() => ['[Encryption] Decryption failed, returning raw data (backward compatibility):', error.message]);
+      log.warn(() => ['[Encryption] Decryption failed for non-encrypted data, returning as-is (backward compatibility):', error.message]);
       // Try to parse as JSON if it looks like JSON
       if (encryptedData && typeof encryptedData === 'string') {
         if (encryptedData.trim().startsWith('{') || encryptedData.trim().startsWith('[')) {
@@ -348,6 +359,13 @@ function decryptUserConfig(config) {
     if (!value) return value;
     const wasEncrypted = isEncrypted(value);
     const result = decrypt(value, true);
+    // decrypt() returns null when encrypted data can't be decrypted (key mismatch)
+    // In that case, clear the field to prevent ciphertext from leaking into API calls
+    if (result === null && wasEncrypted) {
+      decryptionWarnings.push(fieldName);
+      log.warn(() => `[Encryption] Failed to decrypt ${fieldName} - encryption key mismatch. Field cleared to prevent ciphertext leak.`);
+      return '';
+    }
     // Check if decryption actually happened (value changed) or if it returned raw encrypted data
     if (wasEncrypted && result === value) {
       decryptionWarnings.push(fieldName);
@@ -360,14 +378,14 @@ function decryptUserConfig(config) {
     // Decrypt Gemini API key
     if (decrypted.geminiApiKey && (isConfigEncrypted || isEncrypted(decrypted.geminiApiKey))) {
       log.debug(() => '[Encryption] Decrypting Gemini API key');
-      decrypted.geminiApiKey = decrypt(decrypted.geminiApiKey, true);
+      decrypted.geminiApiKey = safeDecrypt(decrypted.geminiApiKey, 'geminiApiKey');
     }
 
     // Decrypt Gemini API keys array (for key rotation feature)
     if (Array.isArray(decrypted.geminiApiKeys) && decrypted.geminiApiKeys.length > 0) {
-      decrypted.geminiApiKeys = decrypted.geminiApiKeys.map(key => {
+      decrypted.geminiApiKeys = decrypted.geminiApiKeys.map((key, idx) => {
         if (key && (isConfigEncrypted || isEncrypted(key))) {
-          return decrypt(key, true);
+          return safeDecrypt(key, `geminiApiKeys[${idx}]`);
         }
         return key;
       });
@@ -377,7 +395,7 @@ function decryptUserConfig(config) {
     // Decrypt AssemblyAI API key
     if (decrypted.assemblyAiApiKey && (isConfigEncrypted || isEncrypted(decrypted.assemblyAiApiKey))) {
       log.debug(() => '[Encryption] Decrypting AssemblyAI API key');
-      decrypted.assemblyAiApiKey = decrypt(decrypted.assemblyAiApiKey, true);
+      decrypted.assemblyAiApiKey = safeDecrypt(decrypted.assemblyAiApiKey, 'assemblyAiApiKey');
     }
 
     // Decrypt subtitle provider credentials
@@ -404,7 +422,7 @@ function decryptUserConfig(config) {
         log.debug(() => `[Encryption] SubDL API key exists, encrypted: ${subdlKeyEncrypted}, will decrypt: ${isConfigEncrypted || subdlKeyEncrypted}`);
         if (isConfigEncrypted || subdlKeyEncrypted) {
           decrypted.subtitleProviders.subdl.apiKey =
-            decrypt(decrypted.subtitleProviders.subdl.apiKey, true);
+            safeDecrypt(decrypted.subtitleProviders.subdl.apiKey, 'subdl.apiKey');
           const isString = typeof decrypted.subtitleProviders.subdl.apiKey === 'string';
           log.debug(() => `[Encryption] SubDL key decrypted successfully, type: ${isString ? 'string' : 'NOT_STRING'}`);
         }
@@ -416,7 +434,7 @@ function decryptUserConfig(config) {
         log.debug(() => `[Encryption] SubSource API key exists, encrypted: ${subsourceKeyEncrypted}, will decrypt: ${isConfigEncrypted || subsourceKeyEncrypted}`);
         if (isConfigEncrypted || subsourceKeyEncrypted) {
           decrypted.subtitleProviders.subsource.apiKey =
-            decrypt(decrypted.subtitleProviders.subsource.apiKey, true);
+            safeDecrypt(decrypted.subtitleProviders.subsource.apiKey, 'subsource.apiKey');
           const isString = typeof decrypted.subtitleProviders.subsource.apiKey === 'string';
           log.debug(() => `[Encryption] SubSource key decrypted successfully, type: ${isString ? 'string' : 'NOT_STRING'}`);
         }
@@ -428,7 +446,7 @@ function decryptUserConfig(config) {
         log.debug(() => `[Encryption] Subs.ro API key exists, encrypted: ${subsroKeyEncrypted}, will decrypt: ${isConfigEncrypted || subsroKeyEncrypted}`);
         if (isConfigEncrypted || subsroKeyEncrypted) {
           decrypted.subtitleProviders.subsro.apiKey =
-            decrypt(decrypted.subtitleProviders.subsro.apiKey, true);
+            safeDecrypt(decrypted.subtitleProviders.subsro.apiKey, 'subsro.apiKey');
           const isString = typeof decrypted.subtitleProviders.subsro.apiKey === 'string';
           log.debug(() => `[Encryption] Subs.ro key decrypted successfully, type: ${isString ? 'string' : 'NOT_STRING'}`);
         }
@@ -441,7 +459,7 @@ function decryptUserConfig(config) {
         if (provider && provider.apiKey) {
           const isEnc = isEncrypted(provider.apiKey);
           if (isConfigEncrypted || isEnc) {
-            decrypted.providers[key].apiKey = decrypt(provider.apiKey, true);
+            decrypted.providers[key].apiKey = safeDecrypt(provider.apiKey, `providers.${key}.apiKey`);
           }
         }
       }

@@ -159,6 +159,7 @@ async function extractRar(buffer) {
     log.debug(() => `[ArchiveExtractor] extractRar: starting RAR extraction (${buffer.length} bytes)`);
 
     const { createExtractorFromData } = require('node-unrar-js');
+    const path = require('path');
 
     try {
         const extractor = await createExtractorFromData({ data: buffer });
@@ -170,23 +171,39 @@ async function extractRar(buffer) {
 
         const entries = fileHeaders
             .filter(h => !h.flags.directory)
-            .map(h => h.name);
+            .map(h => h.name)
+            .filter(name => {
+                // Reject entries with path traversal sequences or absolute paths
+                const normalized = name.replace(/\\/g, '/');
+                if (normalized.includes('..') || path.isAbsolute(normalized) || normalized.startsWith('/')) {
+                    log.warn(() => `[ArchiveExtractor] extractRar: skipping suspicious entry: ${name}`);
+                    return false;
+                }
+                return true;
+            });
         log.debug(() => `[ArchiveExtractor] extractRar: ${entries.length} files (excluding directories)`);
 
         if (entries.length > 0) {
             log.debug(() => `[ArchiveExtractor] extractRar: files in RAR: ${entries.slice(0, 10).join(', ')}${entries.length > 10 ? ` ... and ${entries.length - 10} more` : ''}`);
         }
 
+        const safeEntrySet = new Set(entries);
         const extracted = extractor.extract();
         const files = new Map();
         let extractedCount = 0;
 
         for (const file of extracted.files) {
             if (file.extraction) {
+                const entryName = file.fileHeader.name;
+                // Only include entries that passed our safety filter
+                if (!safeEntrySet.has(entryName)) {
+                    log.warn(() => `[ArchiveExtractor] extractRar: skipping extraction of unsafe entry: ${entryName}`);
+                    continue;
+                }
                 const fileBuffer = Buffer.from(file.extraction);
-                files.set(file.fileHeader.name, fileBuffer);
+                files.set(entryName, fileBuffer);
                 extractedCount++;
-                log.debug(() => `[ArchiveExtractor] extractRar: extracted ${file.fileHeader.name} (${fileBuffer.length} bytes)`);
+                log.debug(() => `[ArchiveExtractor] extractRar: extracted ${entryName} (${fileBuffer.length} bytes)`);
             }
         }
 
@@ -199,6 +216,7 @@ async function extractRar(buffer) {
     }
 }
 
+
 /**
  * Extract files from a ZIP archive
  * @param {Buffer} buffer - ZIP archive buffer
@@ -208,13 +226,23 @@ async function extractZip(buffer) {
     log.debug(() => `[ArchiveExtractor] extractZip: starting ZIP extraction (${buffer.length} bytes)`);
 
     const JSZip = require('jszip');
+    const path = require('path');
 
     try {
         const zip = await JSZip.loadAsync(buffer, { base64: false });
         const allEntries = Object.keys(zip.files);
-        const entries = allEntries.filter(name => !zip.files[name].dir);
+        const entries = allEntries.filter(name => {
+            if (zip.files[name].dir) return false;
+            // Reject entries with path traversal sequences or absolute paths
+            const normalized = name.replace(/\\/g, '/');
+            if (normalized.includes('..') || path.isAbsolute(normalized) || normalized.startsWith('/')) {
+                log.warn(() => `[ArchiveExtractor] extractZip: skipping suspicious entry: ${name}`);
+                return false;
+            }
+            return true;
+        });
 
-        log.debug(() => `[ArchiveExtractor] extractZip: ${allEntries.length} total entries, ${entries.length} files (excluding directories)`);
+        log.debug(() => `[ArchiveExtractor] extractZip: ${allEntries.length} total entries, ${entries.length} files (excluding directories and unsafe entries)`);
         if (entries.length > 0) {
             log.debug(() => `[ArchiveExtractor] extractZip: files in ZIP: ${entries.slice(0, 10).join(', ')}${entries.length > 10 ? ` ... and ${entries.length - 10} more` : ''}`);
         }
@@ -226,6 +254,7 @@ async function extractZip(buffer) {
         throw err;
     }
 }
+
 
 /**
  * Helper function to find episode file in season pack (regular TV shows)

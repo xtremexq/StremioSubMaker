@@ -47,6 +47,7 @@ services:
       - REDIS_KEY_PREFIX=stremio
       - ENCRYPTION_KEY_FILE=/app/keys/.encryption-key
       - REDIS_PASSWORD_FILE=/app/keys/.redis-password
+      - TRUST_PROXY=1
     depends_on:
       redis:
         condition: service_healthy
@@ -131,6 +132,7 @@ services:
     environment:
       - STORAGE_TYPE=filesystem
       - ENCRYPTION_KEY_FILE=/app/keys/.encryption-key
+      - TRUST_PROXY=1
     volumes:
       - ./data:/app/data
       - ./.cache:/app/.cache
@@ -198,6 +200,7 @@ docker run -d \
 - Encryption key: if `ENCRYPTION_KEY` is unset, the app writes a key to `/app/keys/.encryption-key`; keep that path persistent (named volume or bind mount).
 - Redis password: set `REDIS_PASSWORD_FILE` (for example `/app/keys/.redis-password`) to auto-generate and persist a strong Redis password. If `REDIS_PASSWORD` is set, that value is used instead and written to the password file. Ensure Redis is configured to read the same file; the provided `docker-compose.yaml` handles this via the shared `keys` volume.
 - Ports: container listens on `7001` by default; override with `PORT` env and matching host mapping.
+- `TRUST_PROXY`: set to `1` when running behind a reverse proxy (nginx, Cloudflare, etc.) so Express reads the real client IP from `X-Forwarded-For`. Defaults to `false` (safe for direct exposure). Accepts numeric depth, boolean, or named values (`loopback`, `linklocal`, `uniquelocal`).
 
 ## Troubleshooting
 - Check app logs: `docker-compose logs -f submaker`

@@ -36,6 +36,14 @@ class OpenAICompatibleProvider {
       : 2;
     // JSON structured output mode
     this.enableJsonOutput = options.enableJsonOutput === true;
+    // Optional SSRF-safe DNS lookup for custom providers (closes TOCTOU gap)
+    this._ssrfLookup = options.ssrfLookup || null;
+    if (this._ssrfLookup) {
+      const http = require('http');
+      const https = require('https');
+      this._ssrfHttpAgent = new http.Agent({ keepAlive: true, lookup: this._ssrfLookup });
+      this._ssrfHttpsAgent = new https.Agent({ keepAlive: true, lookup: this._ssrfLookup });
+    }
   }
 
   normalizeReasoningEffort(value) {
@@ -43,6 +51,19 @@ class OpenAICompatibleProvider {
     const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
     return allowed.includes(normalized) ? normalized : undefined;
   }
+  /**
+   * Return the appropriate HTTP agents for this provider.
+   * Custom providers with SSRF-safe lookup use dedicated agents;
+   * all others use the shared connection-pooled agents.
+   */
+  getHttpAgents() {
+    if (this._ssrfLookup) {
+      return { httpAgent: this._ssrfHttpAgent, httpsAgent: this._ssrfHttpsAgent };
+    }
+    return { httpAgent, httpsAgent };
+  }
+
+
 
   isCfTranslationModel() {
     const model = String(this.model || '').toLowerCase();
@@ -352,11 +373,12 @@ class OpenAICompatibleProvider {
         ? `${this.baseUrl.replace(/\/v1$/, '')}/models`
         : `${this.baseUrl}/models`;
 
+      const agents = this.getHttpAgents();
       const requestConfig = {
         headers: this.getAuthHeaders(),
         timeout: 10000,
-        httpAgent,
-        httpsAgent
+        httpAgent: agents.httpAgent,
+        httpsAgent: agents.httpsAgent
       };
 
       let response;
@@ -446,14 +468,15 @@ class OpenAICompatibleProvider {
     let lastError;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
+        const agents = this.getHttpAgents();
         const response = await axios.post(
           url,
           body,
           {
             headers: this.getAuthHeaders(),
             timeout: this.translationTimeout,
-            httpAgent,
-            httpsAgent
+            httpAgent: agents.httpAgent,
+            httpsAgent: agents.httpsAgent
           }
         );
 
@@ -512,14 +535,15 @@ class OpenAICompatibleProvider {
     const { body, url, isCfRun } = request;
 
     const executeStream = async () => {
+      const agents = this.getHttpAgents();
       const response = await axios.post(
         url,
         body,
         {
           headers: this.getAuthHeaders(),
           timeout: this.translationTimeout,
-          httpAgent,
-          httpsAgent,
+          httpAgent: agents.httpAgent,
+          httpsAgent: agents.httpsAgent,
           responseType: 'stream'
         }
       );

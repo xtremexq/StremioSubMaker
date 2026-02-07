@@ -4,7 +4,7 @@ const AnthropicProvider = require('./providers/anthropic');
 const DeepLProvider = require('./providers/deepl');
 const GoogleTranslateProvider = require('./providers/googleTranslate');
 const log = require('../utils/logger');
-const { validateCustomBaseUrl, areInternalEndpointsAllowed } = require('../utils/ssrfProtection');
+const { validateCustomBaseUrl, areInternalEndpointsAllowed, createSsrfSafeLookup } = require('../utils/ssrfProtection');
 const { getDefaultProviderParameters, mergeProviderParameters, selectGeminiApiKey } = require('../utils/config');
 
 const KEY_OPTIONAL_PROVIDERS = new Set(['googletranslate']);
@@ -163,13 +163,20 @@ function resolveCfWorkersCredentials(rawKey) {
     }
   }
 
+  // Validate accountId to prevent path traversal / injection in URL construction.
+  // Cloudflare account IDs are 32-character lowercase hex strings.
+  if (accountId && !/^[a-f0-9]{32}$/.test(accountId)) {
+    log.warn(() => `[TranslationProviderFactory] Invalid CF Workers account ID format (expected 32-char hex), rejecting`);
+    throw new Error('Invalid Cloudflare Workers account ID format. Expected a 32-character hexadecimal string.');
+  }
+
   return {
     accountId,
     token
   };
 }
 
-function createProviderInstance(providerKey, providerConfig = {}, providerParams = {}, globalOptions = {}) {
+async function createProviderInstance(providerKey, providerConfig = {}, providerParams = {}, globalOptions = {}) {
   const key = String(providerKey || '').toLowerCase();
   const enableJsonOutput = globalOptions.enableJsonOutput === true;
   switch (key) {
@@ -313,7 +320,8 @@ function createProviderInstance(providerKey, providerConfig = {}, providerParams
       }
 
       // SSRF protection: validate baseUrl is not internal/private (unless allowed)
-      const validation = validateCustomBaseUrl(baseUrl);
+      // This is async because it performs DNS resolution to defend against DNS rebinding
+      const validation = await validateCustomBaseUrl(baseUrl);
       if (!validation.valid) {
         log.warn(() => `[Providers] Custom provider baseUrl blocked: ${validation.error}`);
         return null;
@@ -329,7 +337,8 @@ function createProviderInstance(providerKey, providerConfig = {}, providerParams
         maxOutputTokens: providerParams.maxOutputTokens,
         translationTimeout: providerParams.translationTimeout,
         maxRetries: providerParams.maxRetries,
-        enableJsonOutput
+        enableJsonOutput,
+        ssrfLookup: createSsrfSafeLookup()
       });
     }
     default:
@@ -424,7 +433,7 @@ async function createTranslationProvider(config) {
       const secondaryConfig = await findSecondaryConfig(secondaryProviderKey);
       if (isConfigured(secondaryConfig, secondaryProviderKey)) {
         const secondaryParams = findProviderParams(secondaryProviderKey);
-        fallbackProvider = createProviderInstance(secondaryProviderKey, secondaryConfig, secondaryParams, jsonOutputOptions);
+        fallbackProvider = await createProviderInstance(secondaryProviderKey, secondaryConfig, secondaryParams, jsonOutputOptions);
         fallbackName = secondaryProviderKey;
         fallbackModel = secondaryConfig.model;
       } else {
@@ -465,7 +474,7 @@ async function createTranslationProvider(config) {
   }
 
   const providerParams = findProviderParams(mainProvider);
-  const provider = createProviderInstance(mainProvider, selectedConfig, providerParams, jsonOutputOptions);
+  const provider = await createProviderInstance(mainProvider, selectedConfig, providerParams, jsonOutputOptions);
   if (!provider) {
     log.warn(() => `[Providers] Unsupported provider '${mainProvider}', falling back to Gemini`);
     return {
@@ -496,7 +505,7 @@ async function createTranslationProvider(config) {
         fallbackModel = secondaryConfig.model;
       } else {
         const secondaryParams = findProviderParams(secondaryProviderKey);
-        fallbackProvider = createProviderInstance(secondaryProviderKey, secondaryConfig, secondaryParams, jsonOutputOptions);
+        fallbackProvider = await createProviderInstance(secondaryProviderKey, secondaryConfig, secondaryParams, jsonOutputOptions);
         fallbackName = secondaryProviderKey;
         fallbackModel = secondaryConfig.model;
       }

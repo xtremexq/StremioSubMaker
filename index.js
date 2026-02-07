@@ -1405,10 +1405,10 @@ async function resolveAutoSubTranslationProvider(config, providerKeyOverride, mo
     const mergedParams = mergeProviderParameters(getDefaultProviderParameters(), config?.providerParameters || {});
     const normalizeKey = (key) => String(key || '').trim().toLowerCase();
     const desiredKey = normalizeKey(providerKeyOverride || config?.mainProvider || 'gemini');
-    const maybeBuildProvider = (key, cfgOverride = null) => {
+    const maybeBuildProvider = async (key, cfgOverride = null) => {
         const params = mergedParams[key] || mergedParams.default || {};
         const cfg = cfgOverride || (providers[key] || {});
-        const provider = createProviderInstance(key, cfg, params);
+        const provider = await createProviderInstance(key, cfg, params);
         if (!provider) return null;
         return {
             provider,
@@ -1434,7 +1434,7 @@ async function resolveAutoSubTranslationProvider(config, providerKeyOverride, mo
     if (providerConfig && providerConfig.enabled !== false) {
         const params = mergedParams[desiredKey] || mergedParams.default || {};
         const cfg = { ...providerConfig, model: modelOverride || providerConfig.model || config?.geminiModel };
-        const provider = createProviderInstance(desiredKey, cfg, params);
+        const provider = await createProviderInstance(desiredKey, cfg, params);
         if (provider) {
             return {
                 provider,
@@ -1447,7 +1447,7 @@ async function resolveAutoSubTranslationProvider(config, providerKeyOverride, mo
     // Fallback: try any enabled provider with a key (Gemini first)
     const geminiKey = await selectGeminiApiKey(config);
     if (geminiKey) {
-        const fallback = maybeBuildProvider('gemini', {
+        const fallback = await maybeBuildProvider('gemini', {
             enabled: true,
             apiKey: geminiKey,
             model: modelOverride || config?.geminiModel
@@ -1462,7 +1462,7 @@ async function resolveAutoSubTranslationProvider(config, providerKeyOverride, mo
         return cfg && cfg.apiKey && cfg.enabled !== false;
     });
     if (firstAvailable) {
-        const fallback = maybeBuildProvider(firstAvailable);
+        const fallback = await maybeBuildProvider(firstAvailable);
         if (fallback) {
             fallback.fallbackProviderName = desiredKey;
             return fallback;
@@ -1812,7 +1812,28 @@ function isInvalidSessionConfig(config) {
 
 // Create Express app
 const app = express();
-app.set('trust proxy', 1);
+// SECURITY: trust proxy is configurable via TRUST_PROXY env var.
+// Set TRUST_PROXY=1 (or loopback, linklocal, uniquelocal) when behind a reverse proxy.
+// Defaults to false (no proxy trust) to prevent IP spoofing when directly exposed.
+const trustProxySetting = process.env.TRUST_PROXY;
+if (trustProxySetting !== undefined && trustProxySetting !== '') {
+    // Support numeric (1, 2), boolean-like (true/false), and named values (loopback, linklocal, uniquelocal)
+    const numeric = parseInt(trustProxySetting, 10);
+    if (!isNaN(numeric)) {
+        app.set('trust proxy', numeric);
+    } else if (trustProxySetting.toLowerCase() === 'true') {
+        app.set('trust proxy', true);
+    } else if (trustProxySetting.toLowerCase() === 'false') {
+        app.set('trust proxy', false);
+    } else {
+        // Named values like 'loopback', 'linklocal', 'uniquelocal' or comma-separated subnets
+        app.set('trust proxy', trustProxySetting);
+    }
+} else {
+    // Default: false — safe when no reverse proxy is configured.
+    // Deployments behind nginx/Cloudflare/etc. MUST set TRUST_PROXY=1 in .env.
+    app.set('trust proxy', false);
+}
 app.disable('x-powered-by'); // Hide framework fingerprint in responses
 // CRITICAL: Disable ETags globally to prevent any conditional caching
 // ETags can cause proxies/CDNs to serve stale user-specific content
@@ -3391,12 +3412,12 @@ app.post('/api/models/:provider', async (req, res) => {
 
             // SSRF protection: validate baseUrl before making external requests
             const { validateCustomBaseUrl } = require('./src/utils/ssrfProtection');
-            const validation = validateCustomBaseUrl(baseUrl);
+            const validation = await validateCustomBaseUrl(baseUrl);
             if (!validation.valid) {
                 return res.status(400).json({ error: validation.error });
             }
 
-            const provider = createProviderInstance(
+            const provider = await createProviderInstance(
                 providerKey,
                 {
                     apiKey: providerApiKey || '',
@@ -3431,7 +3452,7 @@ app.post('/api/models/:provider', async (req, res) => {
             providerApiKey = `${creds.accountId}|${creds.token}`;
         }
 
-        const provider = createProviderInstance(
+        const provider = await createProviderInstance(
             providerKey,
             {
                 apiKey: providerApiKey,

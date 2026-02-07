@@ -23,6 +23,12 @@ const TTL_REFRESH_DEBOUNCE_MS = 60 * 60 * 1000; // 1 hour
 const SESSION_INDEX_VERIFY_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const SESSION_INDEX_MISMATCH_LOG_LEVEL = 'error'; // log level when mismatch found
 
+// Rate limiting for failed session lookups to prevent enumeration attacks
+// Tracks failed lookups per token and blocks after threshold within the TTL window
+const FAILED_LOOKUP_MAX = 10; // Max failed lookups per token before throttling
+const FAILED_LOOKUP_WINDOW_MS = 60 * 1000; // 1 minute window
+const FAILED_LOOKUP_BLOCK_MS = 5 * 60 * 1000; // Block for 5 minutes after exceeding threshold
+
 // Internal metadata keys injected into the encrypted payload to detect
 // cross-user/session contamination even when the wrapper appears valid.
 const META_KEYS = {
@@ -479,6 +485,13 @@ class SessionManager extends EventEmitter {
             updateAgeOnGet: true
         });
 
+        // Rate limiter for failed session lookups (prevents enumeration attacks)
+        // Tracks { count, firstFailAt, blockedUntil } per token
+        this.failedLookups = new LRUCache({
+            max: 10000,
+            ttl: FAILED_LOOKUP_BLOCK_MS
+        });
+
         // Auto-save timer
         this.saveTimer = null;
 
@@ -911,6 +924,16 @@ class SessionManager extends EventEmitter {
     async getSession(token) {
         if (!token) return null;
 
+        // Rate limiting: reject tokens that have exceeded the failed lookup threshold
+        const rateLimitEntry = this.failedLookups.get(token);
+        if (rateLimitEntry) {
+            const now = Date.now();
+            if (rateLimitEntry.blockedUntil && now < rateLimitEntry.blockedUntil) {
+                log.warn(() => `[SessionManager] Rate limited session lookup for ${redactToken(token)} (${rateLimitEntry.count} failures, blocked for ${Math.ceil((rateLimitEntry.blockedUntil - now) / 1000)}s)`);
+                return null;
+            }
+        }
+
         let sessionData = this.cache.get(token);
 
         // If not in cache, try loading from storage (Redis/filesystem)
@@ -918,6 +941,7 @@ class SessionManager extends EventEmitter {
             log.debug(() => `[SessionManager] Session not in cache, checking storage: ${redactToken(token)}`);
             const loadedConfig = await this.loadSessionFromStorage(token);
             if (!loadedConfig) {
+                this._recordFailedLookup(token);
                 return null;
             }
             // loadSessionFromStorage already added to cache and returns decrypted config
@@ -1106,6 +1130,32 @@ class SessionManager extends EventEmitter {
         this.decryptedCache.set(token, cloneConfig(decryptedConfig));
 
         return cloneConfig(decryptedConfig);
+    }
+
+    /**
+     * Record a failed session lookup for rate limiting purposes.
+     * After FAILED_LOOKUP_MAX failures within FAILED_LOOKUP_WINDOW_MS,
+     * the token is blocked for FAILED_LOOKUP_BLOCK_MS.
+     * @private
+     * @param {string} token - The token that failed lookup
+     */
+    _recordFailedLookup(token) {
+        const now = Date.now();
+        let entry = this.failedLookups.get(token);
+
+        if (!entry || (now - entry.firstFailAt > FAILED_LOOKUP_WINDOW_MS)) {
+            // Start a new window
+            entry = { count: 1, firstFailAt: now, blockedUntil: 0 };
+        } else {
+            entry.count++;
+        }
+
+        if (entry.count >= FAILED_LOOKUP_MAX && !entry.blockedUntil) {
+            entry.blockedUntil = now + FAILED_LOOKUP_BLOCK_MS;
+            log.warn(() => `[SessionManager] Token ${redactToken(token)} blocked for ${FAILED_LOOKUP_BLOCK_MS / 1000}s after ${entry.count} failed lookups (possible enumeration attempt)`);
+        }
+
+        this.failedLookups.set(token, entry);
     }
 
     /**
