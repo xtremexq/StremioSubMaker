@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.43
+
+**Bug Fixes:**
+
+- **Increased SubDL download timeout from 12s to 20s:** SubDL's download server (`dl.subdl.com`) has been consistently slow (10-20s response times for small files), causing timeout errors. Increased the default download timeout to accommodate their server latency while keeping the search API timeout unchanged.
+
 ## SubMaker v1.4.42
 
 **Improvements:**
