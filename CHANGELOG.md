@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.41
 
+**Bug Fixes:**
+
+- **Fixed `TranslationEngine` constructor crash breaking ALL translations:** The key rotation initialization code accessed `this.keyRotationConfig.keys` without a null check. When key rotation is disabled (the default for all users), `keyRotationConfig` is `null`, so `null.keys` threw `TypeError: Cannot read properties of null (reading 'keys')`. This crashed the `TranslationEngine` constructor before any translation could start, causing every translation request to fail Affected all 4 translation code paths (subtitle translation, file upload, auto-subs, embedded subtitles) and all providers (Gemini, OpenAI, Anthropic, DeepL, etc.). Fixed by adding optional chaining: `this.keyRotationConfig?.keys`.
+
+- **Fixed `caches` global reference error:** The configuration page reset function checked `window.caches` but then used the bare `caches` global for `.keys()` and `.delete()`. On Google TV's embedded browser (and other restricted environments), `window.caches` exists but `caches` as a global variable may not, causing `Cannot read properties of null (reading 'keys')`. Fixed by consistently using `window.caches` for all Cache API calls.
+
 **Security:**
 
 - **SSRF DNS rebinding defense for custom AI provider endpoints:** Custom provider base URLs are now validated against DNS rebinding attacks. After the existing hostname string check passes, `validateCustomBaseUrl()` resolves the hostname (A + AAAA records) and verifies all resolved IPs are external. If DNS resolution fails entirely, the request is blocked (fail-closed). Added `isInternalIp()` covering RFC 1918, loopback, link-local, unique-local, IPv4-mapped IPv6, carrier-grade NAT (100.64/10), and 0.0.0.0. The `ALLOW_INTERNAL_CUSTOM_ENDPOINTS=true` escape hatch is preserved for self-hosters running local LLMs.

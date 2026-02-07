@@ -6292,9 +6292,9 @@ Translate to {target_language}.`;
 
             // 2) Clear Cache Storage directly (in case SW isn't active)
             try {
-                if (window.caches && caches.keys) {
-                    const names = await caches.keys();
-                    await Promise.all(names.map(n => caches.delete(n).catch(() => { })));
+                if (window.caches && window.caches.keys) {
+                    const names = await window.caches.keys();
+                    await Promise.all(names.map(n => window.caches.delete(n).catch(() => { })));
                 }
             } catch (_) { }
 

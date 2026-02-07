@@ -240,7 +240,7 @@ class TranslationEngine {
       // Seed from the initial key's position so the first rotation advances to the next key
       // instead of always restarting at index 0 (which would waste the initial selectGeminiApiKey call).
       const initialApiKey = this.gemini?.apiKey;
-      const initialKeyIndex = initialApiKey
+      const initialKeyIndex = (initialApiKey && this.keyRotationConfig?.keys)
         ? this.keyRotationConfig.keys.indexOf(initialApiKey)
         : -1;
       this._keyRotationCounter = initialKeyIndex >= 0 ? initialKeyIndex + 1 : 0;
