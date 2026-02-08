@@ -12,7 +12,7 @@ Auto-sync subtitles in development!
 
 ## 🚀 [Roadmap 🗺️](docs/ROADMAP.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Stremio Addon](https://img.shields.io/badge/Stremio-Addon-purple)](https://www.stremio.com)
 

@@ -1,0 +1,70 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the form below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen?
+      placeholder: Describe the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Go to...
+        2. Click on...
+        3. See error...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: SubMaker Version
+      description: Check your addon configuration page or package.json
+      placeholder: "e.g., 1.4.43"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment Type
+      options:
+        - ElfHosted (submaker.elfhosted.com)
+        - Self-hosted (Docker)
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device / Platform
+      description: Where are you using Stremio? Where this specific issue happens?
+      placeholder: "e.g., Windows 11, Android TV, Fire Stick"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (if available)
+      description: Paste any relevant error logs or console output
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other relevant information (screenshots, config, videos, more details, etc.)
