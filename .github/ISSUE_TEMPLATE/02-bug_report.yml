@@ -37,14 +37,11 @@ body:
     validations:
       required: true
 
-  - type: markdown
-    attributes:
-      value: "---"
-
   - type: dropdown
     id: deployment
     attributes:
       label: Deployment Type
+      description: How is SubMaker running?
       options:
         - ElfHosted (submaker.elfhosted.com)
         - Self-hosted
