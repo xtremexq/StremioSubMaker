@@ -650,8 +650,7 @@
                         <div class="form-group">
                             <label for="geminiModel">
                                 <span data-i18n="config.gemini.model.label">Translation Model</span>
-                                <span class="label-description" data-i18n="config.gemini.model.helper">AI model for
-                                    translations</span>
+                                <span class="label-description" data-i18n="config.gemini.model.helper">AI model for translations</span>
                             </label>
                             <select id="geminiModel" required>
                                 <option value="gemini-3-flash-preview" data-i18n="config.gemini.model.options.flash3"
@@ -712,8 +711,7 @@
                                 <input type="checkbox" id="geminiKeyRotationEnabled">
                                 <span data-i18n="config.gemini.keyRotation.label">Enable Gemini API key rotation</span>
                             </label>
-                            <span class="label-description" data-i18n="config.gemini.keyRotation.description">Distribute
-                                API calls across multiple keys to avoid rate limits.</span>
+                            <span class="label-description" data-i18n="config.gemini.keyRotation.description">Distribute API calls across multiple keys to avoid rate limits.</span>
                         </div>
 
                         <!-- Advanced Settings removed by request -->
@@ -722,9 +720,7 @@
                                 <input type="checkbox" id="enableMultiProviders">
                                 <span data-i18n="config.multiProvider.label">Multiple providers (beta)</span>
                             </label>
-                            <span class="label-description" data-i18n="config.multiProvider.description">Enables
-                                multiple AI providers. You can set primary/secondary providers in "Translation
-                                Settings".</span>
+                            <span class="label-description" data-i18n="config.multiProvider.description">Enables multiple AI providers. You can set primary/secondary providers in "Translation Settings".</span>
                         </div>
 
                         <div id="multiProvidersContainer"
@@ -1457,14 +1453,7 @@
                                             aria-label="Translation workflow details"
                                             data-i18n="config.translationSettings.workflow.tooltip"
                                             data-i18n-attr="aria-label">?</span>
-                                        <div class="tooltip-bubble" role="tooltip" aria-hidden="true"
-                                            id="translationWorkflowTooltip"
-                                            data-i18n="config.translationSettings.workflow.tooltip">
-                                            "Original Timestamps" sends a numbered list and reattaches original
-                                            timecodes. "Send Timestamps to AI" sends full SRT and trusts the AI to
-                                            preserve timecodes. "XML Tags" wraps each entry in &lt;s id="N"&gt; tags
-                                            for robust ID-based recovery — recommended if you have sync problems.
-                                        </div>
+                                        <div class="tooltip-bubble" role="tooltip" aria-hidden="true" id="translationWorkflowTooltip" data-i18n="config.translationSettings.workflow.tooltip">"Original Timestamps" sends a numbered list and reattaches original timecodes. "Send Timestamps to AI" sends full SRT and trusts the AI to preserve timecodes. "XML Tags" wraps each entry in &lt;s id="N"&gt; tags for robust ID-based recovery — recommended if you have sync problems.</div>
                                     </div>
                                 </div>
                             </label>

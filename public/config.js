@@ -1650,13 +1650,7 @@ Translate to {target_language}.`;
         const btn = document.getElementById('subToolboxLauncher');
         const inlineWrapper = document.getElementById('toolboxInlineWrapper');
         if (!btn) return;
-        if (isMobileViewport()) {
-            btn.style.display = 'none';
-            btn.dataset.configRef = '';
-            btn.classList.remove('show');
-            if (inlineWrapper) inlineWrapper.style.display = 'none';
-            return;
-        }
+        // Visibility is based solely on whether toolbox is enabled, not viewport size
         const cfgRef = configOverride || getActiveConfigRef();
         const shouldShow = !!cfgRef && isToolboxEnabledForConfig(cfgRef);
         if (shouldShow) {

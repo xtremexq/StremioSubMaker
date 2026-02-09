@@ -3334,11 +3334,7 @@ label:has(#subToolboxEnabled:disabled) {
     }
 }
 
-@media (max-width: 768px) {
-    .toolbox-button {
-        display: none !important;
-    }
-}
+/* Toolbox button visibility is controlled by JS based on feature state, not viewport */
 
 [data-theme="dark"] .help-button.mario {
     border-color: #1b2a78;

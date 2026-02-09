@@ -3686,7 +3686,9 @@ app.post('/api/validate-subdl', validationLimiter, async (req, res) => {
 });
 
 // API endpoint to validate OpenSubtitles credentials
-app.post('/api/validate-opensubtitles', validationLimiter, async (req, res) => {
+// Note: No rate limiter needed - OpenSubtitles handles their own rate limiting (1 req/sec on /login)
+// and we have Redis-backed token cache + mutex to prevent redundant logins
+app.post('/api/validate-opensubtitles', async (req, res) => {
     // CRITICAL: Prevent caching to avoid cross-user config contamination (user credentials in request body)
     setNoStore(res);
 
@@ -3701,38 +3703,16 @@ app.post('/api/validate-opensubtitles', validationLimiter, async (req, res) => {
             });
         }
 
-        const axios = require('axios');
-        const { httpAgent, httpsAgent } = require('./src/utils/httpAgents');
-        const { version } = require('./src/utils/version');
-
-        // Make direct login API call
-        const loginUrl = 'https://api.opensubtitles.com/api/v1/login';
-
-        // Get API key from environment
-        const apiKey = process.env.OPENSUBTITLES_API_KEY || '';
-        const headers = {
-            'User-Agent': `SubMaker v${version}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        };
-
-        if (apiKey) {
-            headers['Api-Key'] = apiKey;
-        }
+        // MULTI-INSTANCE FIX: Use OpenSubtitlesService which has Redis-backed token cache
+        // This prevents redundant login calls that cause rate limiting
+        const { OpenSubtitlesService } = require('./src/services/opensubtitles');
+        const osService = new OpenSubtitlesService({ username, password });
 
         try {
-            const response = await axios.post(loginUrl, {
-                username: username,
-                password: password
-            }, {
-                headers: headers,
-                timeout: 15000,
-                httpAgent,
-                httpsAgent
-            });
+            // login() uses Redis cache - if token exists for these credentials, it's reused
+            const token = await osService.login(15000);
 
-            // Check if we got a token
-            if (response.data && response.data.token) {
+            if (token) {
                 res.json({
                     valid: true,
                     message: t('server.validation.credentialsValid', {}, 'Credentials are valid')
@@ -3745,22 +3725,22 @@ app.post('/api/validate-opensubtitles', validationLimiter, async (req, res) => {
             }
         } catch (apiError) {
             // Check for authentication errors
-            if (apiError.response?.status === 401) {
+            if (apiError.statusCode === 401 || apiError.authError) {
                 res.json({
                     valid: false,
                     error: t('server.errors.invalidCredentials', {}, 'Invalid username or password')
                 });
-            } else if (apiError.response?.status === 406) {
+            } else if (apiError.statusCode === 406) {
                 res.json({
                     valid: false,
                     error: t('server.errors.invalidRequestFormat', {}, 'Invalid request format')
                 });
-            } else if (apiError.response?.status === 429) {
+            } else if (apiError.statusCode === 429 || apiError.type === 'rate_limit') {
                 // OpenSubtitles rate limit - provide user-friendly message
                 res.json({
                     valid: false,
                     error: t('server.errors.opensubtitlesRateLimited', {},
-                        'OpenSubtitles is temporarily rate limiting requests. Your credentials may still be valid - try saving and testing in Stremio.')
+                        'OpenSubtitles login is temporarily overloaded (server limit: 1 login/second). Please wait 30 seconds and try again. Your credentials are likely valid.')
                 });
             } else if (apiError.response?.data?.message) {
                 res.json({
@@ -4948,7 +4928,7 @@ const subtitleDownloadHandler = async (req, res) => {
             const isVtt = trimmedCached.startsWith('WEBVTT');
             const isAss = trimmedCached.includes('[Script Info]') && (trimmedCached.includes('[V4+ Styles]') || trimmedCached.includes('[V4 Styles]'));
             const isSsa = trimmedCached.includes('[Script Info]') && trimmedCached.includes('[V4 Styles]') && !trimmedCached.includes('[V4+ Styles]');
-            
+
             if (isVtt) {
                 res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
                 res.setHeader('Content-Disposition', `attachment; filename="${fileId}.vtt"`);
@@ -5020,7 +5000,7 @@ const subtitleDownloadHandler = async (req, res) => {
         const isVtt = trimmedContent.startsWith('WEBVTT');
         const isAss = trimmedContent.includes('[Script Info]') && (trimmedContent.includes('[V4+ Styles]') || trimmedContent.includes('[V4 Styles]'));
         const isSsa = trimmedContent.includes('[Script Info]') && trimmedContent.includes('[V4 Styles]') && !trimmedContent.includes('[V4+ Styles]');
-        
+
         if (isVtt) {
             res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="${fileId}.vtt"`);

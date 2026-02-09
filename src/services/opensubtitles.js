@@ -13,15 +13,19 @@ const { detectArchiveType, extractSubtitleFromArchive, isArchive, createEpisodeN
 const { analyzeResponseContent, createInvalidResponseSubtitle } = require('../utils/responseAnalyzer');
 
 const OPENSUBTITLES_API_URL = 'https://api.opensubtitles.com/api/v1';
+const OPENSUBTITLES_VIP_API_URL = 'https://vip-api.opensubtitles.com/api/v1';
 const USER_AGENT = `SubMaker v${version}`;
 const MAX_ZIP_BYTES = 25 * 1024 * 1024; // hard cap for ZIP downloads (~25MB) to avoid huge packs
 
 const AUTH_FAILURE_TTL_MS = 5 * 60 * 1000; // Keep invalid credentials blocked for 5 minutes
 const credentialFailureCache = new Map();
 
-// Static token cache: shared across all instances with the same credentials
-// Key: credentialsCacheKey (hash of username:password), Value: { token, expiry }
-const tokenCache = new Map();
+// MULTI-INSTANCE FIX: Token cache is now backed by Redis for cross-pod sharing
+// Local Map is used as L1 cache for same-process performance
+// Redis is the source of truth, checked when local cache misses
+const tokenCacheLocal = new Map();
+const TOKEN_CACHE_PREFIX = 'ostoken:';
+const TOKEN_TTL_SECONDS = 23 * 60 * 60; // 23 hours (token valid for 24h, 1h buffer)
 
 // Login mutex: prevents multiple concurrent /login calls for the same credentials
 // Key: credentialsCacheKey, Value: Promise that resolves when login completes
@@ -29,30 +33,101 @@ const loginMutex = new Map();
 
 /**
  * Get cached token for credentials (if valid)
+ * MULTI-INSTANCE: Checks local cache first, then Redis
  * @param {string} cacheKey - Credentials cache key
- * @returns {{ token: string, expiry: number } | null}
+ * @returns {Promise<{ token: string, expiry: number, baseUrl?: string } | null>}
  */
-function getCachedToken(cacheKey) {
+async function getCachedToken(cacheKey) {
   if (!cacheKey) return null;
-  const cached = tokenCache.get(cacheKey);
-  if (!cached) return null;
-  // Check if token is still valid (with 1 minute buffer)
-  if (Date.now() >= cached.expiry - 60000) {
-    tokenCache.delete(cacheKey);
-    return null;
+
+  // L1: Check local cache first (fast path)
+  const local = tokenCacheLocal.get(cacheKey);
+  if (local) {
+    // Check if token is still valid (with 1 minute buffer)
+    if (Date.now() < local.expiry - 60000) {
+      return local;
+    }
+    tokenCacheLocal.delete(cacheKey);
   }
-  return cached;
+
+  // L2: Check Redis (cross-pod cache)
+  try {
+    const { getShared } = require('../utils/sharedCache');
+    const { StorageAdapter } = require('../storage');
+    const redisKey = `${TOKEN_CACHE_PREFIX}${cacheKey}`;
+    const cached = await getShared(redisKey, StorageAdapter.CACHE_TYPES.SESSION);
+
+    if (cached) {
+      const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+      if (parsed && parsed.token && parsed.expiry) {
+        // Check if token is still valid
+        if (Date.now() < parsed.expiry - 60000) {
+          // Populate local cache for future same-process calls
+          tokenCacheLocal.set(cacheKey, parsed);
+          log.debug(() => '[OpenSubtitles] Token loaded from Redis (cross-pod cache)');
+          return parsed;
+        }
+      }
+    }
+  } catch (err) {
+    // Redis unavailable - fall through
+    log.debug(() => `[OpenSubtitles] Redis token lookup failed: ${err.message}`);
+  }
+
+  return null;
 }
 
 /**
- * Store token in static cache
+ * Store token in cache (both local and Redis)
  * @param {string} cacheKey - Credentials cache key
  * @param {string} token - JWT token
  * @param {number} expiry - Expiry timestamp
+ * @param {string} [baseUrl] - Optional VIP API base URL
  */
-function setCachedToken(cacheKey, token, expiry) {
+async function setCachedToken(cacheKey, token, expiry, baseUrl = null) {
   if (!cacheKey || !token) return;
-  tokenCache.set(cacheKey, { token, expiry });
+
+  const data = { token, expiry };
+  // Include VIP base URL if provided (for VIP members)
+  if (baseUrl) {
+    data.baseUrl = baseUrl;
+  }
+
+  // L1: Store in local cache
+  tokenCacheLocal.set(cacheKey, data);
+
+  // L2: Store in Redis for cross-pod sharing
+  try {
+    const { setShared } = require('../utils/sharedCache');
+    const { StorageAdapter } = require('../storage');
+    const redisKey = `${TOKEN_CACHE_PREFIX}${cacheKey}`;
+    await setShared(redisKey, JSON.stringify(data), StorageAdapter.CACHE_TYPES.SESSION, TOKEN_TTL_SECONDS);
+    log.debug(() => '[OpenSubtitles] Token cached in Redis (cross-pod)');
+  } catch (err) {
+    // Redis unavailable - local cache still works
+    log.debug(() => `[OpenSubtitles] Redis token cache failed: ${err.message}`);
+  }
+}
+
+/**
+ * Clear cached token (both local and Redis)
+ * @param {string} cacheKey - Credentials cache key
+ */
+async function clearCachedToken(cacheKey) {
+  if (!cacheKey) return;
+
+  // L1: Clear local cache
+  tokenCacheLocal.delete(cacheKey);
+
+  // L2: Clear from Redis
+  try {
+    const { deleteShared } = require('../utils/sharedCache');
+    const { StorageAdapter } = require('../storage');
+    const redisKey = `${TOKEN_CACHE_PREFIX}${cacheKey}`;
+    await deleteShared(redisKey, StorageAdapter.CACHE_TYPES.SESSION);
+  } catch (err) {
+    log.debug(() => `[OpenSubtitles] Redis token delete failed: ${err.message}`);
+  }
 }
 
 function inferFormatFromFilename(filename) {
@@ -163,14 +238,20 @@ class OpenSubtitlesService {
 
     this.credentialsCacheKey = getCredentialsCacheKey(this.config.username, this.config.password);
 
-    // Load token from static cache if available (shared across instances)
-    const cached = getCachedToken(this.credentialsCacheKey);
-    if (cached) {
-      this.token = cached.token;
-      this.tokenExpiry = cached.expiry;
+    // MULTI-INSTANCE: Token loading from Redis happens lazily in login()/isTokenExpired()
+    // Constructor only checks local cache for fast startup
+    const local = tokenCacheLocal.get(this.credentialsCacheKey);
+    if (local && Date.now() < local.expiry - 60000) {
+      this.token = local.token;
+      this.tokenExpiry = local.expiry;
+      // Apply VIP base_url if cached
+      if (local.baseUrl) {
+        this.baseUrl = local.baseUrl;
+      }
     } else {
       this.token = null;
       this.tokenExpiry = null;
+      this.baseUrl = null;
     }
 
     // Read API key at runtime (not at module load time)
@@ -180,7 +261,7 @@ class OpenSubtitlesService {
     const defaultHeaders = {
       'User-Agent': USER_AGENT,
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      'Accept': '*/*', // OpenSubtitles docs: "make sure you always add to every request Accept header: Accept: */*"
       'Accept-Encoding': 'gzip, deflate, br'
     };
 
@@ -208,14 +289,9 @@ class OpenSubtitlesService {
     // Primary client (search/auth) uses Api-Key
     this.client = axios.create(baseAxiosConfig);
 
-    // Download client must NOT send Api-Key, to avoid global key rate limits on downloads
-    const downloadHeaders = { ...defaultHeaders };
-    delete downloadHeaders['Api-Key'];
-    delete downloadHeaders['api-key'];
-    this.downloadClient = axios.create({
-      ...baseAxiosConfig,
-      headers: downloadHeaders
-    });
+    // Download client also uses Api-Key - per OpenSubtitles docs:
+    // "In every request should be present these HTTP headers... Api-Key"
+    this.downloadClient = axios.create(baseAxiosConfig);
 
     // Only log initialization messages once at startup
     if (!OpenSubtitlesService.initLogged) {
@@ -240,13 +316,9 @@ class OpenSubtitlesService {
     // Add request interceptor to handle token refresh for user authentication
     const addAuthInterceptor = (axiosInstance) => {
       axiosInstance.interceptors.request.use((config) => {
-        // Always check static cache for fresh token
-        const cachedToken = getCachedToken(this.credentialsCacheKey);
-        if (cachedToken) {
-          this.token = cachedToken.token;
-          this.tokenExpiry = cachedToken.expiry;
-        }
-        if (this.token && !this.isTokenExpired()) {
+        // Use instance token if valid - Redis check happens in login()
+        // Interceptor is synchronous, so we only use local state here
+        if (this.token && this.tokenExpiry && Date.now() < this.tokenExpiry) {
           config.headers['Authorization'] = `Bearer ${this.token}`;
         }
         return config;
@@ -254,20 +326,40 @@ class OpenSubtitlesService {
     };
     addAuthInterceptor(this.client);
     addAuthInterceptor(this.downloadClient);
+
+    // Apply cached VIP base_url to axios clients (if loaded from local cache in constructor)
+    if (this.baseUrl) {
+      this.client.defaults.baseURL = this.baseUrl;
+      this.downloadClient.defaults.baseURL = this.baseUrl;
+    }
   }
 
   /**
-   * Check if token is expired (also checks static cache)
-   * @returns {boolean}
+   * Check if token is expired (also checks Redis cache)
+   * MULTI-INSTANCE: Async to support Redis lookup
+   * @returns {Promise<boolean>}
    */
-  isTokenExpired() {
-    // First check static cache for a fresh token
-    const cached = getCachedToken(this.credentialsCacheKey);
+  async isTokenExpired() {
+    // If we have a valid local token, use it
+    if (this.tokenExpiry && Date.now() < this.tokenExpiry) {
+      return false;
+    }
+
+    // Check Redis for a token from another pod
+    const cached = await getCachedToken(this.credentialsCacheKey);
     if (cached) {
       this.token = cached.token;
       this.tokenExpiry = cached.expiry;
+      // Apply VIP base_url if cached
+      if (cached.baseUrl && !this.baseUrl) {
+        this.baseUrl = cached.baseUrl;
+        this.client.defaults.baseURL = cached.baseUrl;
+        this.downloadClient.defaults.baseURL = cached.baseUrl;
+      }
+      return Date.now() >= this.tokenExpiry;
     }
-    return !this.tokenExpiry || Date.now() >= this.tokenExpiry;
+
+    return true;
   }
 
   /**
@@ -296,8 +388,27 @@ class OpenSubtitlesService {
       // Token is valid for 24 hours
       this.tokenExpiry = Date.now() + (24 * 60 * 60 * 1000);
 
-      // Store in static cache for reuse by other instances
-      setCachedToken(this.credentialsCacheKey, this.token, this.tokenExpiry);
+      // VIP users get a special base_url - use it for faster/less rate-limited access
+      let vipBaseUrl = null;
+      if (response.data.base_url) {
+        const rawBaseUrl = String(response.data.base_url).trim();
+        // Only use vip-api endpoint if returned by OpenSubtitles
+        if (rawBaseUrl.includes('vip-api.opensubtitles.com')) {
+          vipBaseUrl = rawBaseUrl.startsWith('http') ? rawBaseUrl : `https://${rawBaseUrl}`;
+          // Ensure it ends with /api/v1
+          if (!vipBaseUrl.endsWith('/api/v1')) {
+            vipBaseUrl = vipBaseUrl.replace(/\/?$/, '/api/v1');
+          }
+          this.baseUrl = vipBaseUrl;
+          // Update axios clients to use VIP endpoint
+          this.client.defaults.baseURL = vipBaseUrl;
+          this.downloadClient.defaults.baseURL = vipBaseUrl;
+          log.info(() => `[OpenSubtitles] VIP user detected - switching to VIP API endpoint`);
+        }
+      }
+
+      // Store in Redis for cross-pod sharing (fire and forget - don't block on this)
+      setCachedToken(this.credentialsCacheKey, this.token, this.tokenExpiry, vipBaseUrl).catch(() => { });
 
       log.debug(() => '[OpenSubtitles] User authentication successful');
       clearCachedAuthFailure(this.credentialsCacheKey);
@@ -352,12 +463,19 @@ class OpenSubtitlesService {
       return null;
     }
 
-    // Check if there's already a valid token in cache
-    const cached = getCachedToken(this.credentialsCacheKey);
+    // Check if there's already a valid token in cache (local + Redis)
+    const cached = await getCachedToken(this.credentialsCacheKey);
     if (cached) {
       this.token = cached.token;
       this.tokenExpiry = cached.expiry;
-      log.debug(() => '[OpenSubtitles] Using cached token (shared across instances)');
+      // Apply VIP base_url if cached (for VIP members)
+      if (cached.baseUrl) {
+        this.baseUrl = cached.baseUrl;
+        this.client.defaults.baseURL = cached.baseUrl;
+        this.downloadClient.defaults.baseURL = cached.baseUrl;
+        log.debug(() => '[OpenSubtitles] VIP base URL applied from cache');
+      }
+      log.debug(() => '[OpenSubtitles] Using cached token (cross-pod Redis cache)');
       return this.token;
     }
 
@@ -368,10 +486,16 @@ class OpenSubtitlesService {
       try {
         const result = await existingMutex;
         // After mutex resolves, check cache again
-        const freshCached = getCachedToken(this.credentialsCacheKey);
+        const freshCached = await getCachedToken(this.credentialsCacheKey);
         if (freshCached) {
           this.token = freshCached.token;
           this.tokenExpiry = freshCached.expiry;
+          // Apply VIP base_url if cached
+          if (freshCached.baseUrl) {
+            this.baseUrl = freshCached.baseUrl;
+            this.client.defaults.baseURL = freshCached.baseUrl;
+            this.downloadClient.defaults.baseURL = freshCached.baseUrl;
+          }
           return this.token;
         }
         return result;
@@ -456,7 +580,7 @@ class OpenSubtitlesService {
         throw authErr;
       }
 
-      if (this.isTokenExpired()) {
+      if (await this.isTokenExpired()) {
         // login() throws for timeout/network/dns errors
         // login() returns null for rate limits (graceful degradation) or if credentials just failed
         const loginResult = await this.login(providerTimeout);
@@ -706,7 +830,7 @@ class OpenSubtitlesService {
         throw authErr;
       }
 
-      if (this.isTokenExpired()) {
+      if (await this.isTokenExpired()) {
         const loginResult = await this.login();
         if (!loginResult) {
           // Check if credentials are now cached as failed
@@ -961,4 +1085,6 @@ class OpenSubtitlesService {
   }
 }
 
+// Support both `require()` direct and `{ OpenSubtitlesService }` destructured imports
 module.exports = OpenSubtitlesService;
+module.exports.OpenSubtitlesService = OpenSubtitlesService;

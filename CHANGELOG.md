@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.47
+
+**Bug Fixes:**
+
+- **Fixed OpenSubtitles rate limiting on multi-pod deployments (ElfHosted):** OpenSubtitles API has aggressive rate limiting on `/login` (~1 request every 2 seconds per API key). On multi-pod deployments like ElfHosted, each pod had its own in-memory token cache, causing redundant login calls that quickly hit the rate limit. **Root cause:** Token cache was a simple JavaScript `Map` not shared across pods. **Solution:** Migrated OpenSubtitles JWT token cache to Redis for cross-pod sharing. Tokens are now stored in Redis with 23-hour TTL, ensuring all pods reuse the same token. Also refactored `/api/validate-opensubtitles` endpoint to use the cached OpenSubtitlesService instead of making direct axios calls (which bypassed the cache entirely).
+
+- **Added VIP API endpoint support for OpenSubtitles:** VIP users now automatically use OpenSubtitles' dedicated VIP server (`vip-api.opensubtitles.com`) which is faster and more stable. When a VIP user logs in, the service extracts the `base_url` from the login response and switches all subsequent requests to the VIP endpoint. The VIP base_url is stored in Redis alongside the JWT token, ensuring all pods use the faster endpoint automatically.
+
+- **Improved OpenSubtitles rate limit error message:** The validation endpoint now shows a clearer message explaining the server-side rate limit (1 req/sec) and suggests waiting before retrying.
+
+- **Fixed OpenSubtitles API headers per official documentation:** Changed `Accept: application/json` to `Accept: */*` as required by OpenSubtitles docs (prevents 406 errors). Also restored `Api-Key` header on all requests including downloads, per docs: "In every request should be present these HTTP headers... Api-Key". Removed unnecessary `validationLimiter` from the validation endpoint since OpenSubtitles handles their own rate limiting server-side.
+
+- **Multiple other minor fixes across the addon.**
+
 ## SubMaker v1.4.46
 
 **New Features:**

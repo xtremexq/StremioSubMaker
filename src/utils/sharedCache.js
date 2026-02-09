@@ -432,7 +432,10 @@ const CACHE_PREFIXES = {
     KEY_HEALTH: 'keyhealth:',
 
     // Key rotation counter
-    KEY_ROTATION: 'keyrotation:'
+    KEY_ROTATION: 'keyrotation:',
+
+    // OpenSubtitles JWT token cache (cross-pod sharing)
+    OS_TOKEN: 'ostoken:'
 };
 
 // TTL values in seconds
@@ -441,7 +444,8 @@ const CACHE_TTLS = {
     ANIME_NEGATIVE: 10 * 60,       // 10 minutes for failed lookups
     TMDB_POSITIVE: 24 * 60 * 60,   // 24 hours for successful lookups
     TMDB_NEGATIVE: 10 * 60,        // 10 minutes for failed lookups
-    USER_CONCURRENCY: 30 * 60      // 30 minutes (safety net for orphaned counts)
+    USER_CONCURRENCY: 30 * 60,     // 30 minutes (safety net for orphaned counts)
+    OS_TOKEN: 23 * 60 * 60         // 23 hours (token valid for 24h, 1h buffer)
 };
 
 module.exports = {
