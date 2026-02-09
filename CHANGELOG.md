@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.45
+
+**Bug Fixes:**
+
+- **Fixed 429 rate limit errors blocking all users on shared hosting (ElfHosted, etc.):** v1.4.41 changed `trust proxy` to default to `false`, which broke rate limiting on deployments behind reverse proxies. All users appeared to share the same IP (the proxy's IP), causing the session creation limit (10/hour) to be exhausted almost immediately. Production deployments (Redis storage) now default to `trust proxy: 1`, ensuring real client IPs from `X-Forwarded-For` headers are used. Local development still defaults to `false`. This will be reviewed in a future update.
+
+- **Added rate limiting to API credential validation endpoints:** All validation endpoints (`/api/validate-opensubtitles`, `/api/validate-subdl`, `/api/validate-gemini`, `/api/validate-subsource`, `/api/validate-subsro`) now share a `validationLimiter` (15 requests per 5 minutes per IP) to prevent hammering external APIs.
+
+- **Improved OpenSubtitles 429 error handling:** When OpenSubtitles API returns a rate limit error during credential validation, the addon now returns a user-friendly message instead of passing through the raw API error. Users are informed their credentials may still be valid and can try saving without validation.
+
 ## SubMaker v1.4.44
 
 **Bug Fixes:**

@@ -1830,9 +1830,16 @@ if (trustProxySetting !== undefined && trustProxySetting !== '') {
         app.set('trust proxy', trustProxySetting);
     }
 } else {
-    // Default: false — safe when no reverse proxy is configured.
-    // Deployments behind nginx/Cloudflare/etc. MUST set TRUST_PROXY=1 in .env.
-    app.set('trust proxy', false);
+    // Default behavior:
+    // - Redis storage (production): default to true (production deployments are ALWAYS behind a reverse proxy)
+    // - Local storage (development): default to false (safe when directly exposed)
+    // Can always be overridden by setting TRUST_PROXY explicitly.
+    const isProduction = (process.env.STORAGE_TYPE || 'redis') === 'redis';
+    const defaultTrust = isProduction ? 1 : false;
+    app.set('trust proxy', defaultTrust);
+    if (isProduction) {
+        log.info(() => '[Server] Production mode detected (Redis storage) - defaulting trust proxy to 1. Set TRUST_PROXY=false to disable.');
+    }
 }
 app.disable('x-powered-by'); // Hide framework fingerprint in responses
 // CRITICAL: Disable ETags globally to prevent any conditional caching
@@ -2636,6 +2643,20 @@ const statsLimiter = rateLimit({
     legacyHeaders: false,
     keyGenerator: (req) => {
         return `stats:${ipKeyGenerator(req.ip)}`;
+    }
+});
+
+// Security: Rate limiting for API credential validation endpoints
+// Shared across all validation endpoints (OpenSubtitles, Gemini, SubDL, etc.)
+// Prevents users from hammering external APIs during validation
+const validationLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 15, // 15 validation attempts per 5 minutes per IP
+    message: 'Too many validation requests. Please wait a few minutes before trying again.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+        return `validation:${ipKeyGenerator(req.ip)}`;
     }
 });
 
@@ -3513,7 +3534,7 @@ app.post('/api/models/:provider', async (req, res) => {
     }
 });
 
-app.post('/api/validate-subsource', async (req, res) => {
+app.post('/api/validate-subsource', validationLimiter, async (req, res) => {
     // CRITICAL: Prevent caching to avoid cross-user config contamination (user credentials in request body)
     setNoStore(res);
 
@@ -3578,7 +3599,7 @@ app.post('/api/validate-subsource', async (req, res) => {
 });
 
 // API endpoint to validate SubDL API key
-app.post('/api/validate-subdl', async (req, res) => {
+app.post('/api/validate-subdl', validationLimiter, async (req, res) => {
     // CRITICAL: Prevent caching to avoid cross-user config contamination (user credentials in request body)
     setNoStore(res);
 
@@ -3665,7 +3686,7 @@ app.post('/api/validate-subdl', async (req, res) => {
 });
 
 // API endpoint to validate OpenSubtitles credentials
-app.post('/api/validate-opensubtitles', async (req, res) => {
+app.post('/api/validate-opensubtitles', validationLimiter, async (req, res) => {
     // CRITICAL: Prevent caching to avoid cross-user config contamination (user credentials in request body)
     setNoStore(res);
 
@@ -3734,6 +3755,13 @@ app.post('/api/validate-opensubtitles', async (req, res) => {
                     valid: false,
                     error: t('server.errors.invalidRequestFormat', {}, 'Invalid request format')
                 });
+            } else if (apiError.response?.status === 429) {
+                // OpenSubtitles rate limit - provide user-friendly message
+                res.json({
+                    valid: false,
+                    error: t('server.errors.opensubtitlesRateLimited', {},
+                        'OpenSubtitles is temporarily rate limiting requests. Your credentials may still be valid - try saving and testing in Stremio.')
+                });
             } else if (apiError.response?.data?.message) {
                 res.json({
                     valid: false,
@@ -3752,7 +3780,7 @@ app.post('/api/validate-opensubtitles', async (req, res) => {
 });
 
 // API endpoint to validate Gemini API key
-app.post('/api/validate-gemini', async (req, res) => {
+app.post('/api/validate-gemini', validationLimiter, async (req, res) => {
     // CRITICAL: Prevent caching to avoid cross-user config contamination (user credentials in request body)
     setNoStore(res);
 
@@ -3834,7 +3862,7 @@ app.post('/api/validate-gemini', async (req, res) => {
 });
 
 // API endpoint to validate Subs.ro API key
-app.post('/api/validate-subsro', async (req, res) => {
+app.post('/api/validate-subsro', validationLimiter, async (req, res) => {
     // CRITICAL: Prevent caching to avoid cross-user config contamination (user credentials in request body)
     setNoStore(res);
 
