@@ -537,7 +537,9 @@ function findEpisodeFile(files, season, episode) {
         new RegExp(`s0*${season}[\\s._-]*x[\\s._-]*e?0*${episode}(?:v\\d+)?(?![0-9])`, 'i'),
         new RegExp(`0*${season}[\\s._-]*x[\\s._-]*e?0*${episode}(?:v\\d+)?(?![0-9])`, 'i'),
         new RegExp(`season[\\s._-]*0*${season}[\\s._-]*episode[\\s._-]*0*${episode}(?![0-9])`, 'i'),
-        new RegExp(`s0*${season}\\.e0*${episode}(?:v\\d+)?`, 'i')
+        new RegExp(`s0*${season}\\.e0*${episode}(?:v\\d+)?`, 'i'),
+        // Matches "01e10" format (common in some releases, e.g. "01e10 - Title.srt")
+        new RegExp(`(?:^|[^a-z])0*${season}e0*${episode}(?:v\\d+)?(?![0-9])`, 'i')
     ];
 
     for (const filename of files) {

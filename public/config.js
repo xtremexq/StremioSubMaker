@@ -551,10 +551,7 @@ Translate to {target_language}.`;
      * Each model has its own optimal settings for thinking and temperature
      */
     const MODEL_SPECIFIC_DEFAULTS = {
-        'gemma-3-27b-it': {
-            thinkingBudget: 0,  // Gemma doesn't support thinking
-            temperature: 0.7
-        },
+
         'gemini-flash-lite-latest': {
             thinkingBudget: 0,
             temperature: 0.7
@@ -653,7 +650,7 @@ Translate to {target_language}.`;
         return merged;
     }
 
-    function getDefaultConfig(modelName = 'gemma-3-27b-it') {
+    function getDefaultConfig(modelName = 'gemini-3-flash-preview') {
         const modelDefaults = getModelSpecificDefaults(modelName);
 
         return {
@@ -4800,7 +4797,7 @@ Translate to {target_language}.`;
 
         // Define hardcoded multi-model options
         const hardcodedModels = [
-            { name: 'gemma-3-27b-it', displayName: 'Gemma 27b (beta) (Recommended for Rate Limits)' },
+
             { name: 'gemini-flash-lite-latest', displayName: 'Gemini 2.5 Flash-Lite' },
             { name: 'gemini-2.5-flash-preview-09-2025', displayName: 'Gemini 2.5 Flash' },
             { name: 'gemini-3-flash-preview', displayName: 'Gemini 3.0 Flash (beta)' },

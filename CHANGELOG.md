@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.49
+
+**Changes:**
+
+- **Removed Gemma 27b model:** Removed the Gemma 27b model from the configuration options as it is no longer supported/recommended.
+
+**Bug Fixes:**
+
+- **Fixed Quick Setup not loading existing settings:** Resolved an issue where the Quick Setup wizard would sometimes show an empty state instead of loading the user's existing configuration, particularly if the wizard had been previously opened within the same browser session.
+
+- **Improved Gemini API Key Validation:** Updated the Quick Setup wizard to validate Gemini API keys via the server-side proxy (`/api/validate-gemini`) instead of direct client-side requests, improving reliability and avoiding CORS issues.
+
+- **Fixed Rotation Frequency label layout:** Corrected excessive margin between the "Rotation Frequency" label and its descriptive text in the Gemini settings.
+
+- **Quick Setup safe updates:** The wizard now merges your changes with your existing configuration instead of overwriting it, ensuring advanced settings are preserved.
+
+- **Quick Setup styling improvements:** Adjusted spacing, font sizes, and link colors in the wizard for a more compact and consistent look.
+
 ## SubMaker v1.4.48
 
 **New Features:**

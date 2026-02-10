@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SubMaker — Configure</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="/css/config-v2.css">
+    <script>
+        (function () {
+            var t = 'light';
+            try { var s = localStorage.getItem('v2-theme'); if (s) { t = s } else if (matchMedia('(prefers-color-scheme:dark)').matches) { t = 'dark' } } catch (_) { }
+            document.documentElement.setAttribute('data-v2-theme', t);
+        })();
+    </script>
+</head>
+
+<body class="v2-root">
+    <div class="v2-wrapper" id="v2App">
+
+        <!-- Header -->
+        <div class="v2-header">
+            <img src="/favicon.svg" alt="" class="v2-logo">
+            <div class="v2-header-text">
+                <div class="v2-header-title">SubMaker</div>
+                <div class="v2-header-subtitle">Configure your addon <span class="v2-version" id="v2Version">v2</span>
+                </div>
+            </div>
+            <div class="v2-theme-switcher">
+                <button class="v2-theme-btn" data-theme="light" title="Light">☀️</button>
+                <button class="v2-theme-btn" data-theme="dark" title="Dark">🌙</button>
+                <button class="v2-theme-btn" data-theme="truedark" title="True Dark">🕳️</button>
+            </div>
+        </div>
+
+        <!-- Mode Toggle -->
+        <div class="v2-mode-strip">
+            <span class="v2-mode-icon">🔄</span>
+            <div class="v2-row-label">
+                <span class="v2-mode-label">No Translation Mode</span>
+                <div class="v2-mode-desc">Fetch subtitles without AI translation</div>
+            </div>
+            <label class="v2-toggle"><input type="checkbox" id="v2-noTranslation"><span
+                    class="v2-toggle-track"></span></label>
+        </div>
+
+        <!-- ═══ SECTION: Subtitle Sources ═══ -->
+        <div class="v2-section" data-section="sources">
+            <div class="v2-section-header"><span class="v2-section-icon">🎬</span><span
+                    class="v2-section-title">Subtitle Sources</span><span class="v2-section-chevron">▼</span></div>
+            <div class="v2-section-body">
+                <div class="v2-section-inner">
+
+                    <!-- OpenSubtitles -->
+                    <div class="v2-provider">
+                        <div class="v2-provider-header">
+                            <span class="v2-provider-icon">🎬</span>
+                            <span class="v2-provider-name">OpenSubtitles</span>
+                            <span class="v2-provider-badge">Auto-enabled</span>
+                        </div>
+                        <div class="v2-provider-body">
+                            <div class="v2-row">
+                                <div class="v2-row-label"><span class="v2-row-title">I have an account</span><span
+                                        class="v2-row-desc">Logged-in users get higher rate limits</span></div>
+                                <label class="v2-toggle"><input type="checkbox" id="v2-opensubsAuth"><span
+                                        class="v2-toggle-track"></span></label>
+                            </div>
+                            <div class="v2-subgroup hidden" id="v2-opensubsFields">
+                                <div class="v2-row v2-row-full">
+                                    <input type="text" class="v2-input" id="v2-opensubsUser" placeholder="Username"
+                                        autocomplete="off">
+                                </div>
+                                <div class="v2-row v2-row-full">
+                                    <div class="v2-input-row">
+                                        <div class="v2-pw-wrap"><input type="password" class="v2-input"
+                                                id="v2-opensubsPass" placeholder="Password" autocomplete="off"><button
+                                                class="v2-pw-toggle" type="button">👁</button></div>
+                                        <button class="v2-btn v2-btn-test" id="v2-testOpensubs"
+                                            type="button">Test</button>
+                                    </div>
+                                    <div class="v2-feedback" id="v2-opensubsFeedback"></div>
+                                </div>
+                                <div class="v2-note"><a class="v2-link"
+                                        href="https://www.opensubtitles.com/en/users/sign_up" target="_blank">Create a
+                                        free account</a> — 20 subs/day limit</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SubDL -->
+                    <div class="v2-provider">
+                        <div class="v2-provider-header">
+                            <span class="v2-provider-icon">📥</span>
+                            <span class="v2-provider-name">SubDL</span>
+                            <label class="v2-toggle"><input type="checkbox" id="v2-enableSubdl"><span
+                                    class="v2-toggle-track"></span></label>
+                        </div>
+                        <div class="v2-provider-body hidden" id="v2-subdlBody">
+                            <div class="v2-row v2-row-full">
+                                <div class="v2-input-row">
+                                    <input type="text" class="v2-input v2-masked" id="v2-subdlKey"
+                                        placeholder="SubDL API key" autocomplete="off">
+                                    <button class="v2-btn v2-btn-test" id="v2-testSubdl" type="button">Test</button>
+                                </div>
+                                <div class="v2-feedback" id="v2-subdlFeedback"></div>
+                            </div>
+                            <div class="v2-note"><a class="v2-link" href="https://subdl.com" target="_blank">Get free
+                                    API key at SubDL.com</a></div>
+                        </div>
+                    </div>
+
+                    <!-- SubSource -->
+                    <div class="v2-provider">
+                        <div class="v2-provider-header">
+                            <span class="v2-provider-icon">📡</span>
+                            <span class="v2-provider-name">SubSource</span>
+                            <label class="v2-toggle"><input type="checkbox" id="v2-enableSubsource"><span
+                                    class="v2-toggle-track"></span></label>
+                        </div>
+                        <div class="v2-provider-body hidden" id="v2-subsourceBody">
+                            <div class="v2-row v2-row-full">
+                                <div class="v2-input-row">
+                                    <input type="text" class="v2-input v2-masked" id="v2-subsourceKey"
+                                        placeholder="SubSource API key" autocomplete="off">
+                                    <button class="v2-btn v2-btn-test" id="v2-testSubsource" type="button">Test</button>
+                                </div>
+                                <div class="v2-feedback" id="v2-subsourceFeedback"></div>
+                            </div>
+                            <div class="v2-note"><a class="v2-link" href="https://subsource.net/" target="_blank">Get
+                                    free API key at SubSource.net</a></div>
+                        </div>
+                    </div>
+
+                    <!-- Wyzie Subs -->
+                    <div class="v2-provider">
+                        <div class="v2-provider-header">
+                            <span class="v2-provider-icon">🔍</span>
+                            <span class="v2-provider-name">Wyzie Subs</span>
+                            <span class="v2-badge v2-badge-free">No key</span>
+                            <label class="v2-toggle"><input type="checkbox" id="v2-enableWyzie"><span
+                                    class="v2-toggle-track"></span></label>
+                        </div>
+                        <div class="v2-provider-body hidden" id="v2-wyzieBody">
+                            <div class="v2-provider-desc">Free subtitle aggregator — more sources = more subtitles but
+                                slower</div>
+                            <div class="v2-chip-grid">
+                                <label class="v2-chip"><input type="checkbox" id="v2-wyzieSubf2m"
+                                        checked><span>Subf2m</span></label>
+                                <label class="v2-chip"><input type="checkbox" id="v2-wyziePodnapisi"
+                                        checked><span>Podnapisi</span></label>
+                                <label class="v2-chip"><input type="checkbox" id="v2-wyzieGestdown"
+                                        checked><span>Gestdown</span></label>
+                                <label class="v2-chip"><input type="checkbox" id="v2-wyzieAnimetosho"
+                                        checked><span>Animetosho</span></label>
+                                <label class="v2-chip"><input type="checkbox"
+                                        id="v2-wyzieOpensubs"><span>OpenSubtitles</span></label>
+                                <label class="v2-chip"><input type="checkbox"
+                                        id="v2-wyzieSubdl"><span>SubDL</span></label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stremio Community Subs -->
+                    <div class="v2-provider">
+                        <div class="v2-provider-header">
+                            <span class="v2-provider-icon">🌐</span>
+                            <span class="v2-provider-name">Stremio Community Subs</span>
+                            <span class="v2-badge v2-badge-free">No key</span>
+                            <label class="v2-toggle"><input type="checkbox" id="v2-enableSCS"><span
+                                    class="v2-toggle-track"></span></label>
+                        </div>
+                        <div class="v2-provider-body hidden" id="v2-scsBody">
+                            <div class="v2-note">⏱ Requires 28-30s timeout (auto-set when enabled)</div>
+                        </div>
+                    </div>
+
+                    <!-- Subs.ro -->
+                    <div class="v2-provider">
+                        <div class="v2-provider-header">
+                            <span class="v2-provider-icon">🇷🇴</span>
+                            <span class="v2-provider-name">Subs.ro</span>
+                            <label class="v2-toggle"><input type="checkbox" id="v2-enableSubsro"><span
+                                    class="v2-toggle-track"></span></label>
+                        </div>
+                    </div>
+
+                    <div class="v2-divider"></div>
+
+                    <!-- Provider Timeout -->
+                    <div class="v2-row v2-row-full">
+                        <div class="v2-row-label"><span class="v2-row-title">Provider Timeout</span><span
+                                class="v2-row-desc">Max seconds to wait for subtitle providers (5-60s)</span></div>
+                        <div class="v2-range-row">
+                            <input type="range" class="v2-range" id="v2-providerTimeout" min="5" max="60" value="20"
+                                step="1">
+                            <span class="v2-range-val" id="v2-providerTimeoutVal">20s</span>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ SECTION: AI Translation ═══ -->
+        <div class="v2-section" data-section="ai" id="v2-aiSection">
+            <div class="v2-section-header"><span class="v2-section-icon">✨</span><span class="v2-section-title">AI
+                    Translation</span><span class="v2-section-chevron">▼</span></div>
+            <div class="v2-section-body">
+                <div class="v2-section-inner">
+
+                    <!-- Gemini API Key -->
+                    <div class="v2-row v2-row-full">
+                        <div class="v2-row-label"><span class="v2-row-title">Gemini API Key <span
+                                    style="color:var(--v2-danger)">*</span></span><span class="v2-row-desc">Required for
+                                translations</span></div>
+                        <div class="v2-input-row">
+                            <div class="v2-pw-wrap"><input type="password" class="v2-input" id="v2-geminiKey"
+                                    placeholder="Enter Gemini API key" autocomplete="off"><button class="v2-pw-toggle"
+                                    type="button">👁</button></div>
+                            <button class="v2-btn v2-btn-test" id="v2-testGemini" type="button">Test</button>
+                        </div>
+                        <div class="v2-feedback" id="v2-geminiFeedback"></div>
+                        <a class="v2-link" href="https://aistudio.google.com/apikey" target="_blank">🔑 Get free key
+                            from Google AI Studio →</a>
+                    </div>
+
+                    <div class="v2-divider"></div>
+
+                    <!-- Key Rotation -->
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">Key Rotation</span><span
+                                class="v2-row-desc">Distribute calls across multiple keys</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-keyRotation"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-subgroup hidden" id="v2-keyRotationBody">
+                        <div class="v2-row v2-row-full">
+                            <div class="v2-row-label"><span class="v2-row-title">Additional Keys</span></div>
+                            <div class="v2-key-list" id="v2-additionalKeys"></div>
+                            <button class="v2-btn v2-btn-sm v2-btn-secondary" id="v2-addKey" type="button">+ Add
+                                Key</button>
+                        </div>
+                        <div class="v2-row v2-row-full">
+                            <div class="v2-row-label"><span class="v2-row-title">Rotation Frequency</span></div>
+                            <select class="v2-select" id="v2-rotationFreq">
+                                <option value="per-request">Per Request</option>
+                                <option value="per-subtitle">Per Subtitle</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="v2-divider"></div>
+
+                    <!-- Multi-Provider -->
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">Multi-Provider Mode <span
+                                    class="v2-badge v2-badge-beta">Beta</span></span><span class="v2-row-desc">Enable
+                                additional translation providers</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-multiProvider"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-subgroup hidden" id="v2-multiProviderBody">
+                        <!-- OpenAI -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">🤖</span><span
+                                    class="v2-provider-name">OpenAI</span><label class="v2-toggle"><input
+                                        type="checkbox" id="v2-enableOpenai"><span
+                                        class="v2-toggle-track"></span></label></div>
+                            <div class="v2-provider-body hidden" id="v2-openaiBody">
+                                <div class="v2-input-row"><input type="text" class="v2-input v2-masked"
+                                        id="v2-openaiKey" placeholder="OpenAI API key" autocomplete="off"><button
+                                        class="v2-btn v2-btn-test" id="v2-testOpenai" type="button">Test</button></div>
+                                <div class="v2-feedback" id="v2-openaiFeedback"></div>
+                                <div class="v2-row v2-row-full" style="margin-top:4px"><span class="v2-row-title"
+                                        style="font-size:11px">Model</span><input type="text" class="v2-input"
+                                        id="v2-openaiModel" placeholder="gpt-4o-mini" autocomplete="off"></div>
+                                <div class="v2-row v2-row-full"><span class="v2-row-title" style="font-size:11px">Custom
+                                        Endpoint <span class="v2-badge v2-badge-beta">Optional</span></span><input
+                                        type="text" class="v2-input" id="v2-openaiEndpoint"
+                                        placeholder="https://api.openai.com/v1" autocomplete="off"></div>
+                            </div>
+                        </div>
+                        <!-- Anthropic -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">🧠</span><span
+                                    class="v2-provider-name">Anthropic</span><label class="v2-toggle"><input
+                                        type="checkbox" id="v2-enableAnthropic"><span
+                                        class="v2-toggle-track"></span></label></div>
+                            <div class="v2-provider-body hidden" id="v2-anthropicBody">
+                                <div class="v2-input-row"><input type="text" class="v2-input v2-masked"
+                                        id="v2-anthropicKey" placeholder="Anthropic API key" autocomplete="off"><button
+                                        class="v2-btn v2-btn-test" id="v2-testAnthropic" type="button">Test</button>
+                                </div>
+                                <div class="v2-feedback" id="v2-anthropicFeedback"></div>
+                                <div class="v2-row v2-row-full" style="margin-top:4px"><span class="v2-row-title"
+                                        style="font-size:11px">Model</span><input type="text" class="v2-input"
+                                        id="v2-anthropicModel" placeholder="claude-sonnet-4-20250514"
+                                        autocomplete="off"></div>
+                            </div>
+                        </div>
+                        <!-- XAI -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">⚡</span><span
+                                    class="v2-provider-name">XAI (Grok)</span><label class="v2-toggle"><input
+                                        type="checkbox" id="v2-enableXai"><span class="v2-toggle-track"></span></label>
+                            </div>
+                            <div class="v2-provider-body hidden" id="v2-xaiBody">
+                                <div class="v2-input-row"><input type="text" class="v2-input v2-masked" id="v2-xaiKey"
+                                        placeholder="XAI API key" autocomplete="off"><button class="v2-btn v2-btn-test"
+                                        id="v2-testXai" type="button">Test</button></div>
+                                <div class="v2-feedback" id="v2-xaiFeedback"></div>
+                            </div>
+                        </div>
+                        <!-- DeepSeek -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">🔎</span><span
+                                    class="v2-provider-name">DeepSeek</span><label class="v2-toggle"><input
+                                        type="checkbox" id="v2-enableDeepseek"><span
+                                        class="v2-toggle-track"></span></label></div>
+                            <div class="v2-provider-body hidden" id="v2-deepseekBody">
+                                <div class="v2-input-row"><input type="text" class="v2-input v2-masked"
+                                        id="v2-deepseekKey" placeholder="DeepSeek API key" autocomplete="off"><button
+                                        class="v2-btn v2-btn-test" id="v2-testDeepseek" type="button">Test</button>
+                                </div>
+                                <div class="v2-feedback" id="v2-deepseekFeedback"></div>
+                            </div>
+                        </div>
+                        <!-- DeepL -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">📘</span><span
+                                    class="v2-provider-name">DeepL</span><label class="v2-toggle"><input type="checkbox"
+                                        id="v2-enableDeepl"><span class="v2-toggle-track"></span></label></div>
+                            <div class="v2-provider-body hidden" id="v2-deeplBody">
+                                <div class="v2-input-row"><input type="text" class="v2-input v2-masked" id="v2-deeplKey"
+                                        placeholder="DeepL API key" autocomplete="off"><button
+                                        class="v2-btn v2-btn-test" id="v2-testDeepl" type="button">Test</button></div>
+                                <div class="v2-feedback" id="v2-deeplFeedback"></div>
+                            </div>
+                        </div>
+                        <!-- Mistral -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">🌊</span><span
+                                    class="v2-provider-name">Mistral</span><label class="v2-toggle"><input
+                                        type="checkbox" id="v2-enableMistral"><span
+                                        class="v2-toggle-track"></span></label></div>
+                            <div class="v2-provider-body hidden" id="v2-mistralBody">
+                                <div class="v2-input-row"><input type="text" class="v2-input v2-masked"
+                                        id="v2-mistralKey" placeholder="Mistral API key" autocomplete="off"><button
+                                        class="v2-btn v2-btn-test" id="v2-testMistral" type="button">Test</button></div>
+                                <div class="v2-feedback" id="v2-mistralFeedback"></div>
+                            </div>
+                        </div>
+                        <!-- CF Workers -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">☁️</span><span
+                                    class="v2-provider-name">Cloudflare Workers AI</span><label class="v2-toggle"><input
+                                        type="checkbox" id="v2-enableCfworkers"><span
+                                        class="v2-toggle-track"></span></label></div>
+                            <div class="v2-provider-body hidden" id="v2-cfworkersBody">
+                                <div class="v2-input-row"><input type="text" class="v2-input v2-masked"
+                                        id="v2-cfworkersKey" placeholder="ACCOUNT_ID|TOKEN" autocomplete="off"><button
+                                        class="v2-btn v2-btn-test" id="v2-testCfworkers" type="button">Test</button>
+                                </div>
+                                <div class="v2-feedback" id="v2-cfworkersFeedback"></div>
+                            </div>
+                        </div>
+                        <!-- OpenRouter -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">🛤️</span><span
+                                    class="v2-provider-name">OpenRouter</span><label class="v2-toggle"><input
+                                        type="checkbox" id="v2-enableOpenrouter"><span
+                                        class="v2-toggle-track"></span></label></div>
+                            <div class="v2-provider-body hidden" id="v2-openrouterBody">
+                                <div class="v2-input-row"><input type="text" class="v2-input v2-masked"
+                                        id="v2-openrouterKey" placeholder="OpenRouter API key"
+                                        autocomplete="off"><button class="v2-btn v2-btn-test" id="v2-testOpenrouter"
+                                        type="button">Test</button></div>
+                                <div class="v2-feedback" id="v2-openrouterFeedback"></div>
+                                <div class="v2-row v2-row-full" style="margin-top:4px"><span class="v2-row-title"
+                                        style="font-size:11px">Model</span><input type="text" class="v2-input"
+                                        id="v2-openrouterModel" placeholder="google/gemini-2.0-flash-001"
+                                        autocomplete="off"></div>
+                            </div>
+                        </div>
+                        <!-- Google Translate -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">🌍</span><span
+                                    class="v2-provider-name">Google Translate</span><span
+                                    class="v2-badge v2-badge-free">Free</span><label class="v2-toggle"><input
+                                        type="checkbox" id="v2-enableGoogleTranslate" checked><span
+                                        class="v2-toggle-track"></span></label></div>
+                        </div>
+                        <!-- Custom Provider -->
+                        <div class="v2-provider">
+                            <div class="v2-provider-header"><span class="v2-provider-icon">🔧</span><span
+                                    class="v2-provider-name">Custom Provider</span><label class="v2-toggle"><input
+                                        type="checkbox" id="v2-enableCustom"><span
+                                        class="v2-toggle-track"></span></label></div>
+                            <div class="v2-provider-body hidden" id="v2-customBody">
+                                <div class="v2-row v2-row-full"><span class="v2-row-title" style="font-size:11px">API
+                                        Key</span><input type="text" class="v2-input v2-masked" id="v2-customKey"
+                                        placeholder="API key" autocomplete="off"></div>
+                                <div class="v2-row v2-row-full"><span class="v2-row-title"
+                                        style="font-size:11px">Endpoint</span><input type="text" class="v2-input"
+                                        id="v2-customEndpoint" placeholder="https://..." autocomplete="off"></div>
+                                <div class="v2-row v2-row-full"><span class="v2-row-title"
+                                        style="font-size:11px">Model</span><input type="text" class="v2-input"
+                                        id="v2-customModel" placeholder="model-name" autocomplete="off"></div>
+                            </div>
+                        </div>
+
+                        <div class="v2-divider"></div>
+                        <!-- Main/Secondary provider select -->
+                        <div class="v2-row">
+                            <div class="v2-row-label"><span class="v2-row-title">Main Provider</span></div>
+                            <select class="v2-select" id="v2-mainProvider" style="width:140px">
+                                <option value="gemini">Gemini</option>
+                            </select>
+                        </div>
+                        <div class="v2-row">
+                            <div class="v2-row-label"><span class="v2-row-title">Secondary Provider</span><span
+                                    class="v2-row-desc">Fallback if main fails</span></div>
+                            <select class="v2-select" id="v2-secondaryProvider" style="width:140px">
+                                <option value="google_translate">Google Translate</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- AssemblyAI -->
+                    <div class="v2-divider"></div>
+                    <div class="v2-row v2-row-full">
+                        <div class="v2-row-label"><span class="v2-row-title">AssemblyAI Key</span><span
+                                class="v2-row-desc">For audio-based subtitle generation</span></div>
+                        <div class="v2-input-row"><input type="text" class="v2-input v2-masked" id="v2-assemblyaiKey"
+                                placeholder="AssemblyAI API key" autocomplete="off"><button class="v2-btn v2-btn-test"
+                                id="v2-testAssemblyai" type="button">Test</button></div>
+                        <div class="v2-feedback" id="v2-assemblyaiFeedback"></div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ SECTION: Languages ═══ -->
+        <div class="v2-section" data-section="languages">
+            <div class="v2-section-header"><span class="v2-section-icon">🌍</span><span
+                    class="v2-section-title">Languages</span><span class="v2-section-chevron">▼</span></div>
+            <div class="v2-section-body">
+                <div class="v2-section-inner">
+
+                    <!-- No-Translation Languages -->
+                    <div class="v2-row v2-row-full" id="v2-noTransLangBlock">
+                        <div class="v2-row-label"><span class="v2-row-title">No-Translation Source Languages</span><span
+                                class="v2-row-desc">Languages to fetch subtitles for (without translation)</span></div>
+                        <div class="v2-lang-search"><span class="v2-lang-search-icon">🔍</span><input type="text"
+                                class="v2-input" id="v2-noTransSearch" placeholder="Search languages..."
+                                autocomplete="off"></div>
+                        <div class="v2-lang-pills" id="v2-noTransPills"></div>
+                        <div class="v2-lang-grid" id="v2-noTransGrid"></div>
+                    </div>
+
+                    <div class="v2-divider" id="v2-transLangDivider"></div>
+
+                    <!-- Source Languages -->
+                    <div class="v2-row v2-row-full" id="v2-sourceLangBlock">
+                        <div class="v2-row-label"><span class="v2-row-title">Source Languages</span><span
+                                class="v2-row-desc">Original subtitle languages to fetch for translation</span></div>
+                        <div class="v2-lang-search"><span class="v2-lang-search-icon">🔍</span><input type="text"
+                                class="v2-input" id="v2-sourceSearch" placeholder="Search languages..."
+                                autocomplete="off"></div>
+                        <div class="v2-lang-pills" id="v2-sourcePills"></div>
+                        <div class="v2-lang-grid" id="v2-sourceGrid"></div>
+                    </div>
+
+                    <div class="v2-divider"></div>
+
+                    <!-- Target Languages -->
+                    <div class="v2-row v2-row-full" id="v2-targetLangBlock">
+                        <div class="v2-row-label"><span class="v2-row-title">Target Languages</span><span
+                                class="v2-row-desc">Languages to translate subtitles into</span></div>
+                        <div class="v2-lang-search"><span class="v2-lang-search-icon">🔍</span><input type="text"
+                                class="v2-input" id="v2-targetSearch" placeholder="Search languages..."
+                                autocomplete="off"></div>
+                        <div class="v2-lang-pills" id="v2-targetPills"></div>
+                        <div class="v2-lang-grid" id="v2-targetGrid"></div>
+                    </div>
+
+                    <div class="v2-divider"></div>
+
+                    <!-- Learn Languages -->
+                    <div class="v2-row v2-row-full v2-hidden" id="v2-learnLangBlock">
+                        <div class="v2-row-label"><span class="v2-row-title">Learn Target Languages</span><span
+                                class="v2-row-desc">Dual-language subtitles for language learning</span></div>
+                        <div class="v2-lang-search"><span class="v2-lang-search-icon">🔍</span><input type="text"
+                                class="v2-input" id="v2-learnSearch" placeholder="Search languages..."
+                                autocomplete="off"></div>
+                        <div class="v2-lang-pills" id="v2-learnPills"></div>
+                        <div class="v2-lang-grid" id="v2-learnGrid"></div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ SECTION: Translation Settings ═══ -->
+        <div class="v2-section" data-section="translation" id="v2-translationSection">
+            <div class="v2-section-header"><span class="v2-section-icon">⚙️</span><span
+                    class="v2-section-title">Translation Settings</span><span class="v2-section-chevron">▼</span></div>
+            <div class="v2-section-body">
+                <div class="v2-section-inner">
+
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">AI Model</span><span class="v2-row-desc">AI
+                                model for translations</span></div>
+                        <select class="v2-select" id="v2-promptStyle" style="width:140px">
+                            <option value="flash">Flash (Fast)</option>
+                            <option value="quality">Quality</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">Workflow Mode</span><span
+                                class="v2-row-desc">How to process subtitle batches</span></div>
+                        <select class="v2-select" id="v2-workflowMode" style="width:140px">
+                            <option value="chunked">Chunked</option>
+                            <option value="single">Single Batch</option>
+                        </select>
+                    </div>
+
+                    <div class="v2-row" id="v2-chunkSizeRow">
+                        <div class="v2-row-label"><span class="v2-row-title">Chunk Size</span><span
+                                class="v2-row-desc">Lines per batch (1-100)</span></div>
+                        <input type="number" class="v2-input v2-input-number" id="v2-chunkSize" min="1" max="100"
+                            value="40">
+                    </div>
+
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">Database Mode</span><span
+                                class="v2-row-desc">Translation caching strategy</span></div>
+                        <select class="v2-select" id="v2-dbMode" style="width:160px">
+                            <option value="shared">Shared (Community)</option>
+                            <option value="private">Private (Your own)</option>
+                            <option value="bypass">Bypass (No cache)</option>
+                        </select>
+                    </div>
+
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">Bypass Cache</span><span
+                                class="v2-row-desc">Skip cached translations, always retranslate</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-bypassCache"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ SECTION: Other Settings ═══ -->
+        <div class="v2-section" data-section="other">
+            <div class="v2-section-header"><span class="v2-section-icon">🔧</span><span class="v2-section-title">Other
+                    Settings</span><span class="v2-section-chevron">▼</span></div>
+            <div class="v2-section-body">
+                <div class="v2-section-inner">
+
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">🧰 Sub Toolbox</span><span
+                                class="v2-row-desc">SRT Translation, Embedded Subs Extraction, AutoSync,
+                                AutoSubbing</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-subToolbox" checked><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">📖 Learn Mode</span><span
+                                class="v2-row-desc">Dual-language subtitles for language learning</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-learnMode"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-subgroup hidden" id="v2-learnModeBody">
+                        <div class="v2-row">
+                            <div class="v2-row-label"><span class="v2-row-title">Subtitle Order</span></div>
+                            <div class="v2-radio-group">
+                                <label class="v2-radio-option"><input type="radio" name="v2-learnOrder"
+                                        value="source-top" checked><span>Source top</span></label>
+                                <label class="v2-radio-option"><input type="radio" name="v2-learnOrder"
+                                        value="target-top"><span>Target top</span></label>
+                            </div>
+                        </div>
+                        <div class="v2-row">
+                            <div class="v2-row-label"><span class="v2-row-title">Italicize one language</span></div>
+                            <label class="v2-toggle"><input type="checkbox" id="v2-learnItalic" checked><span
+                                    class="v2-toggle-track"></span></label>
+                        </div>
+                        <div class="v2-subgroup" id="v2-learnItalicTarget">
+                            <div class="v2-radio-group">
+                                <label class="v2-radio-option"><input type="radio" name="v2-learnItalicTarget"
+                                        value="target" checked><span>Italicize Target</span></label>
+                                <label class="v2-radio-option"><input type="radio" name="v2-learnItalicTarget"
+                                        value="source"><span>Italicize Source</span></label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">📱 Mobile Mode</span><span
+                                class="v2-row-desc">Hold translations for Android/iOS — sends complete subtitle
+                                only</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-mobileMode"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">📦 Season Pack Subtitles</span><span
+                                class="v2-row-desc">Fetch and extract from full season packs</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-seasonPacks" checked><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">🚫 Hide SDH/HI Subtitles</span><span
+                                class="v2-row-desc">Exclude hearing-impaired subtitles</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-excludeHI"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">Force SRT Output</span><span
+                                class="v2-row-desc">Convert all outputs to SRT format</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-forceSRT"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-row v2-hidden" id="v2-convertAssRow">
+                        <div class="v2-row-label"><span class="v2-row-title">Convert ASS/SSA to VTT</span><span
+                                class="v2-row-desc">Convert ASS/SSA subtitles to VTT format</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-convertAss" checked><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">Advanced Mode</span><span
+                                class="v2-row-desc">Unlock advanced parameter settings</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-betaMode"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ SECTION: Advanced Parameters ═══ -->
+        <div class="v2-section v2-hidden" data-section="advanced" id="v2-advancedSection">
+            <div class="v2-section-header"><span class="v2-section-icon">🔬</span><span
+                    class="v2-section-title">Advanced Parameters</span><span class="v2-section-chevron">▼</span></div>
+            <div class="v2-section-body">
+                <div class="v2-section-inner">
+
+                    <div class="v2-info-box warning"><strong>Cache bypass</strong> is auto-enabled when any advanced
+                        setting is changed from defaults.</div>
+
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">Batch Context</span><span
+                                class="v2-row-desc">Include surrounding context for coherence (increases token
+                                usage)</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-batchContext"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+                    <div class="v2-subgroup hidden" id="v2-contextSizeBody">
+                        <div class="v2-row">
+                            <div class="v2-row-label"><span class="v2-row-title">Context Size</span><span
+                                    class="v2-row-desc">1-10 entries</span></div>
+                            <input type="number" class="v2-input v2-input-number" id="v2-contextSize" min="1" max="10"
+                                value="3">
+                        </div>
+                    </div>
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">Mismatch Retries</span><span
+                                class="v2-row-desc">Retries when AI returns wrong count (0-3)</span></div>
+                        <input type="number" class="v2-input v2-input-number" id="v2-mismatchRetries" min="0" max="3"
+                            value="1">
+                    </div>
+                    <div class="v2-row">
+                        <div class="v2-row-label"><span class="v2-row-title">JSON Structured Output</span><span
+                                class="v2-row-desc">Request JSON format from AI for better parsing</span></div>
+                        <label class="v2-toggle"><input type="checkbox" id="v2-jsonOutput"><span
+                                class="v2-toggle-track"></span></label>
+                    </div>
+
+                    <div class="v2-divider"></div>
+
+                    <!-- Gemini Advanced -->
+                    <div class="v2-row-label" style="padding:6px 0"><span class="v2-row-title"
+                            style="font-size:13px">Gemini Parameters</span></div>
+                    <div class="v2-params-grid">
+                        <div class="v2-param"><label for="v2-advModel">Model Override</label><select class="v2-select"
+                                id="v2-advModel">
+                                <option value="">Default</option>
+                            </select></div>
+                        <div class="v2-param"><label for="v2-advThinking">Thinking Budget</label><input type="number"
+                                class="v2-input" id="v2-advThinking" min="-1" max="32768" value="0"></div>
+                        <div class="v2-param"><label for="v2-advTemp">Temperature</label><input type="number"
+                                class="v2-input" id="v2-advTemp" min="0" max="2" step="0.1" value="0.8"></div>
+                        <div class="v2-param"><label for="v2-advTopP">Top-P</label><input type="number" class="v2-input"
+                                id="v2-advTopP" min="0" max="1" step="0.05" value="0.95"></div>
+                    </div>
+
+                    <div class="v2-divider"></div>
+
+                    <!-- Per-Provider Advanced -->
+                    <div class="v2-row-label" style="padding:6px 0"><span class="v2-row-title"
+                            style="font-size:13px">Per-Provider Parameters</span><span
+                            class="v2-row-desc">Multi-provider mode only</span></div>
+                    <div id="v2-providerAdvanced">
+                        <!-- Dynamically populated by JS -->
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ Bottom ═══ -->
+        <div class="v2-reset-bar">
+            <span>Any problems?</span>
+            <button class="v2-reset-btn" id="v2-resetBtn" type="button">Reset Settings</button>
+        </div>
+        <div class="v2-support">
+            Still having issues? <a class="v2-link" href="https://github.com/xtremexq/StremioSubMaker/issues"
+                target="_blank">Open an issue on GitHub</a>
+        </div>
+
+    </div>
+
+    <!-- Action Bar -->
+    <div class="v2-action-bar">
+        <button class="v2-btn v2-btn-primary" id="v2-saveBtn" type="button">💾 Save Configuration</button>
+        <button class="v2-btn v2-btn-secondary" id="v2-installBtn" type="button" disabled>🚀 Install</button>
+        <button class="v2-btn v2-btn-secondary" id="v2-copyBtn" type="button" disabled>📋 Copy URL</button>
+    </div>
+
+    <script src="/js/config-v2.js" defer></script>
+</body>
+
+</html>

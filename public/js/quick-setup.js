@@ -170,30 +170,16 @@
         const overlay = $('quickSetupOverlay');
         if (!overlay) return;
 
-        // Try to restore from sessionStorage first
-        if (restoreStateFromSession()) {
-            hasSaved = false;
-            overlay.classList.add('active');
-            document.body.style.overflow = 'hidden';
-            showStep(state.currentStep);
-            return;
-        }
-
-        // Try to restore from existing active session (if any)
+        // Check for existing saved session token
         const token = localStorage.getItem(TOKEN_KEY);
-        if (token && /^[a-f0-9]{32}$/.test(token)) {
-            // Show loading state overlay
+        const hasValidToken = token && /^[a-f0-9]{32}$/.test(token);
+
+        // If a valid token exists, ALWAYS fetch fresh config from the API.
+        // sessionStorage may contain stale wizard state from a previous incomplete
+        // wizard session, so it must not override the actual saved config.
+        if (hasValidToken) {
             overlay.classList.add('active');
             document.body.style.overflow = 'hidden';
-
-            // Show a temporary loading indicator if needed, 
-            // but the overlay itself is a good start.
-            // We'll reset to step 1 initially but hide content until loaded?
-            // Actually, let's just show Step 1 and let it populate.
-            // But if we populate async, user might see empty then filled.
-            // Better to fetch then show. 
-            // Since we already added 'active' class, the wizard is visible.
-            // Let's rely on the speed of local API or just accept a brief flash.
 
             try {
                 const resp = await fetch(`/api/get-session/${token}`);
@@ -201,10 +187,11 @@
                     const data = await resp.json();
                     if (data && data.config) {
                         mapConfigToState(data.config);
+                        // Clear stale sessionStorage and save fresh state
+                        try { sessionStorage.removeItem(QS_STATE_KEY); } catch (_) { }
                         saveStateToSession();
                         restoreUIFromState();
 
-                        // We always start at Step 1 for review when loading existing config
                         state.currentStep = 1;
                         showStep(1);
                         hasSaved = false;
@@ -214,6 +201,18 @@
             } catch (e) {
                 console.warn('[QuickSetup] Failed to load existing config:', e);
             }
+
+            // API fetch failed — fall through to sessionStorage or reset
+        }
+
+        // No saved token — try to restore mid-wizard progress from sessionStorage
+        // (user was mid-setup for the first time and closed/reopened the wizard)
+        if (!hasValidToken && restoreStateFromSession()) {
+            hasSaved = false;
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+            showStep(state.currentStep);
+            return;
         }
 
         // Fallback: New Session / Reset
@@ -221,7 +220,9 @@
         resetAllStepUIs();
 
         hasSaved = false;
-        overlay.classList.add('active');
+        if (!overlay.classList.contains('active')) {
+            overlay.classList.add('active');
+        }
         document.body.style.overflow = 'hidden';
         showStep(1);
     }
@@ -568,19 +569,18 @@
                 validateBtn.disabled = true;
 
                 try {
-                    // Test the key by listing models directly via the Gemini API
-                    const resp = await fetch(
-                        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}&pageSize=1`,
-                        { method: 'GET', headers: { 'Accept': 'application/json' } }
-                    );
+                    const resp = await fetch('/api/validate-gemini', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ apiKey: key })
+                    });
+                    const result = await resp.json();
 
-                    if (resp.ok) {
+                    if (result.valid) {
                         state.geminiKeyValid = true;
                         showKeyStatus('✓ API key is valid!', 'success');
-                    } else if (resp.status === 400 || resp.status === 403) {
-                        showKeyStatus('✗ Invalid API key — please double-check', 'error');
                     } else {
-                        showKeyStatus(`✗ Validation error (HTTP ${resp.status})`, 'error');
+                        showKeyStatus('✗ ' + (result.error || 'Invalid API key — please double-check'), 'error');
                     }
                 } catch (err) {
                     showKeyStatus('✗ Network error — try again', 'error');

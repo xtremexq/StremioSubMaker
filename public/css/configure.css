@@ -3605,6 +3605,8 @@ label:has(#subToolboxEnabled:disabled) {
 
 #geminiApiKeysContainer .label-description {
     font-size: 0.75rem;
+    white-space: normal;
+    margin-top: 0;
 }
 
 #addGeminiKeyBtn {
