@@ -186,8 +186,9 @@
       "hero": {
         "eyebrow": "Sub Toolbox",
         "title": "Elige una herramienta sin salir de tu emisión",
-        "body": "Usa el botón Sub Toolbox en la lista de subtítulos de Stremio. Tus API keys, idiomas destino y caché llegan automáticamente.",
-        "primary": "Panel de traducción",
+        "body": "¡Disfruta del Toolbox de SubMaker! Tus API keys, idiomas destino y caché llegan automáticamente.",
+        "smdbHint": "Sube o traduce subtítulos SMDB para tus emisiones en nuestra base de datos:",
+        "primary": "Historial de traducción",
         "secondary": "Configurar"
       },
       "toast": {

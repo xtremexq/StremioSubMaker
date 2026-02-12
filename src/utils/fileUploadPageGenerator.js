@@ -126,6 +126,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         syncSubtitles: syncSubtitlesLink,
         embeddedSubs: embeddedSubsLink,
         automaticSubs: autoSubtitlesLink,
+        smdb: `/smdb?config=${encodeURIComponent(configStr)}&videoId=${encodeURIComponent(videoId || '')}${fileParam}`,
         configure: configureLink,
         history: historyLink
     };

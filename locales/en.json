@@ -186,8 +186,9 @@
       "hero": {
         "eyebrow": "Sub Toolbox",
         "title": "Pick a tool without leaving your stream",
-        "body": "Use the Sub Toolbox button in Stremio's subtitle list. Your saved API keys, target languages, and cache come with you automatically.",
-        "primary": "Translation Status",
+        "body": "Enjoy SubMaker's Toolbox! Your saved API keys, target languages, and cache come with you automatically.",
+        "smdbHint": "Upload or translate SMDB subtitles for your streams in our database:",
+        "primary": "Translation History",
         "secondary": "Configure"
       },
       "toast": {

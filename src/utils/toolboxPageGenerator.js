@@ -416,6 +416,7 @@ function buildToolLinks(configStr, videoId, filename) {
     embeddedSubs: `/embedded-subtitles${buildQuery(withFile)}`,
     automaticSubs: `/auto-subtitles${buildQuery(withFile)}`,
     subToolbox: `/sub-toolbox${buildQuery(withFile)}`,
+    smdb: `/smdb${buildQuery(withFile)}`,
     configure: `/configure${buildQuery({ config: configStr })}`,
     history: `/sub-history${buildQuery(historyParams)}`
   };
@@ -832,8 +833,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       display: grid;
       grid-template-columns: 1.15fr 1fr;
       gap: 18px;
-      align-items: stretch;
-      background: linear-gradient(135deg, rgba(8,164,213,0.08), rgba(51,185,225,0.05)), var(--surface);
+      align-items: start;
     }
     .hero-content {
       display: flex;
@@ -841,9 +841,19 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       align-items: center;
       justify-content: center;
       text-align: center;
-      gap: 12px;
-      padding: 0 18px;
-      min-width: 0; /* prevent long stream names from forcing the grid column to grow */
+      gap: 8px;
+      padding: 20px 18px;
+      min-width: 0;
+      background: linear-gradient(135deg, rgba(8,164,213,0.08), rgba(51,185,225,0.05)), var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+    .hero-right {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      min-width: 0;
     }
     .eyebrow {
       text-transform: uppercase;
@@ -853,12 +863,12 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       font-weight: 700;
     }
     .hero h2 {
-      margin: 6px 0 10px;
+      margin: 4px 0 6px;
       font-size: 26px;
       letter-spacing: -0.01em;
     }
     .hero p {
-      margin: 0 0 12px;
+      margin: 0 0 6px;
       color: var(--muted);
       line-height: 1.6;
     }
@@ -866,7 +876,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       display: grid;
       grid-template-columns: 1fr;
       gap: 8px;
-      margin: 14px 0 10px;
+      margin: 8px 0 6px;
       width: 100%;
       text-align: left;
     }
@@ -875,7 +885,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       align-items: center;
       justify-content: flex-start;
       gap: 8px;
-      padding: 10px 12px;
+      padding: 8px 10px;
       border-radius: 10px;
       background: var(--surface-2);
       border: 1px solid var(--border);
@@ -896,13 +906,43 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       gap: 10px;
       flex-wrap: wrap;
       justify-content: center;
-      margin-top: 8px;
+      margin-top: 4px;
+    }
+    .smdb-section {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      padding: 10px 16px;
+      margin-bottom: 6px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(8,164,213,0.06), rgba(51,185,225,0.04));
+      border: 1px dashed rgba(8, 164, 213, 0.28);
+    }
+    .smdb-section .smdb-btn {
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    [data-theme="dark"] .smdb-section {
+      background: linear-gradient(135deg, rgba(8,164,213,0.10), rgba(51,185,225,0.06));
+      border-color: rgba(8, 164, 213, 0.22);
+    }
+    [data-theme="true-dark"] .smdb-section {
+      background: linear-gradient(135deg, rgba(8,164,213,0.08), rgba(51,185,225,0.04));
+      border-color: rgba(8, 164, 213, 0.18);
+    }
+    .smdb-hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
     }
     .button {
       display: inline-flex;
       align-items: center;
-      gap: 9px;
-      padding: 12px 18px;
+      gap: 7px;
+      padding: 9px 14px;
       border-radius: 12px;
       border: 1px solid rgba(8, 164, 213, 0.4);
       background: linear-gradient(120deg, rgba(8, 164, 213, 0.16), rgba(51, 185, 225, 0.08));
@@ -934,15 +974,115 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       color: #04101a;
       border-color: rgba(255, 255, 255, 0.24);
       box-shadow: 0 14px 40px rgba(8, 164, 213, 0.32);
+      text-transform: none;
+      font-size: 14px;
+      letter-spacing: 0.03em;
     }
     .button.ghost {
       background: linear-gradient(120deg, rgba(255,255,255,0.02), rgba(8, 164, 213, 0.08));
       color: var(--text);
       border-color: rgba(8, 164, 213, 0.3);
     }
+    .button.smdb-cta {
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.18), rgba(51, 185, 225, 0.12));
+      border-color: rgba(8, 164, 213, 0.45);
+      color: var(--text);
+      text-transform: none;
+      font-size: 14px;
+      letter-spacing: 0.03em;
+      position: relative;
+      overflow: hidden;
+    }
+    .button.smdb-cta::before {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%; width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+      animation: smdb-shimmer 3s ease-in-out infinite;
+    }
+    @keyframes smdb-shimmer {
+      0%, 100% { left: -100%; }
+      50% { left: 100%; }
+    }
+    .smdb-cta-icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+    [data-theme="dark"] .button.smdb-cta {
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.22), rgba(51, 185, 225, 0.14));
+      border-color: rgba(8, 164, 213, 0.38);
+    }
+    [data-theme="true-dark"] .button.smdb-cta {
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.16), rgba(51, 185, 225, 0.08));
+      border-color: rgba(8, 164, 213, 0.30);
+    }
     .button:hover {
       transform: translateY(-3px) scale(1.01);
       box-shadow: 0 18px 48px rgba(8, 164, 213, 0.26);
+      border-color: rgba(8, 164, 213, 0.55);
+    }
+    .smdb-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 0;
+      padding: 9px 22px;
+      border-radius: 12px;
+      border: 1px solid rgba(8, 164, 213, 0.45);
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.18), rgba(51, 185, 225, 0.10));
+      color: var(--text);
+      font-family: 'Space Grotesk', 'Inter', -apple-system, 'Segoe UI', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.04em;
+      text-decoration: none;
+      text-transform: none;
+      box-shadow: 0 8px 28px rgba(8, 164, 213, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      transition: transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+    }
+    .smdb-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(120deg, rgba(90, 240, 255, 0.15), rgba(8, 164, 213, 0.22), rgba(51, 185, 225, 0.12));
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+    .smdb-btn:hover {
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 16px 44px rgba(8, 164, 213, 0.32), 0 0 20px rgba(8, 164, 213, 0.12);
+      border-color: rgba(8, 164, 213, 0.7);
+    }
+    .smdb-btn:hover::before { opacity: 1; }
+    .smdb-btn:active {
+      transform: translateY(0) scale(0.98);
+    }
+    .smdb-btn .smdb-icon {
+      font-size: 18px;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+    }
+    [data-theme="dark"] .smdb-btn {
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.22), rgba(51, 185, 225, 0.12));
+      border-color: rgba(8, 164, 213, 0.35);
+      box-shadow: 0 8px 28px rgba(8, 164, 213, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    [data-theme="dark"] .smdb-btn:hover {
+      box-shadow: 0 16px 44px rgba(8, 164, 213, 0.35), 0 0 24px rgba(8, 164, 213, 0.18);
+      border-color: rgba(8, 164, 213, 0.6);
+    }
+    [data-theme="true-dark"] .smdb-btn {
+      background: linear-gradient(135deg, rgba(8, 164, 213, 0.16), rgba(51, 185, 225, 0.08));
+      border-color: rgba(8, 164, 213, 0.28);
+      box-shadow: 0 8px 28px rgba(8, 164, 213, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    [data-theme="true-dark"] .smdb-btn:hover {
+      box-shadow: 0 16px 44px rgba(8, 164, 213, 0.28), 0 0 28px rgba(8, 164, 213, 0.22);
       border-color: rgba(8, 164, 213, 0.55);
     }
     .tool-stack {
@@ -1268,11 +1408,11 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
       </div>
     </header>
 
-    <section class="hero card">
+    <section class="hero">
       <div class="hero-content">
         <div class="eyebrow">${t('toolbox.hero.eyebrow', {}, 'Sub Toolbox')}</div>
         <h2>${t('toolbox.hero.title', {}, 'Pick a tool without leaving your stream')}</h2>
-        <p>${t('toolbox.hero.body', {}, `Use the Sub Toolbox button in Stremio's subtitle list. Your saved API keys, target languages, and cache come with you automatically.`)}</p>
+        <p>${t('toolbox.hero.body', {}, `Enjoy SubMaker's Toolbox! Your saved API keys, target languages, and cache come with you automatically.`)}</p>
         <div class="chip-row">
           <div class="chip">${t('toolbox.chips.sources', {}, 'Sources')} <span>${escapeHtml(languageSummary.sources)}</span></div>
           <div class="chip">${t('toolbox.chips.targets', {}, 'Targets')} <span>${escapeHtml(languageSummary.targets)}</span></div>
@@ -1280,48 +1420,51 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
           <div class="chip">${t('toolbox.chips.stream', {}, 'Stream')} <span>${streamHint}</span></div>
         </div>
         <div class="cta-row">
-          <a class="button primary" href="${links.history}">${t('toolbox.hero.primary', {}, 'Translation Status')}</a>
-          <a class="button ghost" href="${links.configure}">${t('toolbox.hero.secondary', {}, 'Configure')}</a>
+          <a class="button primary" href="${links.history}"><span class="smdb-cta-icon">📜</span> ${t('toolbox.hero.primary', {}, 'Translation History')}</a>
+          <a class="button smdb-cta" href="${links.smdb}"><span class="smdb-cta-icon">📦</span> ${t('toolbox.hero.smdbBtn', {}, 'SubMaker Database')}</a>
+          <a class="button ghost" href="${links.configure}">🛠️</a>
         </div>
       </div>
 
-      <div class="tool-stack">
-        <header>
-          <div class="eyebrow">${t('toolbox.tools.eyebrow', {}, 'Tool shelf')}</div>
-        </header>
-        <div class="tool-tiles">
-          <a class="tool-tile" href="${links.translateFiles}">
-            <div class="tool-icon">⚡</div>
-            <div>
-              <div class="tool-title">${t('toolbox.tools.translate.title', {}, 'Translate SRT files')}</div>
-              <p>${t('toolbox.tools.translate.body', {}, 'Upload .srt/.vtt/.ass files and keep cache + language preferences intact.')}</p>
-              <span class="tool-link">${t('toolbox.tools.translate.cta', {}, 'Translate a file')}</span>
-            </div>
-          </a>
-          <a class="tool-tile" href="${links.embeddedSubs}">
-            <div class="tool-icon">🧲</div>
-            <div>
-              <div class="tool-title">${t('toolbox.tools.embedded.title', {}, 'Extract + Translate')}</div>
-              <p>${t('toolbox.tools.embedded.body', {}, 'Extract embedded subtitles from the current stream or file, then translate with your provider.')}</p>
-              <span class="tool-link">${t('toolbox.tools.embedded.cta', {}, 'Open extractor')}</span>
-            </div>
-          </a>
-          <a class="tool-tile${devDisabledClass}" href="${devOnlyLink(links.syncSubtitles)}">
-            <div class="tool-icon">⏱️</div>
-            <div>
-              <div class="tool-title">${t('toolbox.tools.sync.title', {}, 'Sync subtitles')}</div>
-              <p>${t('toolbox.tools.sync.body', {}, 'Fix timing drifts with offsets or the Chrome extension and save back to your session.')}</p>
-              <span class="tool-link">${t('toolbox.tools.sync.cta', {}, 'Open sync studio')}</span>
-            </div>
-          </a>
-          <a class="tool-tile${devDisabledClass}" href="${devOnlyLink(links.automaticSubs)}">
-            <div class="tool-icon">🤖</div>
-            <div>
-              <div class="tool-title">${t('toolbox.tools.auto.title', {}, 'Automatic subtitles')}</div>
-              <p>${t('toolbox.tools.auto.body', {}, 'Create subs when none exist. Uses your target language and provider settings.')}</p>
-              <span class="tool-link">${t('toolbox.tools.auto.cta', {}, 'Generate subs')}</span>
-            </div>
-          </a>
+      <div class="hero-right">
+        <div class="tool-stack">
+          <header>
+            <div class="eyebrow">${t('toolbox.tools.eyebrow', {}, 'Tool shelf')}</div>
+          </header>
+          <div class="tool-tiles">
+            <a class="tool-tile" href="${links.translateFiles}">
+              <div class="tool-icon">⚡</div>
+              <div>
+                <div class="tool-title">${t('toolbox.tools.translate.title', {}, 'Translate SRT files')}</div>
+                <p>${t('toolbox.tools.translate.body', {}, 'Upload .srt/.vtt/.ass files and keep cache + language preferences intact.')}</p>
+                <span class="tool-link">${t('toolbox.tools.translate.cta', {}, 'Translate a file')}</span>
+              </div>
+            </a>
+            <a class="tool-tile" href="${links.embeddedSubs}">
+              <div class="tool-icon">🧲</div>
+              <div>
+                <div class="tool-title">${t('toolbox.tools.embedded.title', {}, 'Extract + Translate')}</div>
+                <p>${t('toolbox.tools.embedded.body', {}, 'Extract embedded subtitles from the current stream or file, then translate with your provider.')}</p>
+                <span class="tool-link">${t('toolbox.tools.embedded.cta', {}, 'Open extractor')}</span>
+              </div>
+            </a>
+            <a class="tool-tile${devDisabledClass}" href="${devOnlyLink(links.syncSubtitles)}">
+              <div class="tool-icon">⏱️</div>
+              <div>
+                <div class="tool-title">${t('toolbox.tools.sync.title', {}, 'Sync subtitles')}</div>
+                <p>${t('toolbox.tools.sync.body', {}, 'Fix timing drifts with offsets or the Chrome extension and save back to your session.')}</p>
+                <span class="tool-link">${t('toolbox.tools.sync.cta', {}, 'Open sync studio')}</span>
+              </div>
+            </a>
+            <a class="tool-tile${devDisabledClass}" href="${devOnlyLink(links.automaticSubs)}">
+              <div class="tool-icon">🤖</div>
+              <div>
+                <div class="tool-title">${t('toolbox.tools.auto.title', {}, 'Automatic subtitles')}</div>
+                <p>${t('toolbox.tools.auto.body', {}, 'Create subs when none exist. Uses your target language and provider settings.')}</p>
+                <span class="tool-link">${t('toolbox.tools.auto.cta', {}, 'Generate subs')}</span>
+              </div>
+            </a>
+          </div>
         </div>
       </div>
     </section>

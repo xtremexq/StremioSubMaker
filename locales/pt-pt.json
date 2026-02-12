@@ -186,8 +186,9 @@
       "hero": {
         "eyebrow": "Sub Toolbox",
         "title": "Escolha uma ferramenta sem sair da sua transmissão",
-        "body": "Use o botão Sub Toolbox na lista de legendas do Stremio. As suas chaves de API guardadas, idiomas de destino e cache vêm consigo automaticamente.",
-        "primary": "Estado da Tradução",
+        "body": "Desfrute do Toolbox do SubMaker! As suas chaves de API guardadas, idiomas de destino e cache vêm consigo automaticamente.",
+        "smdbHint": "Carregue ou traduza legendas SMDB para as suas transmissões na nossa base de dados:",
+        "primary": "Histórico de Tradução",
         "secondary": "Configurar"
       },
       "toast": {

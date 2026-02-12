@@ -1,4 +1,5 @@
 const { LRUCache } = require('lru-cache');
+const crypto = require('crypto');
 const log = require('./logger');
 
 // Tracks the most recent stream per config hash (in-memory only)
@@ -25,13 +26,21 @@ let heartbeatPingEvents = 0;
 let heartbeatListenerSamples = 0;
 let heartbeatSampleCount = 0;
 
+// ── Redis Pub/Sub (multi-instance support) ──────────────────────────────────
+const INSTANCE_ID = crypto.randomBytes(8).toString('hex');
+const PUBSUB_CHANNEL_BASE = 'stream-activity';
+let pubsubChannel = PUBSUB_CHANNEL_BASE; // Resolved at init with Redis key prefix
+let pubClient = null;   // Regular ioredis client for PUBLISH (shared)
+let subClient = null;   // Dedicated ioredis client for SUBSCRIBE (read-only after subscribe)
+let pubsubReady = false;
+
 function cleanupListener(configHash, listener, reason = 'unknown') {
   const set = listeners.get(configHash);
   if (!set || !listener) return;
   if (!set.has(listener)) return;
 
   set.delete(listener);
-  try { listener.res.end(); } catch (_) {}
+  try { listener.res.end(); } catch (_) { }
 
   if (set.size === 0) listeners.delete(configHash);
   const shortHash = (configHash || '').slice(0, 8);
@@ -63,6 +72,7 @@ function sendEvent(configHash, listener, event, data) {
  * @param {string} payload.videoId
  * @param {string} [payload.filename]
  * @param {string} [payload.videoHash]
+ * @param {string} [payload.stremioHash] - Real OpenSubtitles hash from Stremio (via extra.videoHash)
  */
 function recordStreamActivity(payload) {
   if (!payload || typeof payload.configHash !== 'string' || !payload.configHash.length) return;
@@ -71,6 +81,7 @@ function recordStreamActivity(payload) {
   const incomingId = (payload.videoId || '').toString().trim();
   const incomingFilename = (payload.filename || '').toString().trim();
   const incomingHash = (payload.videoHash || '').toString().trim();
+  const incomingStremioHash = (payload.stremioHash || '').toString().trim();
 
   // Treat placeholders/empties as non-authoritative so we don't blow away a good entry
   const isPlaceholderId = (val) => {
@@ -90,17 +101,20 @@ function recordStreamActivity(payload) {
   let effectiveId = incomingId || previous?.videoId || '';
   let effectiveFilename = incomingFilename || '';
   let effectiveHash = incomingHash || '';
+  let effectiveStremioHash = incomingStremioHash || '';
 
   // If this ping carries no useful fields or is clearly a placeholder, treat it as a heartbeat
   if (keepPrevious && (placeholder || (!incomingFilename && !incomingHash && !incomingId))) {
     effectiveId = previous.videoId || effectiveId;
     effectiveFilename = previous.filename || effectiveFilename;
     effectiveHash = previous.videoHash || effectiveHash;
+    effectiveStremioHash = previous.stremioHash || effectiveStremioHash;
   } else {
     // Fill gaps from previous when the videoId matches but fields are missing
     if (keepPrevious && previous.videoId === incomingId) {
       if (!effectiveFilename) effectiveFilename = previous.filename || '';
       if (!effectiveHash) effectiveHash = previous.videoHash || '';
+      if (!effectiveStremioHash) effectiveStremioHash = previous.stremioHash || '';
     }
   }
 
@@ -112,13 +126,15 @@ function recordStreamActivity(payload) {
     videoId: effectiveId,
     filename: effectiveFilename,
     videoHash: effectiveHash,
+    stremioHash: effectiveStremioHash,
     updatedAt: Date.now()
   };
 
   const changed = !previous ||
     previous.videoId !== entry.videoId ||
     previous.filename !== entry.filename ||
-    previous.videoHash !== entry.videoHash;
+    previous.videoHash !== entry.videoHash ||
+    previous.stremioHash !== entry.stremioHash;
 
   latestByConfig.set(payload.configHash, entry);
 
@@ -126,14 +142,123 @@ function recordStreamActivity(payload) {
     const shortHash = payload.configHash.slice(0, 8);
     log.info(() => `[StreamActivity] New stream ping for ${shortHash} -> videoId=${entry.videoId || 'n/a'}, filename=${entry.filename || 'n/a'}, hash=${entry.videoHash || 'n/a'}`);
 
-    const set = listeners.get(payload.configHash);
-    if (set && set.size) {
-      for (const listener of set) {
-        sendEvent(payload.configHash, listener, 'episode', entry);
-      }
-    }
+    _notifyLocalListeners(payload.configHash, entry);
+
+    // Broadcast to other instances via Redis pub/sub
+    _publishStreamEvent(payload.configHash, entry);
   } else {
     log.debug(() => `[StreamActivity] Refreshed activity for existing stream ${payload.configHash.slice(0, 8)}`);
+  }
+}
+
+/**
+ * Notify local SSE listeners for a config hash
+ * @private
+ */
+function _notifyLocalListeners(configHash, entry) {
+  const set = listeners.get(configHash);
+  if (set && set.size) {
+    for (const listener of set) {
+      sendEvent(configHash, listener, 'episode', entry);
+    }
+  }
+}
+
+/**
+ * Publish a stream event to Redis for cross-instance broadcast (fire-and-forget)
+ * @private
+ */
+function _publishStreamEvent(configHash, entry) {
+  if (!pubsubReady || !pubClient) return;
+  try {
+    const message = JSON.stringify({ instanceId: INSTANCE_ID, configHash, entry });
+    pubClient.publish(pubsubChannel, message).catch(err => {
+      log.debug(() => `[StreamActivity] Pub/sub publish failed: ${err.message}`);
+    });
+  } catch (err) {
+    log.debug(() => `[StreamActivity] Pub/sub publish error: ${err.message}`);
+  }
+}
+
+/**
+ * Handle a stream event received from another instance via Redis pub/sub
+ * @private
+ */
+function _handleRemoteStreamEvent(message) {
+  try {
+    const data = JSON.parse(message);
+    // Ignore our own messages
+    if (data.instanceId === INSTANCE_ID) return;
+    if (!data.configHash || !data.entry) return;
+
+    // Update local LRU so polling fallback also works
+    latestByConfig.set(data.configHash, data.entry);
+
+    // Notify local SSE listeners
+    _notifyLocalListeners(data.configHash, data.entry);
+
+    log.debug(() => `[StreamActivity] Received remote stream event for ${data.configHash.slice(0, 8)} from instance ${data.instanceId.slice(0, 6)}`);
+  } catch (err) {
+    log.debug(() => `[StreamActivity] Failed to process remote stream event: ${err.message}`);
+  }
+}
+
+/**
+ * Initialize Redis pub/sub for cross-instance stream activity.
+ * Call once after storage is initialized. Safe to call in filesystem mode (no-op).
+ */
+async function initPubSub() {
+  try {
+    const StorageFactory = require('../storage/StorageFactory');
+    const redisClient = StorageFactory.getRedisClient();
+    if (!redisClient) {
+      log.debug(() => '[StreamActivity] No Redis client available, pub/sub disabled (filesystem mode)');
+      return;
+    }
+
+    // Resolve channel name with Redis key prefix for namespace isolation
+    // (ioredis keyPrefix does NOT apply to pub/sub commands)
+    const keyPrefix = redisClient.options?.keyPrefix || '';
+    pubsubChannel = `${keyPrefix}${PUBSUB_CHANNEL_BASE}`;
+
+    // Use the main client for PUBLISH (it can still do normal commands)
+    pubClient = redisClient;
+
+    // Create a dedicated connection for SUBSCRIBE (ioredis requirement:
+    // subscribing makes a connection read-only)
+    subClient = redisClient.duplicate({ lazyConnect: true });
+    await subClient.connect();
+
+    subClient.subscribe(pubsubChannel, (err) => {
+      if (err) {
+        log.warn(() => `[StreamActivity] Failed to subscribe to pub/sub channel: ${err.message}`);
+        return;
+      }
+      pubsubReady = true;
+      log.info(() => `[StreamActivity] Redis pub/sub initialized (instanceId=${INSTANCE_ID.slice(0, 6)}, channel=${pubsubChannel})`);
+    });
+
+    subClient.on('message', (channel, message) => {
+      if (channel === pubsubChannel) {
+        _handleRemoteStreamEvent(message);
+      }
+    });
+
+    // Graceful shutdown
+    const cleanup = async () => {
+      try {
+        if (subClient) {
+          await subClient.unsubscribe(pubsubChannel);
+          await subClient.disconnect();
+          subClient = null;
+        }
+        pubsubReady = false;
+      } catch (_) { /* ignore */ }
+    };
+    process.once('SIGTERM', cleanup);
+    process.once('SIGINT', cleanup);
+  } catch (err) {
+    log.warn(() => `[StreamActivity] Pub/sub initialization failed (non-fatal): ${err.message}`);
   }
 }
 
@@ -152,7 +277,7 @@ function getLatestStreamActivity(configHash) {
  * @param {object} res Express response
  */
 function subscribe(configHash, res) {
-  if (!configHash || !res) return () => {};
+  if (!configHash || !res) return () => { };
 
   const existing = listeners.get(configHash);
   if (existing && existing.size >= MAX_LISTENERS_PER_CONFIG) {
@@ -165,7 +290,7 @@ function subscribe(configHash, res) {
     res.end();
     const shortHash = (configHash || '').slice(0, 8);
     log.debug(() => `[StreamActivity] SSE rejected (too many listeners) for ${shortHash}`);
-    return () => {};
+    return () => { };
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -176,7 +301,7 @@ function subscribe(configHash, res) {
   res.flushHeaders?.();
 
   // Hint client-side reconnection interval to avoid tight retry loops if upstream drops the socket
-  try { res.write(`retry: 5000\n\n`); } catch (_) {}
+  try { res.write(`retry: 5000\n\n`); } catch (_) { }
 
   // Immediate ack + latest snapshot so the client knows current state
   const listener = { res, createdAt: Date.now(), lastEventAt: Date.now() };
@@ -250,5 +375,6 @@ setInterval(() => {
 module.exports = {
   recordStreamActivity,
   getLatestStreamActivity,
-  subscribe
+  subscribe,
+  initPubSub
 };

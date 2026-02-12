@@ -164,6 +164,18 @@ class StorageFactory {
   }
 
   /**
+   * Get the underlying Redis client (if using RedisStorageAdapter).
+   * Returns null for filesystem deployments.
+   * @returns {import('ioredis')|null}
+   */
+  static getRedisClient() {
+    if (StorageFactory.instance && typeof StorageFactory.instance.getClient === 'function') {
+      return StorageFactory.instance.getClient();
+    }
+    return null;
+  }
+
+  /**
    * Reset the singleton instance (useful for testing)
    */
   static async reset() {

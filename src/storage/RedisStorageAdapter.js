@@ -1242,6 +1242,14 @@ class RedisStorageAdapter extends StorageAdapter {
   }
 
   /**
+   * Get the underlying ioredis client (e.g. for pub/sub duplicate connections)
+   * @returns {import('ioredis')|null}
+   */
+  getClient() {
+    return this.initialized ? this.client : null;
+  }
+
+  /**
    * Close the Redis connection
    */
   async close() {

@@ -19,6 +19,7 @@ const { LRUCache } = require('lru-cache');
 const syncCache = require('../utils/syncCache');
 const streamActivity = require('../utils/streamActivity');
 const embeddedCache = require('../utils/embeddedCache');
+const smdbCache = require('../utils/smdbCache');
 const { StorageFactory, StorageAdapter } = require('../storage');
 const { getCached: getDownloadCached, saveCached: saveDownloadCached } = require('../utils/downloadCache');
 const log = require('../utils/logger');
@@ -2262,12 +2263,25 @@ function createSubtitleHandler(config) {
           : null;
         if (configHash) {
           const videoHashForActivity = deriveVideoHash(streamFilename || '', id);
+          // Also record the real Stremio hash (from streaming addons like Torrentio)
+          // so SMDB can use it for cross-source subtitle matching
+          const realStremioHash = (extra?.videoHash && typeof extra.videoHash === 'string' && extra.videoHash.length > 0)
+            ? extra.videoHash : null;
           streamActivity.recordStreamActivity({
             configHash,
             videoId: id,
             filename: streamFilename || '',
-            videoHash: videoHashForActivity
+            videoHash: videoHashForActivity,
+            stremioHash: realStremioHash
           });
+
+          // Persist stremioHash ↔ derivedHash mapping so SMDB can find subtitles
+          // stored under either hash even after server restarts (stream activity is in-memory only)
+          if (realStremioHash && videoHashForActivity && realStremioHash !== videoHashForActivity) {
+            smdbCache.saveHashMapping(realStremioHash, videoHashForActivity).catch(e =>
+              log.debug(() => ['[Subtitles] Failed to save SMDB hash mapping', e.message])
+            );
+          }
         }
       } catch (e) {
         log.warn(() => ['[Subtitles] Failed to record stream activity', e.message]);
@@ -3083,6 +3097,42 @@ function createSubtitleHandler(config) {
         }
       }
 
+      // ── SMDB entries (community-uploaded subtitles) ──────────────────────────
+      const smdbEntries = [];
+      if (primaryVideoHash) {
+        try {
+          // Start with directly-available hashes
+          const directHashes = new Set();
+          if (hasRealStremioHash && extra.videoHash) directHashes.add(extra.videoHash);
+          directHashes.add(primaryVideoHash);
+
+          // Expand via persistent hash mappings (stremioHash ↔ derivedHash stored in Redis)
+          // This ensures subtitles uploaded under one hash are found even when only the other is available
+          const expansionPromises = [...directHashes].map(h => smdbCache.getAssociatedHashes(h));
+          const expansionResults = await Promise.all(expansionPromises);
+          const smdbHashes = [...new Set(expansionResults.flat().filter(Boolean))];
+
+          if (smdbHashes.length > directHashes.size) {
+            log.debug(() => `[Subtitles] SMDB hash expansion: ${directHashes.size} direct → ${smdbHashes.length} total hashes`);
+          }
+
+          const smdbSubs = await smdbCache.listSubtitlesMultiHash(smdbHashes);
+          for (const sub of smdbSubs) {
+            const langName = getLanguageName(sub.languageCode) || sub.languageCode;
+            smdbEntries.push({
+              id: `smdb_${sub.videoHash}_${sub.languageCode}`,
+              lang: `SMDB (${langName})`,
+              url: `{{ADDON_URL}}/smdb/${sub.videoHash}/${sub.languageCode}.srt`
+            });
+          }
+          if (smdbEntries.length > 0) {
+            log.debug(() => `[Subtitles] Added ${smdbEntries.length} SMDB entries`);
+          }
+        } catch (error) {
+          log.error(() => [`[Subtitles] Failed to get SMDB entries:`, error.message]);
+        }
+      }
+
       // Add special action buttons
       let allSubtitles = [
         ...stremioSubtitles,
@@ -3090,7 +3140,8 @@ function createSubtitleHandler(config) {
         ...learnEntries,
         ...xSyncEntries,
         ...xEmbedOriginalEntries,
-        ...xEmbedEntries
+        ...xEmbedEntries,
+        ...smdbEntries
       ];
 
       // If OpenSubtitles auth failed, append a final entry per language with a helpful SRT

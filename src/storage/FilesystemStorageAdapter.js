@@ -27,7 +27,8 @@ class FilesystemStorageAdapter extends StorageAdapter {
       [StorageAdapter.CACHE_TYPES.EMBEDDED]: path.join(this.baseDir, 'embedded_cache'),
       [StorageAdapter.CACHE_TYPES.SESSION]: path.join(process.cwd(), 'data'),
       [StorageAdapter.CACHE_TYPES.HISTORY]: path.join(this.baseDir, 'history'),
-      [StorageAdapter.CACHE_TYPES.PROVIDER_METADATA]: path.join(this.baseDir, 'provider_meta')
+      [StorageAdapter.CACHE_TYPES.PROVIDER_METADATA]: path.join(this.baseDir, 'provider_meta'),
+      [StorageAdapter.CACHE_TYPES.SMDB]: path.join(this.baseDir, 'smdb')
     };
 
     this.initialized = false;

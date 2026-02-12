@@ -63,6 +63,8 @@ const embeddedCache = require('./src/utils/embeddedCache');
 const { generateSubtitleSyncPage } = require('./src/utils/syncPageGenerator');
 const { generateSubToolboxPage, generateEmbeddedSubtitlePage, generateAutoSubtitlePage } = require('./src/utils/toolboxPageGenerator');
 const { generateHistoryPage } = require('./src/utils/historyPageGenerator');
+const { generateSmdbPage } = require('./src/utils/smdbPageGenerator');
+const smdbCache = require('./src/utils/smdbCache');
 const { deriveVideoHash } = require('./src/utils/videoHash');
 const { registerFileUploadRoutes } = require('./src/routes/fileUploadRoutes');
 const {
@@ -1864,7 +1866,13 @@ app.use((req, res, next) => {
         '/sub-toolbox',
         '/sub-history',
         '/embedded-subtitles',
-        '/auto-subtitles'
+        '/auto-subtitles',
+        '/smdb',
+        '/api/smdb/list',
+        '/api/smdb/download',
+        '/api/smdb/upload',
+        '/api/smdb/translate',
+        '/api/smdb/resolve-hashes'
     ];
 
     const stremioClient = isStremioClient(req);
@@ -1876,7 +1884,8 @@ app.use((req, res, next) => {
             req.path.includes('/sub-toolbox/') ||
             req.path.includes('/sub-history/') ||
             req.path.includes('/embedded-subtitles/') ||
-            req.path.includes('/auto-subtitles/')
+            req.path.includes('/auto-subtitles/') ||
+            req.path.includes('/smdb/')
         );
 
     // CRITICAL FIX: Always allow manifest.json requests (needed for Stremio addon installation)
@@ -2061,7 +2070,8 @@ app.use('/addon/:config', (req, res, next) => {
         '/sub-toolbox',         // toolbox page
         '/sub-history',         // history page
         '/embedded-subtitles',  // embedded extractor
-        '/auto-subtitles'       // auto subtitles tool
+        '/auto-subtitles',      // auto subtitles tool
+        '/smdb'                 // SubMaker Database
     ].some(fragment => req.path.includes(fragment));
 
     if (needsRedirect) {
@@ -2143,6 +2153,8 @@ app.use((req, res, next) => {
         '/sub-toolbox',
         '/embedded-subtitles',
         '/auto-subtitles',
+        '/smdb',
+        '/api/smdb',
         ...configUiAssets
     ];
 
@@ -4729,6 +4741,419 @@ app.get('/sub-toolbox', async (req, res) => {
     }
 });
 
+// ── SMDB (SubMaker Database) Routes ─────────────────────────────────────────
+// Redirect from Stremio addon path to standalone SMDB page
+app.get('/addon/:config/smdb/:videoId', async (req, res) => {
+    try {
+        setNoStore(res);
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const { config: configStr, videoId } = req.params;
+        const { filename } = req.query;
+        const resolvedConfig = await resolveConfigGuarded(configStr, req, res, '[SMDB] config', t);
+        if (!resolvedConfig) return;
+        res.redirect(302, `/smdb?config=${encodeURIComponent(configStr)}&videoId=${encodeURIComponent(videoId)}&filename=${encodeURIComponent(filename || '')}`);
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[SMDB]', t)) return;
+        log.error(() => '[SMDB] Redirect error:', error);
+        res.status(500).send('Failed to load SMDB');
+    }
+});
+
+// SMDB standalone page (HTML)
+app.get('/smdb', async (req, res) => {
+    try {
+        let t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const { config: configStr, videoId, filename } = req.query;
+
+        if (!configStr) {
+            return res.status(400).send(t('server.errors.missingConfig', {}, 'Missing config'));
+        }
+
+        const config = await resolveConfigGuarded(configStr, req, res, '[SMDB Page] config', t);
+        if (!config) return;
+        t = getTranslatorFromRequest(req, res, config);
+        ensureConfigHash(config, configStr);
+
+        setNoStore(res);
+        const html = await generateSmdbPage(configStr, videoId || '', filename || '', config);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[SMDB Page]', t)) return;
+        log.error(() => '[SMDB Page] Error:', error);
+        res.status(500).send(t('server.errors.smdbPageFailed', {}, 'Failed to load SMDB page'));
+    }
+});
+
+// SMDB API: List available subtitles for a video hash
+app.get('/api/smdb/list', async (req, res) => {
+    try {
+        setNoStore(res);
+        let t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const { videoHash, config: configStr } = req.query;
+
+        if (!videoHash || !configStr) {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Missing videoHash or config') });
+        }
+
+        const resolvedConfig = await resolveConfigGuarded(configStr, req, res, '[SMDB API List] config', t);
+        if (!resolvedConfig) return;
+
+        // Input sanitization
+        const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
+        if (!safeVideoHash) {
+            return res.status(400).json({ error: t('server.errors.invalidSmdbParams', {}, 'Invalid SMDB parameters') });
+        }
+
+        const subtitles = await smdbCache.listSubtitles(safeVideoHash);
+        const enriched = subtitles.map(sub => ({
+            ...sub,
+            languageName: getLanguageName(sub.languageCode) || sub.languageCode
+        }));
+
+        res.json({ videoHash: safeVideoHash, subtitles: enriched });
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[SMDB API List]', t)) return;
+        log.error(() => ['[SMDB API List] Error:', error.message]);
+        res.status(500).json({ error: 'Failed to list subtitles' });
+    }
+});
+
+// SMDB API: Download subtitle content
+app.get('/api/smdb/download', async (req, res) => {
+    try {
+        setNoStore(res);
+        let t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const { videoHash, lang, config: configStr } = req.query;
+
+        if (!videoHash || !lang || !configStr) {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Missing videoHash, lang, or config') });
+        }
+
+        const resolvedConfig = await resolveConfigGuarded(configStr, req, res, '[SMDB API Download] config', t);
+        if (!resolvedConfig) return;
+
+        // Input sanitization
+        const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
+        const safeLang = (typeof lang === 'string' && /^[a-zA-Z0-9_-]{1,24}$/.test(lang)) ? lang.toLowerCase() : null;
+        if (!safeVideoHash || !safeLang) {
+            return res.status(400).json({ error: t('server.errors.invalidSmdbParams', {}, 'Invalid SMDB parameters') });
+        }
+
+        const subtitle = await smdbCache.getSubtitle(safeVideoHash, safeLang);
+        if (!subtitle) {
+            return res.status(404).json({ error: t('server.errors.smdbSubtitleNotFound', {}, 'Subtitle not found') });
+        }
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="smdb_${safeLang}.srt"`);
+        res.send(subtitle.content);
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[SMDB API Download]', t)) return;
+        log.error(() => ['[SMDB API Download] Error:', error.message]);
+        res.status(500).json({ error: 'Failed to download subtitle' });
+    }
+});
+
+// SMDB API: Upload subtitle
+app.post('/api/smdb/upload', userDataWriteLimiter, async (req, res) => {
+    try {
+        setNoStore(res);
+        let t = res.locals?.t || getTranslatorFromRequest(req, res, req.body);
+        const { config: configStr } = req.query;
+
+        if (!configStr) {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Missing config') });
+        }
+
+        const resolvedConfig = await resolveConfigGuarded(configStr, req, res, '[SMDB API Upload] config', t);
+        if (!resolvedConfig) return;
+
+        // Reject writes when session token is missing/invalid
+        if (resolvedConfig.__sessionTokenError === true) {
+            log.warn(() => '[SMDB API Upload] Rejected write due to invalid/missing session token');
+            t = getTranslatorFromRequest(req, res, resolvedConfig);
+            return res.status(401).json({ error: t('server.errors.invalidSessionToken', {}, 'Invalid or expired session token') });
+        }
+        t = getTranslatorFromRequest(req, res, resolvedConfig);
+        const configHash = ensureConfigHash(resolvedConfig, configStr);
+
+        const { videoHash, languageCode, content, forceOverride } = req.body || {};
+
+        if (!videoHash || !languageCode || !content) {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Missing videoHash, languageCode, or content') });
+        }
+
+        // Input sanitization
+        const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
+        const safeLangCode = (typeof languageCode === 'string' && /^[a-zA-Z0-9_-]{1,24}$/.test(languageCode)) ? languageCode.toLowerCase() : null;
+        if (!safeVideoHash || !safeLangCode) {
+            return res.status(400).json({ error: t('server.errors.invalidSmdbParams', {}, 'Invalid SMDB parameters') });
+        }
+
+        // Content must be a string
+        if (typeof content !== 'string') {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Invalid subtitle content') });
+        }
+
+        // Content size guard (max 2MB per subtitle)
+        if (content.length > 2 * 1024 * 1024) {
+            return res.status(413).json({ error: t('server.errors.embeddedTooLarge', {}, 'Subtitle content too large (max 2MB)') });
+        }
+
+        // Check if subtitle already exists
+        const existing = await smdbCache.exists(safeVideoHash, safeLangCode);
+        if (existing && !forceOverride) {
+            const limit = smdbCache.checkOverrideLimit(configHash);
+            return res.status(409).json({
+                error: t('server.errors.smdbSubtitleExists', {}, 'Subtitle already exists for this language'),
+                exists: true,
+                allowed: limit.allowed,
+                remaining: limit.remaining
+            });
+        }
+
+        const result = await smdbCache.saveSubtitle(safeVideoHash, safeLangCode, content, configHash);
+
+        if (result.success) {
+            res.json({ success: true, isOverride: result.isOverride });
+        } else if (result.error && result.error.includes('Override limit')) {
+            res.status(429).json({ error: result.error, remaining: result.remaining || 0 });
+        } else {
+            res.status(500).json({ error: result.error || 'Upload failed' });
+        }
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[SMDB API Upload]', t)) return;
+        log.error(() => ['[SMDB API Upload] Error:', error.message]);
+        res.status(500).json({ error: 'Failed to upload subtitle' });
+    }
+});
+
+// SMDB API: Resolve associated hashes (stremioHash ↔ derivedHash mapping)
+app.get('/api/smdb/resolve-hashes', async (req, res) => {
+    try {
+        setNoStore(res);
+        let t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const { videoHash, config: configStr } = req.query;
+
+        if (!videoHash || !configStr) {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Missing videoHash or config') });
+        }
+
+        const resolvedConfig = await resolveConfigGuarded(configStr, req, res, '[SMDB API Resolve] config', t);
+        if (!resolvedConfig) return;
+
+        // Input sanitization
+        const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
+        if (!safeVideoHash) {
+            return res.status(400).json({ error: t('server.errors.invalidSmdbParams', {}, 'Invalid SMDB parameters') });
+        }
+
+        const allHashes = await smdbCache.getAssociatedHashes(safeVideoHash);
+        res.json({ hashes: allHashes });
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[SMDB API Resolve]', t)) return;
+        log.error(() => ['[SMDB API Resolve] Error:', error.message]);
+        res.status(500).json({ error: 'Failed to resolve hashes' });
+    }
+});
+
+// SMDB API: Translate an existing SMDB subtitle to a target language and save back
+app.post('/api/smdb/translate', userDataWriteLimiter, async (req, res) => {
+    try {
+        setNoStore(res);
+        let t = res.locals?.t || getTranslatorFromRequest(req, res, req.body);
+        const { config: configStr } = req.query;
+
+        if (!configStr) {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Missing config') });
+        }
+
+        const resolvedConfig = await resolveConfigGuarded(configStr, req, res, '[SMDB API Translate] config', t);
+        if (!resolvedConfig) return;
+
+        // Reject writes when session token is missing/invalid
+        if (resolvedConfig.__sessionTokenError === true) {
+            log.warn(() => '[SMDB API Translate] Rejected write due to invalid/missing session token');
+            t = getTranslatorFromRequest(req, res, resolvedConfig);
+            return res.status(401).json({ error: t('server.errors.invalidSessionToken', {}, 'Invalid or expired session token') });
+        }
+        t = getTranslatorFromRequest(req, res, resolvedConfig);
+        const configHash = ensureConfigHash(resolvedConfig, configStr);
+
+        const { videoHash, sourceLangCode, targetLangCode, forceOverride } = req.body || {};
+
+        if (!videoHash || !sourceLangCode || !targetLangCode) {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Missing videoHash, sourceLangCode, or targetLangCode') });
+        }
+
+        // Input sanitization
+        const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
+        const safeSourceLang = (typeof sourceLangCode === 'string' && /^[a-zA-Z0-9_-]{1,24}$/.test(sourceLangCode)) ? sourceLangCode.toLowerCase() : null;
+        const safeTargetLang = (typeof targetLangCode === 'string' && /^[a-zA-Z0-9_-]{1,24}$/.test(targetLangCode)) ? targetLangCode.toLowerCase() : null;
+        if (!safeVideoHash || !safeSourceLang || !safeTargetLang) {
+            return res.status(400).json({ error: t('server.errors.invalidSmdbParams', {}, 'Invalid SMDB parameters') });
+        }
+
+        if (safeSourceLang === safeTargetLang) {
+            return res.status(400).json({ error: t('server.errors.missingFields', {}, 'Source and target languages must be different') });
+        }
+
+        log.info(() => `[SMDB Translate] Request: ${safeSourceLang} → ${safeTargetLang} for hash ${safeVideoHash.slice(0, 16)}...`);
+
+        // 1. Fetch the source subtitle from SMDB
+        const sourceEntry = await smdbCache.getSubtitle(safeVideoHash, safeSourceLang);
+        if (!sourceEntry || !sourceEntry.content) {
+            return res.status(404).json({ error: t('server.errors.missingFields', {}, 'Source subtitle not found in SMDB') });
+        }
+
+        // 2. Check if target language already exists (override check)
+        const targetExists = await smdbCache.exists(safeVideoHash, safeTargetLang);
+        if (targetExists && !forceOverride) {
+            const limit = smdbCache.checkOverrideLimit(configHash);
+            return res.status(409).json({
+                error: t('server.errors.smdbSubtitleExists', {}, 'Subtitle already exists for target language'),
+                exists: true,
+                allowed: limit.allowed,
+                remaining: limit.remaining
+            });
+        }
+
+        // 3. Normalize source content to SRT
+        let sourceContent = ensureSRTForTranslation(sourceEntry.content, '[SMDB Translate]');
+
+        // 4. Create translation provider and engine (same as Stremio "Make" workflow)
+        const { provider, providerName, model, fallbackProviderName } = await createTranslationProvider(resolvedConfig);
+        const effectiveModel = model || resolvedConfig.geminiModel;
+
+        const keyRotationConfig = (resolvedConfig.geminiKeyRotationEnabled === true && providerName === 'gemini') ? {
+            enabled: true,
+            mode: resolvedConfig.geminiKeyRotationMode || 'per-batch',
+            keys: Array.isArray(resolvedConfig.geminiApiKeys) ? resolvedConfig.geminiApiKeys.filter(k => typeof k === 'string' && k.trim()) : [],
+            advancedSettings: resolvedConfig.advancedSettings || {}
+        } : null;
+
+        const translationEngine = new TranslationEngine(
+            provider,
+            effectiveModel,
+            resolvedConfig.advancedSettings || {},
+            {
+                singleBatchMode: resolvedConfig.singleBatchMode === true,
+                providerName,
+                fallbackProviderName,
+                keyRotationConfig
+            }
+        );
+
+        // 5. Get target language name for translation context
+        const targetLangName = getLanguageName(safeTargetLang) || safeTargetLang;
+        log.debug(() => `[SMDB Translate] Translating ${sourceContent.length} chars to ${targetLangName} using ${providerName}/${effectiveModel}`);
+
+        // 6. Perform translation
+        const translatedContent = await translationEngine.translateSubtitle(
+            sourceContent,
+            targetLangName,
+            null, // customPrompt
+            null  // onProgress (synchronous, no streaming needed)
+        );
+
+        if (!translatedContent || typeof translatedContent !== 'string' || translatedContent.length < 10) {
+            log.error(() => `[SMDB Translate] Translation returned empty/invalid content`);
+            return res.status(500).json({ error: t('server.errors.translationFailed', {}, 'Translation returned invalid content') });
+        }
+
+        log.info(() => `[SMDB Translate] Translation complete: ${translatedContent.length} chars`);
+
+        // 7. Save translated subtitle to SMDB
+        const result = await smdbCache.saveSubtitle(safeVideoHash, safeTargetLang, translatedContent, configHash);
+
+        if (result.success) {
+            log.info(() => `[SMDB Translate] Saved ${safeSourceLang} → ${safeTargetLang} for ${safeVideoHash.slice(0, 16)}... (override: ${result.isOverride})`);
+            res.json({ success: true, isOverride: result.isOverride });
+        } else if (result.error && result.error.includes('Override limit')) {
+            res.status(429).json({ error: result.error, remaining: result.remaining || 0 });
+        } else {
+            res.status(500).json({ error: result.error || t('server.errors.translationFailed', {}, 'Failed to save translated subtitle') });
+        }
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[SMDB API Translate]', t)) return;
+        log.error(() => ['[SMDB API Translate] Error:', error.message]);
+        res.status(500).json({ error: t('server.errors.translationFailed', {}, 'Translation failed') });
+    }
+});
+
+// SMDB: Serve subtitle SRT to Stremio player (addon-prefixed route for {{ADDON_URL}} expansion)
+app.get('/addon/:config/smdb/:videoHash/:langCode.srt', async (req, res) => {
+    try {
+        const { config: configStr, videoHash, langCode } = req.params;
+        let t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const config = await resolveConfigGuarded(configStr, req, res, '[SMDB SRT Serve] config', t);
+        if (!config) return;
+        if (config.__sessionTokenError === true) {
+            log.warn(() => '[SMDB SRT Serve] Rejected due to invalid/missing session token');
+            t = getTranslatorFromRequest(req, res, config);
+            setSubtitleCacheHeaders(res, 'loading');
+            return res.status(401).send(t('server.errors.invalidSessionToken', {}, 'Invalid or expired session token'));
+        }
+        t = getTranslatorFromRequest(req, res, config);
+
+        // Input sanitization (match xsync/xembedded patterns)
+        const safeVideoHash = (typeof videoHash === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(videoHash)) ? videoHash : null;
+        const safeLangCode = (typeof langCode === 'string' && /^[a-zA-Z0-9_-]{1,24}$/.test(langCode)) ? langCode.toLowerCase() : null;
+
+        if (!safeVideoHash || !safeLangCode) {
+            return res.status(400).send(t('server.errors.invalidSmdbParams', {}, 'Invalid SMDB subtitle parameters'));
+        }
+
+        log.debug(() => `[SMDB SRT Serve] Request for ${safeVideoHash}/${safeLangCode}`);
+
+        const subtitle = await smdbCache.getSubtitle(safeVideoHash, safeLangCode);
+        if (!subtitle) {
+            return res.status(404).send(t('server.errors.smdbSubtitleNotFound', {}, 'SMDB subtitle not found'));
+        }
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="smdb_${safeLangCode}.srt"`);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        setSubtitleCacheHeaders(res, 'final');
+        res.send(maybeConvertToSRT(subtitle.content, config));
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[SMDB SRT Serve]', t)) return;
+        log.error(() => ['[SMDB SRT Serve] Error:', error.message]);
+        res.status(500).send(t('server.errors.smdbServeFailed', {}, 'Failed to serve SMDB subtitle'));
+    }
+});
+
+// SMDB: Serve subtitle SRT (bare route fallback)
+app.get('/smdb/:videoHash/:langCode.srt', async (req, res) => {
+    try {
+        const { videoHash, langCode } = req.params;
+        if (!videoHash || !langCode) {
+            return res.status(400).send('Missing videoHash or langCode');
+        }
+
+        const subtitle = await smdbCache.getSubtitle(videoHash, langCode);
+        if (!subtitle) {
+            return res.status(404).send('Subtitle not found');
+        }
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.send(subtitle.content);
+    } catch (error) {
+        log.error(() => ['[SMDB SRT Serve] Error:', error.message]);
+        res.status(500).send('Failed to serve subtitle');
+    }
+});
+
 // Translation History Page
 app.get('/sub-history', async (req, res) => {
     try {
@@ -7269,6 +7694,13 @@ app.use((error, req, res, next) => {
         cleanupCachesOnStartup();
     } catch (error) {
         log.error(() => ['[Startup] Cache cleanup failed:', error.message]);
+    }
+
+    // Initialize Redis pub/sub for cross-instance stream activity (SMDB page linking)
+    try {
+        await streamActivity.initPubSub();
+    } catch (error) {
+        log.warn(() => `[Startup] Stream activity pub/sub init failed (non-fatal): ${error.message}`);
     }
 
     // Run comprehensive startup validation

@@ -277,6 +277,7 @@ function buildToolLinks(configStr, videoId, filename) {
     embeddedSubs: `/embedded-subtitles${query}`,
     automaticSubs: `/auto-subtitles${query}`,
     subToolbox: `/sub-toolbox${query}`,
+    smdb: `/smdb${query}`,
     configure: `/configure${query}`,
     history: `/sub-history${query}`
   };

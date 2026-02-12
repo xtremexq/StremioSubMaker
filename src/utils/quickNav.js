@@ -39,19 +39,19 @@ function quickNavStyles() {
     .quick-nav-link {
       display: inline-flex;
       align-items: center;
-      gap: 0.55rem;
-      padding: 0.65rem 1rem;
-      border-radius: 10px;
+      gap: 0.4rem;
+      padding: 0.46rem 0.69rem;
+      border-radius: 9px;
       border: 1px solid var(--border);
       background: var(--surface);
       color: var(--text-primary);
       text-decoration: none;
       font-weight: 600;
       transition: all 0.25s ease;
-      box-shadow: 0 6px 18px var(--shadow-color, rgba(0, 0, 0, 0.08));
+      box-shadow: 0 4px 12px var(--shadow-color, rgba(0, 0, 0, 0.07));
       white-space: nowrap;
       flex-shrink: 0;
-      font-size: inherit;
+      font-size: 0.94em;
       cursor: pointer;
     }
     .quick-nav-link.quick-nav-refresh {
@@ -64,9 +64,9 @@ function quickNavStyles() {
       padding: 0;
       gap: 0;
       cursor: pointer;
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
+      width: 41px;
+      height: 41px;
+      border-radius: 12px;
       overflow: hidden;
       isolation: isolate;
       display: flex;
@@ -97,14 +97,14 @@ function quickNavStyles() {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 26px;
-      height: 26px;
-      border-radius: 11px;
+      width: 20px;
+      height: 20px;
+      border-radius: 8px;
       background: radial-gradient(130% 130% at 25% 22%, rgba(255,255,255,0.55), transparent 45%), linear-gradient(135deg, #ffffff 0%, #d9ecff 100%);
       color: #0b2840;
-      box-shadow: inset 0 -3px 8px rgba(0, 0, 0, 0.2), 0 8px 14px rgba(0, 0, 0, 0.16);
+      box-shadow: inset 0 -2px 6px rgba(0, 0, 0, 0.2), 0 6px 10px rgba(0, 0, 0, 0.14);
       font-weight: 900;
-      font-size: 17px;
+      font-size: 13px;
       text-shadow: 0 1px 0 rgba(255,255,255,0.4);
       letter-spacing: -0.04em;
     }
@@ -148,8 +148,8 @@ function quickNavStyles() {
     }
 
     .quick-nav-link .pill {
-      font-size: 0.8rem;
-      padding: 0.25rem 0.55rem;
+      font-size: 0.68rem;
+      padding: 0.18rem 0.4rem;
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.16);
       border: 1px solid rgba(255, 255, 255, 0.24);
@@ -231,26 +231,26 @@ function quickNavStyles() {
     @media (max-width: 1600px) {
       .quick-nav {
         width: min(1120px, calc(100% - 48px));
-        padding: 0.6rem 0.75rem;
-        gap: 0.6rem;
-        font-size: 0.92rem;
+        padding: 0.5rem 0.65rem;
+        gap: 0.45rem;
+        font-size: 0.84rem;
       }
-      .quick-nav-links { gap: 0.55rem; }
-      .quick-nav-link { padding: 0.55rem 0.95rem; }
-      .quick-nav-link.quick-nav-refresh { width: 50px; height: 50px; }
+      .quick-nav-links { gap: 0.4rem; }
+      .quick-nav-link { padding: 0.4rem 0.63rem; }
+      .quick-nav-link.quick-nav-refresh { width: 39px; height: 39px; }
     }
 
     @media (max-width: 1280px) {
       .quick-nav {
         width: min(1040px, calc(100% - 44px));
-        padding: 0.55rem 0.7rem;
-        gap: 0.5rem;
-        font-size: 0.88rem;
+        padding: 0.45rem 0.6rem;
+        gap: 0.4rem;
+        font-size: 0.8rem;
       }
-      .quick-nav-links { gap: 0.45rem; }
-      .quick-nav-link { padding: 0.5rem 0.85rem; }
-      .quick-nav-link .pill { font-size: 0.78rem; }
-      .quick-nav-link.quick-nav-refresh { width: 46px; height: 46px; }
+      .quick-nav-links { gap: 0.35rem; }
+      .quick-nav-link { padding: 0.37rem 0.58rem; }
+      .quick-nav-link .pill { font-size: 0.65rem; }
+      .quick-nav-link.quick-nav-refresh { width: 37px; height: 37px; }
     }
 
     @media (max-width: 1260px) {
@@ -261,17 +261,17 @@ function quickNavStyles() {
       }
       .quick-nav {
         width: min(960px, calc(100% - 36px));
-        padding: 0.45rem 0.55rem;
-        gap: 0.35rem;
-        font-size: 0.84rem;
+        padding: 0.38rem 0.45rem;
+        gap: 0.3rem;
+        font-size: 0.76rem;
       }
       .quick-nav-links {
         flex-wrap: nowrap;
         justify-content: flex-start;
-        gap: 0.35rem;
+        gap: 0.3rem;
       }
-      .quick-nav-link { padding: 0.45rem 0.78rem; }
-      .quick-nav-link.quick-nav-refresh { width: 42px; height: 42px; }
+      .quick-nav-link { padding: 0.32rem 0.52rem; }
+      .quick-nav-link.quick-nav-refresh { width: 35px; height: 35px; }
     }
 
     @media (max-width: 1100px) {
@@ -309,6 +309,10 @@ function quickNavStyles() {
       .quick-nav-link {
         width: 100%;
         justify-content: flex-start;
+        font-size: 0.95rem;
+        padding: 0.65rem 1rem;
+        gap: 0.55rem;
+        border-radius: 10px;
       }
     }
   `;
@@ -356,14 +360,19 @@ function renderQuickNav(links, activeKey, showRefreshButton = true, devMode = tr
         <span>${label('automaticSubs', 'Auto subs')}</span>
         ${activeKey === 'automaticSubs' ? `<span class="pill">${label('youAreHere', 'You are here')}</span>` : ''}
       </a>
-      <a class="quick-nav-link${activeKey === 'configure' ? ' active' : ''}" href="${links.configure}">
-        <span>🛠️</span>
-        <span>${label('configure', 'Configure')}</span>
+      <a class="quick-nav-link${activeKey === 'smdb' ? ' active' : ''}" href="${links.smdb}">
+        <span>📦</span>
+        <span>${label('smdb', 'Database')}</span>
+        ${activeKey === 'smdb' ? `<span class="pill">${label('youAreHere', 'You are here')}</span>` : ''}
       </a>
       <a class="quick-nav-link${activeKey === 'history' ? ' active' : ''}" href="${links.history}">
         <span>📜</span>
         <span>${label('history', 'History')}</span>
         ${activeKey === 'history' ? `<span class="pill">${label('youAreHere', 'You are here')}</span>` : ''}
+      </a>
+      <a class="quick-nav-link${activeKey === 'configure' ? ' active' : ''}" href="${links.configure}">
+        <span>🛠️</span>
+        <span>${label('configure', 'Configure')}</span>
       </a>
     </div>
   </nav>

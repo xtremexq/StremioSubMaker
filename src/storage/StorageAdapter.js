@@ -136,7 +136,8 @@ StorageAdapter.CACHE_TYPES = {
   EMBEDDED: 'embedded',            // Extracted/translated embedded subtitles (50GB)
   SESSION: 'session',              // Session persistence (no limit)
   HISTORY: 'history',              // Translation history (1GB)
-  PROVIDER_METADATA: 'provider_meta' // Provider-specific metadata (IMDB→movieId, etc.) - shared across users (250MB, 7d TTL)
+  PROVIDER_METADATA: 'provider_meta', // Provider-specific metadata (IMDB→movieId, etc.) - shared across users (250MB, 7d TTL)
+  SMDB: 'smdb'                     // SubMaker Database - community-uploaded subtitles (2GB, no TTL, oldest-first LRU)
 };
 
 // Cache size limits in bytes
@@ -154,6 +155,7 @@ StorageAdapter.CACHE_TYPES = {
 // - CACHE_LIMIT_EMBEDDED (default: 0.5GB)
 // - CACHE_LIMIT_HISTORY (default: 1GB)
 // - CACHE_LIMIT_PROVIDER_META (default: 250MB)
+// - CACHE_LIMIT_SMDB (default: 2GB)
 //
 // Example for larger deployments:
 // CACHE_LIMIT_TRANSLATION=50000000000 (50GB) - requires Redis with 120GB+ RAM
@@ -165,7 +167,8 @@ StorageAdapter.SIZE_LIMITS = {
   [StorageAdapter.CACHE_TYPES.EMBEDDED]: parseInt(process.env.CACHE_LIMIT_EMBEDDED) || (0.5 * 1024 * 1024 * 1024),       // 0.5GB - mirrors sync cache
   [StorageAdapter.CACHE_TYPES.SESSION]: null,                                                                             // No limit
   [StorageAdapter.CACHE_TYPES.HISTORY]: parseInt(process.env.CACHE_LIMIT_HISTORY) || (1024 * 1024 * 1024),               // 1GB default
-  [StorageAdapter.CACHE_TYPES.PROVIDER_METADATA]: parseInt(process.env.CACHE_LIMIT_PROVIDER_META) || (250 * 1024 * 1024) // 250MB default
+  [StorageAdapter.CACHE_TYPES.PROVIDER_METADATA]: parseInt(process.env.CACHE_LIMIT_PROVIDER_META) || (250 * 1024 * 1024), // 250MB default
+  [StorageAdapter.CACHE_TYPES.SMDB]: parseInt(process.env.CACHE_LIMIT_SMDB) || (2 * 1024 * 1024 * 1024) // 2GB default - community subtitle uploads
 };
 
 // Default TTL in seconds
@@ -177,7 +180,8 @@ StorageAdapter.DEFAULT_TTL = {
   [StorageAdapter.CACHE_TYPES.EMBEDDED]: null,        // No expiry (shared cache across users)
   [StorageAdapter.CACHE_TYPES.SESSION]: null,         // No expiry
   [StorageAdapter.CACHE_TYPES.HISTORY]: 30 * 24 * 60 * 60, // 30 days
-  [StorageAdapter.CACHE_TYPES.PROVIDER_METADATA]: 30 * 24 * 60 * 60 // 30 days - movieIds don't change
+  [StorageAdapter.CACHE_TYPES.PROVIDER_METADATA]: 30 * 24 * 60 * 60, // 30 days - movieIds don't change
+  [StorageAdapter.CACHE_TYPES.SMDB]: null // No expiry - oldest-first LRU eviction when size limit hit
 };
 
 module.exports = StorageAdapter;
