@@ -164,9 +164,16 @@ class TranslationEngine {
     const rawMismatchRetries = parseInt(this.advancedSettings.mismatchRetries);
     this.mismatchRetries = Number.isFinite(rawMismatchRetries) ? Math.max(0, Math.min(3, rawMismatchRetries)) : 1;
 
-    // Translation workflow mode: 'original' (numbered list), 'ai' (send timestamps), 'xml' (XML-tagged entries)
+    // Translation workflow mode: 'original' (numbered list), 'ai' (send timestamps),
+    //                           'xml' (XML-tagged entries), 'json' (JSON structured I/O)
+    const NON_LLM_PROVIDERS = new Set(['deepl', 'googletranslate']);
+    this.isNativeBatchProvider = NON_LLM_PROVIDERS.has(this.providerName);
+
     const rawWorkflow = String(this.advancedSettings.translationWorkflow || '').toLowerCase();
-    if (rawWorkflow === 'xml') {
+    if (rawWorkflow === 'json') {
+      this.translationWorkflow = 'json';
+      this.sendTimestampsToAI = false;
+    } else if (rawWorkflow === 'xml') {
       this.translationWorkflow = 'xml';
       this.sendTimestampsToAI = false;
     } else if (rawWorkflow === 'ai' || this.advancedSettings.sendTimestampsToAI === true) {
@@ -177,29 +184,24 @@ class TranslationEngine {
       this.sendTimestampsToAI = false;
     }
 
-    // JSON structured output mode (disabled by default, opt-in via config)
-    // Force-disable for non-LLM providers — they don't support structured output
-    const NON_LLM_PROVIDERS = new Set(['deepl', 'googletranslate']);
-    this.isNativeBatchProvider = NON_LLM_PROVIDERS.has(this.providerName);
-    this.enableJsonOutput = this.isNativeBatchProvider ? false : this.advancedSettings.enableJsonOutput === true;
-
-    // --- Fix #9: Warn (and disable) when JSON output is enabled with 'ai' workflow.
-    // JSON structured output is incompatible with 'ai' (timestamp/SRT) mode because the
-    // AI must return valid SRT, not a JSON array. Silently ignoring it is confusing.
-    if (this.enableJsonOutput && this.translationWorkflow === 'ai') {
-      log.warn(() => `[TranslationEngine] JSON structured output is not compatible with 'ai' (timestamp) workflow — disabling JSON output. Use 'original' or 'xml' workflow for JSON output.`);
-      this.enableJsonOutput = false;
+    // Backward compat: enableJsonOutput toggle → 'json' workflow
+    // Only migrate when workflow is not 'ai' (JSON is incompatible with SRT-based workflow)
+    if (this.advancedSettings.enableJsonOutput === true
+      && this.translationWorkflow !== 'ai'
+      && !this.isNativeBatchProvider) {
+      this.translationWorkflow = 'json';
+      this.sendTimestampsToAI = false;
     }
 
-    // Cap batch size when JSON output is enabled — large JSON arrays (300-400 objects)
-    // are extremely error-prone for LLMs. Keep batches at ≤150 entries for reliable JSON.
-    const JSON_OUTPUT_MAX_BATCH_SIZE = 150;
-    if (this.enableJsonOutput && this.batchSize > JSON_OUTPUT_MAX_BATCH_SIZE) {
-      log.debug(() => `[TranslationEngine] Capping batch size from ${this.batchSize} to ${JSON_OUTPUT_MAX_BATCH_SIZE} for JSON output mode`);
-      this.batchSize = JSON_OUTPUT_MAX_BATCH_SIZE;
+    // JSON workflow caps batch size — large JSON arrays (300-400 objects)
+    // are extremely error-prone for LLMs. Keep batches at ≤150 entries.
+    const JSON_MAX_BATCH_SIZE = 150;
+    if (this.translationWorkflow === 'json' && this.batchSize > JSON_MAX_BATCH_SIZE) {
+      log.debug(() => `[TranslationEngine] Capping batch size from ${this.batchSize} to ${JSON_MAX_BATCH_SIZE} for JSON workflow`);
+      this.batchSize = JSON_MAX_BATCH_SIZE;
     }
 
-    // Force workflow to 'original' for non-LLM providers — XML tags and AI timestamps are LLM-only features
+    // Force workflow to 'original' for non-LLM providers — XML/AI/JSON workflows are LLM-only
     if (this.isNativeBatchProvider && this.translationWorkflow !== 'original') {
       log.debug(() => `[TranslationEngine] Forcing workflow to 'original' for non-LLM provider ${this.providerName} (was '${this.translationWorkflow}')`);
       this.translationWorkflow = 'original';
@@ -214,7 +216,7 @@ class TranslationEngine {
       const sanitizedConfig = {
         enabled: options.keyRotationConfig.enabled === true,
         mode: options.keyRotationConfig.mode || 'per-batch',
-        // Merge advancedSettings with engine-level settings so enableJsonOutput etc. are never lost
+        // Merge advancedSettings with engine-level settings so workflow etc. are never lost
         advancedSettings: { ...this.advancedSettings, ...(options.keyRotationConfig.advancedSettings || {}) }
       };
       // Make keys non-enumerable so they won't appear in JSON.stringify or Object.keys
@@ -265,7 +267,7 @@ class TranslationEngine {
     // isNativeBatchProvider already set above during JSON/workflow normalization
 
     const rotationLabel = this.perBatchRotationEnabled ? 'per-batch' : (this.retryRotationEnabled ? 'per-request' : '');
-    log.debug(() => `[TranslationEngine] Initialized with model: ${model || 'unknown'}, batch size: ${this.batchSize}, batch context: ${this.enableBatchContext ? 'enabled' : 'disabled'}, workflow: ${this.translationWorkflow}, mode: ${this.singleBatchMode ? 'single-batch' : 'batched'}, mismatchRetries: ${this.mismatchRetries}, jsonOutput: ${this.enableJsonOutput}${rotationLabel ? `, key-rotation: ${rotationLabel}, keys: ${this.keyRotationConfig.keys.length}` : ''}${this.isNativeBatchProvider ? ', native-batch: true' : ''}`);
+    log.debug(() => `[TranslationEngine] Initialized with model: ${model || 'unknown'}, batch size: ${this.batchSize}, batch context: ${this.enableBatchContext ? 'enabled' : 'disabled'}, workflow: ${this.translationWorkflow}, mode: ${this.singleBatchMode ? 'single-batch' : 'batched'}, mismatchRetries: ${this.mismatchRetries}${rotationLabel ? `, key-rotation: ${rotationLabel}, keys: ${this.keyRotationConfig.keys.length}` : ''}${this.isNativeBatchProvider ? ', native-batch: true' : ''}`);
   }
 
   /**
@@ -1524,13 +1526,36 @@ OUTPUT (EXACTLY ${expectedCount} XML-tagged entries):`;
   }
 
   /**
-   * Fix #12: Build a clean prompt that uses XML as input format but requests JSON output.
-   * This replaces the old fragile approach of regex-stripping XML output rules from the
-   * XML prompt. By constructing the prompt from scratch, we avoid contradictory instructions
-   * (e.g. "return XML tags" + "return JSON array") that confused the AI when the regex
-   * cleanup failed due to minor prompt text changes.
+   * Prepare batch content as a JSON array for the 'json' workflow.
+   * Each entry is a {"id": N, "text": "..."} object.
+   * Context (when enabled) is wrapped in a separate __context key.
    */
-  _buildXmlInputJsonOutputPrompt(batchText, targetLanguage, customPrompt, expectedCount, context = null, batchIndex = 0, totalBatches = 1) {
+  _prepareJsonBatchContent(batch, context = null) {
+    const entries = batch.map((entry, i) => ({
+      id: i + 1,
+      text: entry.text.trim().replace(/\n+/g, '\n')
+    }));
+
+    // Include context as structured metadata when provided
+    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
+      const ctx = {};
+      if (context.surroundingOriginal?.length > 0) {
+        ctx.preceding = context.surroundingOriginal.map(e => e.text.trim().replace(/\n+/g, '\n'));
+      }
+      if (context.previousTranslations?.length > 0) {
+        ctx.recentTranslations = context.previousTranslations.map(e => e.text.trim().replace(/\n+/g, '\n'));
+      }
+      return JSON.stringify({ __context: ctx, entries }, null, 0);
+    }
+
+    return JSON.stringify(entries, null, 0);
+  }
+
+  /**
+   * Build a translation prompt for the 'json' workflow.
+   * Input is JSON, output must be JSON — no format ambiguity.
+   */
+  _buildJsonPrompt(batchText, targetLanguage, customPrompt, expectedCount, context = null, batchIndex = 0, totalBatches = 1) {
     const targetLabel = normalizeTargetLanguageForPrompt(targetLanguage);
     const customPromptText = customPrompt ? customPrompt.replace('{target_language}', targetLabel) : '';
 
@@ -1538,9 +1563,9 @@ OUTPUT (EXACTLY ${expectedCount} XML-tagged entries):`;
     if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
       contextInstructions = `
 CONTEXT PROVIDED:
-- Context entries are provided for reference to maintain coherence and consistency
-- DO NOT translate context entries - they are for reference only
-- ONLY translate entries inside <s id="N"> tags
+- The input includes a "__context" object with preceding original text and/or recent translations
+- Use context to understand dialogue flow, character names, and consistency
+- DO NOT include __context in your output — translate ONLY the "entries" array
 
 `;
     }
@@ -1548,19 +1573,23 @@ CONTEXT PROVIDED:
     const promptBody = `You are translating subtitle text to ${targetLabel}.
 ${contextInstructions}
 CRITICAL RULES:
-1. Translate ONLY the text inside each <s id="N"> tag
-2. Return EXACTLY ${expectedCount} entries
-3. Keep line breaks within each entry
-4. Maintain natural dialogue flow for ${targetLabel}
-5. Use appropriate colloquialisms for ${targetLabel}${context ? '\n6. Use the provided context to ensure consistency' : ''}
+1. Translate ONLY the "text" field of each entry
+2. Preserve the "id" field exactly as given
+3. Return EXACTLY ${expectedCount} entries
+4. Keep line breaks within each entry
+5. Maintain natural dialogue flow for ${targetLabel}
+6. Use appropriate colloquialisms for ${targetLabel}${context ? '\n7. Use the provided context to ensure consistency' : ''}
 
-${customPromptText ? `ADDITIONAL INSTRUCTIONS:\n${customPromptText}\n\n` : ''}
+${customPromptText ? `ADDITIONAL INSTRUCTIONS:
+${customPromptText}
+
+` : ''}
 Do NOT add acknowledgements, explanations, notes, or commentary.
 Do not skip, merge, or split entries.
 Do not include any timestamps/timecodes.
 
 YOUR RESPONSE MUST be a JSON array of objects with "id" (number, 1-indexed) and "text" (string) fields.
-Example format: [{"id":1,"text":"translated text"},{"id":2,"text":"translated text"}]
+Example: [{"id":1,"text":"translated text"},{"id":2,"text":"translated text"}]
 Return ONLY the JSON array with EXACTLY ${expectedCount} entries, no other text.
 
 INPUT (${expectedCount} entries):
@@ -1631,6 +1660,9 @@ OUTPUT (EXACTLY ${expectedCount} entries as JSON array):`;
    * Route to the correct batch content preparation method based on workflow
    */
   prepareBatchContent(batch, context) {
+    if (this.translationWorkflow === 'json') {
+      return this._prepareJsonBatchContent(batch, context);
+    }
     if (this.translationWorkflow === 'ai') {
       return this.prepareBatchSrt(batch);
     }
@@ -1642,56 +1674,31 @@ OUTPUT (EXACTLY ${expectedCount} entries as JSON array):`;
 
   /**
    * Route to the correct prompt creation method based on workflow
-   * When JSON output is enabled, wraps the prompt with JSON format instructions
    */
   createPromptForWorkflow(batchText, targetLanguage, customPrompt, expectedCount, context, batchIndex, totalBatches) {
-    let basePrompt;
+    if (this.translationWorkflow === 'json') {
+      return this._buildJsonPrompt(batchText, targetLanguage, customPrompt, expectedCount, context, batchIndex, totalBatches);
+    }
     if (this.translationWorkflow === 'ai') {
-      basePrompt = this.createTimestampPrompt(targetLanguage, batchIndex, totalBatches);
-    } else if (this.translationWorkflow === 'xml') {
-      basePrompt = this.createXmlBatchPrompt(batchText, targetLanguage, customPrompt, expectedCount, context, batchIndex, totalBatches);
-    } else {
-      basePrompt = this.createBatchPrompt(batchText, targetLanguage, customPrompt, expectedCount, context, batchIndex, totalBatches);
+      return this.createTimestampPrompt(targetLanguage, batchIndex, totalBatches);
     }
-
-    // Wrap with JSON output instructions when enabled
-    // For XML workflow: replace the XML output format with JSON (they're complementary —
-    // XML controls how entries are *sent*, JSON controls how the AI *responds*)
-    if (this.enableJsonOutput && this.translationWorkflow !== 'ai') {
-      if (this.translationWorkflow === 'xml') {
-        // Fix #12: Build the XML+JSON prompt cleanly instead of fragile regex surgery.
-        // The old approach used lastIndexOf('YOUR RESPONSE MUST:') and brittle regexes
-        // to strip XML-specific output rules — if the prompt text changed even slightly,
-        // the cleanup would fail and the AI would get contradictory instructions (both
-        // XML and JSON format). Instead, we rebuild the prompt from scratch, keeping
-        // XML as the *input* format but requesting JSON as the *output* format.
-        basePrompt = this._buildXmlInputJsonOutputPrompt(
-          batchText, targetLanguage, customPrompt, expectedCount, context, batchIndex, totalBatches
-        );
-      } else {
-        basePrompt += `\n\nIMPORTANT: Return your response as a JSON array of objects with "id" (number) and "text" (string) fields.
-Example format: [{"id":1,"text":"translated text"},{"id":2,"text":"translated text"}]
-Return ONLY the JSON array, no other text.`;
-      }
+    if (this.translationWorkflow === 'xml') {
+      return this.createXmlBatchPrompt(batchText, targetLanguage, customPrompt, expectedCount, context, batchIndex, totalBatches);
     }
-
-    return basePrompt;
+    return this.createBatchPrompt(batchText, targetLanguage, customPrompt, expectedCount, context, batchIndex, totalBatches);
   }
 
   /**
    * Route to the correct response parser based on workflow
-   * When JSON output is enabled, attempts JSON parsing first with fallback
    */
   parseResponseForWorkflow(translatedText, expectedCount, batch) {
-    // Try JSON parsing first when enabled
-    if (this.enableJsonOutput && this.translationWorkflow !== 'ai') {
+    // JSON workflow: strict JSON parse — no fallback to numbered-list/XML parsers
+    if (this.translationWorkflow === 'json') {
       const jsonEntries = this.parseJsonResponse(translatedText, expectedCount);
       if (jsonEntries && jsonEntries.length > 0) {
         return jsonEntries;
       }
-      // JSON parsing failed — the response is likely JSON-shaped but malformed.
-      // Before falling through to numbered-list/XML parsers (which can't parse JSON),
-      // try one more extraction pass with the regex extractor directly on the raw text.
+      // JSON.parse failed — try regex extraction for malformed-but-recoverable JSON
       const rawCleaned = String(translatedText || '').trim()
         .replace(/```json\s*/gi, '').replace(/```\s*/g, '');
       const regexEntries = this.extractJsonEntries(rawCleaned);
@@ -1702,11 +1709,12 @@ Return ONLY the JSON array, no other text.`;
         }).filter(Boolean);
         mapped.sort((a, b) => a.index - b.index);
         if (mapped.length > 0) {
-          log.info(() => `[TranslationEngine] JSON fallback regex recovered ${mapped.length}/${expectedCount} entries from malformed response`);
+          log.info(() => `[TranslationEngine] JSON regex fallback recovered ${mapped.length}/${expectedCount} entries`);
           return mapped;
         }
       }
-      log.warn(() => `[TranslationEngine] JSON parsing failed, falling back to standard parser`);
+      log.warn(() => `[TranslationEngine] JSON workflow parsing failed completely — returning empty`);
+      return [];
     }
 
     if (this.translationWorkflow === 'ai') {
@@ -1986,13 +1994,13 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
 
     let parsedEntries = [];
 
-    // When JSON output is enabled, extract completed entries from partial JSON.
+    // JSON workflow: extract completed entries from partial JSON during streaming.
     // Use extractJsonEntries() directly instead of parseJsonResponse() because
     // streaming chunks are almost always incomplete JSON (e.g. [{"id":1,"text":"hello"},{"id":2,"te)
     // that will always fail JSON.parse(), generating noise in logs and wasting cycles.
     // The regex extractor reliably pulls out fully-formed {"id":N,"text":"..."} objects
     // from partial text without needing the overall array to be valid JSON.
-    if (this.enableJsonOutput && this.translationWorkflow !== 'ai') {
+    if (this.translationWorkflow === 'json') {
       const rawCleaned = String(partialText).trim()
         .replace(/```json\s*/gi, '').replace(/```\s*/g, '');
       const extracted = this.extractJsonEntries(rawCleaned);
@@ -2004,9 +2012,9 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
       }
     }
 
-    // Fix #5: Fall back to workflow-specific parsing if JSON didn't yield results.
-    // Even when JSON output is enabled, partial streams may have no complete JSON objects,
-    // so we allow the fallback to provide some streaming feedback rather than none.
+    // Fall back to workflow-specific parsing if JSON didn't yield results.
+    // For JSON workflow, partial streams may have no complete JSON objects,
+    // so we let other parsers provide some streaming feedback rather than none.
     if (parsedEntries.length === 0) {
       if (this.translationWorkflow === 'ai') {
         const parsed = parseSRT(partialText) || [];

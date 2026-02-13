@@ -1474,7 +1474,8 @@
                                             Timestamps" sends a numbered list and reattaches original timecodes. "Send
                                             Timestamps to AI" sends full SRT and trusts the AI to preserve timecodes.
                                             "XML Tags" wraps each entry in &lt;s id="N"&gt; tags for robust ID-based
-                                            recovery — recommended if you have sync problems.</div>
+                                            recovery. "JSON" sends and receives structured JSON arrays for
+                                            unambiguous parsing.</div>
                                     </div>
                                 </div>
                             </label>
@@ -1485,6 +1486,8 @@
                                     Original Timestamps (Legacy)</option>
                                 <option value="ai" data-i18n="config.translationSettings.workflow.ai">Send Timestamps to
                                     AI</option>
+                                <option value="json" data-i18n="config.translationSettings.workflow.json">JSON
+                                    (Structured)</option>
                             </select>
                         </div>
 
@@ -1851,17 +1854,6 @@
                                 placeholder="1">
                         </div>
 
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="enableJsonOutput">
-                                <span data-i18n="config.translationSettings.jsonOutput.label">Enable JSON Structured
-                                    Output (Beta)</span>
-                                <span class="label-description"
-                                    data-i18n="config.translationSettings.jsonOutput.description">Request JSON array
-                                    format from AI for unambiguous response parsing. May improve accuracy but not all
-                                    providers support it. Disabled by default.</span>
-                            </label>
-                        </div>
 
 
                     </div>

@@ -707,7 +707,7 @@ class OpenSubtitlesService {
         }
       }
 
-      const { imdb_id, type, season, episode, languages, excludeHearingImpairedSubtitles } = params;
+      const { imdb_id, type, season, episode, languages, excludeHearingImpairedSubtitles, videoHash } = params;
 
       if (!imdb_id) {
         log.warn(() => '[OpenSubtitles] No IMDB ID provided, skipping search');
@@ -759,6 +759,13 @@ class OpenSubtitlesService {
 
       if (excludeHearingImpairedSubtitles === true) {
         queryParams.hearing_impaired = 'exclude';
+      }
+
+      // Send moviehash when a real Stremio video hash is available
+      // OpenSubtitles API will return moviehash_match=true for exact file matches
+      if (videoHash) {
+        queryParams.moviehash = videoHash;
+        log.debug(() => '[OpenSubtitles] Including moviehash in search for hash-based matching');
       }
 
       log.debug(() => ['[OpenSubtitles] Searching with params:', JSON.stringify(queryParams)]);
@@ -819,6 +826,9 @@ class OpenSubtitlesService {
         const cleanedName = stripExtension(fileName);
         const displayName = releaseName || cleanedName || sub.attributes.feature_details?.movie_name || 'Unknown';
 
+        // OpenSubtitles API returns moviehash_match when moviehash was sent in query
+        const isHashMatch = sub.attributes.moviehash_match === true;
+
         return {
           id: String(fileId),
           language: originalLang,
@@ -835,7 +845,9 @@ class OpenSubtitlesService {
           foreign_parts_only: sub.attributes.foreign_parts_only || false,
           machine_translated: sub.attributes.machine_translated || false,
           uploader: sub.attributes.uploader?.name || 'Unknown',
-          provider: 'opensubtitles'
+          provider: 'opensubtitles',
+          hashMatch: isHashMatch,
+          hashMatchPriority: isHashMatch ? 0 : undefined
         };
       });
 

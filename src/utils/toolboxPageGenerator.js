@@ -5680,14 +5680,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         targetLang: document.getElementById('targetLang'),
         model: document.getElementById('whisperModel'),
         translateToggle: document.getElementById('translateOutput'),
-        batchMode: document.getElementById('singleBatchModeSelect'),
-        timestampsMode: document.getElementById('timestampsMode'),
-        provider: document.getElementById('translationProvider'),
-        providerModel: document.getElementById('translationModel'),
-        translationStep: document.getElementById('translationStep'),
-        translationSettings: document.getElementById('translationSettings'),
-        translationSettingsToggle: document.getElementById('translationSettingsToggle'),
-        translationSettingsContent: document.getElementById('translationSettingsContent'),
+        targetLangWrapper: document.getElementById('targetLangWrapper'),
         srtPreview: document.getElementById('srtPreview'),
         dlSrt: document.getElementById('downloadSrt'),
         dlVtt: document.getElementById('downloadVtt'),
@@ -5704,14 +5697,12 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         continueBtn: document.getElementById('autoContinue'),
         step2ContinueBtn: document.getElementById('autoStep2Continue'),
         step2Card: document.getElementById('autoStep2Card'),
-        translationCard: document.getElementById('autoTranslationCard'),
+
         step3Card: document.getElementById('autoStep3Card'),
         step4Card: document.getElementById('autoStep4Card'),
         assemblySendFullVideo: document.getElementById('assemblySendFullVideo'),
         assemblyOptions: document.getElementById('assemblyOptions'),
         assemblyModeHelper: document.getElementById('assemblyModeHelper'),
-        vadFilterEnabled: document.getElementById('vadFilterEnabled'),
-        turboOptions: document.getElementById('turboOptions'),
         decodeBadge: document.getElementById('decodeBadge'),
         decodeBadgeDot: document.getElementById('decodeBadgeDot'),
         decodeBadgeValue: document.getElementById('decodeBadgeValue'),
@@ -5919,7 +5910,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         const needRunLabel = lockReasons.needRun || needContinueLabel;
         if (!state.step1Confirmed) {
           lockSection(els.step2Card, needContinueLabel);
-          lockSection(els.translationCard, needContinueLabel);
           lockSection(els.step3Card, needContinueLabel);
           lockSection(els.step4Card, needContinueLabel);
           applyStartDisabled(false);
@@ -5927,13 +5917,11 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         }
         unlockSection(els.step2Card);
         if (!state.step2Confirmed) {
-          lockSection(els.translationCard, needStep2Label);
           lockSection(els.step3Card, needStep2Label);
           lockSection(els.step4Card, needStep2Label);
           applyStartDisabled(false);
           return;
         }
-        unlockSection(els.translationCard);
         const step3Ready = isStep3Ready();
         if (step3Ready) {
           unlockSection(els.step3Card);
@@ -6603,129 +6591,43 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         }
       }
 
-      function renderProviders() {
-        if (!els.provider) return;
-        const options = Array.isArray(BOOTSTRAP.providerOptions) ? BOOTSTRAP.providerOptions : [];
-        els.provider.innerHTML = '';
-        if (!options.length) {
-          const empty = document.createElement('option');
-          empty.value = '';
-          empty.textContent = tt('toolbox.autoSubs.providers.missing', {}, 'No provider configured');
-          els.provider.appendChild(empty);
-          return;
-        }
-        options.forEach((opt) => {
-          const o = document.createElement('option');
-          o.value = opt.key || opt.value || opt;
-          o.textContent = opt.label || formatProviderName(opt.key || opt.value || opt);
-          if (opt.model) o.dataset.model = opt.model;
-          els.provider.appendChild(o);
-        });
-        const desired = BOOTSTRAP.defaults?.provider || options[0]?.key || '';
-        if (desired) els.provider.value = desired;
-        renderProviderModels();
-      }
 
-      function renderProviderModels() {
-        if (!els.providerModel) return;
-        const selectedProvider = (els.provider?.value || '').toString().toLowerCase();
-        const options = Array.isArray(BOOTSTRAP.providerOptions) ? BOOTSTRAP.providerOptions : [];
-        const match = options.find(opt => (opt.key || opt.value || '').toString().toLowerCase() === selectedProvider);
-        const configuredModel = match?.model || '';
-        const desired = BOOTSTRAP.defaults?.translationModel || '';
-        const current = els.providerModel.value || '';
-        const seen = new Set();
-        const addOption = (value, label) => {
-          const key = String(value);
-          if (seen.has(key)) return;
-          const opt = document.createElement('option');
-          opt.value = value;
-          opt.textContent = label;
-          els.providerModel.appendChild(opt);
-          seen.add(key);
-        };
-        els.providerModel.innerHTML = '';
-        addOption('', copy.steps.providerModelPlaceholder || 'Use provider default');
-        if (configuredModel) {
-          const label = tt('toolbox.autoSubs.steps.providerModelConfigured', { model: configuredModel }, `Configured: ${configuredModel}`);
-          addOption(configuredModel, label);
-        }
-        if (desired && desired !== configuredModel) {
-          addOption(desired, desired);
-        }
-        if (current && !seen.has(current)) {
-          addOption(current, current);
-        }
-        const next = desired || configuredModel || current || '';
-        if (next && seen.has(next)) {
-          els.providerModel.value = next;
-        } else {
-          els.providerModel.value = '';
-        }
-      }
+
+
 
       function toggleModeDetails() {
         const mode = (els.modeSelect?.value || '').toString().toLowerCase();
-        const showDetails = mode !== 'local';
+        const isAssembly = mode === 'assemblyai';
+        const isCloudflare = mode === 'cloudflare';
+        const hideSourceAndModel = isAssembly || isCloudflare;
+        // Hide modeDetails entirely when local (no details) or when source/model are hidden (nothing left inside)
+        const showDetails = mode !== 'local' && !hideSourceAndModel;
         if (els.modeDetails) {
           els.modeDetails.style.display = showDetails ? '' : 'none';
         }
-        if (els.assemblyOptions) {
-          els.assemblyOptions.style.display = mode === 'assemblyai' ? '' : 'none';
-        }
-        const isAssembly = mode === 'assemblyai';
         const langAudioRow = els.modeDetails ? els.modeDetails.querySelector('.row') : null;
         const sourceLangRow = els.sourceLang ? els.sourceLang.closest('div') : null;
         const modelRow = els.model ? els.model.closest('div') : null;
-        if (langAudioRow) langAudioRow.style.display = isAssembly ? 'none' : '';
-        if (sourceLangRow) sourceLangRow.style.display = isAssembly ? 'none' : '';
-        if (modelRow) modelRow.style.display = isAssembly ? 'none' : '';
-        if (els.sourceLang) els.sourceLang.disabled = isAssembly;
-        if (els.model) els.model.disabled = isAssembly;
-        // Also update turbo options visibility based on current model
-        toggleTurboOptions();
-      }
-
-      function toggleTurboOptions() {
-        const mode = (els.modeSelect?.value || '').toString().toLowerCase();
-        const model = (els.model?.value || '').toString();
-        const isCloudflare = mode === 'cloudflare';
-        const isTurbo = model.includes('whisper-large-v3-turbo');
-        // Show turboOptions only when Cloudflare mode + Turbo model selected
-        if (els.turboOptions) {
-          els.turboOptions.style.display = (isCloudflare && isTurbo) ? '' : 'none';
+        if (langAudioRow) langAudioRow.style.display = hideSourceAndModel ? 'none' : '';
+        if (sourceLangRow) sourceLangRow.style.display = hideSourceAndModel ? 'none' : '';
+        if (modelRow) modelRow.style.display = hideSourceAndModel ? 'none' : '';
+        if (els.sourceLang) els.sourceLang.disabled = hideSourceAndModel;
+        if (els.model) els.model.disabled = hideSourceAndModel;
+        // Force whisper-large-v3-turbo for Cloudflare
+        if (isCloudflare && els.model) {
+          els.model.value = '@cf/openai/whisper-large-v3-turbo';
         }
       }
+
+
 
       function toggleTranslationStep() {
         const enabled = els.translateToggle?.checked === true;
-        if (els.translationStep) {
-          els.translationStep.style.display = enabled ? '' : 'none';
-          els.translationStep.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+        if (els.targetLangWrapper) {
+          els.targetLangWrapper.style.display = enabled ? '' : 'none';
         }
-        if (els.translationSettingsToggle) {
-          els.translationSettingsToggle.disabled = !enabled;
-        }
-        [els.provider, els.providerModel, els.targetLang, els.batchMode, els.timestampsMode].forEach((el) => {
-          if (el) el.disabled = !enabled;
-        });
-        if (!enabled) {
-          toggleTranslationSettings(false);
-        }
+        if (els.targetLang) els.targetLang.disabled = !enabled;
         refreshStepLocks();
-      }
-
-      function toggleTranslationSettings(forceOpen = null) {
-        const container = els.translationSettings;
-        const toggle = els.translationSettingsToggle;
-        const content = els.translationSettingsContent;
-        if (!container || !toggle || !content) return;
-        const shouldOpen = typeof forceOpen === 'boolean'
-          ? forceOpen
-          : !container.classList.contains('open');
-        container.classList.toggle('open', shouldOpen);
-        content.style.display = shouldOpen ? 'block' : 'none';
-        toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
       }
 
       function setDownloads(original, translations, rawTranscript) {
@@ -7105,18 +7007,15 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           sourceLanguage: (transcript && (transcript.languageCode || transcript.language)) || overrides.sourceLanguageOverride || els.sourceLang?.value || '',
           targetLanguages: targets,
           translate: translateEnabled,
-          translationProvider: els.provider?.value || '',
-          translationModel: (els.providerModel?.value || '').trim(),
-          sendTimestampsToAI: overrides.sendTimestampsToAI ?? ((els.timestampsMode?.value || '') === 'send'),
-          singleBatchMode: overrides.singleBatchMode ?? ((els.batchMode?.value || '') === 'single'),
+          translationProvider: BOOTSTRAP.defaults?.provider || '',
+          translationModel: (BOOTSTRAP.defaults?.translationModel || '').trim(),
+          sendTimestampsToAI: overrides.sendTimestampsToAI ?? (BOOTSTRAP.defaults?.sendTimestampsToAI === true),
+          singleBatchMode: overrides.singleBatchMode ?? (BOOTSTRAP.defaults?.singleBatchMode === true),
           translationPrompt: overrides.translationPrompt || ''
         };
         if (engine === 'assemblyai') {
           delete payload.model;
           // sourceLanguage is kept - server normalizes to AssemblyAI format (e.g., 'jpn' -> 'ja')
-        }
-        if (overrides.sendFullVideo === true) {
-          payload.sendFullVideo = true;
         }
         if (transcript && transcript.srt) {
           payload.transcript = {
@@ -7417,8 +7316,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                 sourceLanguage: els.sourceLang?.value || '', // Extension normalizes to AssemblyAI format
                 diarization: true,
                 useAssembly: true,
-                assemblyApiKey: BOOTSTRAP.assemblyApiKey || '',
-                sendFullVideo: els.assemblySendFullVideo?.checked === true
+                assemblyApiKey: BOOTSTRAP.assemblyApiKey || ''
               }
             }, '*');
             appendLog('Sent auto-sub request to extension (AssemblyAI path)', 'info');
@@ -7466,7 +7364,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                 model: els.model?.value || '@cf/openai/whisper',
                 sourceLanguage: els.sourceLang?.value || '',
                 diarization: true,
-                vadFilter: els.vadFilterEnabled?.checked === true,
+                vadFilter: true,
                 cfAccountId: cfCreds.accountId,
                 cfToken: cfCreds.token
               }
@@ -7562,28 +7460,14 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
         if (els.translateToggle) {
           els.translateToggle.checked = BOOTSTRAP.defaults?.translateToTarget !== false;
         }
-        if (els.batchMode) {
-          els.batchMode.value = BOOTSTRAP.defaults?.singleBatchMode ? 'single' : 'multi';
-        }
-        if (els.timestampsMode) {
-          els.timestampsMode.value = BOOTSTRAP.defaults?.sendTimestampsToAI ? 'send' : 'original';
-        }
-        if (els.assemblySendFullVideo) {
-          els.assemblySendFullVideo.checked = BOOTSTRAP.defaults?.assemblySendFullVideo === true;
-        }
         hydrateVideoMeta({
           title: BOOTSTRAP.linkedTitle || '',
           videoId: PAGE.videoId,
           filename: PAGE.filename
         });
         hydrateTargets();
-        renderProviders();
-        if (els.providerModel && BOOTSTRAP.defaults?.translationModel) {
-          els.providerModel.value = BOOTSTRAP.defaults.translationModel;
-        }
-        toggleModeDetails(); // Sets mode details and turbo options visibility
+        toggleModeDetails(); // Sets mode details visibility
         toggleTranslationStep();
-        toggleTranslationSettings(false);
         updateHashStatusFromInput();
         refreshStepLocks(lockReasons.needContinue);
       }
@@ -7604,9 +7488,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           refreshStepLocks();
         });
         els.modeSelect?.addEventListener('change', toggleModeDetails);
-        els.model?.addEventListener('change', toggleTurboOptions);
-        els.translationSettingsToggle?.addEventListener('click', () => toggleTranslationSettings());
-        els.provider?.addEventListener('change', renderProviderModels);
         els.targetLang?.addEventListener('change', () => refreshStepLocks());
         els.audioTrackSelect?.addEventListener('change', () => {
           const raw = els.audioTrackSelect ? parseInt(els.audioTrackSelect.value, 10) : NaN;
@@ -8447,7 +8328,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 14px;
-      align-items: flex-start;
+      align-items: start;
     }
     .section-joined .joined-grid > .step-card { height: auto; }
     @media (min-width: 1024px) {
@@ -8516,6 +8397,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       justify-content: center;
       gap: 12px;
       text-align: center;
+      min-height: 0;
     }
     .step-body > * { width: min(100%, 920px); }
     .step-body .controls { justify-content: center; }
@@ -8529,7 +8411,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       justify-content: flex-start;
       text-align: center;
       align-self: start;
-      height: max-content;
+      height: auto !important;
+      min-height: 0;
     }
     #autoStep2Card .step-title { justify-content: flex-start; width: 100%; text-align: left; }
     #autoStep2Card .step-body {
@@ -8538,6 +8421,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       justify-content: flex-start;
       text-align: center;
       gap: 10px;
+      min-height: 0;
     }
     #autoStep2Card .step-body > * { width: auto; max-width: 640px; margin: 0 auto; }
     #autoStep2Card .row { width: auto; max-width: 640px; margin: 0 auto; justify-items: center; }
@@ -8992,7 +8876,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           <div class="step-body">
             <label for="autoSubsMode">${escapeHtml(copy.steps.modeLabel)}</label>
             <select id="autoSubsMode">
-              <option value="local" disabled>${escapeHtml(copy.steps.modeLocal)}</option>
+              <option value="local">${escapeHtml(copy.steps.modeLocal)}</option>
               <option value="cloudflare"${cloudflareEnabled ? '' : ' disabled'}>${escapeHtml(copy.steps.modeRemote)}</option>
               <option value="assemblyai"${assemblyEnabled ? '' : ' disabled'}>${escapeHtml(copy.steps.modeAssembly)}</option>
             </select>
@@ -9013,23 +8897,17 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                   </select>
                 </div>
               </div>
-              <div class="controls wrap">
-                <label class="inline-checkbox">
-                  <input type="checkbox" id="translateOutput" checked> ${escapeHtml(copy.steps.translateOutput)}
-                </label>
-              </div>
-              <div id="turboOptions" style="margin-top:8px; text-align:center;">
-                <label class="inline-checkbox">
-                  <input type="checkbox" id="vadFilterEnabled" checked> ${escapeHtml(copy.steps.vadFilter)}
-                </label>
-                <p class="muted" id="vadFilterHelper" style="margin-top:4px;">${escapeHtml(copy.steps.vadFilterHelper)}</p>
-              </div>
-              <div id="assemblyOptions" style="display:none; margin-top:8px;">
-                <label class="inline-checkbox">
-                  <input type="checkbox" id="assemblySendFullVideo"> ${escapeHtml(copy.steps.assemblySendFullVideo)}
-                </label>
-                <p class="muted" id="assemblyModeHelper" style="margin-top:4px;">${escapeHtml(copy.steps.assemblySendFullVideoHelper)}</p>
-              </div>
+            </div>
+            <div class="controls wrap">
+              <label class="inline-checkbox">
+                <input type="checkbox" id="translateOutput" checked> ${escapeHtml(copy.steps.translateOutput)}
+              </label>
+            </div>
+            <div id="targetLangWrapper" style="margin-top:8px;">
+              <label for="targetLang">${escapeHtml(copy.steps.targetLabel)}</label>
+              <select id="targetLang">
+                ${targetOptions}
+              </select>
             </div>
             <div class="controls" style="margin-top:12px;">
               <button class="btn" id="autoStep2Continue"><span>➡️</span> ${escapeHtml(copy.actions.continue)}</button>
@@ -9039,58 +8917,6 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       </div>
     </div>
 
-    <div class="section" id="translationStep">
-      <h2><span class="section-number">2.5</span> ${escapeHtml(copy.steps.translationStepTitle)}</h2>
-      <div class="step-card locked" id="autoTranslationCard" data-locked-label="${escapeHtml(copy.locks.needContinue)}">
-        <div class="step-body">
-          <div class="row">
-            <div>
-              <label for="translationProvider">${escapeHtml(copy.steps.providerLabel)}</label>
-              <select id="translationProvider"></select>
-            </div>
-            <div>
-              <label for="translationModel">${escapeHtml(copy.steps.providerModelLabel)}</label>
-              <select id="translationModel">
-                <option value="">${escapeHtml(copy.steps.providerModelPlaceholder)}</option>
-              </select>
-            </div>
-            <div>
-              <label for="targetLang">${escapeHtml(copy.steps.targetLabel)}</label>
-              <select id="targetLang">
-                ${targetOptions}
-              </select>
-            </div>
-          </div>
-          <div class="translation-settings" id="translationSettings">
-            <button class="translation-settings-toggle" id="translationSettingsToggle" type="button" aria-expanded="false">
-              <div class="toggle-labels">
-                <span class="eyebrow">${escapeHtml(copy.steps.translationSettingsTitle)}</span>
-                <span class="muted">${escapeHtml(copy.steps.translationSettingsMeta)}</span>
-              </div>
-              <span class="caret">▼</span>
-            </button>
-            <div class="translation-settings-content" id="translationSettingsContent">
-              <div class="row">
-                <div>
-                  <label for="singleBatchModeSelect">${escapeHtml(copy.steps.batchingLabel)}</label>
-                  <select id="singleBatchModeSelect">
-                    <option value="multi">${escapeHtml(copy.steps.batchingMultiple)}</option>
-                    <option value="single">${escapeHtml(copy.steps.batchingSingle)}</option>
-                  </select>
-                </div>
-                <div>
-                  <label for="timestampsMode">${escapeHtml(copy.steps.timestampsLabel)}</label>
-                  <select id="timestampsMode">
-                    <option value="original">${escapeHtml(copy.steps.timestampsRebuild)}</option>
-                    <option value="send">${escapeHtml(copy.steps.sendTimestamps)}</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <div class="section section-joined">
       <h2><span class="section-number">3-4</span> ${escapeHtml(copy.sections.runAndReview)}</h2>

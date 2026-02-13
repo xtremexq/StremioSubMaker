@@ -8,6 +8,7 @@ const AniDBService = require('../services/anidb');
 const KitsuService = require('../services/kitsu');
 const MALService = require('../services/mal');
 const AniListService = require('../services/anilist');
+const animeIdResolver = require('../services/animeIdResolver');
 const StremioCommunitySubtitlesService = require('../services/stremioCommunitySubtitles');
 const WyzieSubsService = require('../services/wyzieSubs');
 const SubsRoService = require('../services/subsRo');
@@ -50,6 +51,12 @@ const anidbService = new AniDBService();
 const kitsuService = new KitsuService();
 const malService = new MALService();
 const anilistService = new AniListService();
+
+// Initialize offline anime ID resolver (Fribb/anime-lists, ~42k entries, O(1) lookups)
+// This runs async but non-blocking — maps are available within ~200ms of startup
+animeIdResolver.initialize().catch(err =>
+  log.warn(() => `[Subtitles] Offline anime ID resolver failed to initialize: ${err.message}`)
+);
 
 // Redact/noise-reduce helper for logging large cache keys
 function shortKey(v) {
@@ -1850,13 +1857,13 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
     let matchTier = 'none';
     let matchDetails = '';
 
-    // TIER 0: SCS Hash Match (200,000+ points)
-    // Highest priority - SCS returned this subtitle as a hash match for the exact video file
-    // This means the subtitle is specifically linked to this exact video release
-    if (sub.provider === 'stremio-community-subtitles' && sub.hashMatch === true) {
+    // TIER 0: Hash Match (200,000+ points)
+    // Highest priority - provider confirmed this subtitle matches the exact video file hash
+    // Supported by: SCS (heuristic first-per-language), OpenSubtitles auth (moviehash_match)
+    if (sub.hashMatch === true) {
       finalScore = 200000 - (sub.hashMatchPriority || 0); // Higher priority = higher score within tier
-      matchTier = 'tier0-scs-hash';
-      matchDetails = 'SCS hash match - exact video file match';
+      matchTier = 'tier0-hash';
+      matchDetails = `Hash match from ${sub.provider} - exact video file match`;
       log.debug(() => `[Tier 0 Match] ${sub.name}: ${matchDetails}`);
     }
 
@@ -2134,56 +2141,70 @@ function createSubtitleHandler(config) {
             if (videoInfo.isAnime && videoInfo.animeId) {
               log.debug(() => `[Subtitles] Anime content detected (${videoInfo.animeIdType}), attempting to map to IMDB ID`);
 
-              if (videoInfo.animeIdType === 'anidb') {
-                try {
-                  const imdbId = await anidbService.getImdbId(videoInfo.anidbId);
-                  if (imdbId) {
-                    log.info(() => `[Subtitles] Mapped AniDB ${videoInfo.anidbId} to ${imdbId}`);
-                    videoInfo.imdbId = imdbId;
-                  } else {
-                    log.warn(() => `[Subtitles] Could not find IMDB mapping for AniDB ${videoInfo.anidbId}, subtitles may be limited`);
-                  }
-                } catch (error) {
-                  log.error(() => [`[Subtitles] Error mapping AniDB to IMDB: ${error.message}`, error]);
+              // Step 1: Try offline static mapping (instant, O(1) Map lookup, no API calls)
+              const offlineResult = animeIdResolver.resolveImdbId(videoInfo.animeIdType, videoInfo.animeId);
+              if (offlineResult?.imdbId) {
+                videoInfo.imdbId = offlineResult.imdbId;
+                // Also store TMDB ID from offline mapping if we don't already have one
+                if (offlineResult.tmdbId && !videoInfo.tmdbId) {
+                  videoInfo.tmdbId = String(offlineResult.tmdbId);
                 }
-              } else if (videoInfo.animeIdType === 'kitsu') {
-                try {
-                  const imdbId = await kitsuService.getImdbId(videoInfo.animeId);
-                  if (imdbId) {
-                    log.info(() => `[Subtitles] Mapped Kitsu ${videoInfo.animeId} to ${imdbId}`);
-                    videoInfo.imdbId = imdbId;
-                  } else {
-                    log.warn(() => `[Subtitles] Could not find IMDB mapping for Kitsu ${videoInfo.animeId}, subtitles may be limited`);
-                  }
-                } catch (error) {
-                  log.error(() => [`[Subtitles] Error mapping Kitsu to IMDB: ${error.message}`, error]);
-                }
-              } else if (videoInfo.animeIdType === 'mal') {
-                try {
-                  const imdbId = await malService.getImdbId(videoInfo.animeId);
-                  if (imdbId) {
-                    log.info(() => `[Subtitles] Mapped MAL ${videoInfo.animeId} to ${imdbId}`);
-                    videoInfo.imdbId = imdbId;
-                  } else {
-                    log.warn(() => `[Subtitles] Could not find IMDB mapping for MAL ${videoInfo.animeId}, subtitles may be limited`);
-                  }
-                } catch (error) {
-                  log.error(() => [`[Subtitles] Error mapping MAL to IMDB: ${error.message}`, error]);
-                }
-              } else if (videoInfo.animeIdType === 'anilist') {
-                try {
-                  const imdbId = await anilistService.getImdbId(videoInfo.animeId, malService);
-                  if (imdbId) {
-                    log.info(() => `[Subtitles] Mapped AniList ${videoInfo.animeId} to ${imdbId}`);
-                    videoInfo.imdbId = imdbId;
-                  } else {
-                    log.warn(() => `[Subtitles] Could not find IMDB mapping for AniList ${videoInfo.animeId}, subtitles may be limited`);
-                  }
-                } catch (error) {
-                  log.error(() => [`[Subtitles] Error mapping AniList to IMDB: ${error.message}`, error]);
-                }
+                log.info(() => `[Subtitles] Offline mapped ${videoInfo.animeIdType} ${videoInfo.animeId} → ${offlineResult.imdbId}${offlineResult.tmdbId ? ` (tmdb:${offlineResult.tmdbId})` : ''}`);
               } else {
-                log.debug(() => `[Subtitles] Unknown anime ID type: ${videoInfo.animeIdType}, will search by anime metadata`);
+                // Step 2: Fallback to live API services (for entries not in the static list)
+                log.debug(() => `[Subtitles] No offline mapping for ${videoInfo.animeIdType} ${videoInfo.animeId}, falling back to live API`);
+
+                if (videoInfo.animeIdType === 'anidb') {
+                  try {
+                    const imdbId = await anidbService.getImdbId(videoInfo.anidbId);
+                    if (imdbId) {
+                      log.info(() => `[Subtitles] Live-mapped AniDB ${videoInfo.anidbId} → ${imdbId}`);
+                      videoInfo.imdbId = imdbId;
+                    } else {
+                      log.warn(() => `[Subtitles] Could not find IMDB mapping for AniDB ${videoInfo.anidbId}, subtitles may be limited`);
+                    }
+                  } catch (error) {
+                    log.error(() => [`[Subtitles] Error mapping AniDB to IMDB: ${error.message}`, error]);
+                  }
+                } else if (videoInfo.animeIdType === 'kitsu') {
+                  try {
+                    const imdbId = await kitsuService.getImdbId(videoInfo.animeId);
+                    if (imdbId) {
+                      log.info(() => `[Subtitles] Live-mapped Kitsu ${videoInfo.animeId} → ${imdbId}`);
+                      videoInfo.imdbId = imdbId;
+                    } else {
+                      log.warn(() => `[Subtitles] Could not find IMDB mapping for Kitsu ${videoInfo.animeId}, subtitles may be limited`);
+                    }
+                  } catch (error) {
+                    log.error(() => [`[Subtitles] Error mapping Kitsu to IMDB: ${error.message}`, error]);
+                  }
+                } else if (videoInfo.animeIdType === 'mal') {
+                  try {
+                    const imdbId = await malService.getImdbId(videoInfo.animeId);
+                    if (imdbId) {
+                      log.info(() => `[Subtitles] Live-mapped MAL ${videoInfo.animeId} → ${imdbId}`);
+                      videoInfo.imdbId = imdbId;
+                    } else {
+                      log.warn(() => `[Subtitles] Could not find IMDB mapping for MAL ${videoInfo.animeId}, subtitles may be limited`);
+                    }
+                  } catch (error) {
+                    log.error(() => [`[Subtitles] Error mapping MAL to IMDB: ${error.message}`, error]);
+                  }
+                } else if (videoInfo.animeIdType === 'anilist') {
+                  try {
+                    const imdbId = await anilistService.getImdbId(videoInfo.animeId, malService);
+                    if (imdbId) {
+                      log.info(() => `[Subtitles] Live-mapped AniList ${videoInfo.animeId} → ${imdbId}`);
+                      videoInfo.imdbId = imdbId;
+                    } else {
+                      log.warn(() => `[Subtitles] Could not find IMDB mapping for AniList ${videoInfo.animeId}, subtitles may be limited`);
+                    }
+                  } catch (error) {
+                    log.error(() => [`[Subtitles] Error mapping AniList to IMDB: ${error.message}`, error]);
+                  }
+                } else {
+                  log.debug(() => `[Subtitles] Unknown anime ID type: ${videoInfo.animeIdType}, will search by anime metadata`);
+                }
               }
             }
 
@@ -4492,6 +4513,24 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
       return Math.max(1, step);
     };
 
+    // Log checkpoint schedule at start so we know exactly when partial saves will trigger
+    if (streamingProviderMode) {
+      const isSingleBatch = config.singleBatchMode === true;
+      // Rough entry count estimate from SRT structure (actual count comes from parser inside translateSubtitle)
+      const roughEntryCount = sourceContent ? (sourceContent.match(/\n\n/g) || []).length : 0;
+      const step = computeRebuildStep(roughEntryCount);
+      const firstTarget = STREAM_FIRST_PARTIAL_MIN_ENTRIES;
+      const checkpoints = [firstTarget];
+      let cp = firstTarget + step;
+      const limit = roughEntryCount || 1000;
+      while (cp < limit) {
+        checkpoints.push(cp);
+        cp += step;
+      }
+      if (roughEntryCount > 0) checkpoints.push(roughEntryCount);
+      log.debug(() => `[Translation] Partial delivery config (streaming=${true}, singleBatch=${isSingleBatch}): first=${firstTarget}, step=${step}, checkpoints=[${checkpoints.slice(0, 12).join(', ')}${checkpoints.length > 12 ? '...' : ''}], debounce=${STREAM_SAVE_DEBOUNCE_MS}ms, minDelta=${STREAM_SAVE_MIN_STEP}, logInterval=${logIntervalEntries}`);
+    }
+
     const shouldRebuildPartial = (completedEntries, totalEntries, isStreaming = false) => {
       // Always save the final partial to cover the gap before permanent cache is written (Fix #10)
       if (totalEntries > 0 && completedEntries >= totalEntries) return true;
@@ -4552,7 +4591,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
         targetLangName,
         config.translationPrompt,
         async (progress) => {
-          const persistPartial = async (partialText, logThisProgress) => {
+          const persistPartial = async (partialText) => {
             if (partialDeliveryDisabled) return false;
             const partialSrt = buildPartialSrtWithTail(partialText, config.uiLanguage || 'en');
             if (!partialSrt || partialSrt.length === 0) return false;
@@ -4567,9 +4606,8 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
                   expiresAt: Date.now() + 60 * 60 * 1000
                 });
                 consecutivePartialSaveFailures = 0; // Reset on success
-                if (logThisProgress) {
-                  log.debug(() => `[Translation] Saved partial: batch ${progress.currentBatch}/${progress.totalBatches}, ${progress.completedEntries}/${progress.totalEntries} entries${progress.streaming ? ' (streaming)' : ''}`);
-                }
+                // Always log partial saves — they only happen at checkpoint boundaries so they are rare
+                log.debug(() => `[Translation] Partial SAVED: batch ${progress.currentBatch}/${progress.totalBatches}, ${progress.completedEntries}/${progress.totalEntries} entries${progress.streaming ? ' (streaming)' : ''}, nextCheckpoint=${nextPartialRebuildAt}`);
                 saved = true;
               } catch (saveErr) {
                 consecutivePartialSaveFailures++;
@@ -4611,15 +4649,34 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
                 lastStreamSequence = seq;
                 if (completed > 0) lastStreamEntries = completed;
                 lastStreamSavedAt = now;
-                didPersist = await persistPartial(progress.partialSRT, !throttleLogging || logThisProgress);
+                didPersist = await persistPartial(progress.partialSRT);
               }
             } else if (shouldSavePartial(progress.currentBatch) && progress.currentBatch > lastSavedBatch && allowRebuild) {
               lastSavedBatch = progress.currentBatch;
-              didPersist = await persistPartial(progress.partialSRT, !throttleLogging || logThisProgress);
+              didPersist = await persistPartial(progress.partialSRT);
             }
 
+            // Log progress with accurate skip reason when not persisted
             if (logThisProgress && throttleLogging && !didPersist) {
-              log.debug(() => `[Translation] Gemini streaming progress: batch ${progress.currentBatch}/${progress.totalBatches}, ${completed}/${total} entries${progress.streaming ? ' (streaming)' : ''} (partial save skipped by throttle)`);
+              // Determine the actual reason the save was skipped for clarity
+              let skipReason;
+              if (!allowRebuild) {
+                skipReason = `checkpoint not reached (next=${nextPartialRebuildAt})`;
+              } else if (isStreaming) {
+                const seq = progress.streamSequence || 0;
+                const enoughDelta = completed - lastStreamEntries >= STREAM_SAVE_MIN_STEP;
+                const timeElapsed = (Date.now() - lastStreamSavedAt) >= STREAM_SAVE_DEBOUNCE_MS;
+                if (seq <= lastStreamSequence) {
+                  skipReason = `stale sequence (seq=${seq}, last=${lastStreamSequence})`;
+                } else if (!enoughDelta && !timeElapsed) {
+                  skipReason = `debounce (delta=${completed - lastStreamEntries}<${STREAM_SAVE_MIN_STEP}, elapsed=${Date.now() - lastStreamSavedAt}ms<${STREAM_SAVE_DEBOUNCE_MS}ms)`;
+                } else {
+                  skipReason = 'unknown';
+                }
+              } else {
+                skipReason = 'batch already saved';
+              }
+              log.debug(() => `[Translation] Streaming progress: batch ${progress.currentBatch}/${progress.totalBatches}, ${completed}/${total} entries (not saved: ${skipReason})`);
             }
           }
         }
@@ -5345,13 +5402,33 @@ async function resolveHistoryTitle(videoId, fallbackTitle = '', seasonHint = nul
   try {
     const parsed = parseStremioId(videoId);
 
-    // Handle anime IDs - use Kitsu API for Kitsu IDs
+    // Handle anime IDs - resolve title via offline mapping → Cinemeta, with Kitsu API fallback
     if (parsed?.isAnime && parsed?.animeId) {
       if (parsed.episode) episode = parsed.episode;
       if (parsed.season) season = parsed.season;
 
-      // Try to get title from Kitsu API if it's a Kitsu ID
-      if (parsed.animeIdType === 'kitsu') {
+      // Step 1: Try offline mapping to get IMDB/TMDB ID, then use Cinemeta for title
+      // This works for ALL anime platforms (kitsu, anidb, mal, anilist)
+      const offlineResult = animeIdResolver.resolveImdbId(parsed.animeIdType, parsed.animeId);
+      let resolvedTitle = false;
+
+      if (offlineResult?.imdbId) {
+        try {
+          const metaType = offlineResult.type === 'MOVIE' || offlineResult.type === 'Movie' ? 'movie' : 'series';
+          const metaUrl = `https://v3-cinemeta.strem.io/meta/${metaType}/${encodeURIComponent(offlineResult.imdbId)}.json`;
+          const metaResp = await axios.get(metaUrl, { timeout: 7500 });
+          if (metaResp?.data?.meta?.name) {
+            title = metaResp.data.meta.name;
+            resolvedTitle = true;
+            log.debug(() => `[History] Resolved ${parsed.animeIdType} ${parsed.animeId} title via offline→Cinemeta: "${title}"`);
+          }
+        } catch (metaErr) {
+          log.debug(() => `[History] Cinemeta lookup failed for ${offlineResult.imdbId}: ${metaErr.message}`);
+        }
+      }
+
+      // Step 2: Fallback — try Kitsu API directly for Kitsu IDs (if offline/Cinemeta failed)
+      if (!resolvedTitle && parsed.animeIdType === 'kitsu') {
         const numericIdMatch = parsed.animeId.match(/kitsu[:-]?(\d+)/i);
         if (numericIdMatch) {
           const numericId = numericIdMatch[1];
@@ -5366,15 +5443,13 @@ async function resolveHistoryTitle(videoId, fallbackTitle = '', seasonHint = nul
             const animeData = kitsuResp?.data?.data?.attributes;
             if (animeData) {
               title = animeData.canonicalTitle || animeData.titles?.en || animeData.titles?.en_us || title;
+              resolvedTitle = true;
             }
           } catch (kitsuErr) {
-            log.debug(() => [`[History] Kitsu lookup failed for ${videoId}:`, kitsuErr.message]);
+            log.debug(() => [`[History] Kitsu API fallback failed for ${videoId}:`, kitsuErr.message]);
           }
         }
       }
-      // For other anime platforms (anidb, mal, anilist), title resolution for history
-      // display is not yet implemented. The ID mapping services exist but are optimized
-      // for IMDB resolution, not title fetching. Fall back to filename/videoId as title.
 
     } else {
       // Handle IMDB/TMDB IDs - use Cinemeta

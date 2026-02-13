@@ -435,8 +435,8 @@ function shouldMergeAutoSubEntries(prev, next, opts = {}) {
     const nextText = (next.text || '').trim();
     if (!prevText || !nextText) return false;
     if (/[.!?…]['"]?$/.test(prevText)) return false;
-    // If next starts with a capitalized word, treat as a likely new sentence/speaker
-    if (/^[A-Z]/.test(nextText)) return false;
+    // Only block on obvious speaker/section markers, not just any capital letter
+    // (sentence boundaries are already caught by the punctuation check above)
     if (/^[-–—♪]/.test(nextText)) return false;
     const combinedLength = (prevText + ' ' + nextText).length;
     const maxChars = Number.isFinite(opts.maxMergedChars) ? opts.maxMergedChars : 180;
@@ -466,13 +466,15 @@ function splitLongEntry(entry, opts = {}) {
     segments.forEach((part, idx) => {
         const weight = part.length || 1;
         let slice = totalWeight ? Math.round((duration || 0) * (weight / totalWeight)) : Math.round((duration || 0) / segments.length);
-        slice = Math.max(slice || 0, 1200);
+        slice = Math.max(slice || 0, 800);
         const start = cursor;
         let end = start + slice;
         const last = idx === segments.length - 1;
         if (last || end > (entry.endMs || end)) {
             end = entry.endMs || end;
         }
+        // Prevent zero-duration entries
+        if (end <= start) end = start + 800;
         cursor = end;
         result.push({
             startMs: start,
@@ -515,11 +517,16 @@ function normalizeAutoSubSrt(srt = '', opts = {}) {
         }
 
         const expanded = merged.flatMap((entry) => splitLongEntry(entry, opts));
-        const finalEntries = expanded.map((entry, idx) => ({
-            id: idx + 1,
-            timecode: `${formatTimestamp((entry.startMs || 0) / 1000)} --> ${formatTimestamp((entry.endMs || entry.startMs || 0) / 1000)}`,
-            text: wrapSrtText(entry.text, opts.maxLineLength || 42, opts.maxLines || 2)
-        }));
+        const finalEntries = expanded.map((entry, idx) => {
+            // Ensure minimum duration of 800ms for each subtitle entry
+            let endMs = entry.endMs || entry.startMs || 0;
+            if (endMs <= (entry.startMs || 0)) endMs = (entry.startMs || 0) + 800;
+            return {
+                id: idx + 1,
+                timecode: `${formatTimestamp((entry.startMs || 0) / 1000)} --> ${formatTimestamp(endMs / 1000)}`,
+                text: wrapSrtText(entry.text, opts.maxLineLength || 42, opts.maxLines || 2)
+            };
+        });
 
         return toSRT(finalEntries).trim();
     } catch (_) {
@@ -1600,6 +1607,16 @@ function shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang) {
     }
 }
 
+// FIRST-IN-CHAIN request trace: fires BEFORE any middleware (helmet, CORS, compression, etc.)
+// If a subtitle request doesn't produce this log, it truly never reached the server.
+app.use((req, res, next) => {
+    const p = req.path || '';
+    if (p.includes('/subtitles/') || p.includes('/manifest.json')) {
+        log.warn(() => `[Request Trace] >>> ${req.method} ${req.originalUrl?.substring(0, 120) || p.substring(0, 120)}`);
+    }
+    next();
+});
+
 // Security: Add security headers
 app.use(helmet({
     contentSecurityPolicy: {
@@ -2077,6 +2094,7 @@ app.use('/addon/:config', (req, res, next) => {
     if (needsRedirect) {
         const suffix = req.url.replace(`/addon/${req.params.config}`, '');
         const redirectTarget = `/addon/${encodeURIComponent(req.params.config)}${CACHE_BUSTER_PATH}${suffix || ''}`;
+        log.debug(() => `[CacheBuster] 307 redirect: ${req.path.substring(0, 80)} -> versioned path`);
         return res.redirect(307, redirectTarget);
     }
 
@@ -7208,7 +7226,6 @@ app.use('/addon/:config', (req, res, next) => {
     // REQUEST TRACE: Log all incoming addon requests (helps diagnose "Stremio not sending requests" issues)
     // This runs BEFORE any processing, so if this doesn't log, the request never reached the server
     if (isSubtitlesRequest || isManifestRequest) {
-        // Log subtitle and manifest requests at INFO level for visibility
         log.info(() => `[Addon Request] ${req.method} ${requestPath.substring(0, 100)} (UA: ${(req.get('user-agent') || 'none').substring(0, 50)})`);
     } else if (isDownloadRequest) {
         // Log download requests at DEBUG level (these are frequent)

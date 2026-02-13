@@ -756,8 +756,7 @@ Translate to {target_language}.`;
                 enableBatchContext: false, // Include original surrounding context and previous translations
                 contextSize: 3, // Number of surrounding entries to include as context
                 sendTimestampsToAI: false, // Let AI handle timestamps directly
-                translationWorkflow: 'xml', // 'original', 'ai', or 'xml'
-                enableJsonOutput: false, // Request JSON structured output from AI
+                translationWorkflow: 'xml', // 'original', 'ai', 'xml', or 'json'
                 mismatchRetries: 1 // Retries when AI returns wrong entry count (0-3)
             }
         };
@@ -1810,11 +1809,11 @@ Translate to {target_language}.`;
         // Mismatch retries change
         const mismatchRetriesEl = document.getElementById('mismatchRetries');
         const mismatchRetriesChanged = mismatchRetriesEl ? (parseInt(mismatchRetriesEl.value) !== (defaults.mismatchRetries ?? 1)) : false;
-        // JSON output change
-        const jsonOutputEl = document.getElementById('enableJsonOutput');
-        const jsonOutputChanged = jsonOutputEl ? (jsonOutputEl.checked !== (defaults.enableJsonOutput === true)) : false;
+        // Workflow change (default is 'xml')
+        const workflowEl = document.getElementById('sendTimestampsToAI');
+        const workflowChanged = workflowEl ? (workflowEl.value !== 'xml') : false;
 
-        return modelChanged || thinkingChanged || tempChanged || topPChanged || batchCtxChanged || ctxSizeChanged || mismatchRetriesChanged || jsonOutputChanged;
+        return modelChanged || thinkingChanged || tempChanged || topPChanged || batchCtxChanged || ctxSizeChanged || mismatchRetriesChanged || workflowChanged;
     }
 
     /**
@@ -2856,10 +2855,6 @@ Translate to {target_language}.`;
         if (sendTimestampsEl) {
             sendTimestampsEl.addEventListener('change', updateBypassCacheForAdvancedSettings);
             sendTimestampsEl.addEventListener('input', updateBypassCacheForAdvancedSettings);
-        }
-        const enableJsonOutputEl = document.getElementById('enableJsonOutput');
-        if (enableJsonOutputEl) {
-            enableJsonOutputEl.addEventListener('change', updateBypassCacheForAdvancedSettings);
         }
         const mismatchRetriesEl = document.getElementById('mismatchRetries');
         if (mismatchRetriesEl) {
@@ -4398,7 +4393,7 @@ Translate to {target_language}.`;
         const excludeHearingImpairedNoTranslationGroup = document.getElementById('excludeHearingImpairedNoTranslationGroup');
         const enableSeasonPacksNoTranslationGroup = document.getElementById('enableSeasonPacksNoTranslationGroup');
 
-        ['sendTimestampsToAI', 'enableJsonOutput', 'databaseMode', 'learnModeEnabled', 'mobileMode', 'singleBatchMode', 'betaMode'].forEach(id => {
+        ['sendTimestampsToAI', 'databaseMode', 'learnModeEnabled', 'mobileMode', 'singleBatchMode', 'betaMode'].forEach(id => {
             const group = document.getElementById(id)?.closest('.form-group');
             if (group) groupsToHide.push(group);
         });
@@ -5594,14 +5589,14 @@ Translate to {target_language}.`;
         if (contextSizeEl) contextSizeEl.value = currentConfig.advancedSettings?.contextSize || 3;
         const sendTimestampsEl = document.getElementById('sendTimestampsToAI');
         if (sendTimestampsEl) {
-            const workflow = currentConfig.advancedSettings?.translationWorkflow ||
+            let workflow = currentConfig.advancedSettings?.translationWorkflow ||
                 ((currentConfig.advancedSettings?.sendTimestampsToAI === true) ? 'ai' : 'xml');
+            // Backward compat: migrate enableJsonOutput toggle → 'json' workflow
+            if (currentConfig.advancedSettings?.enableJsonOutput === true && workflow !== 'ai') {
+                workflow = 'json';
+            }
             sendTimestampsEl.value = workflow;
         }
-
-        // Load JSON output setting
-        const enableJsonOutputEl = document.getElementById('enableJsonOutput');
-        if (enableJsonOutputEl) enableJsonOutputEl.checked = currentConfig.advancedSettings?.enableJsonOutput === true;
 
         // Load mismatch retries setting
         const mismatchRetriesEl = document.getElementById('mismatchRetries');
@@ -5886,9 +5881,7 @@ Translate to {target_language}.`;
                 topK: 40, // Keep default topK
                 enableBatchContext: (function () { const el = document.getElementById('enableBatchContext'); return el ? el.checked : false; })(),
                 contextSize: (function () { const el = document.getElementById('contextSize'); return el ? parseInt(el.value) : 3; })(),
-                sendTimestampsToAI: (function () { const el = document.getElementById('sendTimestampsToAI'); return el ? el.value === 'ai' : false; })(),
                 translationWorkflow: (function () { const el = document.getElementById('sendTimestampsToAI'); return el ? el.value : 'xml'; })(),
-                enableJsonOutput: (function () { const el = document.getElementById('enableJsonOutput'); return el ? el.checked : false; })(),
                 mismatchRetries: (function () { const el = document.getElementById('mismatchRetries'); return el ? Math.max(0, Math.min(3, parseInt(el.value) || 1)) : 1; })()
             }
         };

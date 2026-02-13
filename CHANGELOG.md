@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.53
+
+**Improvements:**
+
+- **Partial delivery checkpoint schedule logged at translation start:** When streaming translation begins, the addon now logs the full checkpoint schedule showing exactly when partial saves will trigger (e.g., `first=30, step=75, checkpoints=[30, 105, 180, 255, 324]`), along with debounce, minimum delta, and log interval settings. This makes it immediately clear what the save cadence will be for a given file size and streaming mode.
+
+- **Partial saves always logged with next checkpoint info:** Partial cache saves are now always logged with a `[Translation] Partial SAVED:` message that includes the current entry count and the next checkpoint target (`nextCheckpoint=180`). Previously, save logs were throttled by the same interval as progress logs (every 100 entries), making it appear that saves weren't happening when they actually were at checkpoint boundaries (30, 105, 180...).
+
+- **Accurate partial save skip reasons in logs:** Replaced the generic `"partial save skipped by throttle"` log message with detailed skip reasons: `"checkpoint not reached (next=105)"` when waiting for the next save boundary, `"debounce (delta=5<10, elapsed=1200ms<3000ms)"` when new data arrived too fast, `"stale sequence"` for duplicate stream events, or `"batch already saved"` in multi-batch mode. Eliminates ambiguity about why a particular progress event didn't trigger a save.
+
+- **First-in-chain request tracing:** Added a new middleware at the very top of the Express stack (before helmet, CORS, compression) that logs `[Request Trace] >>>` for all subtitle and manifest requests. If a request doesn't produce this log, it truly never reached the server — helping diagnose "Stremio not sending requests" issues.
+
+- **Cache buster redirects now logged:** 307 redirects from the cache-buster middleware now log at DEBUG level showing the redirect path.
+
+- **OpenSubtitles auth hash matching:** When a real Stremio `videoHash` is available (from torrent-based streaming addons like Torrentio), the OpenSubtitles auth search now includes the `moviehash` parameter. Subtitles that the API confirms as exact file matches (`moviehash_match=true`) are flagged with `hashMatch: true` and ranked in Tier 0 alongside SCS hash matches.
+
+- **Provider-agnostic Tier 0 hash ranking:** The highest-priority subtitle ranking tier (200,000+ points) is no longer exclusive to Stremio Community Subtitles. Any provider that sets `hashMatch: true` on its results now qualifies for Tier 0 ranking, enabling OpenSubtitles auth hash-matched subtitles to rank at the top alongside SCS.
+
+- **Offline anime ID resolver (Fribb/anime-lists):** Added `animeIdResolver.js` — a new service that loads the complete [Fribb/anime-lists](https://github.com/Fribb/anime-lists) dataset (~42,000 entries) into memory at startup, building O(1) `Map` lookups for Kitsu, MAL, AniDB, and AniList IDs → IMDB/TMDB. Anime ID resolution now completes instantly via local Map lookup instead of making live API calls to Kitsu, Jikan, AniList GraphQL, or Wikidata SPARQL. Existing live API services are retained as fallbacks for entries not in the static list. The data file is auto-downloaded on first startup if missing, and auto-refreshed weekly with Redis leader election for multi-instance deployments (only one pod downloads; others detect the update via a Redis timestamp key and reload).
+
+- **History title resolution for all anime platforms:** Previously, only Kitsu anime entries in Translation History could resolve titles (via the Kitsu API). MAL, AniDB, and AniList entries showed raw IDs (e.g., `mal:20:1:5`). Now, the offline resolver maps any anime platform ID → IMDB, then Cinemeta provides the title. The Kitsu API remains as a final fallback for Kitsu IDs if the offline→Cinemeta path fails.
+
+- **Native JSON translation workflow:** Added "JSON (Structured)" as a fourth Translation Workflow option alongside Original Timestamps, Send Timestamps to AI, and XML Tags. When selected, subtitle entries are sent to the AI as a clean JSON array (`[{"id":1,"text":"..."},...]`) and the AI responds in the same format — no format ambiguity. This replaces the old `enableJsonOutput` toggle, which bolted JSON instructions onto existing workflows causing "Pattern Trap" issues where the AI ignored the JSON format and returned numbered lists. The new workflow has a dedicated prompt (`_buildJsonPrompt`), input formatter (`_prepareJsonBatchContent`), and response parser. Batch size is intrinsically capped at 150 entries for JSON to reduce syntax errors. Full context support: when batch context is enabled, context is wrapped in a `__context` key in the JSON payload.
+
+- **Auto-migration from enableJsonOutput toggle:** Users who had the old `enableJsonOutput` checkbox enabled are automatically migrated to the new `json` workflow on config load. The `ENABLE_JSON_OUTPUT` environment variable is deprecated but still works (auto-migrates during config validation). Old saved configs with `enableJsonOutput: true` seamlessly upgrade to `translationWorkflow: 'json'` without user intervention.
+
+
+**Bug Fixes:**
+
+
+- **Improved auto-sub merge logic for capitalized text:** The `shouldMergeAutoSubEntries` function no longer blocks merging when the next subtitle starts with a capital letter. Previously, any capital letter at the start prevented merging (treating it as a new sentence/speaker), but sentence boundaries are already caught by the punctuation check. Now only obvious speaker/section markers (`-–—♪`) block merging.
+
+- **Reduced minimum subtitle duration from 1200ms to 800ms:** The `splitLongEntry` function now uses 800ms minimum slice duration instead of 1200ms, allowing more granular subtitle timing for fast-paced dialogue.
+
+- **Fixed zero-duration subtitle entries:** Added explicit guard in `splitLongEntry` to prevent zero-duration entries — if `end <= start`, the end time is set to `start + 800ms`.
+
+- **Ensured 800ms minimum duration in final SRT output:** The `normalizeAutoSubSrt` function now enforces a minimum 800ms duration for each subtitle entry during final processing, catching any edge cases missed earlier in the pipeline.
+
+**User Interface:**
+
+- **Simplified Auto Subs translation settings:** Removed the collapsible "Translation Settings" panel and its contents (provider selector, model selector, batch mode, timestamps mode). Translation now uses the settings from the main addon configuration. The target language dropdown remains inline with the translate toggle.
+
+- **Removed unused VAD filter and AssemblyAI options from UI:** Removed the "VAD Filter" checkbox and "Send Full Video" checkbox from the Auto Subs page. VAD filter is now always enabled for Cloudflare mode; AssemblyAI no longer accepts the `sendFullVideo` option.
+
+- **Re-enabled Local mode option:** The Local transcription mode option in the Auto Subs dropdown is no longer disabled, allowing selection when a local transcription setup is available.
+
+- **Forced Cloudflare to use whisper-large-v3-turbo:** When Cloudflare mode is selected, the model dropdown is now hidden and the model is automatically set to `@cf/openai/whisper-large-v3-turbo`.
+
+- **Cloudflare and AssemblyAI modes hide source language and model selectors:** When either Cloudflare or AssemblyAI mode is selected, the source language and model dropdowns are hidden (in addition to the audio track selector) since these services auto-detect language.
+
+- **Improved step card CSS:** Fixed grid alignment (`align-items: start`), added `min-height: 0` to prevent unwanted stretching, and set `height: auto !important` on step 2 card for proper content-based sizing.
+
+- **JSON workflow added to Translation Workflow dropdown:** The Translation Workflow selector now offers four options: Original Timestamps, Send Timestamps to AI, XML Tags (Robust), and JSON (Structured). The old "Enable JSON Structured Output" checkbox has been removed from Advanced Settings — its functionality is now fully integrated into the workflow dropdown.
+
+**Cleanup:**
+
+- **Removed orphaned `_buildXmlInputJsonOutputPrompt` method:** The old XML-input + JSON-output hybrid prompt builder (48 lines) was no longer called after the `enableJsonOutput` bolt-on removal. Its functionality is now handled natively by `_buildJsonPrompt` in the `json` workflow.
+
+- **Removed dead `enableJsonOutput` UI wiring:** Cleaned up 4 stale references in `public/config.js`: event listener for removed checkbox, `areAdvancedSettingsModified()` comparison, save logic, and simplified-mode hide list.
+
+
 ## SubMaker v1.4.52
 
 **New Features:**

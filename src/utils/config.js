@@ -477,12 +477,14 @@ function normalizeConfig(config) {
     sendTimestampsToAI: advSettings.sendTimestampsToAI === true,
     translationWorkflow: (() => {
       const val = String(advSettings.translationWorkflow || '').toLowerCase();
-      if (['original', 'ai', 'xml'].includes(val)) return val;
+      if (['original', 'ai', 'xml', 'json'].includes(val)) return val;
+      // Backward compat: enableJsonOutput + non-ai workflow → 'json'
+      if (advSettings.enableJsonOutput === true) return 'json';
       // Backward compat: if sendTimestampsToAI was true, map to 'ai'
       if (advSettings.sendTimestampsToAI === true) return 'ai';
       return 'original';
     })(),
-    enableJsonOutput: advSettings.enableJsonOutput === true,
+    enableJsonOutput: advSettings.enableJsonOutput === true, // kept for one version (backward compat)
     mismatchRetries: (() => {
       const val = parseInt(advSettings.mismatchRetries);
       return Number.isFinite(val) ? Math.max(0, Math.min(3, val)) : 1;
@@ -919,9 +921,9 @@ function getDefaultConfig(modelName = null) {
     maxRetries: process.env.GEMINI_MAX_RETRIES !== undefined ? parseInt(process.env.GEMINI_MAX_RETRIES) : 3,
     // When enabled, trust the AI to return timestamps for each batch instead of reusing originals
     sendTimestampsToAI: process.env.SEND_TIMESTAMPS_TO_AI === 'true',
-    // Translation workflow: 'original' (numbered list), 'ai' (send timestamps), 'xml' (XML-tagged entries)
+    // Translation workflow: 'original' (numbered list), 'ai' (send timestamps), 'xml' (XML-tagged), 'json' (structured JSON I/O)
     translationWorkflow: process.env.TRANSLATION_WORKFLOW || 'original',
-    // JSON structured output: request JSON array from AI for unambiguous parsing (disabled by default)
+    // DEPRECATED: Use translationWorkflow: 'json' instead. Kept for backward compat (auto-migrates in validation).
     enableJsonOutput: process.env.ENABLE_JSON_OUTPUT === 'true',
     // Extended thinking (priority: .env > model-specific > global default)
     thinkingBudget: process.env.GEMINI_THINKING_BUDGET !== undefined

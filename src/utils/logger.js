@@ -560,7 +560,7 @@ function debug(messageFn) {
  * Usage: log.info(() => `[Module] Info: ${data}`)
  */
 function info(messageFn) {
-    if (currentLevel > LEVELS.debug) return; // Info logs at debug level
+    if (currentLevel > LEVELS.debug) return; // Info logs visible at debug level only
     if (!shouldSample('debug')) return; // Sampling check
 
     const message = typeof messageFn === 'function' ? messageFn() : messageFn;
