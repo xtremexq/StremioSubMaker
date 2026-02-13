@@ -209,6 +209,7 @@ class OpenAICompatibleProvider {
   }
 
   buildChatRequest(userPrompt, stream = false, meta = {}) {
+    const disableStructuredOutput = meta?.disableStructuredOutput === true;
     const isCfRun = this.isCfWorkersRunModel();
     const isCfTranslation = isCfRun && this.isCfTranslationModel();
 
@@ -238,8 +239,26 @@ class OpenAICompatibleProvider {
       };
 
     // JSON structured output mode for OpenAI-compatible APIs
-    if (!isCfRun && this.enableJsonOutput) {
-      body.response_format = { type: 'json_object' };
+    if (!isCfRun && this.enableJsonOutput && !disableStructuredOutput) {
+      body.response_format = {
+        type: 'json_schema',
+        json_schema: {
+          name: 'subtitle_entries',
+          strict: true,
+          schema: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'integer' },
+                text: { type: 'string' }
+              },
+              required: ['id', 'text'],
+              additionalProperties: false
+            }
+          }
+        }
+      };
     }
 
     if (!isCfRun && this.providerName === 'openai') {
@@ -453,21 +472,44 @@ class OpenAICompatibleProvider {
     }
   }
 
-  async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt = null) {
+  isStructuredOutputUnsupportedError(error) {
+    if (!error) return false;
+    const status = error?.response?.status || error?.status || error?.statusCode || 0;
+    const msg = String(
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.message ||
+      error?.message ||
+      ''
+    ).toLowerCase();
+    const requestIssue = status === 400 || status === 404 || status === 405 || status === 415 || status === 422 || status === 501;
+    const mentionsStructuredMode =
+      msg.includes('response_format') ||
+      msg.includes('json_schema') ||
+      msg.includes('json_object') ||
+      msg.includes('unknown parameter') ||
+      msg.includes('unsupported') ||
+      msg.includes('does not support');
+    return requestIssue && mentionsStructuredMode;
+  }
+
+  async translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt = null, requestOptions = {}) {
     const { userPrompt } = this.buildUserPrompt(subtitleContent, targetLanguage, customPrompt);
-    const { body, url, isCfRun } = this.buildChatRequest(
-      userPrompt,
-      false,
-      {
-        subtitleContent,
-        sourceLanguage,
-        targetLanguage
-      }
-    );
 
     let lastError;
+    let disableStructuredOutput = requestOptions?.disableStructuredOutput === true;
+    let structuredDowngradeUsed = disableStructuredOutput;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
+        const { body, url, isCfRun } = this.buildChatRequest(
+          userPrompt,
+          false,
+          {
+            subtitleContent,
+            sourceLanguage,
+            targetLanguage,
+            disableStructuredOutput
+          }
+        );
         const agents = this.getHttpAgents();
         const response = await axios.post(
           url,
@@ -498,6 +540,17 @@ class OpenAICompatibleProvider {
         return this.cleanTranslatedSubtitle(text);
       } catch (error) {
         lastError = error;
+        if (
+          this.enableJsonOutput &&
+          !disableStructuredOutput &&
+          !structuredDowngradeUsed &&
+          this.isStructuredOutputUnsupportedError(error)
+        ) {
+          structuredDowngradeUsed = true;
+          disableStructuredOutput = true;
+          log.warn(() => [`[${this.providerName}] Structured output not supported by this model/base, retrying without response_format`]);
+          continue;
+        }
         if (attempt < this.maxRetries) {
           log.warn(() => [`[${this.providerName}] Retry ${attempt + 1}/${this.maxRetries} after error:`, error.message]);
           continue;
@@ -512,7 +565,7 @@ class OpenAICompatibleProvider {
     }
   }
 
-  async streamTranslateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt = null, onPartial = null) {
+  async streamTranslateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt = null, onPartial = null, requestOptions = {}) {
     const { userPrompt } = this.buildUserPrompt(subtitleContent, targetLanguage, customPrompt);
     const request = this.buildChatRequest(
       userPrompt,
@@ -520,12 +573,13 @@ class OpenAICompatibleProvider {
       {
         subtitleContent,
         sourceLanguage,
-        targetLanguage
+        targetLanguage,
+        disableStructuredOutput: requestOptions?.disableStructuredOutput === true
       }
     );
 
     if (request.isCfTranslation) {
-      const full = await this.translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt);
+      const full = await this.translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt, requestOptions);
       if (typeof onPartial === 'function') {
         try { await onPartial(full); } catch (_) { }
       }
@@ -670,7 +724,7 @@ class OpenAICompatibleProvider {
         if (!fallbackUsed && looksUnsupported) {
           fallbackUsed = true;
           log.warn(() => [`[${this.providerName}] Streaming not supported for this model/base, falling back to non-stream`]);
-          const full = await this.translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt);
+          const full = await this.translateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt, requestOptions);
           if (typeof onPartial === 'function') {
             try { await onPartial(full); } catch (_) { }
           }

@@ -50,7 +50,7 @@ const { redactToken } = require('./src/utils/security');
 const { getAllLanguages, getLanguageName, toISO6392, findISO6391ByName, canonicalSyncLanguageCode } = require('./src/utils/languages');
 const { generateCacheKeys } = require('./src/utils/cacheKeys');
 const { getCached: getDownloadCached, saveCached: saveDownloadCached, getCacheStats: getDownloadCacheStats } = require('./src/utils/downloadCache');
-const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, createSessionTokenErrorSubtitle, createOpenSubtitlesAuthErrorSubtitle, createOpenSubtitlesQuotaExceededSubtitle, createCredentialDecryptionErrorSubtitle, readFromPartialCache, hasCachedTranslation, purgeTranslationCache, translationStatus, inFlightTranslations, canUserStartTranslation, getHistoryForUser, resolveHistoryUserHash, saveRequestToHistory, resolveHistoryTitle, maybeConvertToSRT } = require('./src/handlers/subtitles');
+const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, createSessionTokenErrorSubtitle, createOpenSubtitlesAuthErrorSubtitle, createOpenSubtitlesQuotaExceededSubtitle, createCredentialDecryptionErrorSubtitle, createTranslationErrorSubtitle, readFromPartialCache, hasCachedTranslation, purgeTranslationCache, translationStatus, inFlightTranslations, canUserStartTranslation, getHistoryForUser, resolveHistoryUserHash, saveRequestToHistory, resolveHistoryTitle, maybeConvertToSRT } = require('./src/handlers/subtitles');
 const GeminiService = require('./src/services/gemini');
 const TranslationEngine = require('./src/services/translationEngine');
 const { createProviderInstance, createTranslationProvider, resolveCfWorkersCredentials } = require('./src/services/translationProviderFactory');
@@ -322,7 +322,7 @@ function deriveStreamHashFromUrlServer(streamUrl, fallback = {}) {
             if (foundFilename) {
                 filename = foundFilename;
             }
-            const idKeys = ['videoId', 'video', 'id', 'mediaid', 'imdb', 'tmdb', 'kitsu', 'anidb', 'mal', 'anilist'];
+            const idKeys = ['videoId', 'video', 'id', 'mediaid', 'imdb', 'tmdb', 'kitsu', 'anidb', 'mal', 'myanimelist', 'anilist', 'tvdb', 'simkl', 'livechart', 'anisearch'];
             for (const key of idKeys) {
                 const val = url.searchParams.get(key);
                 if (val && val.trim()) {
@@ -1002,6 +1002,19 @@ app.set('etag', false);
 function computeConfigHash(configStr) {
     try {
         const seen = new WeakSet();
+        // Runtime/session activity fields that should never affect translation cache identity.
+        // These can change during playback (stream pings, UI metadata refresh) and were
+        // causing user-scoped bypass keys to drift mid-translation.
+        const volatileHashKeys = new Set([
+            'laststream',
+            'streamfilename',
+            'videofilename',
+            'videoid',
+            'videohash',
+            'streamurl',
+            'linkedtitle',
+            'lastlinkedtitle'
+        ]);
 
         const sanitizeForHash = (value) => {
             if (value === null) return null;
@@ -1020,6 +1033,7 @@ function computeConfigHash(configStr) {
             for (const key of Object.keys(value).sort()) {
                 // Ignore internal/runtime metadata so the hash only depends on user-facing config
                 if (String(key).startsWith('__')) continue;
+                if (volatileHashKeys.has(String(key).toLowerCase())) continue;
                 const sanitized = sanitizeForHash(value[key]);
                 if (sanitized !== undefined) {
                     result[key] = sanitized;
@@ -1676,6 +1690,14 @@ const searchLimiter = rateLimit({
                 // Fall through to IP if config parsing fails
             }
         }
+        // Try config from query (GET API endpoints like stream metadata/title resolvers)
+        if (req.query?.config) {
+            try {
+                return `config:${computeConfigHash(req.query.config)}`;
+            } catch (e) {
+                // Fall through to IP if config parsing fails
+            }
+        }
         // Fallback to IP address for non-authenticated requests
         // Use ipKeyGenerator to properly handle IPv6 subnet masking
         return `ip:${ipKeyGenerator(req.ip)}`;
@@ -1874,8 +1896,9 @@ app.use((req, res, next) => {
         '/api/validate-subdl',
         '/api/validate-opensubtitles',
         '/api/validate-subsro',
-        // Stream change watcher for tool pages (SSE + polling)
+        // Stream metadata endpoints for tool pages
         '/api/stream-activity',
+        '/api/resolve-linked-title',
         '/api/translate-file',
         '/api/save-synced-subtitle',
         '/api/save-embedded-subtitle',
@@ -2165,6 +2188,7 @@ app.use((req, res, next) => {
         '/api/save-embedded-subtitle',
         '/api/translate-embedded',
         '/api/stream-activity',
+        '/api/resolve-linked-title',
         '/addon',  // CRITICAL: Prevent caching of ALL addon routes (manifest, subtitles, translations)
         '/file-upload',
         '/subtitle-sync',
@@ -2468,6 +2492,45 @@ app.get('/api/stream-activity', async (req, res) => {
         if (respondStorageUnavailable(res, error, '[API] stream-activity')) return;
         log.error(() => ['[API] stream-activity error:', error.message]);
         res.status(500).json({ error: t('server.errors.streamActivityFailed', {}, 'Failed to read stream activity') });
+    }
+});
+
+// Resolve a user-facing linked stream title (anime + imdb/tmdb) for tool UIs
+app.get('/api/resolve-linked-title', searchLimiter, async (req, res) => {
+    setNoStore(res);
+    let t = res.locals?.t || getTranslatorFromRequest(req, res);
+    const { config: configStr, videoId } = req.query || {};
+
+    if (!configStr) {
+        return res.status(400).json({ error: t('server.errors.missingConfig', {}, 'Missing config') });
+    }
+    const safeVideoId = String(videoId || '').trim();
+    if (!safeVideoId) {
+        return res.status(400).json({ error: t('server.errors.missingVideoId', {}, 'Missing video ID') });
+    }
+    if (safeVideoId.length > 512) {
+        return res.status(400).json({ error: t('server.errors.invalidVideoId', {}, 'Invalid video ID') });
+    }
+
+    try {
+        const resolvedConfig = await resolveConfigGuarded(configStr, req, res, '[API] resolve-linked-title config', t);
+        if (!resolvedConfig) return;
+        if (resolvedConfig?.__sessionTokenError === true) {
+            t = getTranslatorFromRequest(req, res, resolvedConfig);
+            return res.status(401).json({ error: t('server.errors.invalidConfig', {}, 'Invalid or expired config') });
+        }
+        t = getTranslatorFromRequest(req, res, resolvedConfig);
+
+        const resolved = await resolveHistoryTitle(safeVideoId, '');
+        const title = String(resolved?.title || '').trim();
+        const normalizedTitle = title && title !== safeVideoId ? title : null;
+        const season = Number.isFinite(Number(resolved?.season)) ? Number(resolved.season) : null;
+        const episode = Number.isFinite(Number(resolved?.episode)) ? Number(resolved.episode) : null;
+        return res.json({ title: normalizedTitle, season, episode });
+    } catch (error) {
+        if (respondStorageUnavailable(res, error, '[API] resolve-linked-title')) return;
+        log.error(() => ['[API] resolve-linked-title error:', error.message]);
+        return res.status(500).json({ error: t('server.errors.metadataFailed', {}, 'Failed to resolve stream metadata') });
     }
 });
 
@@ -4463,7 +4526,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
             log.debug(() => `[Translation] Duplicate request detected for ${sourceFileId} to ${targetLang} - checking for partial results`);
 
             // Generate cache keys using shared utility (single source of truth for cache key scoping)
-            const { cacheKey, runtimeKey } = generateCacheKeys(config, sourceFileId, targetLang);
+            const { cacheKey, runtimeKey, bypass, bypassEnabled, userHash, allowPermanent } = generateCacheKeys(config, sourceFileId, targetLang);
 
             // For duplicate requests, check partial cache FIRST (in-flight translations)
             // Partials are saved under runtimeKey (see performTranslation), so read with the same key
@@ -4480,13 +4543,62 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
             const { StorageAdapter } = require('./src/storage');
             const { getStorageAdapter } = require('./src/storage/StorageFactory');
             const adapter = await getStorageAdapter();
-            const bypassCached = await adapter.get(cacheKey, StorageAdapter.CACHE_TYPES.BYPASS);
-            if (bypassCached && typeof bypassCached.content === 'string' && bypassCached.content.length > 0) {
-                log.debug(() => `[Translation] Found bypass cache result for ${sourceFileId} (${bypassCached.content.length} chars)`);
-                res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-                res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
-                setSubtitleCacheHeaders(res, 'final');
-                return res.send(bypassCached.content);
+            if (bypass && bypassEnabled) {
+                const bypassCached = await adapter.get(cacheKey, StorageAdapter.CACHE_TYPES.BYPASS);
+                if (bypassCached && bypassCached.configHash && bypassCached.configHash !== userHash) {
+                    log.warn(() => `[Translation] Bypass cache configHash mismatch for duplicate request key=${cacheKey}`);
+                } else if (bypassCached && !bypassCached.configHash) {
+                    log.warn(() => `[Translation] Bypass cache entry missing configHash for duplicate request key=${cacheKey}`);
+                }
+                if (bypassCached && bypassCached.configHash && bypassCached.configHash === userHash) {
+                    if (bypassCached.isError === true) {
+                        log.debug(() => `[Translation] Found bypass cached error for ${sourceFileId}`);
+                        const errSrt = createTranslationErrorSubtitle(
+                            bypassCached.errorType || 'other',
+                            bypassCached.errorMessage || 'Translation failed',
+                            config?.uiLanguage || 'en',
+                            bypassCached.errorProvider || null
+                        );
+                        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                        res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
+                        setSubtitleCacheHeaders(res, 'final');
+                        return res.send(errSrt);
+                    }
+                    if (typeof bypassCached.content === 'string' && bypassCached.content.length > 0) {
+                        log.debug(() => `[Translation] Found bypass cache result for ${sourceFileId} (${bypassCached.content.length} chars)`);
+                        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                        res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
+                        setSubtitleCacheHeaders(res, 'final');
+                        return res.send(bypassCached.content);
+                    }
+                }
+            }
+
+            if (!bypassEnabled && allowPermanent && process.env.ENABLE_PERMANENT_TRANSLATIONS !== 'false') {
+                const permanentKey = `t2s__${cacheKey}`;
+                const permanentCached = await adapter.get(permanentKey, StorageAdapter.CACHE_TYPES.TRANSLATION);
+                if (permanentCached) {
+                    if (permanentCached.isError === true) {
+                        log.debug(() => `[Translation] Found permanent cached error for ${sourceFileId}`);
+                        const errSrt = createTranslationErrorSubtitle(
+                            permanentCached.errorType || 'other',
+                            permanentCached.errorMessage || 'Translation failed',
+                            config?.uiLanguage || 'en',
+                            permanentCached.errorProvider || null
+                        );
+                        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                        res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
+                        setSubtitleCacheHeaders(res, 'final');
+                        return res.send(errSrt);
+                    }
+                    if (typeof permanentCached.content === 'string' && permanentCached.content.length > 0) {
+                        log.debug(() => `[Translation] Found permanent cache result for ${sourceFileId} (${permanentCached.content.length} chars)`);
+                        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                        res.setHeader('Content-Disposition', `attachment; filename="translated_${targetLang}.srt"`);
+                        setSubtitleCacheHeaders(res, 'final');
+                        return res.send(permanentCached.content);
+                    }
+                }
             }
 
             // No partial yet, serve loading message
@@ -4519,22 +4631,27 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
             return res.status(500).send(t('server.errors.translationInvalidContent', {}, 'Translation returned invalid content'));
         }
 
-        // Check if this is a loading message or actual translation
+        // Distinguish placeholder loading SRT from in-progress partial SRT.
+        // Partial payloads include a "TRANSLATION IN PROGRESS" tail cue, so that marker
+        // alone is not sufficient to classify as loading.
+        const cueCount = (subtitleContent.match(/(?:^|\n)\d+\n\d{2}:\d{2}:\d{2},\d{3}\s+-->/g) || []).length;
+        const hasProgressTail = subtitleContent.includes('TRANSLATION IN PROGRESS');
         const isLoadingMessage = subtitleContent.includes('Please wait while the selected subtitle is being translated') ||
             subtitleContent.includes('Translation is happening in the background') ||
             subtitleContent.includes('Click this subtitle again to confirm translation') ||
-            subtitleContent.includes('TRANSLATION IN PROGRESS');
-        log.debug(() => `[Translation] Serving ${isLoadingMessage ? 'loading message' : 'translated content'} for ${sourceFileId} (was duplicate: ${isAlreadyInFlight})`);
+            (hasProgressTail && cueCount <= 1);
+        const isPartialMessage = hasProgressTail && cueCount > 1;
+        log.debug(() => `[Translation] Serving ${isLoadingMessage ? 'loading message' : (isPartialMessage ? 'partial content' : 'translated content')} for ${sourceFileId} (was duplicate: ${isAlreadyInFlight})`);
         log.debug(() => `[Translation] Content length: ${subtitleContent.length} characters, first 200 chars: ${subtitleContent.substring(0, 200)}`);
 
         // Always use 'attachment' header for Android compatibility
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${isLoadingMessage ? 'translating' : 'translated'}_${targetLang}.srt"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${(isLoadingMessage || isPartialMessage) ? 'translating' : 'translated'}_${targetLang}.srt"`);
 
-        // Disable caching for loading messages so Stremio can poll for updates
-        if (isLoadingMessage) {
+        // Disable caching for loading/partial messages so Stremio can poll for updates
+        if (isLoadingMessage || isPartialMessage) {
             setSubtitleCacheHeaders(res, 'loading');
-            log.debug(() => `[Translation] Set no-store headers for loading message`);
+            log.debug(() => `[Translation] Set no-store headers for ${isPartialMessage ? 'partial message' : 'loading message'}`);
         } else {
             // Final translations: allow private caching so Android players don't keep reloading and resetting offsets
             setSubtitleCacheHeaders(res, 'final');
@@ -7365,7 +7482,7 @@ app.get('/manifest.json', (req, res) => {
             catalogs: [],
             resources: ['subtitles'],
             types: ['movie', 'series', 'anime'],
-            idPrefixes: ['tt', 'tmdb', 'anidb', 'kitsu', 'mal', 'anilist'],
+            idPrefixes: ['tt', 'tmdb', 'anidb', 'kitsu', 'mal', 'myanimelist', 'anilist', 'tvdb', 'simkl', 'livechart', 'anisearch'],
             behaviorHints: {
                 configurable: true,
                 configurationRequired: true

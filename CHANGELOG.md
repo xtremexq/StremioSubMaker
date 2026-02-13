@@ -4,7 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.53
 
+**New Features:**
+
+- **Offline anime ID resolver (Fribb/anime-lists):** Added `animeIdResolver.js` — a new service that loads the complete [Fribb/anime-lists](https://github.com/Fribb/anime-lists) dataset (~42,000 entries) into memory at startup, building O(1) `Map` lookups for Kitsu, MAL, AniDB, and AniList IDs → IMDB/TMDB. Anime ID resolution now completes instantly via local Map lookup instead of making live API calls to Kitsu, Jikan, AniList GraphQL, or Wikidata SPARQL. Existing live API services are retained as fallbacks for entries not in the static list. The data file is auto-downloaded on first startup if missing, and auto-refreshed weekly with Redis leader election for multi-instance deployments (only one pod downloads; others detect the update via a Redis timestamp key and reload).
+
+- **Native JSON translation workflow:** Added "JSON (Structured)" as a fourth Translation Workflow option alongside Original Timestamps, Send Timestamps to AI, and XML Tags. When selected, subtitle entries are sent to the AI as a clean JSON array (`[{"id":1,"text":"..."},...]`) and the AI responds in the same format — no format ambiguity. This replaces the old `enableJsonOutput` toggle, which bolted JSON instructions onto existing workflows causing "Pattern Trap" issues where the AI ignored the JSON format and returned numbered lists. The new workflow has a dedicated prompt (`_buildJsonPrompt`), input formatter (`_prepareJsonBatchContent`), and response parser. Batch size is intrinsically capped at 150 entries for JSON to reduce syntax errors. Full context support: when batch context is enabled, context is wrapped in a `__context` key in the JSON payload.
+
+- **OpenSubtitles auth hash matching:** When a real Stremio `videoHash` is available (from torrent-based streaming addons like Torrentio), the OpenSubtitles auth search now includes the `moviehash` parameter. Subtitles that the API confirms as exact file matches (`moviehash_match=true`) are flagged with `hashMatch: true` and ranked in Tier 0 alongside SCS hash matches.
+
 **Improvements:**
+
+- **Expanded supported anime ID schemes in the manifest:** SubMaker now advertises and accepts additional anime ecosystem ID prefixes used by catalog addons: `myanimelist`, `tvdb`, `simkl`, `livechart`, and `anisearch` (alongside `anidb`, `kitsu`, `mal`, and `anilist`).
+
+- **Extended offline resolver maps to additional platforms:** The bundled Fribb/anime-lists resolver now builds O(1) in-memory maps not only for Kitsu/MAL/AniDB/AniList, but also for TVDB, SIMKL, LiveChart, and AniSearch IDs.
+
+- **Provider-agnostic Tier 0 hash ranking:** The highest-priority subtitle ranking tier (200,000+ points) is no longer exclusive to Stremio Community Subtitles. Any provider that sets `hashMatch: true` on its results now qualifies for Tier 0 ranking, enabling OpenSubtitles auth hash-matched subtitles to rank at the top alongside SCS.
+
+- **History title resolution for all anime platforms:** Previously, only Kitsu anime entries in Translation History could resolve titles (via the Kitsu API). MAL, AniDB, and AniList entries showed raw IDs (e.g., `mal:20:1:5`). Now, the offline resolver maps any anime platform ID → IMDB, then Cinemeta provides the title. The Kitsu API remains as a final fallback for Kitsu IDs if the offline→Cinemeta path fails.
 
 - **Partial delivery checkpoint schedule logged at translation start:** When streaming translation begins, the addon now logs the full checkpoint schedule showing exactly when partial saves will trigger (e.g., `first=30, step=75, checkpoints=[30, 105, 180, 255, 324]`), along with debounce, minimum delta, and log interval settings. This makes it immediately clear what the save cadence will be for a given file size and streaming mode.
 
@@ -16,21 +32,61 @@ All notable changes to this project will be documented in this file.
 
 - **Cache buster redirects now logged:** 307 redirects from the cache-buster middleware now log at DEBUG level showing the redirect path.
 
-- **OpenSubtitles auth hash matching:** When a real Stremio `videoHash` is available (from torrent-based streaming addons like Torrentio), the OpenSubtitles auth search now includes the `moviehash` parameter. Subtitles that the API confirms as exact file matches (`moviehash_match=true`) are flagged with `hashMatch: true` and ranked in Tier 0 alongside SCS hash matches.
-
-- **Provider-agnostic Tier 0 hash ranking:** The highest-priority subtitle ranking tier (200,000+ points) is no longer exclusive to Stremio Community Subtitles. Any provider that sets `hashMatch: true` on its results now qualifies for Tier 0 ranking, enabling OpenSubtitles auth hash-matched subtitles to rank at the top alongside SCS.
-
-- **Offline anime ID resolver (Fribb/anime-lists):** Added `animeIdResolver.js` — a new service that loads the complete [Fribb/anime-lists](https://github.com/Fribb/anime-lists) dataset (~42,000 entries) into memory at startup, building O(1) `Map` lookups for Kitsu, MAL, AniDB, and AniList IDs → IMDB/TMDB. Anime ID resolution now completes instantly via local Map lookup instead of making live API calls to Kitsu, Jikan, AniList GraphQL, or Wikidata SPARQL. Existing live API services are retained as fallbacks for entries not in the static list. The data file is auto-downloaded on first startup if missing, and auto-refreshed weekly with Redis leader election for multi-instance deployments (only one pod downloads; others detect the update via a Redis timestamp key and reload).
-
-- **History title resolution for all anime platforms:** Previously, only Kitsu anime entries in Translation History could resolve titles (via the Kitsu API). MAL, AniDB, and AniList entries showed raw IDs (e.g., `mal:20:1:5`). Now, the offline resolver maps any anime platform ID → IMDB, then Cinemeta provides the title. The Kitsu API remains as a final fallback for Kitsu IDs if the offline→Cinemeta path fails.
-
-- **Native JSON translation workflow:** Added "JSON (Structured)" as a fourth Translation Workflow option alongside Original Timestamps, Send Timestamps to AI, and XML Tags. When selected, subtitle entries are sent to the AI as a clean JSON array (`[{"id":1,"text":"..."},...]`) and the AI responds in the same format — no format ambiguity. This replaces the old `enableJsonOutput` toggle, which bolted JSON instructions onto existing workflows causing "Pattern Trap" issues where the AI ignored the JSON format and returned numbered lists. The new workflow has a dedicated prompt (`_buildJsonPrompt`), input formatter (`_prepareJsonBatchContent`), and response parser. Batch size is intrinsically capped at 150 entries for JSON to reduce syntax errors. Full context support: when batch context is enabled, context is wrapped in a `__context` key in the JSON payload.
-
 - **Auto-migration from enableJsonOutput toggle:** Users who had the old `enableJsonOutput` checkbox enabled are automatically migrated to the new `json` workflow on config load. The `ENABLE_JSON_OUTPUT` environment variable is deprecated but still works (auto-migrates during config validation). Old saved configs with `enableJsonOutput: true` seamlessly upgrade to `translationWorkflow: 'json'` without user intervention.
 
+- **Raised JSON workflow batch cap to 200 entries:** Increased the JSON structured workflow cap from 150 to 200 (`TranslationEngine`), so high-throughput models like `gemini-3-flash` now log and run at `400 -> 200` instead of `400 -> 150`.
+
+- **MAL alias normalization (`myanimelist` -> `mal`):** Incoming IDs using `myanimelist:*` are normalized to the canonical `mal:*` path so they resolve through the same fast offline mapping.
+
+- **TMDB-only offline crosswalks are now first-class:** Anime IDs that resolve offline to TMDB (but not IMDb) are now preserved and used in search/title flows instead of being treated as misses.
+
+- **Optional season hint support from bundled mapping:** The resolver now carries mapping `season` metadata and can apply it to seasonless anime-episode IDs when `ANIME_SEASON_HINT_ENABLED=true`.
+
+- **Safer canonical Stremio ID parsing:** Unknown prefixed IDs no longer fall through as pseudo-IMDb IDs; invalid/unknown prefixed formats now fail closed, reducing false-positive searches.
+
+- **Cross-surface ID compatibility updates:** Stream-ID extraction and anime-ID recognition were expanded consistently in server and toolbox/sync/quick-nav generated pages for the same prefix set.
+
+- **Redis refresh coordination hardened for multi-instance deployments:** Weekly mapping refresh leader election now uses atomic Redis `SET ... NX EX` lock acquisition when Redis is available, with existing standalone fallback preserved.
+
+- **Linked stream title resolution unified across Toolbox/Sync surfaces:** Anime linked-title display in browser UIs is no longer effectively Kitsu-only. Client pages now call a server API resolver that supports all mapped anime ID platforms (`anidb`, `kitsu`, `mal`/`myanimelist`, `anilist`, `tvdb`, `simkl`, `livechart`, `anisearch`) through the offline resolver + Cinemeta fallback chain.
+
+- **New metadata endpoint for linked-title resolution:** Added `GET /api/resolve-linked-title` for toolbox/sync UI title hydration. The endpoint validates config/session state, applies `no-store` caching headers, and returns normalized `{ title, season, episode }` metadata for a provided `videoId`.
+
+- **Rate-limit keying improved for query-based config endpoints:** `searchLimiter` now keys on `req.query.config` in addition to params/body config sources, so GET metadata endpoints using query tokens are user/config scoped (not shared IP fallback).
 
 **Bug Fixes:**
 
+- **429/503 retry rotation now walks all remaining Gemini keys:** Translation retries for HTTP rate-limit/unavailable errors no longer stop after a single rotated-key attempt. When key rotation is enabled with multiple keys, the engine now retries across remaining keys (`keys - 1` max) before falling back. Rotation also stops early if the latest retry failure is no longer an HTTP retryable error.
+
+- **JSON workflow now drives provider structured mode (not only deprecated toggle):** Fixed provider wiring so selecting `translationWorkflow: 'json'` reliably enables provider-side structured output behavior (with `enableJsonOutput` still accepted for backward compatibility). Previously, some paths only checked the deprecated flag, so JSON workflow could be selected while providers were still running in plain-text mode.
+
+- **OpenAI-compatible structured output aligned to array contract + graceful downgrade:** Replaced `response_format: { type: 'json_object' }` with a strict `json_schema` that matches SubMaker's expected array of `{id,text}` entries. Added automatic one-shot retry without structured `response_format` when the model/base URL rejects structured output parameters.
+
+- **Automatic JSON -> XML workflow fallback on hard failures:** Added batch-level XML fallback when JSON structured mode fails in practice (provider structured-capability errors, total JSON parse failure, or mismatch recovery ending with warning placeholders). This keeps translation progress moving with robust ID-based XML parsing instead of returning sparse/placeholder output.
+
+- **JSON parser now accepts object envelopes in addition to arrays:** `parseJsonResponse()` now recovers from structured responses wrapped as objects (for example `{ "entries": [...] }`, `{ "items": [...] }`, `{ "data": [...] }`) rather than failing when a model returns an envelope instead of a raw array.
+
+- **DeepL/Google native flow enforced as secondary fallback too:** DeepL and Google Translate were already forced to native/original flow when selected as main providers. Extended this behavior to secondary fallback usage: when either is secondary, fallback calls now send native SRT input with no JSON/XML prompt contract, preventing workflow-format mismatches in JSON-mode error recovery.
+
+- **Fixed duplicate in-flight translations caused by config-hash drift during playback:** Some requests for the same subtitle/language pair could generate different user-scoped runtime keys (for example, `...__u_b955...` then `...__u_014e...`) when stream/runtime metadata changed between requests. This bypassed in-flight deduplication and started parallel background translations for the same job.
+
+- **Stabilized translation cache identity by excluding volatile stream metadata from config hashing:** `computeConfigHash()` now ignores runtime-only fields (`lastStream`, `streamFilename`, `videoFilename`, `videoId`, `videoHash`, `streamUrl`, `linkedTitle`, `lastLinkedTitle`) so playback activity no longer changes bypass/partial cache namespaces mid-translation.
+
+- **Fixed "Partial SAVED" logs with missing visible partials (key-split symptom):** Partial checkpoints were being persisted, but duplicate polls under a drifted hash looked in a different partial key and saw only loading/final output. With stable hash identity, partial reads and writes now remain in the same keyspace for the full translation lifecycle.
+
+- **Eliminated misleading post-completion partial-save logs from parallel duplicate runs:** Logs like `Partial SAVED ... 331/392` or `392/392` after an earlier completion were emitted by a second duplicate translation still running under another runtime key. Preventing hash-drift duplicates removes this delayed second completion pattern.
+
+- **Partial save deduplicated by payload fingerprint (not only counters):** Partial checkpoint persistence now hashes the generated partial SRT payload and skips writes when the payload is identical to the last saved snapshot. This removes redundant writes/logs when streaming and batch-end callbacks emit the same state (for example duplicate `392/392` saves), while still allowing legitimate updates with the same entry count.
+
+- **In-flight duplicate polling now re-checks final cache before falling back to loading:** During active translations, duplicate/status paths now check final cache resolution (bypass/permanent) before serving partial/loading placeholders. This closes race windows where final output was already available but callers still received loading.
+
+- **Duplicate route now resolves permanent-cache finals and cached errors consistently:** The `/addon/:config/translate/:sourceFileId/:targetLang` duplicate-request fast path now reads permanent cache (`t2s__...`) when bypass is not active, and serves cached translation errors (`isError`) for both bypass and permanent modes instead of falling through to loading.
+
+- **Bypass duplicate reads now enforce configHash guards with explicit diagnostics:** Duplicate bypass-cache checks now log and ignore entries with missing/mismatched `configHash`, matching the same isolation guard behavior used in main translation cache reads.
+
+- **Loading-vs-partial response classification corrected in translation route logs/headers:** Partial SRT payloads (multi-cue payloads with a `TRANSLATION IN PROGRESS` tail) are now classified as partial content rather than placeholder loading messages. This avoids misleading logs and keeps no-store behavior focused on true in-progress payload semantics.
+
+- **Hardened file-upload route hash handling to preserve canonical scoped hash:** `/file-upload` no longer overwrites `config.__configHash` with an unscoped recompute when a canonical hash already exists from config resolution; it now only computes a fallback hash when missing. This keeps hash semantics aligned across routes.
 
 - **Improved auto-sub merge logic for capitalized text:** The `shouldMergeAutoSubEntries` function no longer blocks merging when the next subtitle starts with a capital letter. Previously, any capital letter at the start prevented merging (treating it as a new sentence/speaker), but sentence boundaries are already caught by the punctuation check. Now only obvious speaker/section markers (`-–—♪`) block merging.
 
@@ -39,6 +95,8 @@ All notable changes to this project will be documented in this file.
 - **Fixed zero-duration subtitle entries:** Added explicit guard in `splitLongEntry` to prevent zero-duration entries — if `end <= start`, the end time is set to `start + 800ms`.
 
 - **Ensured 800ms minimum duration in final SRT output:** The `normalizeAutoSubSrt` function now enforces a minimum 800ms duration for each subtitle entry during final processing, catching any edge cases missed earlier in the pipeline.
+
+- **Resolved-title cache behavior hardened for transient metadata misses:** Title history resolution now uses short-lived negative caching for unresolved lookups (5 minutes) instead of letting unresolved states linger in the long-lived history title cache window.
 
 **User Interface:**
 
@@ -61,7 +119,6 @@ All notable changes to this project will be documented in this file.
 - **Removed orphaned `_buildXmlInputJsonOutputPrompt` method:** The old XML-input + JSON-output hybrid prompt builder (48 lines) was no longer called after the `enableJsonOutput` bolt-on removal. Its functionality is now handled natively by `_buildJsonPrompt` in the `json` workflow.
 
 - **Removed dead `enableJsonOutput` UI wiring:** Cleaned up 4 stale references in `public/config.js`: event listener for removed checkbox, `areAdvancedSettingsModified()` comparison, save logic, and simplified-mode hide list.
-
 
 ## SubMaker v1.4.52
 
@@ -1820,6 +1877,3 @@ This release implements comprehensive automatic recovery for corrupted, missing,
 - **Locale key flash fix:** Prevented raw i18n keys from appearing briefly before localized text loads on config pages.
 - Fixed SRT integrity during partial loading: entries reindexed and tail message positioned after last translated timestamp
 - Fixed addon URL generation for private networks (192.168.x.x, 10.x.x.x, 172.16-31.x.x ranges now recognized as local, preventing forced HTTPS)
-
-
-

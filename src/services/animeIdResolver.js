@@ -33,11 +33,15 @@ const REDIS_LOCK_TTL_SECONDS = 5 * 60; // 5 min lock
 const REDIS_UPDATED_KEY = 'anime_list_updated_at';
 
 // ── state ────────────────────────────────────────────────────────────
-/** @type {Map<number, {imdbId:string|null, tmdbId:number|null, type:string}>} */
+/** @type {Map<number, {imdbId:string|null, tmdbId:number|null, type:string, season:number|null}>} */
 let kitsuMap = new Map();
 let malMap = new Map();
 let anidbMap = new Map();
 let anilistMap = new Map();
+let tvdbMap = new Map();
+let simklMap = new Map();
+let livechartMap = new Map();
+let anisearchMap = new Map();
 
 let _ready = false;
 let _entryCount = 0;
@@ -66,6 +70,10 @@ function buildMaps(entries) {
     const mMap = new Map();
     const adbMap = new Map();
     const alMap = new Map();
+    const tvMap = new Map();
+    const skMap = new Map();
+    const lcMap = new Map();
+    const asMap = new Map();
 
     for (let i = 0; i < entries.length; i++) {
         const e = entries[i];
@@ -74,15 +82,20 @@ function buildMaps(entries) {
         const tmdbId = e.themoviedb_id || null;
         if (!imdbId && !tmdbId) continue; // skip entries with no useful mapping
 
-        const meta = { imdbId, tmdbId, type: e.type || null };
+        const season = Number.isFinite(Number(e.season)) ? Number(e.season) : null;
+        const meta = { imdbId, tmdbId, type: e.type || null, season };
 
         if (e.kitsu_id) kMap.set(e.kitsu_id, meta);
         if (e.mal_id) mMap.set(e.mal_id, meta);
         if (e.anidb_id) adbMap.set(e.anidb_id, meta);
         if (e.anilist_id) alMap.set(e.anilist_id, meta);
+        if (e.tvdb_id) tvMap.set(e.tvdb_id, meta);
+        if (e.simkl_id) skMap.set(e.simkl_id, meta);
+        if (e.livechart_id) lcMap.set(e.livechart_id, meta);
+        if (e.anisearch_id) asMap.set(e.anisearch_id, meta);
     }
 
-    return { kMap, mMap, adbMap, alMap };
+    return { kMap, mMap, adbMap, alMap, tvMap, skMap, lcMap, asMap };
 }
 
 // ── download / load ──────────────────────────────────────────────────
@@ -137,18 +150,22 @@ function loadFromDisk() {
             return false;
         }
 
-        const { kMap, mMap, adbMap, alMap } = buildMaps(entries);
+        const { kMap, mMap, adbMap, alMap, tvMap, skMap, lcMap, asMap } = buildMaps(entries);
         kitsuMap = kMap;
         malMap = mMap;
         anidbMap = adbMap;
         anilistMap = alMap;
+        tvdbMap = tvMap;
+        simklMap = skMap;
+        livechartMap = lcMap;
+        anisearchMap = asMap;
         _entryCount = entries.length;
         _loadedAt = Date.now();
         _ready = true;
 
         log.info(() =>
             `[AnimeIdResolver] Loaded ${entries.length} entries → ` +
-            `kitsu:${kMap.size} mal:${mMap.size} anidb:${adbMap.size} anilist:${alMap.size}`
+            `kitsu:${kMap.size} mal:${mMap.size} anidb:${adbMap.size} anilist:${alMap.size} tvdb:${tvMap.size} simkl:${skMap.size} livechart:${lcMap.size} anisearch:${asMap.size}`
         );
         return true;
     } catch (err) {
@@ -166,24 +183,28 @@ function loadFromDisk() {
  */
 async function tryAcquireRefreshLock() {
     try {
-        const { StorageAdapter } = require('../storage');
-        const { getShared, setShared } = require('../utils/sharedCache');
+        const { StorageAdapter, StorageFactory } = require('../storage');
+        const redisClient = StorageFactory.getRedisClient();
 
-        // Try to set the lock key only if it doesn't exist (NX pattern via sharedCache)
-        // We use a special cache type since this is coordination, not data
-        const existing = await getShared(REDIS_LOCK_KEY, StorageAdapter.CACHE_TYPES.PROVIDER_METADATA);
-        if (existing) {
-            log.debug(() => '[AnimeIdResolver] Another instance holds the refresh lock');
-            return false;
+        // Preferred path: true atomic lock with SET key value NX EX ttl
+        if (redisClient) {
+            const adapter = await StorageFactory.getStorageAdapter();
+            const fullKey = adapter._getKey(REDIS_LOCK_KEY, StorageAdapter.CACHE_TYPES.PROVIDER_METADATA);
+            const result = await redisClient.set(
+                fullKey,
+                String(Date.now()),
+                'EX',
+                REDIS_LOCK_TTL_SECONDS,
+                'NX'
+            );
+            return result === 'OK';
         }
 
-        // Set the lock with TTL
-        await setShared(
-            REDIS_LOCK_KEY,
-            String(Date.now()),
-            StorageAdapter.CACHE_TYPES.PROVIDER_METADATA,
-            REDIS_LOCK_TTL_SECONDS
-        );
+        // Fallback path for standalone/filesystem mode (best effort)
+        const { getShared, setShared } = require('../utils/sharedCache');
+        const existing = await getShared(REDIS_LOCK_KEY, StorageAdapter.CACHE_TYPES.PROVIDER_METADATA);
+        if (existing) return false;
+        await setShared(REDIS_LOCK_KEY, String(Date.now()), StorageAdapter.CACHE_TYPES.PROVIDER_METADATA, REDIS_LOCK_TTL_SECONDS);
         return true;
     } catch (err) {
         // If Redis is not available, allow this instance to refresh (standalone mode)
@@ -313,9 +334,9 @@ async function refresh() {
 /**
  * Resolve an anime platform ID to IMDB (and optionally TMDB).
  *
- * @param {string} platform - 'kitsu' | 'mal' | 'anidb' | 'anilist'
+ * @param {string} platform - 'kitsu' | 'mal' | 'myanimelist' | 'anidb' | 'anilist' | 'tvdb' | 'simkl' | 'livechart' | 'anisearch'
  * @param {string|number} rawId - e.g. "kitsu:1376", "mal:20", or just "1376"
- * @returns {{ imdbId: string|null, tmdbId: number|null, type: string|null } | null}
+ * @returns {{ imdbId: string|null, tmdbId: number|null, type: string|null, season:number|null } | null}
  */
 function resolveImdbId(platform, rawId) {
     if (!_ready) return null;
@@ -323,12 +344,17 @@ function resolveImdbId(platform, rawId) {
     const numericId = extractNumeric(rawId);
     if (isNaN(numericId)) return null;
 
-    const p = String(platform).toLowerCase();
+    const rawPlatform = String(platform).toLowerCase();
+    const p = rawPlatform === 'myanimelist' ? 'mal' : rawPlatform;
     let map;
     if (p === 'kitsu') map = kitsuMap;
     else if (p === 'mal') map = malMap;
     else if (p === 'anidb') map = anidbMap;
     else if (p === 'anilist') map = anilistMap;
+    else if (p === 'tvdb') map = tvdbMap;
+    else if (p === 'simkl') map = simklMap;
+    else if (p === 'livechart') map = livechartMap;
+    else if (p === 'anisearch') map = anisearchMap;
     else return null;
 
     const result = map.get(numericId);
@@ -351,6 +377,10 @@ function getStats() {
             mal: malMap.size,
             anidb: anidbMap.size,
             anilist: anilistMap.size,
+            tvdb: tvdbMap.size,
+            simkl: simklMap.size,
+            livechart: livechartMap.size,
+            anisearch: anisearchMap.size,
         },
     };
 }

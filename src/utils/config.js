@@ -1307,7 +1307,7 @@ function buildManifest(config, baseUrl = '') {
     resources: ['subtitles'],
     types: ['movie', 'series', 'anime'],
 
-    idPrefixes: ['tt', 'tmdb', 'anidb', 'kitsu', 'mal', 'anilist'],
+    idPrefixes: ['tt', 'tmdb', 'anidb', 'kitsu', 'mal', 'myanimelist', 'anilist', 'tvdb', 'simkl', 'livechart', 'anisearch'],
 
     behaviorHints: {
       configurable: true,

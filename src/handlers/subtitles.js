@@ -176,6 +176,12 @@ const historyTitleCache = new LRUCache({
   ttl: 24 * 60 * 60 * 1000, // 24 hours
   updateAgeOnGet: true
 });
+// Negative cache for unresolved history titles (short TTL to avoid stale misses)
+const historyTitleMissCache = new LRUCache({
+  max: 500,
+  ttl: 5 * 60 * 1000, // 5 minutes
+  updateAgeOnGet: true
+});
 
 // Track subtitle source metadata (videoId/filename/title) by sourceFileId for history enrichment
 const translationSourceMeta = new LRUCache({
@@ -2143,13 +2149,28 @@ function createSubtitleHandler(config) {
 
               // Step 1: Try offline static mapping (instant, O(1) Map lookup, no API calls)
               const offlineResult = animeIdResolver.resolveImdbId(videoInfo.animeIdType, videoInfo.animeId);
-              if (offlineResult?.imdbId) {
-                videoInfo.imdbId = offlineResult.imdbId;
+              if (offlineResult?.imdbId || offlineResult?.tmdbId) {
+                if (offlineResult.imdbId) {
+                  videoInfo.imdbId = offlineResult.imdbId;
+                }
                 // Also store TMDB ID from offline mapping if we don't already have one
                 if (offlineResult.tmdbId && !videoInfo.tmdbId) {
                   videoInfo.tmdbId = String(offlineResult.tmdbId);
                 }
-                log.info(() => `[Subtitles] Offline mapped ${videoInfo.animeIdType} ${videoInfo.animeId} → ${offlineResult.imdbId}${offlineResult.tmdbId ? ` (tmdb:${offlineResult.tmdbId})` : ''}`);
+                if (
+                  videoInfo.type === 'anime-episode' &&
+                  !videoInfo.season &&
+                  Number.isFinite(Number(offlineResult.season)) &&
+                  Number(offlineResult.season) > 0 &&
+                  process.env.ANIME_SEASON_HINT_ENABLED === 'true'
+                ) {
+                  videoInfo.season = Number(offlineResult.season);
+                }
+                const resolvedSummary = [
+                  offlineResult.imdbId || null,
+                  offlineResult.tmdbId ? `tmdb:${offlineResult.tmdbId}` : null
+                ].filter(Boolean).join(' | ');
+                log.info(() => `[Subtitles] Offline mapped ${videoInfo.animeIdType} ${videoInfo.animeId} → ${resolvedSummary}`);
               } else {
                 // Step 2: Fallback to live API services (for entries not in the static list)
                 log.debug(() => `[Subtitles] No offline mapping for ${videoInfo.animeIdType} ${videoInfo.animeId}, falling back to live API`);
@@ -4023,14 +4044,22 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
           return createTranslationErrorSubtitle('other', 'Translation did not finish in time. Please retry.', config.uiLanguage || 'en');
         } else {
           // DON'T WAIT for completion - immediately return available partials instead
-          // Check storage first (in case it just completed)
-          const cachedResult = (allowPermanent && ENABLE_PERMANENT_TRANSLATIONS)
-            ? await readFromStorage(baseKey)
-            : null;
+          // Check final cache first (bypass/permanent) in case it just completed
+          const cachedResult = await getFinalCachedTranslation(
+            baseKey,
+            cacheKey,
+            {
+              bypass,
+              bypassEnabled,
+              userHash,
+              allowPermanent: allowPermanent && ENABLE_PERMANENT_TRANSLATIONS,
+              uiLanguage: config.uiLanguage || 'en'
+            }
+          );
           if (cachedResult) {
             log.debug(() => '[Translation] Final result already cached; returning it');
             cacheMetrics.hits++;
-            return cachedResult.content || cachedResult;
+            return cachedResult;
           }
 
           // Check partial cache (most common case - translation in progress)
@@ -4121,6 +4150,22 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
           return createTranslationErrorSubtitle('other', 'Translation did not finish in time. Please retry.', config.uiLanguage || 'en');
         } else {
           try {
+            const finalNow = await getFinalCachedTranslation(
+              baseKey,
+              cacheKey,
+              {
+                bypass,
+                bypassEnabled,
+                userHash,
+                allowPermanent: allowPermanent && ENABLE_PERMANENT_TRANSLATIONS,
+                uiLanguage: config.uiLanguage || 'en'
+              }
+            );
+            if (finalNow) {
+              log.debug(() => '[Translation] Final result became available while status was in-progress; serving final');
+              cacheMetrics.hits++;
+              return finalNow;
+            }
             const partial = await readFromPartialCache(runtimeKey);
             if (partial && typeof partial.content === 'string' && partial.content.length > 0) {
               log.debug(() => '[Translation] Serving partial SRT from partial cache');
@@ -4498,6 +4543,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
     let lastStreamSavedAt = 0;
     let lastLoggedEntries = 0;
     let nextPartialRebuildAt = null;
+    let lastPartialSavedFingerprint = '';
     const STREAM_SAVE_MIN_STEP = 10;
     const STREAM_SAVE_DEBOUNCE_MS = 3000;
     const streamingProviderMode = translationEngine.enableStreaming === true;
@@ -4591,10 +4637,16 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
         targetLangName,
         config.translationPrompt,
         async (progress) => {
+          let skippedDuplicatePayload = false;
           const persistPartial = async (partialText) => {
             if (partialDeliveryDisabled) return false;
             const partialSrt = buildPartialSrtWithTail(partialText, config.uiLanguage || 'en');
             if (!partialSrt || partialSrt.length === 0) return false;
+            const partialFingerprint = crypto.createHash('sha1').update(partialSrt).digest('hex');
+            if (partialFingerprint && partialFingerprint === lastPartialSavedFingerprint) {
+              skippedDuplicatePayload = true;
+              return false;
+            }
 
             // Chain saves sequentially to prevent race conditions
             let saved = false;
@@ -4608,6 +4660,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
                 consecutivePartialSaveFailures = 0; // Reset on success
                 // Always log partial saves — they only happen at checkpoint boundaries so they are rare
                 log.debug(() => `[Translation] Partial SAVED: batch ${progress.currentBatch}/${progress.totalBatches}, ${progress.completedEntries}/${progress.totalEntries} entries${progress.streaming ? ' (streaming)' : ''}, nextCheckpoint=${nextPartialRebuildAt}`);
+                lastPartialSavedFingerprint = partialFingerprint;
                 saved = true;
               } catch (saveErr) {
                 consecutivePartialSaveFailures++;
@@ -4660,7 +4713,9 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
             if (logThisProgress && throttleLogging && !didPersist) {
               // Determine the actual reason the save was skipped for clarity
               let skipReason;
-              if (!allowRebuild) {
+              if (skippedDuplicatePayload) {
+                skipReason = `duplicate partial payload (${completed}/${total})`;
+              } else if (!allowRebuild) {
                 skipReason = `checkpoint not reached (next=${nextPartialRebuildAt})`;
               } else if (isStreaming) {
                 const seq = progress.streamSequence || 0;
@@ -5394,6 +5449,10 @@ async function resolveHistoryTitle(videoId, fallbackTitle = '', seasonHint = nul
     const cached = historyTitleCache.get(videoId);
     if (cached) return cached;
   }
+  if (historyTitleMissCache.has(videoId)) {
+    const cachedMiss = historyTitleMissCache.get(videoId);
+    if (cachedMiss) return cachedMiss;
+  }
 
   let title = fallbackTitle || '';
   let season = seasonHint;
@@ -5412,18 +5471,23 @@ async function resolveHistoryTitle(videoId, fallbackTitle = '', seasonHint = nul
       const offlineResult = animeIdResolver.resolveImdbId(parsed.animeIdType, parsed.animeId);
       let resolvedTitle = false;
 
-      if (offlineResult?.imdbId) {
+      if (offlineResult?.imdbId || offlineResult?.tmdbId) {
         try {
           const metaType = offlineResult.type === 'MOVIE' || offlineResult.type === 'Movie' ? 'movie' : 'series';
-          const metaUrl = `https://v3-cinemeta.strem.io/meta/${metaType}/${encodeURIComponent(offlineResult.imdbId)}.json`;
+          const offlineMetaId = offlineResult.imdbId || `tmdb:${offlineResult.tmdbId}`;
+          const metaUrl = `https://v3-cinemeta.strem.io/meta/${metaType}/${encodeURIComponent(offlineMetaId)}.json`;
           const metaResp = await axios.get(metaUrl, { timeout: 7500 });
           if (metaResp?.data?.meta?.name) {
             title = metaResp.data.meta.name;
             resolvedTitle = true;
+            if (!season && Number.isFinite(Number(offlineResult.season)) && Number(offlineResult.season) > 0) {
+              season = Number(offlineResult.season);
+            }
             log.debug(() => `[History] Resolved ${parsed.animeIdType} ${parsed.animeId} title via offline→Cinemeta: "${title}"`);
           }
         } catch (metaErr) {
-          log.debug(() => `[History] Cinemeta lookup failed for ${offlineResult.imdbId}: ${metaErr.message}`);
+          const failedMetaId = offlineResult.imdbId || `tmdb:${offlineResult.tmdbId}`;
+          log.debug(() => `[History] Cinemeta lookup failed for ${failedMetaId}: ${metaErr.message}`);
         }
       }
 
@@ -5479,7 +5543,14 @@ async function resolveHistoryTitle(videoId, fallbackTitle = '', seasonHint = nul
     season: seasonHint ?? season ?? null,
     episode: episodeHint ?? episode ?? null
   };
-  historyTitleCache.set(videoId, resolved);
+  const resolvedTitle = String(resolved.title || '').trim();
+  const hasResolvedTitle = !!resolvedTitle && resolvedTitle !== String(videoId || '').trim();
+  if (hasResolvedTitle) {
+    historyTitleCache.set(videoId, resolved);
+    historyTitleMissCache.delete(videoId);
+  } else {
+    historyTitleMissCache.set(videoId, resolved);
+  }
   return resolved;
 }
 

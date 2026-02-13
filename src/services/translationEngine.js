@@ -83,6 +83,7 @@ const MAX_ENTRY_CACHE_SIZE = parseInt(process.env.ENTRY_CACHE_SIZE) || 100000;
 const MAX_TOKENS_PER_BATCH = parseInt(process.env.MAX_TOKENS_PER_BATCH) || 25000; // Max tokens before auto-chunking
 const SINGLE_BATCH_MAX_TOKENS_PER_CHUNK = parseInt(process.env.SINGLE_BATCH_MAX_TOKENS_PER_CHUNK) || 120000;
 const SINGLE_BATCH_TOKEN_SOFT_LIMIT = Math.floor(SINGLE_BATCH_MAX_TOKENS_PER_CHUNK * 0.9);
+const NATIVE_BATCH_PROVIDER_NAMES = new Set(['deepl', 'googletranslate']);
 // Entry cache disabled by default - causes stale data on cache resets and not HA-aware
 // Only useful for repeated translations with identical config (rare)
 const CACHE_TRANSLATIONS = process.env.CACHE_TRANSLATIONS === 'true'; // Enable/disable entry caching
@@ -166,8 +167,7 @@ class TranslationEngine {
 
     // Translation workflow mode: 'original' (numbered list), 'ai' (send timestamps),
     //                           'xml' (XML-tagged entries), 'json' (JSON structured I/O)
-    const NON_LLM_PROVIDERS = new Set(['deepl', 'googletranslate']);
-    this.isNativeBatchProvider = NON_LLM_PROVIDERS.has(this.providerName);
+    this.isNativeBatchProvider = NATIVE_BATCH_PROVIDER_NAMES.has(this.providerName);
 
     const rawWorkflow = String(this.advancedSettings.translationWorkflow || '').toLowerCase();
     if (rawWorkflow === 'json') {
@@ -194,8 +194,8 @@ class TranslationEngine {
     }
 
     // JSON workflow caps batch size — large JSON arrays (300-400 objects)
-    // are extremely error-prone for LLMs. Keep batches at ≤150 entries.
-    const JSON_MAX_BATCH_SIZE = 150;
+    // are extremely error-prone for LLMs. Keep batches at ≤200 entries.
+    const JSON_MAX_BATCH_SIZE = 200;
     if (this.translationWorkflow === 'json' && this.batchSize > JSON_MAX_BATCH_SIZE) {
       log.debug(() => `[TranslationEngine] Capping batch size from ${this.batchSize} to ${JSON_MAX_BATCH_SIZE} for JSON workflow`);
       this.batchSize = JSON_MAX_BATCH_SIZE;
@@ -538,6 +538,87 @@ class TranslationEngine {
       msg.includes('429') || msg.includes('Too Many Requests') ||
       msg.includes('503') || msg.includes('Service Unavailable') ||
       msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate limit');
+  }
+
+  _isStructuredOutputCapabilityError(error) {
+    if (!error) return false;
+    const status = error.statusCode || error.status || error.response?.status || 0;
+    const raw =
+      error.message ||
+      error.response?.data?.error?.message ||
+      error.response?.data?.message ||
+      '';
+    const msg = String(raw).toLowerCase();
+
+    const statusSuggestsRequestIssue = status === 400 || status === 404 || status === 405 || status === 415 || status === 422 || status === 501;
+    const mentionsStructuredFeature =
+      msg.includes('response_format') ||
+      msg.includes('json_schema') ||
+      msg.includes('json_object') ||
+      msg.includes('structured output') ||
+      msg.includes('does not support') ||
+      msg.includes('unsupported') ||
+      msg.includes('unknown parameter');
+
+    return statusSuggestsRequestIssue && mentionsStructuredFeature;
+  }
+
+  _collectStructuredToggleTargets(provider, changes, enabled) {
+    if (!provider || typeof provider !== 'object') return;
+
+    if (Object.prototype.hasOwnProperty.call(provider, 'enableJsonOutput')) {
+      changes.push({ target: provider, prev: provider.enableJsonOutput });
+      provider.enableJsonOutput = enabled;
+    }
+
+    if (provider.primary && typeof provider.primary === 'object') {
+      this._collectStructuredToggleTargets(provider.primary, changes, enabled);
+    }
+    if (provider.fallback && typeof provider.fallback === 'object') {
+      this._collectStructuredToggleTargets(provider.fallback, changes, enabled);
+    }
+  }
+
+  _restoreStructuredToggles(changes) {
+    if (!Array.isArray(changes)) return;
+    for (const change of changes) {
+      if (!change || !change.target) continue;
+      change.target.enableJsonOutput = change.prev;
+    }
+  }
+
+  async _attemptJsonWorkflowFallbackToXml(batch, targetLanguage, customPrompt, batchIndex, totalBatches, context, reason = 'parse-failure') {
+    if (this.translationWorkflow !== 'json') return null;
+
+    const originalWorkflow = this.translationWorkflow;
+    const originalSendTimestamps = this.sendTimestampsToAI;
+    const structuredToggleChanges = [];
+
+    try {
+      this.translationWorkflow = 'xml';
+      this.sendTimestampsToAI = false;
+      this._collectStructuredToggleTargets(this.gemini, structuredToggleChanges, false);
+
+      const xmlBatchText = this.prepareBatchContent(batch, context);
+      const xmlPrompt = this.createPromptForWorkflow(xmlBatchText, targetLanguage, customPrompt, batch.length, context, batchIndex, totalBatches);
+      const xmlText = await this._translateCall(xmlBatchText, targetLanguage, xmlPrompt, false, null);
+      const xmlEntries = this.parseResponseForWorkflow(xmlText, batch.length, batch);
+      if (!xmlEntries || xmlEntries.length === 0) {
+        return null;
+      }
+      log.warn(() => `[TranslationEngine] JSON workflow fallback to XML succeeded for batch ${batchIndex + 1} (${reason})`);
+      return {
+        translatedText: xmlText,
+        entries: xmlEntries
+      };
+    } catch (fallbackErr) {
+      log.warn(() => `[TranslationEngine] JSON workflow fallback to XML failed for batch ${batchIndex + 1} (${reason}): ${fallbackErr.message}`);
+      return null;
+    } finally {
+      this.translationWorkflow = originalWorkflow;
+      this.sendTimestampsToAI = originalSendTimestamps;
+      this._restoreStructuredToggles(structuredToggleChanges);
+    }
   }
 
   /**
@@ -969,13 +1050,26 @@ class TranslationEngine {
         return { handled: false, error: primaryError };
       }
       try {
+        const fallbackProviderName = String(
+          this.fallbackProvider?.providerName ||
+          this.fallbackProvider?.primaryName ||
+          this.fallbackProviderName ||
+          ''
+        ).toLowerCase();
+        const fallbackIsNative = NATIVE_BATCH_PROVIDER_NAMES.has(fallbackProviderName);
+        const fallbackContent = fallbackIsNative ? this.prepareBatchSrt(batch) : batchText;
+        const fallbackPrompt = fallbackIsNative ? null : prompt;
         const translated = await this.fallbackProvider.translateSubtitle(
-          batchText,
+          fallbackContent,
           'detected',
           targetLanguage,
-          prompt
+          fallbackPrompt
         );
-        log.info(() => `[TranslationEngine] Fallback provider ${this.fallbackProviderName || 'secondary'} succeeded for batch ${batchIndex + 1}`);
+        if (fallbackIsNative) {
+          log.info(() => `[TranslationEngine] Native fallback provider ${this.fallbackProviderName || 'secondary'} succeeded for batch ${batchIndex + 1}`);
+        } else {
+          log.info(() => `[TranslationEngine] Fallback provider ${this.fallbackProviderName || 'secondary'} succeeded for batch ${batchIndex + 1}`);
+        }
         return { handled: true, text: translated };
       } catch (fallbackError) {
         const combined = new Error(`Primary (${this.providerName}) failed: ${primaryError.message || primaryError}\nSecondary (${this.fallbackProviderName || 'fallback'}) failed: ${fallbackError.message || fallbackError}`);
@@ -1066,9 +1160,14 @@ class TranslationEngine {
 
     // Translate batch - with retry on PROHIBITED_CONTENT and MAX_TOKENS errors
     let translatedText;
+    let translatedEntries = null;
+    let jsonXmlFallbackAttempted = false;
     let prohibitedRetryAttempted = false;
     let maxTokensRetryAttempted = false;
-    let httpRetryAttempted = false;
+    const maxHttpRotationRetries = this.retryRotationEnabled && Array.isArray(this.keyRotationConfig?.keys)
+      ? Math.max(0, this.keyRotationConfig.keys.length - 1)
+      : 0;
+    let httpRetryAttempts = 0;
 
     // Build a streaming callback for reuse in retry paths (Bug 1 fix: retries preserve streaming)
     const streamCallback = streamingRequested ? async (partialText) => {
@@ -1094,20 +1193,52 @@ class TranslationEngine {
         this._recordKeyError(this.gemini.apiKey);
       }
 
-      // 429/503: rotate to next key and retry once (before other error-specific retries)
-      if (this._isRetryableHttpError(error) && !httpRetryAttempted && this.retryRotationEnabled) {
-        httpRetryAttempted = true;
-        await this._rotateToNextKey(`429/503 retry for batch ${batchIndex + 1}`);
-        log.warn(() => `[TranslationEngine] 429/503 error detected, retrying batch ${batchIndex + 1} with next key`);
+      // If JSON structured mode itself appears unsupported by provider/model, immediately
+      // retry this batch in XML mode for robust ID-based recovery.
+      if (this.translationWorkflow === 'json' && this._isStructuredOutputCapabilityError(error)) {
+        jsonXmlFallbackAttempted = true;
+        const xmlFallback = await this._attemptJsonWorkflowFallbackToXml(
+          batch,
+          targetLanguage,
+          customPrompt,
+          batchIndex,
+          totalBatches,
+          context,
+          'provider-unsupported'
+        );
+        if (xmlFallback?.entries?.length > 0) {
+          translatedText = xmlFallback.translatedText;
+          translatedEntries = xmlFallback.entries;
+        }
+      }
 
-        try {
-          translatedText = await this._translateCall(batchText, targetLanguage, prompt, streamingRequested, streamCallback);
-          log.info(() => `[TranslationEngine] 429/503 key-rotation retry succeeded for batch ${batchIndex + 1}`);
-        } catch (retryError) {
-          if (this.retryRotationEnabled && this.gemini?.apiKey) {
-            this._recordKeyError(this.gemini.apiKey);
+      // 429/503: rotate through remaining keys and retry before other error-specific retries
+      if (!translatedEntries && this._isRetryableHttpError(error) && this.retryRotationEnabled && maxHttpRotationRetries > 0) {
+        let retrySucceeded = false;
+        let shouldStopHttpRotation = false;
+
+        while (!retrySucceeded && !shouldStopHttpRotation && httpRetryAttempts < maxHttpRotationRetries) {
+          httpRetryAttempts++;
+          await this._rotateToNextKey(`429/503 retry ${httpRetryAttempts}/${maxHttpRotationRetries} for batch ${batchIndex + 1}`);
+          log.warn(() => `[TranslationEngine] 429/503 error detected, retrying batch ${batchIndex + 1} with rotated key (${httpRetryAttempts}/${maxHttpRotationRetries})`);
+
+          try {
+            translatedText = await this._translateCall(batchText, targetLanguage, prompt, streamingRequested, streamCallback);
+            retrySucceeded = true;
+            log.info(() => `[TranslationEngine] 429/503 key-rotation retry succeeded for batch ${batchIndex + 1} on attempt ${httpRetryAttempts}/${maxHttpRotationRetries}`);
+          } catch (retryError) {
+            if (this.retryRotationEnabled && this.gemini?.apiKey) {
+              this._recordKeyError(this.gemini.apiKey);
+            }
+            log.warn(() => `[TranslationEngine] 429/503 key-rotation retry failed for batch ${batchIndex + 1} on attempt ${httpRetryAttempts}/${maxHttpRotationRetries}: ${retryError.message}`);
+            if (!this._isRetryableHttpError(retryError)) {
+              shouldStopHttpRotation = true;
+              log.warn(() => `[TranslationEngine] Stopping 429/503 rotation retries for batch ${batchIndex + 1}; last error is non-HTTP-retryable`);
+            }
           }
-          log.warn(() => `[TranslationEngine] 429/503 key-rotation retry also failed for batch ${batchIndex + 1}: ${retryError.message}`);
+        }
+
+        if (!retrySucceeded) {
           const fallbackResult = await tryFallback(error);
           if (fallbackResult.handled) {
             translatedText = fallbackResult.text;
@@ -1117,7 +1248,7 @@ class TranslationEngine {
         }
       }
       // If MAX_TOKENS error and haven't retried yet, retry once
-      else if (error.message && (error.message.includes('MAX_TOKENS') || error.message.includes('exceeded maximum token limit')) && !maxTokensRetryAttempted) {
+      else if (!translatedEntries && error.message && (error.message.includes('MAX_TOKENS') || error.message.includes('exceeded maximum token limit')) && !maxTokensRetryAttempted) {
         maxTokensRetryAttempted = true;
         await this._rotateToNextKey(`MAX_TOKENS retry for batch ${batchIndex + 1}`);
         log.warn(() => `[TranslationEngine] MAX_TOKENS error detected, retrying batch ${batchIndex + 1} with next key`);
@@ -1140,7 +1271,7 @@ class TranslationEngine {
         }
       }
       // If PROHIBITED_CONTENT error and haven't retried yet, retry with modified prompt
-      else if (error.message && error.message.includes('PROHIBITED_CONTENT') && !prohibitedRetryAttempted) {
+      else if (!translatedEntries && error.message && error.message.includes('PROHIBITED_CONTENT') && !prohibitedRetryAttempted) {
         prohibitedRetryAttempted = true;
         await this._rotateToNextKey(`PROHIBITED_CONTENT retry for batch ${batchIndex + 1}`);
         log.warn(() => `[TranslationEngine] PROHIBITED_CONTENT detected, retrying batch with next key and modified prompt`);
@@ -1164,7 +1295,7 @@ class TranslationEngine {
             throw fallbackResult.error; // Throw original/fallback-combined error
           }
         }
-      } else {
+      } else if (!translatedEntries) {
         // Not a retryable error or already retried, throw as-is
         // If streaming returned nothing, fall back to non-streaming once
         const noStreamContent = error.message && (
@@ -1199,7 +1330,27 @@ class TranslationEngine {
     }
 
     // Parse translated text back into entries
-    let translatedEntries = this.parseResponseForWorkflow(translatedText, batch.length, batch);
+    if (!translatedEntries) {
+      translatedEntries = this.parseResponseForWorkflow(translatedText, batch.length, batch);
+    }
+
+    // JSON parse failed completely: immediately retry this batch as XML once.
+    if (this.translationWorkflow === 'json' && translatedEntries.length === 0) {
+      jsonXmlFallbackAttempted = true;
+      const xmlFallback = await this._attemptJsonWorkflowFallbackToXml(
+        batch,
+        targetLanguage,
+        customPrompt,
+        batchIndex,
+        totalBatches,
+        context,
+        'json-parse-empty'
+      );
+      if (xmlFallback?.entries?.length > 0) {
+        translatedText = xmlFallback.translatedText;
+        translatedEntries = xmlFallback.entries;
+      }
+    }
 
     // Handle entry count mismatches with two-pass recovery
     if (translatedEntries.length !== batch.length) {
@@ -1300,6 +1451,30 @@ class TranslationEngine {
       } else {
         // All entries aligned despite count mismatch (extras were trimmed)
         translatedEntries = Object.values(aligned).sort((a, b) => a.index - b.index);
+      }
+    }
+
+    // If JSON mismatch recovery still leaves warning placeholders, try XML once.
+    if (this.translationWorkflow === 'json' && !jsonXmlFallbackAttempted) {
+      const markedCount = translatedEntries.filter(entry =>
+        typeof entry?.text === 'string' &&
+        entry.text.startsWith('[⚠]')
+      ).length;
+      if (markedCount > 0) {
+        jsonXmlFallbackAttempted = true;
+        const xmlFallback = await this._attemptJsonWorkflowFallbackToXml(
+          batch,
+          targetLanguage,
+          customPrompt,
+          batchIndex,
+          totalBatches,
+          context,
+          'mismatch-marked'
+        );
+        if (xmlFallback?.entries?.length > 0) {
+          translatedText = xmlFallback.translatedText;
+          translatedEntries = xmlFallback.entries;
+        }
       }
     }
 
@@ -1736,13 +1911,19 @@ OUTPUT (EXACTLY ${expectedCount} entries as JSON array):`;
       let cleaned = String(translatedText || '').trim();
       // Remove markdown code blocks
       cleaned = cleaned.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
-      // Find the JSON array in the response
+      // Find JSON payload in the response. Prefer array form; accept object envelope.
       const arrayStart = cleaned.indexOf('[');
       const arrayEnd = cleaned.lastIndexOf(']');
-      if (arrayStart === -1 || arrayEnd === -1 || arrayEnd <= arrayStart) {
-        return null;
+      if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+        cleaned = cleaned.slice(arrayStart, arrayEnd + 1);
+      } else {
+        const objectStart = cleaned.indexOf('{');
+        const objectEnd = cleaned.lastIndexOf('}');
+        if (objectStart === -1 || objectEnd === -1 || objectEnd <= objectStart) {
+          return null;
+        }
+        cleaned = cleaned.slice(objectStart, objectEnd + 1);
       }
-      cleaned = cleaned.slice(arrayStart, arrayEnd + 1);
 
       let parsed = null;
 
@@ -1763,6 +1944,15 @@ OUTPUT (EXACTLY ${expectedCount} entries as JSON array):`;
         }
       }
 
+      if (!Array.isArray(parsed) && parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.entries)) {
+          parsed = parsed.entries;
+        } else if (Array.isArray(parsed.items)) {
+          parsed = parsed.items;
+        } else if (Array.isArray(parsed.data)) {
+          parsed = parsed.data;
+        }
+      }
       if (!Array.isArray(parsed)) return null;
 
       const entries = [];
@@ -2386,3 +2576,4 @@ OUTPUT (EXACTLY ${expectedCount} numbered entries, NO OTHER TEXT):`;
 }
 
 module.exports = TranslationEngine;
+

@@ -16,7 +16,7 @@ const { parseStremioId } = require('./subtitle');
 const { version: appVersion } = require('../../package.json');
 const { quickNavStyles, quickNavScript, renderQuickNav, renderRefreshBadge } = require('./quickNav');
 const { buildClientBootstrap, loadLocale, getTranslator } = require('./i18n');
-const KitsuService = require('../services/kitsu');
+const { resolveHistoryTitle } = require('../handlers/subtitles');
 
 function escapeHtml(text) {
     if (!text) return '';
@@ -182,38 +182,10 @@ function resolveSubtitleLanguage(sub, languageMaps) {
 }
 
 async function fetchLinkedTitleServer(videoId) {
-    const parsed = parseStremioId(videoId);
-    if (!parsed) return null;
-
-    // Handle anime IDs (Kitsu, etc.) - fetch from Kitsu API
-    if (parsed.isAnime && parsed.animeIdType === 'kitsu' && parsed.animeId) {
-        try {
-            const kitsuService = new KitsuService();
-            const animeData = await kitsuService.getAnimeInfo(parsed.animeId);
-            if (animeData && animeData.data && animeData.data.attributes) {
-                const attrs = animeData.data.attributes;
-                return attrs.canonicalTitle || attrs.titles?.en || attrs.titles?.en_us || null;
-            }
-        } catch (_) {
-            // Fall through to return null
-        }
-        return null;
-    }
-
-    const metaType = parsed.type === 'episode' ? 'series' : 'movie';
-    const metaId = (() => {
-        const imdbId = parsed.imdbId;
-        if (imdbId && /^tt\d{3,}$/i.test(imdbId)) return imdbId.toLowerCase();
-        if (parsed.tmdbId) return `tmdb:${parsed.tmdbId}`;
-        return null;
-    })();
-    // Skip lookups when ID is clearly not resolvable (placeholder/default links)
-    if (!metaId) return null;
-    const url = `https://v3-cinemeta.strem.io/meta/${metaType}/${encodeURIComponent(metaId)}.json`;
     try {
-        const resp = await axios.get(url, { timeout: 3500 });
-        const meta = resp.data && resp.data.meta;
-        return meta?.name || meta?.english_name || (meta?.nameTranslated && meta.nameTranslated.en) || null;
+        const resolved = await resolveHistoryTitle(videoId, '');
+        const title = String(resolved?.title || '').trim();
+        return title && title !== String(videoId).trim() ? title : null;
     } catch (_) {
         return null;
     }
@@ -2487,7 +2459,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
         function extractStreamVideoId(streamUrl) {
             try {
                 const url = new URL(streamUrl);
-                const paramKeys = ['videoId', 'video', 'id', 'mediaid', 'imdb', 'tmdb', 'kitsu', 'anidb', 'mal', 'anilist'];
+                const paramKeys = ['videoId', 'video', 'id', 'mediaid', 'imdb', 'tmdb', 'kitsu', 'anidb', 'mal', 'myanimelist', 'anilist', 'tvdb', 'simkl', 'livechart', 'anisearch'];
                 for (const key of paramKeys) {
                     const val = url.searchParams.get(key);
                     if (val && val.trim()) return normalizeVideoIdCandidate(val);
@@ -2914,7 +2886,7 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             const parts = String(id).split(':');
             // Handle anime IDs (anidb, kitsu, mal, anilist)
             // Format: platform:animeId:episode OR platform:animeId:season:episode
-            if (/^(anidb|kitsu|mal|anilist)/.test(parts[0])) {
+            if (/^(anidb|kitsu|mal|myanimelist|anilist|tvdb|simkl|livechart|anisearch)/.test(parts[0])) {
                 const animeIdType = parts[0];
                 if (parts.length === 1) {
                     // Just platform name - anime movie/series
@@ -2977,38 +2949,23 @@ async function generateSubtitleSyncPage(subtitles, videoId, streamFilename, conf
             const parsed = parseVideoId(videoId);
             if (!parsed) return null;
             
-            // Handle anime IDs - fetch from Kitsu API
+            // Handle anime IDs through server-side resolver (supports all platforms)
             if (parsed.isAnime && parsed.animeId) {
-                // Extract numeric ID from animeId (e.g., "kitsu:201" -> "201")
-                // Use string split to avoid regex escaping issues in template literals
-                const animeIdParts = parsed.animeId.split(':');
-                const numericId = animeIdParts.length >= 2 ? animeIdParts[1] : null;
-                if (numericId && parsed.animeIdType === 'kitsu') {
-
-                    const animeCacheKey = 'anime:' + numericId;
-                    if (linkedTitleCache.has(animeCacheKey)) return linkedTitleCache.get(animeCacheKey);
-                    
-                    try {
-                        const resp = await fetch('https://kitsu.io/api/edge/anime/' + numericId, {
-                            headers: {
-                                'Accept': 'application/vnd.api+json'
-                            }
-                        });
-                        if (resp.ok) {
-                            const data = await resp.json();
-                            const title = data?.data?.attributes?.canonicalTitle || 
-                                         data?.data?.attributes?.titles?.en || 
-                                         data?.data?.attributes?.titles?.en_us || null;
-                            linkedTitleCache.set(animeCacheKey, title);
-                            return title;
-                        }
-                    } catch (err) {
-                        console.warn('[fetchLinkedTitle] Kitsu API error:', err);
+                const animeCacheKey = 'anime:' + String(videoId || '').trim().toLowerCase();
+                if (linkedTitleCache.has(animeCacheKey)) return linkedTitleCache.get(animeCacheKey);
+                try {
+                    const url = '/api/resolve-linked-title?config=' + encodeURIComponent(CONFIG.configStr) + '&videoId=' + encodeURIComponent(videoId || '');
+                    const resp = await fetch(url, { cache: 'no-store' });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        const title = (typeof data?.title === 'string' && data.title.trim()) ? data.title.trim() : null;
+                        linkedTitleCache.set(animeCacheKey, title);
+                        return title;
                     }
-                    linkedTitleCache.set(animeCacheKey, null);
-                    return null;
+                } catch (err) {
+                    console.warn('[fetchLinkedTitle] Anime resolver API error:', err);
                 }
-                // For other anime platforms, we don't have direct API access client-side
+                linkedTitleCache.set(animeCacheKey, null);
                 return null;
             }
             

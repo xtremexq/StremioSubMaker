@@ -505,10 +505,14 @@ function normalizeImdbId(id) {
 function parseStremioId(id, stremioType) {
   if (!id) return null;
 
-  const parts = id.split(':');
+  const raw = String(id).trim();
+  if (!raw) return null;
+
+  const parts = raw.split(':');
+  const prefix = String(parts[0] || '').toLowerCase();
 
   // Handle TMDB IDs (movie or TV/episode)
-  if (parts[0] === 'tmdb') {
+  if (prefix === 'tmdb') {
     const tmdbId = parts[1];
     if (!tmdbId) return null;
 
@@ -531,35 +535,58 @@ function parseStremioId(id, stremioType) {
 
     if (parts.length === 3) {
       // Episode with implicit season 1: tmdb:{id}:{episode}
+      const episode = parseInt(parts[2], 10);
+      if (!Number.isFinite(episode) || episode <= 0) return null;
       return {
         tmdbId,
         tmdbMediaType,
         type: 'episode',
         season: 1,
-        episode: parseInt(parts[2], 10)
+        episode
       };
     }
 
     if (parts.length === 4) {
       // Episode with season: tmdb:{id}:{season}:{episode}
+      const season = parseInt(parts[2], 10);
+      const episode = parseInt(parts[3], 10);
+      if (!Number.isFinite(season) || season <= 0 || !Number.isFinite(episode) || episode <= 0) return null;
       return {
         tmdbId,
         tmdbMediaType,
         type: 'episode',
-        season: parseInt(parts[2], 10),
-        episode: parseInt(parts[3], 10)
+        season,
+        episode
       };
     }
   }
 
-  // Handle anime IDs (anidb, kitsu, mal, anilist)
-  if (parts[0] && /^(anidb|kitsu|mal|anilist)/.test(parts[0])) {
-    const animeIdType = parts[0]; // Platform name (anidb, kitsu, etc.)
+  // Handle anime IDs (extended compatibility with common anime catalog prefixes)
+  const animePrefixAliases = {
+    myanimelist: 'mal'
+  };
+  const supportedAnimePrefixes = new Set([
+    'anidb',
+    'kitsu',
+    'mal',
+    'myanimelist',
+    'anilist',
+    'tvdb',
+    'simkl',
+    'livechart',
+    'anisearch'
+  ]);
+
+  if (parts[0] && supportedAnimePrefixes.has(prefix)) {
+    const canonicalAnimePrefix = animePrefixAliases[prefix] || prefix;
+    const animeIdType = canonicalAnimePrefix;
+    const animeRawId = String(parts[1] || '').trim();
+    if (!animeRawId) return null;
 
     if (parts.length === 2) {
       // Anime movie or series (format: platform:id)
       // Example: kitsu:8640 -> platform=kitsu, id=8640
-      const animeId = `${parts[0]}:${parts[1]}`; // Full ID with platform prefix
+      const animeId = `${canonicalAnimePrefix}:${animeRawId}`; // Full ID with canonical platform prefix
       return {
         animeId,
         animeIdType,
@@ -573,12 +600,14 @@ function parseStremioId(id, stremioType) {
     if (parts.length === 3) {
       // Anime episode (format: platform:id:episode)
       // Example: kitsu:8640:2 -> platform=kitsu, id=8640, episode=2
-      const animeId = `${parts[0]}:${parts[1]}`; // Full ID with platform prefix
+      const episode = parseInt(parts[2], 10);
+      if (!Number.isFinite(episode) || episode <= 0) return null;
+      const animeId = `${canonicalAnimePrefix}:${animeRawId}`; // Full ID with canonical platform prefix
       return {
         animeId,
         animeIdType,
         type: 'anime-episode',
-        episode: parseInt(parts[2]),
+        episode,
         isAnime: true,
         // Keep anidbId for backward compatibility if it's an AniDB ID
         ...(animeIdType === 'anidb' && { anidbId: animeId })
@@ -588,22 +617,35 @@ function parseStremioId(id, stremioType) {
     if (parts.length === 4) {
       // Anime episode with season (format: platform:id:season:episode)
       // Example: kitsu:8640:1:2 -> platform=kitsu, id=8640, season=1, episode=2
-      const animeId = `${parts[0]}:${parts[1]}`; // Full ID with platform prefix
+      const season = parseInt(parts[2], 10);
+      const episode = parseInt(parts[3], 10);
+      if (!Number.isFinite(season) || season <= 0 || !Number.isFinite(episode) || episode <= 0) return null;
+      const animeId = `${canonicalAnimePrefix}:${animeRawId}`; // Full ID with canonical platform prefix
       return {
         animeId,
         animeIdType,
         type: 'anime-episode',
-        season: parseInt(parts[2]),
-        episode: parseInt(parts[3]),
+        season,
+        episode,
         isAnime: true,
         // Keep anidbId for backward compatibility if it's an AniDB ID
         ...(animeIdType === 'anidb' && { anidbId: animeId })
       };
     }
+
+    return null;
+  }
+
+  // Fail closed for unknown prefixed IDs instead of coercing them into fake IMDB IDs.
+  if (parts.length > 1 && prefix && !/^tt\d+$/i.test(prefix)) {
+    return null;
   }
 
   // Handle IMDB IDs (regular content)
-  const imdbId = normalizeImdbId(parts[0]);
+  const imdbBase = String(parts[0] || '').trim();
+  const imdbId = normalizeImdbId(imdbBase);
+  const isImdbLike = /^tt\d{3,}$/i.test(imdbId);
+  if (!isImdbLike) return null;
 
   if (parts.length === 1) {
     // Movie
@@ -630,11 +672,14 @@ function parseStremioId(id, stremioType) {
 
   if (parts.length === 3) {
     // TV Episode
+    const season = parseInt(parts[1], 10);
+    const episode = parseInt(parts[2], 10);
+    if (!Number.isFinite(season) || season <= 0 || !Number.isFinite(episode) || episode <= 0) return null;
     return {
       imdbId,
       type: 'episode',
-      season: parseInt(parts[1]),
-      episode: parseInt(parts[2])
+      season,
+      episode
     };
   }
 

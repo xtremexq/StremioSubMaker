@@ -53,7 +53,11 @@ function registerFileUploadRoutes(app, { log, resolveConfigGuarded, computeConfi
             }
 
             const config = await resolveConfigGuarded(configStr, req, res, '[File Upload Page] config');
-            config.__configHash = computeConfigHash(config);
+            // Preserve canonical scoped hash from config resolution when available.
+            // Fallback to local computation only for legacy/unscoped paths.
+            if (!config.__configHash) {
+                config.__configHash = computeConfigHash(config);
+            }
 
             log.debug(() => `[File Upload Page] Loading page for video ${videoId}, filename: ${filename || 'n/a'}`);
 

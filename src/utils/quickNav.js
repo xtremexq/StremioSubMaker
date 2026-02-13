@@ -559,7 +559,7 @@ function quickNavScript() {
         const parts = id.split(':');
         
         // Handle anime IDs (anidb, kitsu, mal, anilist)
-        if (/^(anidb|kitsu|mal|anilist)/.test(parts[0])) {
+        if (/^(anidb|kitsu|mal|myanimelist|anilist|tvdb|simkl|livechart|anisearch)/.test(parts[0])) {
           const animeIdType = parts[0];
           if (parts.length === 1) {
             return { type: 'anime', animeId: parts[0], animeIdType, isAnime: true, id };

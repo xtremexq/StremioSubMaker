@@ -354,13 +354,15 @@ async function createTranslationProvider(config) {
   const multiEnabled = config?.multiProviderEnabled === true;
   const providersConfig = config?.providers || {};
   const mainProvider = String(config?.mainProvider || (multiEnabled ? 'gemini' : 'gemini')).toLowerCase();
+  const normalizedWorkflow = String(config?.advancedSettings?.translationWorkflow || '').toLowerCase();
+  const structuredJsonEnabled = normalizedWorkflow === 'json' || config?.advancedSettings?.enableJsonOutput === true;
   const secondaryEnabled = multiEnabled && config?.secondaryProviderEnabled === true;
   const secondaryProviderKey = secondaryEnabled
     ? String(config?.secondaryProvider || '').toLowerCase()
     : '';
   // Build globalOptions for non-Gemini providers (Gemini gets it via advancedSettings)
   const jsonOutputOptions = {
-    enableJsonOutput: config?.advancedSettings?.enableJsonOutput === true
+    enableJsonOutput: structuredJsonEnabled
   };
   const defaultProviderParams = getDefaultProviderParameters();
   const mergedProviderParams = mergeProviderParameters(
@@ -381,9 +383,11 @@ async function createTranslationProvider(config) {
   const getGeminiAdvancedSettings = () => {
     const settings = config?.advancedSettings || {};
     const base = settings.enabled === true ? settings : {};
-    // Always pass enableJsonOutput regardless of advanced settings toggle
-    if (settings.enableJsonOutput === true) {
+    // Keep provider JSON mode aligned with workflow-based JSON structured mode.
+    if (structuredJsonEnabled) {
       base.enableJsonOutput = true;
+    } else {
+      base.enableJsonOutput = false;
     }
     return base;
   };
