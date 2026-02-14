@@ -9364,7 +9364,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
                 <div>
                   <label for="whisperModel">${escapeHtml(copy.steps.modelLabel)}</label>
                   <select id="whisperModel">
-                    ${devMode ? `<option value="@cf/openai/whisper">${escapeHtml(copy.steps.model.standard)}</option>` : ''}
+                    <option value="@cf/openai/whisper"${devMode ? '' : ' disabled'}>${escapeHtml(copy.steps.model.standard)}</option>
                     <option value="@cf/openai/whisper-large-v3-turbo" selected>${escapeHtml(copy.steps.model.turbo)}</option>
                   </select>
                 </div>
