@@ -7809,7 +7809,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
           if (hasDesired) {
             els.model.value = desiredModel;
           } else if (!els.model.value && opts.length) {
-            els.model.value = opts[0].value;
+            const firstEnabled = opts.find(o => !o.disabled);
+            if (firstEnabled) els.model.value = firstEnabled.value;
           }
         }
         if (els.assemblyModel) {
@@ -8120,7 +8121,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
   })();
   const defaults = {
     mode: defaultMode,
-    whisperModel: config?.whisperModel || '@cf/openai/whisper',
+    whisperModel: config?.whisperModel || '@cf/openai/whisper-large-v3-turbo',
     translateToTarget: true,
     streamFilename: filename || '',
     provider: (config?.mainProvider && String(config.mainProvider).toLowerCase()) || providerOptions[0]?.key || 'gemini',
