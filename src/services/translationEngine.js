@@ -159,7 +159,7 @@ class TranslationEngine {
 
     // Context settings (disabled by default)
     this.enableBatchContext = this.advancedSettings.enableBatchContext === true;
-    this.contextSize = parseInt(this.advancedSettings.contextSize) || 3;
+    this.contextSize = parseInt(this.advancedSettings.contextSize) || 8;
 
     // Mismatch retry: number of retries when AI returns wrong entry count (default: 1)
     const rawMismatchRetries = parseInt(this.advancedSettings.mismatchRetries);
@@ -999,7 +999,7 @@ class TranslationEngine {
 
     // Get surrounding context from original entries (before the batch)
     const surroundingStartIdx = Math.max(0, firstEntryId - 1 - this.contextSize);
-    const surroundingEndIdx = firstEntryId - 1;
+    const surroundingEndIdx = firstEntryId - 2;
     const surroundingContext = [];
 
     for (let i = surroundingStartIdx; i <= surroundingEndIdx && i < allOriginalEntries.length; i++) {
@@ -1012,15 +1012,11 @@ class TranslationEngine {
       }
     }
 
-    // Get previous translations (last N entries that were already translated)
-    const previousTranslations = translatedSoFar.slice(Math.max(0, translatedSoFar.length - this.contextSize));
-
     // Only include context if this is NOT the first batch
-    const hasContext = batchIndex > 0 && (surroundingContext.length > 0 || previousTranslations.length > 0);
+    const hasContext = batchIndex > 0 && surroundingContext.length > 0;
 
     return hasContext ? {
-      surroundingOriginal: surroundingContext,
-      previousTranslations: previousTranslations
+      surroundingOriginal: surroundingContext
     } : null;
   }
 
@@ -1145,12 +1141,7 @@ class TranslationEngine {
       // This ensures coherence is maintained across auto-chunked batches
       const contextCount = Math.min(this.contextSize, firstHalf.length);
       const secondHalfContext = this.enableBatchContext && contextCount > 0 ? {
-        surroundingOriginal: firstHalf.slice(-contextCount),
-        previousTranslations: firstTranslated.slice(-contextCount).map((entry, i) => ({
-          id: firstHalf[firstHalf.length - contextCount + i]?.id || i + 1,
-          text: entry.text || '',
-          timecode: entry.timecode || firstHalf[firstHalf.length - contextCount + i]?.timecode
-        }))
+        surroundingOriginal: firstHalf.slice(-contextCount)
       } : null;
 
       const secondTranslated = await this.translateBatch(secondHalf, targetLanguage, customPrompt, batchIndex, totalBatches, secondHalfContext, opts);
@@ -1567,27 +1558,12 @@ class TranslationEngine {
     let result = '';
 
     // Add context section if provided
-    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
+    if (context?.surroundingOriginal?.length > 0) {
       result += '=== CONTEXT (FOR REFERENCE ONLY - DO NOT TRANSLATE) ===\n\n';
-
-      // Add surrounding original context
-      if (context.surroundingOriginal && context.surroundingOriginal.length > 0) {
-        result += '--- Original Context (preceding entries) ---\n';
-        context.surroundingOriginal.forEach((entry, index) => {
-          const cleanText = entry.text.trim().replace(/\n+/g, '\n');
-          result += `[Context ${index + 1}] ${cleanText}\n\n`;
-        });
-      }
-
-      // Add previous translations
-      if (context.previousTranslations && context.previousTranslations.length > 0) {
-        result += '--- Previous Translations (recently translated) ---\n';
-        context.previousTranslations.forEach((entry, index) => {
-          const cleanText = entry.text.trim().replace(/\n+/g, '\n');
-          result += `[Translated ${index + 1}] ${cleanText}\n\n`;
-        });
-      }
-
+      context.surroundingOriginal.forEach((entry, index) => {
+        const cleanText = entry.text.trim().replace(/\n+/g, '\n');
+        result += `[Context ${index + 1}] ${cleanText}\n\n`;
+      });
       result += '=== END OF CONTEXT ===\n\n';
       result += '=== ENTRIES TO TRANSLATE (translate these) ===\n\n';
     }
@@ -1625,22 +1601,12 @@ class TranslationEngine {
     let result = '';
 
     // Add context section if provided
-    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
+    if (context?.surroundingOriginal?.length > 0) {
       result += '=== CONTEXT (FOR REFERENCE ONLY - DO NOT TRANSLATE) ===\n\n';
-      if (context.surroundingOriginal && context.surroundingOriginal.length > 0) {
-        result += '--- Original Context (preceding entries) ---\n';
-        context.surroundingOriginal.forEach((entry, index) => {
-          const cleanText = entry.text.trim().replace(/\n+/g, '\n');
-          result += `[Context ${index + 1}] ${cleanText}\n\n`;
-        });
-      }
-      if (context.previousTranslations && context.previousTranslations.length > 0) {
-        result += '--- Previous Translations (recently translated) ---\n';
-        context.previousTranslations.forEach((entry, index) => {
-          const cleanText = entry.text.trim().replace(/\n+/g, '\n');
-          result += `[Translated ${index + 1}] ${cleanText}\n\n`;
-        });
-      }
+      context.surroundingOriginal.forEach((entry, index) => {
+        const cleanText = entry.text.trim().replace(/\n+/g, '\n');
+        result += `[Context ${index + 1}] ${cleanText}\n\n`;
+      });
       result += '=== END OF CONTEXT ===\n\n';
       result += '=== ENTRIES TO TRANSLATE ===\n\n';
     }
@@ -1663,7 +1629,7 @@ class TranslationEngine {
     const customPromptText = customPrompt ? customPrompt.replace('{target_language}', targetLabel) : '';
 
     let contextInstructions = '';
-    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
+    if (context?.surroundingOriginal?.length > 0) {
       contextInstructions = `
 CONTEXT PROVIDED:
 - Context entries are provided for reference to maintain coherence and consistency
@@ -1681,9 +1647,9 @@ CRITICAL RULES:
 3. Return EXACTLY ${expectedCount} tagged entries
 4. Keep line breaks within each entry
 5. Maintain natural dialogue flow for ${targetLabel}
-6. Use appropriate colloquialisms for ${targetLabel}${context ? '\n7. Use the provided context to ensure consistency' : ''}
+6. Use appropriate colloquialisms for ${targetLabel}${context ? '\\n7. Use the provided context to ensure consistency' : ''}
 
-${customPromptText ? `ADDITIONAL INSTRUCTIONS:\n${customPromptText}\n\n` : ''}
+${customPromptText ? `ADDITIONAL INSTRUCTIONS:\\n${customPromptText}\\n\\n` : ''}
 Do NOT add acknowledgements, explanations, notes, or commentary.
 Do not skip, merge, or split entries.
 Do not include any timestamps/timecodes.
@@ -1712,14 +1678,10 @@ OUTPUT (EXACTLY ${expectedCount} XML-tagged entries):`;
     }));
 
     // Include context as structured metadata when provided
-    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
-      const ctx = {};
-      if (context.surroundingOriginal?.length > 0) {
-        ctx.preceding = context.surroundingOriginal.map(e => e.text.trim().replace(/\n+/g, '\n'));
-      }
-      if (context.previousTranslations?.length > 0) {
-        ctx.recentTranslations = context.previousTranslations.map(e => e.text.trim().replace(/\n+/g, '\n'));
-      }
+    if (context?.surroundingOriginal?.length > 0) {
+      const ctx = {
+        preceding: context.surroundingOriginal.map(e => e.text.trim().replace(/\n+/g, '\n'))
+      };
       return JSON.stringify({ __context: ctx, entries }, null, 0);
     }
 
@@ -1735,10 +1697,10 @@ OUTPUT (EXACTLY ${expectedCount} XML-tagged entries):`;
     const customPromptText = customPrompt ? customPrompt.replace('{target_language}', targetLabel) : '';
 
     let contextInstructions = '';
-    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
+    if (context?.surroundingOriginal?.length > 0) {
       contextInstructions = `
 CONTEXT PROVIDED:
-- The input includes a "__context" object with preceding original text and/or recent translations
+- The input includes a "__context" object with the preceding original source text
 - Use context to understand dialogue flow, character names, and consistency
 - DO NOT include __context in your output — translate ONLY the "entries" array
 
@@ -1748,17 +1710,28 @@ CONTEXT PROVIDED:
     const promptBody = `You are translating subtitle text to ${targetLabel}.
 ${contextInstructions}
 CRITICAL RULES:
-1. Translate ONLY the "text" field of each entry
-2. Preserve the "id" field exactly as given
+1. Translate ONLY the "text" field of each entry into ${targetLabel}
+2. Preserve the "id" field exactly as given with no modification
 3. Return EXACTLY ${expectedCount} entries
-4. Keep line breaks within each entry
-5. Maintain natural dialogue flow for ${targetLabel}
-6. Use appropriate colloquialisms for ${targetLabel}${context ? '\n7. Use the provided context to ensure consistency' : ''}
+4. Maintain natural dialogue flow with strict and explicit consistency in character gender, pronouns, speech level, and honorifics throughout the batch; If not obvious or explicitly stated in the source text, do your best to get the genders right. If gender is ambiguous, use neutral forms or maintain consistency with context or previous entries.
+5. Every entry must be fully translated; never return original source text unless it is a proper noun (e.g., names, people, places, brands). If the source text appears corrupted, nonsensical, or contains only symbols/numbers, return it unchanged
+6. If a text field is empty, contains only whitespace, or only formatting tags, return it unchanged
 
-${customPromptText ? `ADDITIONAL INSTRUCTIONS:
+ADDITIONAL INSTRUCTIONS:
+You are a professional subtitles translator operating in an automated localization environment. Translate while:
+1. Maintaining perfect, machine-parseable JSON format matching the input schema exactly. Ensure JSON is valid: escape double quotes with a backslash (e.g., \\" ) and use \\n for line breaks within the text field, and ensure no trailing commas after the last entry
+2. Do NOT add, remove, reorder, or modify JSON keys, fields, or data types
+3. Using concise, conversational, cinematic subtitle style suitable for professional streaming platforms. Preserve Unicode characters and punctuation (e.g., ellipses, em dashes) appropriate for the target language
+4. For lyrics, prioritize maintaining rhythm and intent; if preserving rhythm conflicts with literal meaning, opt for natural phrasing that captures the essence. For non-dialogue text (e.g., [sigh]), preserve meaning and tags
+5. Preserving any existing formatting tags${context ? '\n6. Use the provided context to ensure consistency' : ''}
+
+${customPromptText ? `CUSTOM INSTRUCTIONS:
 ${customPromptText}
 
-` : ''}
+` : ''}This is an automatic system, DO NOT make any explanations or comments - simply output the translated content.
+Return ONLY the translated content, nothing else. NEVER output markdown.
+Translate to ${targetLabel}.
+
 Do NOT add acknowledgements, explanations, notes, or commentary.
 Do not skip, merge, or split entries.
 Do not include any timestamps/timecodes.
@@ -2120,11 +2093,11 @@ OUTPUT (EXACTLY ${expectedCount} entries as JSON array):`;
     const customPromptText = customPrompt ? customPrompt.replace('{target_language}', targetLabel) : '';
 
     let contextInstructions = '';
-    if (context && (context.surroundingOriginal?.length > 0 || context.previousTranslations?.length > 0)) {
+    if (context?.surroundingOriginal?.length > 0) {
       contextInstructions = `
 CONTEXT PROVIDED:
 - Context entries are provided for reference to maintain coherence and consistency
-- Context entries are marked with [Context N] or [Translated N]
+- Context entries are marked with [Context N]
 - DO NOT translate context entries - they are for reference only
 - Use the context to understand dialogue flow, character names, and references
 - ONLY translate the numbered entries (1. 2. 3. etc.)
@@ -2140,9 +2113,9 @@ CRITICAL RULES:
 3. Return EXACTLY ${expectedCount} numbered entries
 4. Keep line breaks within each entry
 5. Maintain natural dialogue flow for ${targetLabel}
-6. Use appropriate colloquialisms for ${targetLabel}${context ? '\n7. Use the provided context to ensure consistency with previous translations' : ''}
+6. Use appropriate colloquialisms for ${targetLabel}${context ? '\\n7. Use the provided context to ensure consistency with previous translations' : ''}
 
-${customPromptText ? `ADDITIONAL INSTRUCTIONS (from user/config):\n${customPromptText}\n\n` : ''}
+${customPromptText ? `ADDITIONAL INSTRUCTIONS (from user/config):\\n${customPromptText}\\n\\n` : ''}
 DO NOT add ANY acknowledgements, explanations, notes, or commentary.
 Do not add alternative translations
 Do not skip any entries

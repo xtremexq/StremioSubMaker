@@ -241,37 +241,43 @@ class OpenAICompatibleProvider {
           stream
         }
         : {
-        model: this.model,
-        messages: [
-          { role: 'system', content: 'You are a subtitle translation engine.' },
-          { role: 'user', content: userPrompt }
-        ],
-        max_completion_tokens: isOpenAI ? cappedMaxTokens : undefined,
-        max_tokens: isOpenAI ? undefined : cappedMaxTokens,
-        stream
-      };
+          model: this.model,
+          messages: [
+            { role: 'system', content: 'You are a subtitle translation engine.' },
+            { role: 'user', content: userPrompt }
+          ],
+          max_completion_tokens: isOpenAI ? cappedMaxTokens : undefined,
+          max_tokens: isOpenAI ? undefined : cappedMaxTokens,
+          stream
+        };
 
     // JSON structured output mode for OpenAI-compatible APIs
     if (!isCfRun && this.enableJsonOutput && !disableStructuredOutput) {
-      body.response_format = {
-        type: 'json_schema',
-        json_schema: {
-          name: 'subtitle_entries',
-          strict: true,
-          schema: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                id: { type: 'integer' },
-                text: { type: 'string' }
-              },
-              required: ['id', 'text'],
-              additionalProperties: false
+      // DeepSeek does not support json_schema (strict) — use json_object instead.
+      // Tested: both deepseek-chat and deepseek-reasoner accept json_object and reject json_schema.
+      if (this.providerName === 'deepseek') {
+        body.response_format = { type: 'json_object' };
+      } else {
+        body.response_format = {
+          type: 'json_schema',
+          json_schema: {
+            name: 'subtitle_entries',
+            strict: true,
+            schema: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'integer' },
+                  text: { type: 'string' }
+                },
+                required: ['id', 'text'],
+                additionalProperties: false
+              }
             }
           }
-        }
-      };
+        };
+      }
     }
 
     if (!isCfRun && this.providerName === 'openai') {

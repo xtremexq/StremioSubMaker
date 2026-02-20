@@ -1332,6 +1332,8 @@ const DEFAULT_STREMIO_WEB_ORIGINS = [
     'https://www.stremio.com',
     'https://stremio.com',
     'https://app.stremio.com',
+    // Stremio web shell hosted on GitHub Pages
+    'https://stremio.github.io',
     // Third-party Stremio web frontends
     'https://stremio-neo.aayushcodes.eu',
     'https://peario.xyz'

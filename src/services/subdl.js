@@ -464,6 +464,7 @@ class SubDLService {
       'russian': 'rus',
       'japanese': 'jpn',
       'chinese': 'chi',
+      'chinese bg code': 'chi',
       'korean': 'kor',
       'arabic': 'ara',
       'dutch': 'dut',

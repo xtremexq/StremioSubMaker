@@ -669,10 +669,10 @@
                                     selected>Gemini 3.0 Flash (beta)</option>
                                 <option value="gemini-3-pro-preview" data-i18n="config.gemini.model.options.pro3">Gemini
                                     3.0 Pro (beta)</option>
-                                <option value="gemini-flash-lite-latest"
-                                    data-i18n="config.gemini.model.options.flashLite">Gemini 2.5 Flash-Lite</option>
-                                <option value="gemini-2.5-flash-preview-09-2025"
-                                    data-i18n="config.gemini.model.options.flash">Gemini 2.5 Flash</option>
+                                <option value="gemini-2.5-flash-lite" data-i18n="config.gemini.model.options.flashLite">
+                                    Gemini 2.5 Flash-Lite</option>
+                                <option value="gemini-2.5-flash" data-i18n="config.gemini.model.options.flash">Gemini
+                                    2.5 Flash</option>
 
                             </select>
                             <div class="field-error" id="geminiModelError"
@@ -1778,7 +1778,8 @@
                                 </label>
                                 <label style="display: block; margin-bottom: 6px;">
                                     <input type="radio" name="urlExtensionTest" value="resolve">
-                                    <span><strong>Resolver redirect</strong> (Test C) - Detect format on click, then redirect to typed URL</span>
+                                    <span><strong>Resolver redirect</strong> (Test C) - Detect format on click, then
+                                        redirect to typed URL</span>
                                 </label>
                             </div>
                         </div>
@@ -1787,7 +1788,8 @@
                         <div class="form-group" id="androidSubtitleCompatModeGroup" style="display: none;">
                             <label>
                                 <span style="font-weight: 600; color: #f59e0b;">Android Subtitle Compat Mode</span>
-                                <span class="label-description">Experimental Android/TV subtitle URL compatibility options. Keep OFF unless debugging subtitle click/download issues.</span>
+                                <span class="label-description">Experimental Android/TV subtitle URL compatibility
+                                    options. Keep OFF unless debugging subtitle click/download issues.</span>
                             </label>
                             <div style="margin-top: 8px; padding-left: 4px;">
                                 <label style="display: block; margin-bottom: 6px;">
@@ -1796,11 +1798,13 @@
                                 </label>
                                 <label style="display: block; margin-bottom: 6px;">
                                     <input type="radio" name="androidSubtitleCompatMode" value="safe">
-                                    <span><strong>Safe</strong> - Encode URL path segments + force typed <code>.srt</code> subtitle URLs</span>
+                                    <span><strong>Safe</strong> - Encode URL path segments + force typed
+                                        <code>.srt</code> subtitle URLs</span>
                                 </label>
                                 <label style="display: block; margin-bottom: 6px;">
                                     <input type="radio" name="androidSubtitleCompatMode" value="aggressive">
-                                    <span><strong>Aggressive</strong> - Safe mode plus skip subtitle-route cache-buster redirects and force stricter SRT headers</span>
+                                    <span><strong>Aggressive</strong> - Safe mode plus skip subtitle-route cache-buster
+                                        redirects and force stricter SRT headers</span>
                                 </label>
                             </div>
                         </div>
@@ -1863,9 +1867,9 @@
                                 <span class="label-description"
                                     data-i18n="config.advancedGemini.contextSize.description">Number of surrounding
                                     entries to include as context (1-10).
-                                    Default: 3</span>
+                                    Default: 8</span>
                             </label>
-                            <input type="number" id="contextSize" min="1" max="10" step="1" value="3" placeholder="3">
+                            <input type="number" id="contextSize" min="1" max="10" step="1" value="8" placeholder="8">
                         </div>
 
                         <div class="form-group">

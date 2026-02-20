@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.59
+
+**Improvements:**
+
+- **Batch context refactored — removed `previousTranslations`, kept `surroundingOriginal` only:** The context sent to AI translation workflows no longer includes recently translated entries (`previousTranslations`). Only the preceding original source entries (`surroundingOriginal`) are now included as context. This avoids feeding conflicts to the AI while still providing enough narrative continuity. All four workflows (XML, JSON, Original Timestamps, and Send Timestamps to AI) were updated accordingly — context section builders simplified and deduplicated throughout `TranslationEngine`.
+
+- **Context size default increased from 3 to 8:** The `contextSize` setting (number of preceding original entries sent as context per batch) now defaults to `8` across all config layers (`src/utils/config.js`, `public/config.js`, `TranslationEngine` fallback, and the config page UI input/description). This provides more surrounding narrative context for better translation coherence at minimal token cost.
+
+- **JSON workflow prompt significantly enhanced:** `_buildJsonPrompt()` in `translationEngine.js` received a major prompt upgrade:
+  - Explicit rules for JSON validity (escaping double-quotes, `\n` for line breaks, no trailing commas).
+  - Strict `id` field preservation with no modification.
+  - Gender/pronoun/speech level consistency enforced across the batch with best-effort disambiguation.
+  - Rule to never return original source text unless it is a proper noun.
+  - Rule to pass through empty/whitespace/tag-only fields unchanged.
+  - Additional professional localization instructions: cinematic subtitle style, Unicode punctuation, lyric adaptation intent, formatting tag preservation.
+  - Closing statements consolidated to avoid duplicate "DO NOT add explanations" lines.
+
+- **JSON workflow context description updated:** Context instructions for JSON workflow now correctly describe `__context.preceding` as "preceding original source text" instead of the removed "preceding original text and/or recent translations".
+
+- **Numbered-list workflow context label updated:** Context section marker for the numbered-list (original timestamps) workflow now reads "Context entries are marked with [Context N]" — removed the stale "[Translated N]" label that referenced the now-removed `previousTranslations`.
+
+- **`surroundingEndIdx` off-by-one corrected:** `_getBatchContext()` now uses `firstEntryId - 2` as the end index for surrounding context (instead of `firstEntryId - 1`), ensuring the batch's own first entry is not inadvertently included in its own context window.
+
+- **Stremio GitHub Pages origin allowed:** Added `https://stremio.github.io` to the `DEFAULT_STREMIO_WEB_ORIGINS` allowlist in `index.js`, enabling the Stremio web shell hosted on GitHub Pages to communicate with the addon without CORS blocks.
+
+- **SubDL `chinese bg code` language mapping added:** Added `'chinese bg code': 'chi'` to SubDL's language-to-ISO-code map, fixing subtitle searches that fail when SubDL returns the `Chinese BG Code` language tag for Simplified Chinese subtitles.
+
+- **DeepSeek JSON workflow fix (400 errors resolved):** DeepSeek's API rejects `response_format: json_schema` (strict) with a 400 error — it only supports the simpler `json_object` format. When the JSON workflow is active and the provider is DeepSeek, the request now sends `{ type: 'json_object' }` instead of the full strict `json_schema` contract. Both `deepseek-chat` and `deepseek-reasoner` accept `json_object` and produce valid JSON output; the prompt already instructs the exact `[{id, text}]` structure so schema enforcement at the API level is not needed. All other providers continue using the strict `json_schema` path unchanged.
+
+- **Gemini model IDs updated to stable names:** Replaced all hardcoded preview/alias model slugs with their current stable API identifiers across the full config stack (`src/utils/config.js`, `public/config.js`, `public/partials/main.html`):
+  - `gemini-2.5-flash-preview-09-2025` → `gemini-2.5-flash`
+  - `gemini-flash-lite-latest` → `gemini-2.5-flash-lite`
+  Both old IDs now return 404 from the Gemini API; new IDs are confirmed valid. Backward-compatible migration is applied at both the frontend form-load level (users with old saved model values have it silently corrected when the config page loads) and the server-side deprecated model override (old IDs are included in `DEPRECATED_MODEL_NAMES` and replaced with the current default on config resolution).
+
 ## SubMaker v1.4.58
 
 - **OpenAI model compatibility hotfix (400 errors resolved):** Fixed OpenAI request shaping for modern GPT families. OpenAI chat requests now use `max_completion_tokens` (instead of `max_tokens`), and GPT-5-family requests no longer send unsupported sampling params (`temperature`/`top_p`) that were triggering `400 invalid_request_error` responses.

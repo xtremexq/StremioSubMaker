@@ -1,0 +1,144 @@
+﻿diff --git a/index.js b/index.js
+index 86f6518..4e8fd87 100644
+--- a/index.js
++++ b/index.js
+@@ -1332,6 +1332,8 @@ const DEFAULT_STREMIO_WEB_ORIGINS = [
+     'https://www.stremio.com',
+     'https://stremio.com',
+     'https://app.stremio.com',
++    // Stremio web shell hosted on GitHub Pages
++    'https://stremio.github.io',
+     // Third-party Stremio web frontends
+     'https://stremio-neo.aayushcodes.eu',
+     'https://peario.xyz'
+diff --git a/public/config.js b/public/config.js
+index 2599735..39ffd23 100644
+--- a/public/config.js
++++ b/public/config.js
+@@ -523,27 +523,31 @@
+ 
+     // Translation prompt presets
+     const STRICT_TRANSLATION_PROMPT = `You are a professional subtitles translator. Translate the following subtitles while:
+-1. Maintaining perfect SRT format (sequence numbers, timestamps, and text)
+-2. Preserving the timing and structure exactly as given
+-3. Keeping the same number of lines and line breaks
+-4. Translating text naturally and contextually
+-5. Ensuring cultural adaptation where necessary while staying faithful to the original meaning
+-6. Preserving any existing formatting tags
++1. Preserving entry boundaries and ordering exactly as given
++2. Preserving line breaks within each entry unless a break is clearly invalid
++3. Preserving formatting tags and special characters
++4. Preserving meaning, tone, and speaker intent with high fidelity
++5. Keeping terminology, names, and style consistent across entries
+ 
+-This is an automatic system, DO NOT make any explanations or comments - simply output the translated SRT content
+-
+-Return ONLY the translated SRT content, nothing else. NEVER output markdown.
++CRITICAL:
++- Follow the output format contract specified by the current workflow instructions (numbered list, XML tags, JSON array, or timestamped SRT when explicitly requested).
++- Do NOT add explanations, notes, acknowledgements, or alternative translations.
++- Return ONLY the translated output in the required format. NEVER output markdown.
+ 
+ Translate to {target_language}.`;
+ 
+     const NATURAL_TRANSLATION_PROMPT = `You are a professional subtitle translator. Translate the following subtitles while:
++1. Preserving entry boundaries and ordering
++2. Preserving line breaks where possible, but adapt phrasing for natural subtitle flow when needed
++3. Maintaining natural dialogue and colloquialisms appropriate to the target language
++4. Preserving formatting tags and special characters
++5. Keeping character voice and context accurate for film/TV dialogue
++
++CRITICAL:
++- Follow the output format contract specified by the current workflow instructions (numbered list, XML tags, JSON array, or timestamped SRT when explicitly requested).
++- Do NOT add explanations, notes, acknowledgements, or alternative translations.
++- Return ONLY the translated output in the required format. NEVER output markdown.
+ 
+-1. Trying to preserve the timing and structure exactly as given, correctly adapting for natural target language subtitles flow if deemed necessary.
+-2. The same is true for number of lines and line breaks
+-3. Maintaining natural dialogue flow and colloquialisms appropriate to the target language
+-4. Preserving any formatting tags or special characters
+-5. Ensuring translations are contextually accurate for film/TV dialogue
+-This is an automatic system, you must return ONLY the subtitles output/file.
+ Translate to {target_language}.`;
+ 
+     /**
+diff --git a/src/services/subdl.js b/src/services/subdl.js
+index 9333a09..5c2c53a 100644
+--- a/src/services/subdl.js
++++ b/src/services/subdl.js
+@@ -464,6 +464,7 @@ class SubDLService {
+       'russian': 'rus',
+       'japanese': 'jpn',
+       'chinese': 'chi',
++      'chinese bg code': 'chi',
+       'korean': 'kor',
+       'arabic': 'ara',
+       'dutch': 'dut',
+diff --git a/src/services/translationEngine.js b/src/services/translationEngine.js
+index e723c84..85a638e 100644
+--- a/src/services/translationEngine.js
++++ b/src/services/translationEngine.js
+@@ -1681,9 +1681,9 @@ CRITICAL RULES:
+ 3. Return EXACTLY ${expectedCount} tagged entries
+ 4. Keep line breaks within each entry
+ 5. Maintain natural dialogue flow for ${targetLabel}
+-6. Use appropriate colloquialisms for ${targetLabel}${context ? '\n7. Use the provided context to ensure consistency' : ''}
++6. Use appropriate colloquialisms for ${targetLabel}${context ? '\\n7. Use the provided context to ensure consistency' : ''}
+ 
+-${customPromptText ? `ADDITIONAL INSTRUCTIONS:\n${customPromptText}\n\n` : ''}
++${customPromptText ? `ADDITIONAL INSTRUCTIONS:\\n${customPromptText}\\n\\n` : ''}
+ Do NOT add acknowledgements, explanations, notes, or commentary.
+ Do not skip, merge, or split entries.
+ Do not include any timestamps/timecodes.
+@@ -1748,17 +1748,31 @@ CONTEXT PROVIDED:
+     const promptBody = `You are translating subtitle text to ${targetLabel}.
+ ${contextInstructions}
+ CRITICAL RULES:
+-1. Translate ONLY the "text" field of each entry
+-2. Preserve the "id" field exactly as given
++1. Translate ONLY the "text" field of each entry into ${targetLabel}
++2. Preserve the "id" field exactly as given with no modification
+ 3. Return EXACTLY ${expectedCount} entries
+-4. Keep line breaks within each entry
+-5. Maintain natural dialogue flow for ${targetLabel}
+-6. Use appropriate colloquialisms for ${targetLabel}${context ? '\n7. Use the provided context to ensure consistency' : ''}
+-
+-${customPromptText ? `ADDITIONAL INSTRUCTIONS:
++4. Preserve original formatting tags (e.g., <i>, </i>, \\h, \\N); modify line breaks ONLY if strictly required to enforce readability targets. Formatting tags do not count toward CPL limits and must be preserved unless they physically interfere with text wrapping
++5. Maintain natural dialogue flow with strict and explicit consistency in character gender, pronouns, speech level, and honorifics throughout the batch; do NOT infer or change gender unless it is explicitly stated in the source text. If gender is ambiguous, use neutral forms or maintain consistency with previous entries
++6. Adhere to a readability target of 42 characters per line (CPL); for long-word languages, use natural syntactic breaks (e.g., after punctuation or conjunctions) to ensure brevity without losing nuance. Prioritize the CPL target over original line breaks if the source exceeds the limit. If a line still exceeds 42 CPL after rephrasing, break it at a natural point; do NOT merge text from different entries or split a single entry into multiple JSON objects
++7. Every entry must be fully translated; never return original source text unless it is a proper noun (e.g., names, people, places, brands). If the source text appears corrupted, nonsensical, or contains only symbols/numbers, return it unchanged
++8. If a text field is empty, contains only whitespace, or only formatting tags, return it unchanged
++
++ADDITIONAL INSTRUCTIONS:
++You are a professional subtitles translator operating in an automated localization environment. Translate while:
++1. Maintaining perfect, machine-parseable JSON format matching the input schema exactly. Ensure JSON is valid: escape double quotes with a backslash (e.g., \\" ) and use \\n for line breaks within the text field, and ensure no trailing commas after the last entry
++2. Do NOT add, remove, reorder, or modify JSON keys, fields, or data types
++3. Using concise, conversational, cinematic subtitle style suitable for professional streaming platforms. Preserve Unicode characters and punctuation (e.g., ellipses, em dashes) appropriate for the target language
++4. Review the entire batch context to ensure consistency and continuity; the model must prioritize global coherence across all ${expectedCount} entries before producing output
++5. For lyrics, prioritize maintaining rhythm and intent; if preserving rhythm conflicts with literal meaning, opt for natural phrasing that captures the essence. For non-dialogue text (e.g., [sigh]), preserve meaning and tags
++6. Preserving any existing formatting tags${context ? '\n7. Use the provided context to ensure consistency' : ''}
++
++${customPromptText ? `CUSTOM INSTRUCTIONS:
+ ${customPromptText}
+ 
+-` : ''}
++` : ''}This is an automatic system, DO NOT make any explanations or comments - simply output the translated content.
++Return ONLY the translated content, nothing else. NEVER output markdown.
++Translate to ${targetLabel}.
++
+ Do NOT add acknowledgements, explanations, notes, or commentary.
+ Do not skip, merge, or split entries.
+ Do not include any timestamps/timecodes.
+@@ -2140,9 +2154,9 @@ CRITICAL RULES:
+ 3. Return EXACTLY ${expectedCount} numbered entries
+ 4. Keep line breaks within each entry
+ 5. Maintain natural dialogue flow for ${targetLabel}
+-6. Use appropriate colloquialisms for ${targetLabel}${context ? '\n7. Use the provided context to ensure consistency with previous translations' : ''}
++6. Use appropriate colloquialisms for ${targetLabel}${context ? '\\n7. Use the provided context to ensure consistency with previous translations' : ''}
+ 
+-${customPromptText ? `ADDITIONAL INSTRUCTIONS (from user/config):\n${customPromptText}\n\n` : ''}
++${customPromptText ? `ADDITIONAL INSTRUCTIONS (from user/config):\\n${customPromptText}\\n\\n` : ''}
+ DO NOT add ANY acknowledgements, explanations, notes, or commentary.
+ Do not add alternative translations
+ Do not skip any entries

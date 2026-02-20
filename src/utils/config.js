@@ -215,7 +215,9 @@ const DEPRECATED_MODEL_NAMES = [
   'gemini-2.5-flash-lite-09-2025', // Old name before preview version
   'gemini-2.5-flash-latest',
   'gemini-pro-latest',
-  'gemini-2.5-pro-latest'
+  'gemini-2.5-pro-latest',
+  'gemini-2.5-flash-preview-09-2025', // Renamed to gemini-2.5-flash
+  'gemini-flash-lite-latest'          // Renamed to gemini-2.5-flash-lite
 ];
 
 /**
@@ -908,7 +910,7 @@ const MODEL_SPECIFIC_DEFAULTS = {
     thinkingBudget: 0,      // Gemma models don't support thinking
     temperature: 0.7        // Balanced temperature for Gemma
   },
-  'gemini-flash-lite-latest': {
+  'gemini-2.5-flash-lite': {
     thinkingBudget: 0,      // No thinking for lite model
     temperature: 0.8        // Higher temperature for creativity
   },
@@ -916,7 +918,7 @@ const MODEL_SPECIFIC_DEFAULTS = {
     thinkingBudget: 0,      // No thinking for lite model
     temperature: 0.8        // Higher temperature for creativity
   },
-  'gemini-2.5-flash-preview-09-2025': {
+  'gemini-2.5-flash': {
     thinkingBudget: -1,     // Dynamic thinking for flash model
     temperature: 0.5        // Lower temperature for consistency
   },
@@ -982,7 +984,7 @@ function getDefaultConfig(modelName = null) {
     // Batch context: Include original surrounding context and previous translations for better coherence
     // Disabled by default for performance (can be enabled for improved translation quality)
     enableBatchContext: process.env.ENABLE_BATCH_CONTEXT === 'true' ? true : false,
-    contextSize: parseInt(process.env.BATCH_CONTEXT_SIZE) || 3, // Number of surrounding entries to include as context
+    contextSize: parseInt(process.env.BATCH_CONTEXT_SIZE) || 8, // Number of preceding original entries to include as context
     // Mismatch retries: number of times to retry a batch when AI returns wrong entry count (0-3, default: 1)
     mismatchRetries: process.env.MISMATCH_RETRIES !== undefined ? Math.max(0, Math.min(3, parseInt(process.env.MISMATCH_RETRIES))) : 1
   };

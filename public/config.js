@@ -523,27 +523,31 @@
 
     // Translation prompt presets
     const STRICT_TRANSLATION_PROMPT = `You are a professional subtitles translator. Translate the following subtitles while:
-1. Maintaining perfect SRT format (sequence numbers, timestamps, and text)
-2. Preserving the timing and structure exactly as given
-3. Keeping the same number of lines and line breaks
-4. Translating text naturally and contextually
-5. Ensuring cultural adaptation where necessary while staying faithful to the original meaning
-6. Preserving any existing formatting tags
+1. Preserving entry boundaries and ordering exactly as given
+2. Preserving line breaks within each entry unless a break is clearly invalid
+3. Preserving formatting tags and special characters
+4. Preserving meaning, tone, and speaker intent with high fidelity
+5. Keeping terminology, names, and style consistent across entries
 
-This is an automatic system, DO NOT make any explanations or comments - simply output the translated SRT content
-
-Return ONLY the translated SRT content, nothing else. NEVER output markdown.
+CRITICAL:
+- Follow the output format contract specified by the current workflow instructions (numbered list, XML tags, JSON array, or timestamped SRT when explicitly requested).
+- Do NOT add explanations, notes, acknowledgements, or alternative translations.
+- Return ONLY the translated output in the required format. NEVER output markdown.
 
 Translate to {target_language}.`;
 
     const NATURAL_TRANSLATION_PROMPT = `You are a professional subtitle translator. Translate the following subtitles while:
+1. Preserving entry boundaries and ordering
+2. Preserving line breaks where possible, but adapt phrasing for natural subtitle flow when needed
+3. Maintaining natural dialogue and colloquialisms appropriate to the target language
+4. Preserving formatting tags and special characters
+5. Keeping character voice and context accurate for film/TV dialogue
 
-1. Trying to preserve the timing and structure exactly as given, correctly adapting for natural target language subtitles flow if deemed necessary.
-2. The same is true for number of lines and line breaks
-3. Maintaining natural dialogue flow and colloquialisms appropriate to the target language
-4. Preserving any formatting tags or special characters
-5. Ensuring translations are contextually accurate for film/TV dialogue
-This is an automatic system, you must return ONLY the subtitles output/file.
+CRITICAL:
+- Follow the output format contract specified by the current workflow instructions (numbered list, XML tags, JSON array, or timestamped SRT when explicitly requested).
+- Do NOT add explanations, notes, acknowledgements, or alternative translations.
+- Return ONLY the translated output in the required format. NEVER output markdown.
+
 Translate to {target_language}.`;
 
     /**
@@ -552,7 +556,7 @@ Translate to {target_language}.`;
      */
     const MODEL_SPECIFIC_DEFAULTS = {
 
-        'gemini-flash-lite-latest': {
+        'gemini-2.5-flash-lite': {
             thinkingBudget: 0,
             temperature: 0.7
         },
@@ -560,7 +564,7 @@ Translate to {target_language}.`;
             thinkingBudget: 0,
             temperature: 0.7
         },
-        'gemini-2.5-flash-preview-09-2025': {
+        'gemini-2.5-flash': {
             thinkingBudget: -1,
             temperature: 0.5
         },
@@ -756,7 +760,7 @@ Translate to {target_language}.`;
                 topP: 0.95,
                 topK: 40,
                 enableBatchContext: false, // Include original surrounding context and previous translations
-                contextSize: 3, // Number of surrounding entries to include as context
+                contextSize: 8, // Number of preceding original entries to include as context
                 sendTimestampsToAI: false, // Let AI handle timestamps directly
                 translationWorkflow: 'xml', // 'original', 'ai', 'xml', or 'json'
                 mismatchRetries: 1 // Retries when AI returns wrong entry count (0-3)
@@ -4817,8 +4821,8 @@ Translate to {target_language}.`;
         // Define hardcoded multi-model options
         const hardcodedModels = [
 
-            { name: 'gemini-flash-lite-latest', displayName: 'Gemini 2.5 Flash-Lite' },
-            { name: 'gemini-2.5-flash-preview-09-2025', displayName: 'Gemini 2.5 Flash' },
+            { name: 'gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash-Lite' },
+            { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
             { name: 'gemini-3-flash-preview', displayName: 'Gemini 3.0 Flash (beta)' },
             { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro (beta)' },
             { name: 'gemini-3-pro-preview', displayName: 'Gemini 3.0 Pro (beta)' }
@@ -5365,6 +5369,14 @@ Translate to {target_language}.`;
         if (modelToUse === 'gemini-2.5-pro-preview-05-06') {
             modelToUse = 'gemini-2.5-pro';
         }
+        // Migrate old Flash preview model ID to new stable ID
+        if (modelToUse === 'gemini-2.5-flash-preview-09-2025') {
+            modelToUse = 'gemini-2.5-flash';
+        }
+        // Migrate old Flash-Lite alias to new stable ID
+        if (modelToUse === 'gemini-flash-lite-latest') {
+            modelToUse = 'gemini-2.5-flash-lite';
+        }
 
         if (modelSelect) {
             modelSelect.value = modelToUse;
@@ -5602,10 +5614,10 @@ Translate to {target_language}.`;
 
         // Load advanced settings
         if (!currentConfig.advancedSettings) {
-            currentConfig.advancedSettings = getDefaultConfig(currentConfig.geminiModel || 'gemini-2.5-flash-preview-09-2025').advancedSettings;
+            currentConfig.advancedSettings = getDefaultConfig(currentConfig.geminiModel || 'gemini-2.5-flash').advancedSettings;
         } else {
             // Merge with defaults to backfill any new fields
-            const advDefaults = getDefaultConfig(currentConfig.geminiModel || 'gemini-2.5-flash-preview-09-2025').advancedSettings;
+            const advDefaults = getDefaultConfig(currentConfig.geminiModel || 'gemini-2.5-flash').advancedSettings;
             currentConfig.advancedSettings = {
                 ...advDefaults,
                 ...currentConfig.advancedSettings
