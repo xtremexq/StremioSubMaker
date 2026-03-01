@@ -77,7 +77,9 @@ function buildFileTranslationClientConfig(config) {
         providers: safeProviders,
         providerParameters: mergedParams,
         fileTranslationEnabled: config?.fileTranslationEnabled !== false,
-        singleBatchMode: config?.singleBatchMode === true
+        singleBatchMode: config?.singleBatchMode === true,
+        translationWorkflow: config?.advancedSettings?.translationWorkflow || 'xml',
+        enableBatchContext: config?.advancedSettings?.enableBatchContext === true
     };
 }
 
@@ -138,7 +140,8 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
     const uploadQueueDefaults = { maxFiles: maxBatchFiles, maxConcurrent: maxConcurrency };
     const translationWorkflowDefaults = {
         singleBatchMode: config?.singleBatchMode === true,
-        sendTimestampsToAI: config?.advancedSettings?.sendTimestampsToAI === true
+        translationWorkflow: config?.advancedSettings?.translationWorkflow || 'xml',
+        enableBatchContext: config?.advancedSettings?.enableBatchContext === true
     };
     const MAX_OUTPUT_TOKEN_LIMIT = 200000;
     const DEFAULT_MAX_OUTPUT_TOKENS = 65536;
@@ -215,12 +218,16 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
     const translationOptionsTitle = t('fileUpload.options.title', {}, 'Translation Options');
     const translationProviderLabel = t('fileUpload.options.provider.label', {}, 'Translation Provider');
     const translationProviderHelper = t('fileUpload.options.provider.helper', {}, 'Choose which configured provider to use for this translation.');
-    const translationFlowLabel = t('fileUpload.options.flow.label', {}, 'Translation Flow');
-    const translationFlowMulti = t('fileUpload.options.flow.multiple', {}, 'Multiple Batches (Recommended)');
-    const translationFlowSingle = t('fileUpload.options.flow.single', {}, 'Single-batch (all at once)');
-    const timingStrategyLabel = t('fileUpload.options.timing.label', {}, 'Timestamps Strategy');
-    const timingStrategyRebuild = t('fileUpload.options.timing.rebuild', {}, 'Rebuild Timestamps');
-    const timingStrategyAI = t('fileUpload.options.timing.ai', {}, 'Send Timestamps to AI');
+    const translationWorkflowLabel = t('fileUpload.options.workflow.label', {}, 'Translation Workflow');
+    const translationWorkflowHelper = t('fileUpload.options.workflow.helper', {}, 'How subtitles are formatted for the AI. XML Tags is recommended for most use cases.');
+    const workflowXml = t('fileUpload.options.workflow.xml', {}, 'XML Tags (Default)');
+    const workflowJson = t('fileUpload.options.workflow.json', {}, 'JSON (Structured)');
+    const workflowOriginal = t('fileUpload.options.workflow.original', {}, 'Original Timestamps (Legacy)');
+    const workflowAi = t('fileUpload.options.workflow.ai', {}, 'Send Timestamps to AI');
+    const singleBatchLabel = t('fileUpload.options.singleBatch.label', {}, 'Single Batch Mode');
+    const singleBatchHelper = t('fileUpload.options.singleBatch.helper', {}, 'Translate the whole subtitle in one go. Improves contextual coherence but can hit provider limits more easily.');
+    const batchContextLabel = t('fileUpload.options.batchContext.label', {}, 'Enable Batch Context');
+    const batchContextHelper = t('fileUpload.options.batchContext.helper', {}, 'Include surrounding context and previous translations when processing batches. Improves coherence but increases token usage.');
     const advancedSettingsTitle = t('fileUpload.advanced.title', {}, 'Advanced Settings');
     const advancedHighlightTitle = t('fileUpload.advanced.highlightTitle', {}, 'Fine-tune AI behavior for this translation only:');
     const advancedHighlightBody = t('fileUpload.advanced.highlightBody', {}, 'Override model and parameters.');
@@ -2188,24 +2195,35 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
 
                             <div class="form-group">
                                 <label for="workflowMode">
-                                    ${escapeHtml(translationFlowLabel)}
-                                    <span class="label-description">${escapeHtml(t('fileUpload.options.flow.helper', {}, 'Choose between multiple batches or a single batch run.'))}</span>
+                                    ${escapeHtml(translationWorkflowLabel)}
+                                    <span class="label-description">${escapeHtml(translationWorkflowHelper)}</span>
                                 </label>
                                 <select id="workflowMode">
-                                    <option value="batched">${escapeHtml(translationFlowMulti)}</option>
-                                    <option value="single-pass">${escapeHtml(translationFlowSingle)}</option>
+                                    <option value="xml">${escapeHtml(workflowXml)}</option>
+                                    <option value="json">${escapeHtml(workflowJson)}</option>
+                                    <option value="original">${escapeHtml(workflowOriginal)}</option>
+                                    <option value="ai">${escapeHtml(workflowAi)}</option>
                                 </select>
                             </div>
 
                             <div class="form-group">
-                                <label for="timingMode">
-                                    ${escapeHtml(timingStrategyLabel)}
-                                    <span class="label-description">${escapeHtml(t('fileUpload.options.timing.helper', {}, 'Decide how timestamps are handled during translation.'))}</span>
+                                <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" id="singleBatchMode" style="margin-top: 0.3rem;">
+                                    <div>
+                                        ${escapeHtml(singleBatchLabel)}
+                                        <span class="label-description">${escapeHtml(singleBatchHelper)}</span>
+                                    </div>
                                 </label>
-                                <select id="timingMode">
-                                    <option value="preserve-timing">${escapeHtml(timingStrategyRebuild)}</option>
-                                    <option value="ai-timing">${escapeHtml(timingStrategyAI)}</option>
-                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" id="enableBatchContext" style="margin-top: 0.3rem;">
+                                    <div>
+                                        ${escapeHtml(batchContextLabel)}
+                                        <span class="label-description">${escapeHtml(batchContextHelper)}</span>
+                                    </div>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -2624,7 +2642,8 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         const sourceLang = document.getElementById('sourceLang');
         const sourceLangGroup = document.getElementById('sourceLangGroup');
         const workflowMode = document.getElementById('workflowMode');
-        const timingMode = document.getElementById('timingMode');
+        const singleBatchCheckbox = document.getElementById('singleBatchMode');
+        const enableBatchContextCheckbox = document.getElementById('enableBatchContext');
         const queuePanel = document.getElementById('queuePanel');
         const queueList = document.getElementById('queueList');
         const queueSummary = document.getElementById('queueSummary');
@@ -2649,10 +2668,12 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             : '';
         const defaultTargetLanguage = hasConfiguredLanguages ? clientConfig.targetLanguages[0] : '';
         const defaultShowAllLanguages = hasConfiguredLanguages ? false : true;
-        const defaultWorkflowValue = translationDefaults.singleBatchMode ? 'single-pass' : 'batched';
-        const defaultTimingValue = translationDefaults.sendTimestampsToAI ? 'ai-timing' : 'preserve-timing';
+        const defaultWorkflowValue = translationDefaults.translationWorkflow || 'xml';
+        const defaultSingleBatchValue = translationDefaults.singleBatchMode === true;
+        const defaultBatchContextValue = translationDefaults.enableBatchContext === true;
         if (workflowMode) workflowMode.value = defaultWorkflowValue;
-        if (timingMode) timingMode.value = defaultTimingValue;
+        if (singleBatchCheckbox) singleBatchCheckbox.checked = defaultSingleBatchValue;
+        if (enableBatchContextCheckbox) enableBatchContextCheckbox.checked = defaultBatchContextValue;
 
         // Translation options elements
         const translationOptions = document.getElementById('translationOptions');
@@ -3020,7 +3041,8 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             }
 
             if (workflowMode) workflowMode.value = defaultWorkflowValue;
-            if (timingMode) timingMode.value = defaultTimingValue;
+            if (singleBatchCheckbox) singleBatchCheckbox.checked = defaultSingleBatchValue;
+            if (enableBatchContextCheckbox) enableBatchContextCheckbox.checked = defaultBatchContextValue;
 
             if (showAllLanguagesCheckbox) {
                 showAllLanguagesCheckbox.checked = defaultShowAllLanguages;
@@ -3375,15 +3397,19 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         }
 
         const summarizeQueueMeta = (job) => {
-            const workflow = job.settings.workflowMode === 'single-pass'
+            const workflowNames = {
+                'xml': 'XML Tags',
+                'json': 'JSON',
+                'original': 'Original Timestamps',
+                'ai': 'Send to AI'
+            };
+            const workflowLabel = workflowNames[job.settings.translationWorkflow] || job.settings.translationWorkflow || 'XML Tags';
+            const batchLabel = job.settings.singleBatchMode
                 ? tt('fileUpload.queue.meta.single', {}, 'Single-batch')
                 : tt('fileUpload.queue.meta.multi', {}, 'Multiple batches');
-            const timing = job.settings.timingMode === 'ai-timing'
-                ? tt('fileUpload.queue.meta.timingAi', {}, 'Send timestamps to AI')
-                : tt('fileUpload.queue.meta.timingRebuild', {}, 'Rebuild timestamps');
             const target = (job.settings.targetLanguage || '').toUpperCase();
             const targetLabel = tt('fileUpload.queue.meta.target', { target }, target);
-            return workflow + ' • ' + timing + ' • ' + targetLabel;
+            return workflowLabel + ' • ' + batchLabel + ' • ' + targetLabel;
         };
 
         function buildDownloadName(job) {
@@ -3569,8 +3595,9 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 overrides.advancedSettings = advancedOverrides;
             }
 
-            const workflowValue = workflowMode ? workflowMode.value : 'batched';
-            const timingValue = timingMode ? timingMode.value : 'preserve-timing';
+            const workflowValue = workflowMode ? workflowMode.value : 'xml';
+            const singleBatchValue = singleBatchCheckbox ? singleBatchCheckbox.checked : false;
+            const batchContextValue = enableBatchContextCheckbox ? enableBatchContextCheckbox.checked : false;
 
             return {
                 providerKey,
@@ -3578,8 +3605,9 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 sourceLanguage: caps.requiresSourceLanguage ? selectedSourceLanguage : '',
                 overrides,
                 advancedOverrides,
-                workflowMode: workflowValue,
-                timingMode: timingValue
+                translationWorkflow: workflowValue,
+                singleBatchMode: singleBatchValue,
+                enableBatchContext: batchContextValue
             };
         }
 
@@ -3592,10 +3620,9 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 advancedSettings: settings.providerKey === 'gemini' ? settings.advancedOverrides : {},
                 overrides: settings.overrides,
                 options: {
-                    workflow: settings.workflowMode,
-                    timingMode: settings.timingMode,
-                    singleBatchMode: settings.workflowMode === 'single-pass',
-                    sendTimestampsToAI: settings.timingMode !== 'preserve-timing'
+                    translationWorkflow: settings.translationWorkflow || 'xml',
+                    singleBatchMode: settings.singleBatchMode === true,
+                    enableBatchContext: settings.enableBatchContext === true
                 }
             };
             if (settings.sourceLanguage) {

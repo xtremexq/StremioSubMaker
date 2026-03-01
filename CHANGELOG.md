@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.63
+
+**Bug Fixes:**
+
+- **Fixed 524 Cloudflare timeout on file translation page:** The file translation API endpoint (`/api/translate-file`) never forwarded the `translationWorkflow` value (xml/json/original/ai) to the TranslationEngine. The engine always used whatever workflow was in the user's saved config, with no way for the file upload page to override it. Combined with single-batch mode, this could cause the entire file to be processed in one API call using an unintended workflow, exceeding Cloudflare's 100-second origin timeout.
+
+- **Fixed TranslationEngine error catch allowing incorrect fallback for structured workflows:** When the TranslationEngine failed for xml/json/ai workflows, the error catch block checked `singleBatchMode || sendTimestampsToAI` to decide whether to throw or fall back to the legacy parallel/single-call path. Since xml/json workflows didn't set `sendTimestampsToAI`, failures would silently fall back to the legacy path which doesn't support structured workflows, producing garbled output. Now only the `original` workflow without `singleBatchMode` can fall back to the legacy path.
+
+**Improvements:**
+
+- **File translation page now mirrors main config translation workflow options:** Replaced the simplified "Translation Flow" dropdown (batched/single-pass) and "Timestamps Strategy" dropdown (preserve-timing/ai-timing) with the real 4-option Translation Workflow dropdown matching the main config page: XML Tags (Default), JSON (Structured), Original Timestamps (Legacy), and Send Timestamps to AI. Added separate "Single Batch Mode" checkbox and "Enable Batch Context" checkbox, also matching the main config page. All three settings are initialized from the user's saved config defaults and correctly forwarded to the API.
+
+- **File translation API now accepts `translationWorkflow` and `enableBatchContext` per-request overrides:** The `POST /api/translate-file` endpoint now reads `options.translationWorkflow` (xml/json/original/ai) and forwards it to `config.advancedSettings.translationWorkflow` for the TranslationEngine. Also reads `options.enableBatchContext` and forwards to `config.advancedSettings.enableBatchContext`. The `shouldUseEngine` decision is now workflow-aware — any workflow other than `original` routes through the TranslationEngine.
+
+- **Joi validation schema updated for new file translation options:** Added `translationWorkflow`, `singleBatchMode`, and `enableBatchContext` to the `translationOptionsSchema`. Legacy fields (`workflow`, `timingMode`, `sendTimestampsToAI`) are preserved for backward compatibility. Without this update, Joi's `stripUnknown: true` would silently discard the new fields from requests.
+
+- **File translation queue summary now shows actual workflow name:** Queue metadata display updated from "Single-batch/Multiple batches • Rebuild timestamps/Send timestamps to AI" to "XML Tags/JSON/Original Timestamps/Send to AI • Single-batch/Multiple batches", accurately reflecting the selected workflow.
+
 ## SubMaker v1.4.62
 
 **Bug Fixes:**
@@ -37,8 +55,6 @@ All notable changes to this project will be documented in this file.
 - **Responsive styles for new provider group rows:** Provider group rows scale to smaller font and tighter padding on mobile (≤920px) viewport, consistent with existing chip/tag responsive behavior.
 
 - **Fixed translation history entries silently lost on multi-instance deployments:** `saveRequestToHistory` used a non-atomic read-modify-write cycle on a single aggregated store key (`histset__{hash}`). With two SubMaker pods running concurrently, both pods could read the store key at the same time, merge their respective new entries independently, then each overwrite the other's write — causing the entry from whichever pod wrote first to be permanently lost. Fixed by writing each history entry to its **own independent key** (`hist__{hash}__{id}`) as a pure atomic SET with no prior read. Concurrent pods now write to different keys and can never clobber each other. The aggregated store key is still updated as a best-effort read-cache immediately after the entry write so the history page fast-path stays warm.
-
-**Improvements:**
 
 - **History page reads now use a time-gated fast-path to avoid expensive Redis SCANs:** `getHistoryForUser` previously always performed a full Redis SCAN of per-entry keys on every history page load. With thousands of users this created unnecessary SCAN pressure on the Redis cluster. The function now checks the aggregated store key first: if it was refreshed within the last 15 seconds, the result is returned immediately from a single GET without touching SCAN. If the cache is stale or missing, the slow path runs a full SCAN, merges per-entry keys from all pods with any cached store entries (newest version of each entry wins), then rebuilds the store key so subsequent reads within the next 15 seconds use the fast path.
 

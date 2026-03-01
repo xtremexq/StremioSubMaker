@@ -73,9 +73,12 @@ const translationOverridesSchema = Joi.object({
 
 // Optional translation engine toggles (workflow/timing)
 const translationOptionsSchema = Joi.object({
+  translationWorkflow: Joi.string().valid('xml', 'json', 'original', 'ai').optional(),
+  singleBatchMode: Joi.boolean().optional(),
+  enableBatchContext: Joi.boolean().optional(),
+  // Legacy fields kept for backward compatibility with older clients
   workflow: Joi.string().valid('batched', 'single-pass', 'single-batch', 'one-pass').optional(),
   timingMode: Joi.string().valid('preserve-timing', 'ai-timing', 'ai-timestamps', 'source-timing').optional(),
-  singleBatchMode: Joi.boolean().optional(),
   sendTimestampsToAI: Joi.boolean().optional()
 }).unknown(true).optional();
 

@@ -3768,27 +3768,51 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
 
         // Resolve translation workflow/timing options (per-request overrides win over config defaults)
         const options = req.body.options || {};
-        const workflowMode = typeof options.workflow === 'string' ? options.workflow.trim().toLowerCase() : '';
-        const timingMode = typeof options.timingMode === 'string' ? options.timingMode.trim().toLowerCase() : '';
+
+        // Translation workflow (xml/json/original/ai) — per-request override wins over saved config
+        const validWorkflows = ['xml', 'json', 'original', 'ai'];
+        const requestedWorkflow = typeof options.translationWorkflow === 'string'
+            ? options.translationWorkflow.trim().toLowerCase() : '';
+        const translationWorkflow = validWorkflows.includes(requestedWorkflow)
+            ? requestedWorkflow : '';
+
+        // Single batch mode — per-request override
         const singleBatchRequested = typeof options.singleBatchMode === 'boolean'
-            ? options.singleBatchMode
-            : (workflowMode === 'single-pass' || workflowMode === 'single-batch' || workflowMode === 'one-pass');
-        const timestampsRequested = typeof options.sendTimestampsToAI === 'boolean'
-            ? options.sendTimestampsToAI
-            : (timingMode === 'ai-timing' || timingMode === 'ai-timestamps');
+            ? options.singleBatchMode : false;
         const singleBatchMode = singleBatchRequested || config.singleBatchMode === true;
-        const sendTimestampsToAI = (() => {
-            if (typeof timestampsRequested === 'boolean') return timestampsRequested;
-            return config.advancedSettings?.sendTimestampsToAI === true;
-        })();
+
+        // Batch context — per-request override
+        const enableBatchContextRequested = typeof options.enableBatchContext === 'boolean'
+            ? options.enableBatchContext : null;
+
+        // Derive sendTimestampsToAI from the workflow (only 'ai' workflow uses it)
+        const sendTimestampsToAI = translationWorkflow
+            ? translationWorkflow === 'ai'
+            : (config.advancedSettings?.sendTimestampsToAI === true);
 
         config.singleBatchMode = singleBatchMode;
         const advanced = { ...(config.advancedSettings || {}) };
-        if (sendTimestampsToAI) {
+
+        // Forward translation workflow to engine
+        if (translationWorkflow) {
+            advanced.translationWorkflow = translationWorkflow;
+            // Sync the legacy sendTimestampsToAI flag with workflow choice
+            if (translationWorkflow === 'ai') {
+                advanced.sendTimestampsToAI = true;
+            } else {
+                delete advanced.sendTimestampsToAI;
+            }
+        } else if (sendTimestampsToAI) {
             advanced.sendTimestampsToAI = true;
         } else {
             delete advanced.sendTimestampsToAI;
         }
+
+        // Forward batch context setting
+        if (enableBatchContextRequested !== null) {
+            advanced.enableBatchContext = enableBatchContextRequested;
+        }
+
         config.advancedSettings = advanced;
 
         // Get language names for better translation context
@@ -3806,7 +3830,8 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
         const effectiveModel = model || config.geminiModel;
         log.debug(() => `[File Translation API] Using provider=${providerName} model=${effectiveModel}`);
 
-        const shouldUseEngine = singleBatchMode || sendTimestampsToAI || process.env.FILE_UPLOAD_FORCE_ENGINE === 'true';
+        const effectiveWorkflow = config.advancedSettings?.translationWorkflow || 'xml';
+        const shouldUseEngine = singleBatchMode || effectiveWorkflow !== 'original' || process.env.FILE_UPLOAD_FORCE_ENGINE === 'true';
         let translatedContent = null;
 
         if (shouldUseEngine) {
@@ -3817,7 +3842,7 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
                     config.advancedSettings || {},
                     { singleBatchMode, providerName, fallbackProviderName, enableStreaming: false }
                 );
-                log.debug(() => `[File Translation API] Using TranslationEngine (singleBatch=${singleBatchMode}, timestamps=${sendTimestampsToAI})`);
+                log.debug(() => `[File Translation API] Using TranslationEngine (workflow=${effectiveWorkflow}, singleBatch=${singleBatchMode}, batchContext=${!!config.advancedSettings?.enableBatchContext})`);
                 translatedContent = await engine.translateSubtitle(
                     workingContent,
                     targetLangName,
@@ -3825,7 +3850,9 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
                     null
                 );
             } catch (engineErr) {
-                if (singleBatchMode || sendTimestampsToAI) {
+                // Only fall back to legacy path if using 'original' workflow without singleBatch
+                // xml/json/ai workflows require the engine — falling back would produce garbled output
+                if (singleBatchMode || effectiveWorkflow !== 'original') {
                     throw engineErr;
                 }
                 log.warn(() => ['[File Translation API] TranslationEngine failed, falling back to legacy path:', engineErr.message]);

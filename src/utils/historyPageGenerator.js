@@ -443,8 +443,8 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
           <span>${dateStr}</span>
         </div>
         <div class="history-details">
-          ${/* Main provider tag — always shown, styled with main accent when secondary was also invoked */''}
-          <span class="history-tag" style="${hasSecondary ? 'border-color:var(--provider-main-border);color:var(--provider-main);background:var(--provider-main-bg);font-weight:600' : ''}">${providerLabel}</span>
+          ${/* Main provider tag — always shown with main provider accent */''}
+          <span class="history-tag" style="border-color:var(--provider-main-border);color:var(--provider-main);background:var(--provider-main-bg);font-weight:600">${providerLabel}</span>
           <span class="history-tag">${modelLabel}</span>
           ${cacheLabel}
           ${entryCountTag}
