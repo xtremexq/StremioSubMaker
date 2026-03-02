@@ -21,13 +21,14 @@ const SUPPORTED_TARGET_LANGS = new Set([
 ]);
 
 const BETA_LANGUAGES = new Set([
-  'ACE', 'AF', 'AN', 'AS', 'AY', 'AZ', 'BA', 'BE', 'BHO', 'BN', 'BR', 'BS', 'CA',
-  'CEB', 'CKB', 'CY', 'EO', 'EU', 'FA', 'GA', 'GL', 'GN', 'GOM', 'GU', 'HA', 'HI',
-  'HR', 'HT', 'HY', 'IG', 'IS', 'JV', 'KA', 'KK', 'KMR', 'KY', 'LA', 'LB', 'LMO',
-  'LN', 'MAI', 'MG', 'MI', 'MK', 'ML', 'MN', 'MR', 'MS', 'MT', 'MY', 'NE', 'OC',
-  'OM', 'PA', 'PAG', 'PAM', 'PRS', 'PS', 'QU', 'SA', 'SCN', 'SQ', 'SR', 'ST', 'SU',
-  'SW', 'TA', 'TE', 'TG', 'TK', 'TL', 'TN', 'TS', 'TT', 'UR', 'UZ', 'WO', 'XH',
-  'YI', 'YUE', 'ZU'
+  'AB', 'ACE', 'AF', 'AK', 'AN', 'AS', 'AY', 'AZ', 'BA', 'BE', 'BHO', 'BM', 'BN', 'BR', 'BS',
+  'CA', 'CEB', 'CKB', 'CV', 'CY', 'DV', 'DZ', 'EE', 'EO', 'EU', 'FA', 'FF', 'FIL', 'FJ', 'FO',
+  'GA', 'GL', 'GN', 'GOM', 'GU', 'HA', 'HI', 'HR', 'HT', 'HY', 'IG', 'IS', 'JV', 'KA', 'KK',
+  'KMR', 'KY', 'LA', 'LB', 'LG', 'LI', 'LMO', 'LN', 'MAI', 'MG', 'MI', 'MK', 'ML', 'MN', 'MR',
+  'MS', 'MT', 'MY', 'NE', 'NR', 'NSO', 'OC', 'OM', 'OS', 'PA', 'PAG', 'PAM', 'PRS', 'PS', 'QU',
+  'RN', 'RW', 'SA', 'SCN', 'SG', 'SI', 'SM', 'SN', 'SQ', 'SR', 'SS', 'ST', 'SU', 'SW', 'TA',
+  'TE', 'TG', 'TI', 'TK', 'TL', 'TN', 'TS', 'TT', 'UR', 'UZ', 'VE', 'WO', 'XH', 'YI', 'YO',
+  'YUE', 'ZU'
 ]);
 
 const LANGUAGE_VARIANTS = {

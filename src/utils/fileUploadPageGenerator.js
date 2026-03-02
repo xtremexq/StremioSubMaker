@@ -3685,7 +3685,22 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                     throw new Error(tt('fileUpload.errors.translationFailed', { error: responseText }, 'Translation failed: ' + responseText));
                 }
 
-                const translatedContent = await response.text();
+                const rawContent = await response.text();
+
+                // Detect error marker (server sends [TRANSLATION_ERROR] when it fails
+                // after HTTP 200 was already committed for keepalive streaming)
+                const errorMarkerIdx = rawContent.indexOf('[TRANSLATION_ERROR]');
+                if (errorMarkerIdx !== -1) {
+                    const errorMsg = rawContent.substring(errorMarkerIdx + '[TRANSLATION_ERROR]'.length).trim();
+                    throw new Error(errorMsg || tt('fileUpload.errors.translationFailed', { error: '' }, 'Translation failed'));
+                }
+
+                // Trim leading keepalive newlines sent during translation
+                const translatedContent = rawContent.replace(/^\n+/, '');
+                if (!translatedContent) {
+                    throw new Error(tt('fileUpload.errors.translationFailed', { error: 'empty response' }, 'Translation failed: empty response'));
+                }
+
                 const blob = new Blob([translatedContent], { type: 'text/plain;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
 

@@ -787,7 +787,9 @@ Translate to {target_language}.`;
 
     // State management
     let currentConfig = null;
-    let allLanguages = [];
+    let providerLanguages = [];    // Languages for source/no-translation (Stremio/provider-compatible)
+    let translationLanguages = []; // Languages for target/learn (AI translation targets with regional variants)
+    let allLanguages = [];         // Combined lookup (both sets merged for chip display)
     let isFirstRun = false;
     let modelsFetchTimeout = null;
     let lastFetchedApiKey = null;
@@ -1226,9 +1228,11 @@ Translate to {target_language}.`;
 
     function normalizeLanguageCodes(codes) {
         if (!Array.isArray(codes)) return [];
-        return codes.map(c => {
+        const normalized = codes.map(c => {
             const lc = String(c || '').toLowerCase();
             if (lc === 'ptbr' || lc === 'pt-br') return 'pob';
+            // Filipino and Tagalog are the same language; canonicalize to 'tl'
+            if (lc === 'fil') return 'tl';
             return lc;
         }).filter(lc => {
             // Block UI-only fake entries from ever persisting into config
@@ -1237,6 +1241,8 @@ Translate to {target_language}.`;
             if (lc.startsWith('___')) return false; // frontend/internal placeholders
             return true;
         });
+        // Deduplicate codes that may have merged (e.g., fil + tl → two 'tl' entries)
+        return [...new Set(normalized)];
     }
 
     function getCombinedTargetSet() {
@@ -1885,30 +1891,61 @@ Translate to {target_language}.`;
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-                const response = await fetch('/api/languages', {
-                    signal: controller.signal,
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
+                // Fetch both endpoints in parallel
+                const [providerResponse, translationResponse] = await Promise.all([
+                    fetch('/api/languages', {
+                        signal: controller.signal,
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                    }),
+                    fetch('/api/languages/translation', {
+                        signal: controller.signal,
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                    })
+                ]);
 
                 clearTimeout(timeoutId);
 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                if (!providerResponse.ok) {
+                    throw new Error(`HTTP ${providerResponse.status}: ${providerResponse.statusText}`);
+                }
+                if (!translationResponse.ok) {
+                    throw new Error(`HTTP ${translationResponse.status}: ${translationResponse.statusText}`);
                 }
 
-                const languages = await response.json();
+                const providerLangs = await providerResponse.json();
+                const translationLangs = await translationResponse.json();
 
                 // Filter out special fake languages (like ___upload for File Translation) and dedupe variants
-                const filtered = languages.filter(lang => !lang.code.startsWith('___'));
-                allLanguages = dedupeLanguagesForUI(filtered);
+                providerLanguages = dedupeLanguagesForUI(providerLangs.filter(lang => !lang.code.startsWith('___')));
+                translationLanguages = dedupeLanguagesForUI(translationLangs.filter(lang => !lang.code.startsWith('___')));
 
-                renderLanguageGrid('sourceLanguages', 'selectedSourceLanguages', allLanguages);
-                renderLanguageGrid('targetLanguages', 'selectedTargetLanguages', allLanguages);
-                renderLanguageGrid('noTranslationLanguages', 'selectedNoTranslationLanguages', allLanguages);
-                renderLanguageGrid('learnLanguages', 'selectedLearnLanguages', allLanguages);
+                // Build combined lookup for chip display (translation languages include all provider languages)
+                // Use a Map to dedupe by code, preferring translationLanguages entries (they have more info)
+                const combinedMap = new Map();
+                providerLanguages.forEach(lang => combinedMap.set(lang.code, lang));
+                translationLanguages.forEach(lang => combinedMap.set(lang.code, lang));
+                allLanguages = Array.from(combinedMap.values());
+
+                // For target/learn grids: filter by extended flag
+                const baseTranslationLanguages = translationLanguages.filter(l => !l.extended);
+
+                // Restore extended toggle state from localStorage
+                const extToggleSaved = localStorage.getItem('submaker_extended_languages') === 'true';
+                const extToggleTarget = document.getElementById('extendedLanguagesToggle');
+                const extToggleLearn = document.getElementById('extendedLanguagesToggleLearn');
+                if (extToggleTarget) extToggleTarget.checked = extToggleSaved;
+                if (extToggleLearn) extToggleLearn.checked = extToggleSaved;
+
+                const targetList = extToggleSaved ? translationLanguages : baseTranslationLanguages;
+
+                // Source and no-translation use provider languages (Stremio/subtitle provider compatible)
+                // Target and learn use translation languages (AI can handle regional variants)
+                renderLanguageGrid('sourceLanguages', 'selectedSourceLanguages', providerLanguages);
+                renderLanguageGrid('targetLanguages', 'selectedTargetLanguages', targetList);
+                renderLanguageGrid('noTranslationLanguages', 'selectedNoTranslationLanguages', providerLanguages);
+                renderLanguageGrid('learnLanguages', 'selectedLearnLanguages', targetList);
 
                 // Update selected chips
                 updateSelectedChips('source', currentConfig.sourceLanguages);
@@ -1965,6 +2002,27 @@ Translate to {target_language}.`;
         });
 
         return Array.from(byName.values());
+    }
+
+    /**
+     * Re-render target and learn language grids based on the extended toggle state.
+     * Called when the checkbox is toggled.
+     */
+    function rerenderExtendedGrids(isExtended) {
+        localStorage.setItem('submaker_extended_languages', isExtended ? 'true' : 'false');
+        // Sync both checkboxes
+        const extToggleTarget = document.getElementById('extendedLanguagesToggle');
+        const extToggleLearn = document.getElementById('extendedLanguagesToggleLearn');
+        if (extToggleTarget) extToggleTarget.checked = isExtended;
+        if (extToggleLearn) extToggleLearn.checked = isExtended;
+
+        const baseTranslationLanguages = translationLanguages.filter(l => !l.extended);
+        const targetList = isExtended ? translationLanguages : baseTranslationLanguages;
+        renderLanguageGrid('targetLanguages', 'selectedTargetLanguages', targetList);
+        renderLanguageGrid('learnLanguages', 'selectedLearnLanguages', targetList);
+        // Re-apply current selections
+        updateSelectedChips('target', currentConfig.targetLanguages);
+        updateSelectedChips('learn', currentConfig.learnTargetLanguages);
     }
 
     function renderLanguageGrid(gridId, selectedId, languages) {
@@ -2280,6 +2338,20 @@ Translate to {target_language}.`;
         document.getElementById('targetSearch').addEventListener('input', (e) => {
             filterLanguages('targetLanguages', e.target.value);
         });
+
+        // Extended languages toggle (Target + Learn)
+        const extToggleTarget = document.getElementById('extendedLanguagesToggle');
+        const extToggleLearn = document.getElementById('extendedLanguagesToggleLearn');
+        if (extToggleTarget) {
+            extToggleTarget.addEventListener('change', (e) => {
+                rerenderExtendedGrids(e.target.checked);
+            });
+        }
+        if (extToggleLearn) {
+            extToggleLearn.addEventListener('change', (e) => {
+                rerenderExtendedGrids(e.target.checked);
+            });
+        }
 
         // No-translation mode toggle
         const noTranslationToggle = document.getElementById('noTranslationMode');

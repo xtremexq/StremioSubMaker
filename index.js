@@ -47,7 +47,7 @@ const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLangua
 const { parseSRT, toSRT, sanitizeSubtitleText, srtPairToWebVTT, ensureSRTForTranslation } = require('./src/utils/subtitle');
 const { version } = require('./src/utils/version');
 const { redactToken } = require('./src/utils/security');
-const { getAllLanguages, getLanguageName, toISO6392, findISO6391ByName, canonicalSyncLanguageCode } = require('./src/utils/languages');
+const { getAllLanguages, getAllTranslationLanguages, getLanguageName, toISO6392, findISO6391ByName, canonicalSyncLanguageCode } = require('./src/utils/languages');
 const { generateCacheKeys } = require('./src/utils/cacheKeys');
 const { getCached: getDownloadCached, saveCached: saveDownloadCached, getCacheStats: getDownloadCacheStats } = require('./src/utils/downloadCache');
 const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, getAvailableSubtitlesForTranslation, createLoadingSubtitle, createSessionTokenErrorSubtitle, createOpenSubtitlesAuthErrorSubtitle, createOpenSubtitlesQuotaExceededSubtitle, createCredentialDecryptionErrorSubtitle, createTranslationErrorSubtitle, readFromPartialCache, hasCachedTranslation, purgeTranslationCache, translationStatus, inFlightTranslations, canUserStartTranslation, getHistoryForUser, resolveHistoryUserHash, saveRequestToHistory, resolveHistoryTitle, maybeConvertToSRT } = require('./src/handlers/subtitles');
@@ -1924,6 +1924,7 @@ app.use((req, res, next) => {
         '/file-upload',
         '/subtitle-sync',
         '/api/languages',
+        '/api/languages/translation',
         '/api/test-opensubtitles',
         '/api/gemini-models',
         // Session management endpoints (needed for config page to save/update/retrieve configs)
@@ -2502,6 +2503,19 @@ app.get('/api/languages', (req, res) => {
         res.json(languages);
     } catch (error) {
         log.error(() => '[API] Error getting languages:', error);
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        res.status(500).json({ error: t('server.errors.languagesFailed', {}, 'Failed to get languages') });
+    }
+});
+
+// API endpoint to get all translation target languages (includes regional variants and extended languages)
+// Used by config page for target/learn language selection where AI can translate to specific regional variants
+app.get('/api/languages/translation', (req, res) => {
+    try {
+        const languages = getAllTranslationLanguages();
+        res.json(languages);
+    } catch (error) {
+        log.error(() => '[API] Error getting translation languages:', error);
         const t = res.locals?.t || getTranslatorFromRequest(req, res);
         res.status(500).json({ error: t('server.errors.languagesFailed', {}, 'Failed to get languages') });
     }
@@ -3834,111 +3848,147 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
         const shouldUseEngine = singleBatchMode || effectiveWorkflow !== 'original' || process.env.FILE_UPLOAD_FORCE_ENGINE === 'true';
         let translatedContent = null;
 
-        if (shouldUseEngine) {
-            try {
-                const engine = new TranslationEngine(
-                    translationProvider,
-                    effectiveModel,
-                    config.advancedSettings || {},
-                    { singleBatchMode, providerName, fallbackProviderName, enableStreaming: false }
-                );
-                log.debug(() => `[File Translation API] Using TranslationEngine (workflow=${effectiveWorkflow}, singleBatch=${singleBatchMode}, batchContext=${!!config.advancedSettings?.enableBatchContext})`);
-                translatedContent = await engine.translateSubtitle(
-                    workingContent,
-                    targetLangName,
-                    config.translationPrompt,
-                    null
-                );
-            } catch (engineErr) {
-                // Only fall back to legacy path if using 'original' workflow without singleBatch
-                // xml/json/ai workflows require the engine — falling back would produce garbled output
-                if (singleBatchMode || effectiveWorkflow !== 'original') {
-                    throw engineErr;
-                }
-                log.warn(() => ['[File Translation API] TranslationEngine failed, falling back to legacy path:', engineErr.message]);
-                translatedContent = null;
-            }
-        }
-
-        if (translatedContent === null) {
-            // Estimate token count (prefer real count when the provider supports it)
-            let tokenCount = null;
-            if (typeof translationProvider.countTokensForTranslation === 'function') {
+        // --- Keepalive streaming to prevent Cloudflare 524 timeouts ---
+        // Cloudflare kills connections after 100s of no data from origin.
+        // Send periodic newline bytes to reset the timer while translation runs.
+        // SRT parsers ignore leading blank lines, so this is safe.
+        const KEEPALIVE_INTERVAL_MS = parseInt(process.env.FILE_UPLOAD_KEEPALIVE_INTERVAL) || 30000;
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        let keepaliveTimer = null;
+        let keepaliveCount = 0;
+        try {
+            keepaliveTimer = setInterval(() => {
                 try {
-                    tokenCount = await translationProvider.countTokensForTranslation(
+                    if (!res.writableEnded) {
+                        res.write('\n');
+                        if (typeof res.flush === 'function') res.flush();
+                        keepaliveCount++;
+                        log.debug(() => `[File Translation API] Keepalive #${keepaliveCount} sent`);
+                    }
+                } catch (_) { /* response already closed */ }
+            }, KEEPALIVE_INTERVAL_MS);
+
+            if (shouldUseEngine) {
+                try {
+                    const engine = new TranslationEngine(
+                        translationProvider,
+                        effectiveModel,
+                        config.advancedSettings || {},
+                        { singleBatchMode, providerName, fallbackProviderName, enableStreaming: false }
+                    );
+                    log.debug(() => `[File Translation API] Using TranslationEngine (workflow=${effectiveWorkflow}, singleBatch=${singleBatchMode}, batchContext=${!!config.advancedSettings?.enableBatchContext})`);
+                    translatedContent = await engine.translateSubtitle(
                         workingContent,
+                        targetLangName,
+                        config.translationPrompt,
+                        null
+                    );
+                } catch (engineErr) {
+                    // Only fall back to legacy path if using 'original' workflow without singleBatch
+                    // xml/json/ai workflows require the engine — falling back would produce garbled output
+                    if (singleBatchMode || effectiveWorkflow !== 'original') {
+                        throw engineErr;
+                    }
+                    log.warn(() => ['[File Translation API] TranslationEngine failed, falling back to legacy path:', engineErr.message]);
+                    translatedContent = null;
+                }
+            }
+
+            if (translatedContent === null) {
+                // Estimate token count (prefer real count when the provider supports it)
+                let tokenCount = null;
+                if (typeof translationProvider.countTokensForTranslation === 'function') {
+                    try {
+                        tokenCount = await translationProvider.countTokensForTranslation(
+                            workingContent,
+                            targetLangName,
+                            config.translationPrompt
+                        );
+                    } catch (err) {
+                        log.debug(() => ['[File Translation API] Token count request failed, using estimate:', err.message]);
+                    }
+                }
+
+                const estimatedTokens = tokenCount
+                    || (typeof translationProvider.estimateTokenCount === 'function'
+                        ? translationProvider.estimateTokenCount(workingContent)
+                        : Math.ceil(String(workingContent || '').length / 3));
+                log.debug(() => `[File Translation API] Estimated tokens: ${estimatedTokens}${tokenCount ? ' (actual)' : ''}`);
+
+                // Use parallel translation for large files (>threshold tokens)
+                // Parallel translation provides:
+                // - Faster processing through concurrent API calls
+                // - Better context preservation with chunk overlap
+                // - Improved reliability with per-chunk retries
+                const parallelThreshold = parseInt(process.env.PARALLEL_TRANSLATION_THRESHOLD) || 15000;
+                const useParallel = estimatedTokens > parallelThreshold;
+
+                if (useParallel) {
+                    log.debug(() => `[File Translation API] Using parallel translation (${estimatedTokens} tokens)`);
+
+                    // Parallel translation configuration (environment variables with fallbacks)
+                    const maxConcurrency = parseInt(process.env.PARALLEL_MAX_CONCURRENCY) || 3;
+                    const targetChunkTokens = parseInt(process.env.PARALLEL_CHUNK_SIZE) || 12000;
+                    const contextSize = parseInt(process.env.PARALLEL_CONTEXT_SIZE) || 3;
+
+                    // Parallel translation with context preservation
+                    translatedContent = await translateInParallel(
+                        workingContent,
+                        translationProvider,
+                        targetLangName,
+                        {
+                            sourceLanguage: sourceLangName,
+                            customPrompt: config.translationPrompt,
+                            maxConcurrency,
+                            targetChunkTokens,
+                            contextSize,
+                            onProgress: (current, total) => {
+                                log.debug(() => `[File Translation API] Progress: ${current}/${total} chunks (concurrency: ${maxConcurrency})`);
+                            }
+                        }
+                    );
+                } else {
+                    log.debug(() => `[File Translation API] Using single-call translation (${estimatedTokens} tokens)`);
+
+                    // Single API call for smaller files
+                    translatedContent = await translationProvider.translateSubtitle(
+                        workingContent,
+                        sourceLangName,
                         targetLangName,
                         config.translationPrompt
                     );
-                } catch (err) {
-                    log.debug(() => ['[File Translation API] Token count request failed, using estimate:', err.message]);
                 }
-            }
 
-            const estimatedTokens = tokenCount
-                || (typeof translationProvider.estimateTokenCount === 'function'
-                    ? translationProvider.estimateTokenCount(workingContent)
-                    : Math.ceil(String(workingContent || '').length / 3));
-            log.debug(() => `[File Translation API] Estimated tokens: ${estimatedTokens}${tokenCount ? ' (actual)' : ''}`);
-
-            // Use parallel translation for large files (>threshold tokens)
-            // Parallel translation provides:
-            // - Faster processing through concurrent API calls
-            // - Better context preservation with chunk overlap
-            // - Improved reliability with per-chunk retries
-            const parallelThreshold = parseInt(process.env.PARALLEL_TRANSLATION_THRESHOLD) || 15000;
-            const useParallel = estimatedTokens > parallelThreshold;
-
-            if (useParallel) {
-                log.debug(() => `[File Translation API] Using parallel translation (${estimatedTokens} tokens)`);
-
-                // Parallel translation configuration (environment variables with fallbacks)
-                const maxConcurrency = parseInt(process.env.PARALLEL_MAX_CONCURRENCY) || 3;
-                const targetChunkTokens = parseInt(process.env.PARALLEL_CHUNK_SIZE) || 12000;
-                const contextSize = parseInt(process.env.PARALLEL_CONTEXT_SIZE) || 3;
-
-                // Parallel translation with context preservation
-                translatedContent = await translateInParallel(
-                    workingContent,
-                    translationProvider,
-                    targetLangName,
-                    {
-                        sourceLanguage: sourceLangName,
-                        customPrompt: config.translationPrompt,
-                        maxConcurrency,
-                        targetChunkTokens,
-                        contextSize,
-                        onProgress: (current, total) => {
-                            log.debug(() => `[File Translation API] Progress: ${current}/${total} chunks (concurrency: ${maxConcurrency})`);
-                        }
-                    }
-                );
+                log.debug(() => `[File Translation API] Translation completed (${useParallel ? 'parallel' : 'single-call'})`);
             } else {
-                log.debug(() => `[File Translation API] Using single-call translation (${estimatedTokens} tokens)`);
-
-                // Single API call for smaller files
-                translatedContent = await translationProvider.translateSubtitle(
-                    workingContent,
-                    sourceLangName,
-                    targetLangName,
-                    config.translationPrompt
-                );
+                log.debug(() => '[File Translation API] Translation completed via TranslationEngine');
             }
 
-            log.debug(() => `[File Translation API] Translation completed (${useParallel ? 'parallel' : 'single-call'})`);
-        } else {
-            log.debug(() => '[File Translation API] Translation completed via TranslationEngine');
+            // Send translated content and end the response
+            log.debug(() => `[File Translation API] Sending result (${keepaliveCount} keepalives sent during translation)`);
+            res.end(translatedContent);
+
+        } finally {
+            if (keepaliveTimer) clearInterval(keepaliveTimer);
         }
-
-
-        // Return translated content as plain text
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.send(translatedContent);
 
     } catch (error) {
         log.error(() => '[File Translation API] Error:', error);
-        const t = res.locals?.t || getTranslatorFromRequest(req, res);
-        res.status(500).send(t('server.errors.translateFileError', { reason: error.message }, `Translation failed: ${error.message}`));
+        if (res.headersSent) {
+            // Headers already committed (keepalive started) — send error marker in the body
+            // The client detects [TRANSLATION_ERROR] and extracts the message
+            try {
+                const t = res.locals?.t || getTranslatorFromRequest(req, res);
+                const msg = t('server.errors.translateFileError', { reason: error.message }, `Translation failed: ${error.message}`);
+                res.end('\n[TRANSLATION_ERROR]\n' + msg);
+            } catch (_) {
+                try { res.end('\n[TRANSLATION_ERROR]\nTranslation failed: ' + (error.message || 'Unknown error')); } catch (__) { /* response closed */ }
+            }
+        } else {
+            // Headers not sent yet (early failure before keepalive) — use standard error response
+            const t = res.locals?.t || getTranslatorFromRequest(req, res);
+            res.status(500).send(t('server.errors.translateFileError', { reason: error.message }, `Translation failed: ${error.message}`));
+        }
     }
 });
 

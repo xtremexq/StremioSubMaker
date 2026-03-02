@@ -2698,14 +2698,51 @@ function createSubtitleHandler(config) {
       //   foundSubtitles = [...foundSubtitles, ...results];
       // }
 
+
       // Normalize language codes to proper ISO-639-2 format
       const normalizeLanguageCode = (lang) => {
-        const lower = lang.toLowerCase().replace(/[_-]/g, '');
+        if (!lang) return '';
+        const original = lang;
+        let lower = lang.toLowerCase();
 
-        // Handle special cases for Portuguese Brazilian
-        if (lower === 'ptbr' || lower === 'pt-br') {
+        // Handle special cases for Portuguese Brazilian (various formats)
+        if (lower === 'pt-br' || lower === 'ptbr' || lower === 'pb') {
           return 'pob';
         }
+
+        // Handle script variants (like mni-Mtei for Meitei/Manipuri)
+        // Format: xxx-Xxxx where second part starts with uppercase (script tag)
+        const scriptMatch = lower.match(/^([a-z]{2,3})[-_][a-z]+$/i);
+        if (scriptMatch && /^[a-z]{2,3}[-_][A-Z]/.test(original)) {
+          // This is a script variant - extract base code
+          const baseCode = scriptMatch[1];
+          const { languageMap } = require('../utils/languages');
+          if (languageMap[baseCode]) {
+            return baseCode; // e.g., mni-Mtei -> mni
+          }
+        }
+
+        // Handle regional variants like es-MX, en-GB, zh-CN, ar-EG, etc.
+        // Format: xx-YY where both parts are letters (country/region code)
+        const regionalMatch = lower.match(/^([a-z]{2})[-_]([a-z]{2,4})$/i);
+        if (regionalMatch) {
+          const baseCode = regionalMatch[1]; // e.g., 'es' from 'es-MX'
+          // Special case: pt-BR should become pob
+          if (baseCode === 'pt' && regionalMatch[2].toLowerCase() === 'br') {
+            return 'pob';
+          }
+          // Convert base 2-letter code to ISO-639-2
+          const { toISO6392 } = require('../utils/languages');
+          const iso2Codes = toISO6392(baseCode);
+          if (iso2Codes && iso2Codes.length > 0) {
+            return iso2Codes[0].code2;
+          }
+          // Fallback: just use the base code
+          lower = baseCode;
+        }
+
+        // Strip any remaining hyphens/underscores for non-regional codes
+        lower = lower.replace(/[_-]/g, '');
 
         // If it's already 3 letters, return as-is
         if (/^[a-z]{3}$/.test(lower)) {
@@ -2943,14 +2980,22 @@ function createSubtitleHandler(config) {
         if (streamFilename) translateQueryParts.push(`filename=${encodeURIComponent(streamFilename)}`);
         const translateQuery = translateQueryParts.length ? `?${translateQueryParts.join('&')}` : '';
 
-        // Normalize and deduplicate target languages
-        const normalizedTargetLangs = [...new Set(config.targetLanguages.map(lang => {
+
+        // For translation buttons, use ORIGINAL target language codes (including regional variants like es-MX)
+        // This preserves regional info for AI translation prompts (e.g., Mexican Spanish vs Castilian Spanish)
+        // Deduplication is done on normalized codes to avoid duplicate buttons (es-MX and spa would both translate to Spanish)
+        const seenNormalizedTargets = new Set();
+        const targetLangsForTranslation = [];
+        for (const lang of (config.targetLanguages || [])) {
           const normalized = normalizeLanguageCode(lang);
-          if (normalized !== lang) {
-            log.debug(() => `[Subtitles] Normalized language code: "${lang}" -> "${normalized}"`);
+          if (!seenNormalizedTargets.has(normalized)) {
+            seenNormalizedTargets.add(normalized);
+            targetLangsForTranslation.push(lang); // Keep ORIGINAL code for AI
+            if (normalized !== lang.toLowerCase()) {
+              log.debug(() => `[Subtitles] Translation target: "${lang}" (fetches as "${normalized}")`);
+            }
           }
-          return normalized;
-        }))];
+        }
 
         // Create translation entries: for each target language, create entries for top source language subtitles
         // Note: filteredFoundSubtitles is already limited to MAX_SUBS_PER_LANGUAGE per language (including source languages)
@@ -2992,7 +3037,7 @@ function createSubtitleHandler(config) {
 
         // For each target language, create a translation entry for each source subtitle
         // Translation entries are created from the already-limited source subtitles (16 per source language)
-        for (const targetLang of normalizedTargetLangs) {
+        for (const targetLang of targetLangsForTranslation) {
           const baseName = getLanguageName(targetLang);
           const displayName = `Make ${baseName}`;
           log.debug(() => `[Subtitles] Creating translation entries for ${displayName} (${targetLang})`);
