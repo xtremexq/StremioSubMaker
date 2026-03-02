@@ -5,9 +5,10 @@
 # Dependencies
 node_modules
 
-# Cache and data directories
+# Cache and data directories (exclude runtime data but include bundled files)
 .cache
-data
+data/*
+!data/anime-list-full.json
 logs
 
 # Environment files
@@ -15,8 +16,9 @@ logs
 .env.local
 .env.*.local
 
-# Encryption keys (sensitive data - prevent copying to image)
+# Encryption keys and instance data (sensitive - prevent copying to image)
 .encryption-key
+.instance-id
 keys/
 keys
 
@@ -67,3 +69,5 @@ temp
 tools
 scripts
 docs
+native
+tests
