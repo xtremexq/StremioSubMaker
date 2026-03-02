@@ -13,7 +13,7 @@
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg?style=flat-square" alt="License: AGPL v3"/></a>
   <img src="https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen?style=flat-square" alt="Node 18+"/>
   <img src="https://img.shields.io/badge/Stremio-Addon-purple?style=flat-square" alt="Stremio Addon"/>
-  <img src="https://img.shields.io/badge/languages-197-orange?style=flat-square" alt="433 Languages"/>
+  <img src="https://img.shields.io/badge/languages-433-orange?style=flat-square" alt="433 Languages"/>
   <img src="https://img.shields.io/badge/AI-10%2B%20providers-ff69b4?style=flat-square" alt="10+ AI Providers"/>
 </p>
 
