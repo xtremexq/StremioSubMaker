@@ -199,6 +199,11 @@ class WyzieSubsService {
             if (languages && languages.length > 0) {
                 const iso1Langs = languages
                     .map(lang => {
+                        // Special-case: Filipino (fil) has a 3-letter ISO 639-1 code which Wyzie rejects.
+                        // Map fil → tl (Tagalog) since they share the same written standard.
+                        // Also handle tgl (Tagalog ISO 639-2) the same way.
+                        const lower = lang.toLowerCase().trim();
+                        if (lower === 'fil' || lower === 'tgl') return 'tl';
                         const code = toISO6391(lang);
                         if (!code) return null;
                         // Wyzie uses 'pb' for Brazilian Portuguese, not 'pt-br'

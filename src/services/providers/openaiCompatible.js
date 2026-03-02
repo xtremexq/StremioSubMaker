@@ -423,7 +423,6 @@ class OpenAICompatibleProvider {
       'es_la': 'es-419',
       'es-la': 'es-419',
       'es-latam': 'es-419',
-      'es-mx': 'es-419',
       'zht': 'zh-hant',
       'zh-hant': 'zh-hant',
       'zh-tw': 'zh-hant',

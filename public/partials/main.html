@@ -1197,11 +1197,13 @@
                                     translations</span>
                                 <span class="label-description" id="sourceLanguagesDescription"
                                     data-i18n="config.limits.sourceDescription">You can select up to 3 source
-                                    languages, but only 1 is recommended (so you have the same list order when
-                                    translating). All
-                                    subtitles from this language will be available for translation in the translation
-                                    selector
-                                    AND will be fetched (original subtitles will show up).</span>
+                                    language(s), but only 1 is recommended. This way you have the exact same
+                                    "Make (language)" subtitles list order as the Source language and can verify the
+                                    original subtitles for sync issues before translating.
+                                    <br><br>
+                                    All subtitles found in the selected Source language will show up in their original
+                                    language AND will be used as sources for the "Make (target language)" translation
+                                    lists.</span>
                             </label>
 
                             <div class="language-search">
@@ -1247,10 +1249,11 @@
                                     translations</span>
                                 <span class="label-description" id="targetLanguagesDescription"
                                     data-i18n="config.limits.targetDescription">Subtitles in target languages
-                                    will be fetched AND translation buttons will appear for translating FROM the source
-                                    language
-                                    TO these languages. You can select up to 6 total target languages (including Learn
-                                    Mode).</span>
+                                    will be fetched (found subtitles will show up) AND translation buttons ("Make"
+                                    lists) will appear for translating FROM the Source language subtitles TO the target
+                                    languages.
+                                    <br><br>
+                                    You can select up to 6 total target languages (including Learn Mode).</span>
                             </label>
 
                             <div class="language-search">
@@ -2108,7 +2111,7 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-openai-timeout"
                                     data-i18n="config.providerAdvanced.labels.timeout">Request timeout (s)</label>
-                                <input type="number" id="provider-openai-timeout" min="5" max="600" step="5" value="60">
+                                <input type="number" id="provider-openai-timeout" min="5" max="720" step="5" value="60">
                             </div>
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-openai-retries"
@@ -2151,7 +2154,7 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-anthropic-timeout"
                                     data-i18n="config.providerAdvanced.labels.timeout">Request timeout (s)</label>
-                                <input type="number" id="provider-anthropic-timeout" min="5" max="600" step="5"
+                                <input type="number" id="provider-anthropic-timeout" min="5" max="720" step="5"
                                     value="60">
                             </div>
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
@@ -2199,7 +2202,7 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-xai-timeout"
                                     data-i18n="config.providerAdvanced.labels.timeout">Request timeout (s)</label>
-                                <input type="number" id="provider-xai-timeout" min="5" max="600" step="5" value="60">
+                                <input type="number" id="provider-xai-timeout" min="5" max="720" step="5" value="60">
                             </div>
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-xai-retries" data-i18n="config.providerAdvanced.labels.retries">Max
@@ -2242,7 +2245,7 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-deepseek-timeout"
                                     data-i18n="config.providerAdvanced.labels.timeout">Request timeout (s)</label>
-                                <input type="number" id="provider-deepseek-timeout" min="5" max="600" step="5"
+                                <input type="number" id="provider-deepseek-timeout" min="5" max="720" step="5"
                                     value="60">
                             </div>
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
@@ -2279,7 +2282,7 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-deepl-timeout"
                                     data-i18n="config.providerAdvanced.labels.timeout">Request timeout (s)</label>
-                                <input type="number" id="provider-deepl-timeout" min="5" max="600" step="5" value="60">
+                                <input type="number" id="provider-deepl-timeout" min="5" max="720" step="5" value="60">
                             </div>
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-deepl-retries"
@@ -2337,7 +2340,7 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-mistral-timeout"
                                     data-i18n="config.providerAdvanced.labels.timeout">Request timeout (s)</label>
-                                <input type="number" id="provider-mistral-timeout" min="5" max="600" step="5"
+                                <input type="number" id="provider-mistral-timeout" min="5" max="720" step="5"
                                     value="60">
                             </div>
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
@@ -2381,7 +2384,7 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-cfworkers-timeout"
                                     data-i18n="config.providerAdvanced.labels.timeout">Request timeout (s)</label>
-                                <input type="number" id="provider-cfworkers-timeout" min="5" max="600" step="5"
+                                <input type="number" id="provider-cfworkers-timeout" min="5" max="720" step="5"
                                     value="60">
                             </div>
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
@@ -2425,7 +2428,7 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-openrouter-timeout"
                                     data-i18n="config.providerAdvanced.labels.timeout">Request timeout (s)</label>
-                                <input type="number" id="provider-openrouter-timeout" min="5" max="600" step="5"
+                                <input type="number" id="provider-openrouter-timeout" min="5" max="720" step="5"
                                     value="60">
                             </div>
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">

@@ -252,7 +252,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
     const preserveFormattingHelper = t('fileUpload.advanced.preserveFormatting.helper', {}, 'Keep line breaks, casing, and tags intact (DeepL only).');
     const preserveFormattingToggle = t('fileUpload.advanced.preserveFormatting.toggle', {}, 'Preserve formatting');
     const translationTimeoutLabel = t('fileUpload.advanced.timeout.label', {}, 'Translation Timeout (seconds)');
-    const translationTimeoutHelper = t('fileUpload.advanced.timeout.helper', {}, 'Maximum time to wait for translation (5-600). Defaults follow your selected provider.');
+    const translationTimeoutHelper = t('fileUpload.advanced.timeout.helper', {}, 'Maximum time to wait for translation (5-720). Defaults follow your selected provider.');
     const maxRetriesLabel = t('fileUpload.advanced.retries.label', {}, 'Max Retries');
     const maxRetriesHelper = t('fileUpload.advanced.retries.helper', {}, 'Number of retry attempts for this translation (0-5). Default: 2');
     const resetDefaultsText = t('fileUpload.advanced.reset', {}, '🔄 Reset to Defaults');
@@ -2343,7 +2343,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                                     ${escapeHtml(translationTimeoutLabel)}
                                     <span class="label-description">${escapeHtml(translationTimeoutHelper)}</span>
                                 </label>
-                                <input type="number" id="advancedTimeout" min="5" max="600" step="5" value="600" placeholder="600">
+                                <input type="number" id="advancedTimeout" min="5" max="720" step="5" value="720" placeholder="720">
                             </div>
 
                             <div class="form-group">
@@ -2807,7 +2807,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                     topP: baseAdvancedSettings.topP ?? 0.95,
                     topK: baseAdvancedSettings.topK ?? 40,
                     maxOutputTokens: baseAdvancedSettings.maxOutputTokens ?? 65536,
-                    translationTimeout: baseAdvancedSettings.translationTimeout ?? 600,
+                    translationTimeout: baseAdvancedSettings.translationTimeout ?? 720,
                     maxRetries: baseAdvancedSettings.maxRetries ?? 2
                 };
             }
@@ -3000,7 +3000,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 );
             }
             if (advancedTimeout && caps.supportsTimeout) {
-                advancedTimeout.value = params.translationTimeout ?? baseAdvancedSettings.translationTimeout ?? 600;
+                advancedTimeout.value = params.translationTimeout ?? baseAdvancedSettings.translationTimeout ?? 720;
             }
             if (advancedMaxRetries && caps.supportsMaxRetries) {
                 advancedMaxRetries.value = params.maxRetries ?? baseAdvancedSettings.maxRetries ?? 2;

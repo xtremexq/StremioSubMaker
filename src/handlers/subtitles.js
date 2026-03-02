@@ -13,7 +13,7 @@ const StremioCommunitySubtitlesService = require('../services/stremioCommunitySu
 const WyzieSubsService = require('../services/wyzieSubs');
 const SubsRoService = require('../services/subsRo');
 const { parseSRT, toSRT, parseStremioId, appendHiddenInformationalNote, normalizeImdbId, ensureSRTForTranslation, convertToSRT } = require('../utils/subtitle');
-const { getLanguageName, getDisplayName, toISO6391, toISO6392, canonicalSyncLanguageCode } = require('../utils/languages');
+const { getLanguageName, getDisplayName, toISO6391, toISO6392, canonicalSyncLanguageCode, normalizeLanguageCode } = require('../utils/languages');
 const { getTranslator } = require('../utils/i18n');
 const { deriveVideoHash } = require('../utils/videoHash');
 const { LRUCache } = require('lru-cache');
@@ -236,8 +236,8 @@ const TRANSLATION_STORAGE_PREFIX = 't2s__';   // Shared across configs/users (co
 const SHARED_TRANSLATION_LOCK_PREFIX = 'translation_lock:';
 const SHARED_TRANSLATION_LOCK_TTL_SECONDS = Math.max(
   60,
-  parseInt(process.env.TRANSLATION_LOCK_TTL_SECONDS, 10) || (30 * 60)
-); // default 30 minutes
+  parseInt(process.env.TRANSLATION_LOCK_TTL_SECONDS, 10) || (15 * 60)
+); // default 15 minutes (must exceed stale detection threshold of max(10min, translationTimeout); max translationTimeout is 720s = 12min)
 
 function getTranslationStorageKey(cacheKey) {
   if (!cacheKey || typeof cacheKey !== 'string') return '';
@@ -1068,7 +1068,7 @@ async function readFromBypassStorage(cacheKey) {
 
 // Helper: calculate wait timeout for mobile mode (clamp to sensible range)
 function getMobileWaitTimeoutMs(config) {
-  const timeoutSeconds = parseInt(config?.advancedSettings?.translationTimeout) || 600;
+  const timeoutSeconds = parseInt(config?.advancedSettings?.translationTimeout) || 720;
   const clampedSeconds = Math.max(30, Math.min(timeoutSeconds, 300)); // at least 30s, cap at 5m
   return clampedSeconds * 1000;
 }
@@ -2353,6 +2353,12 @@ function createSubtitleHandler(config) {
         ? [...new Set(config.noTranslationLanguages || [])]
         : [...new Set([...config.sourceLanguages, ...config.targetLanguages])];
 
+      // Normalize BCP-47 regional variants to ISO-639-2 for providers
+      // e.g., [es-MX, es-AR, eng] → [spa, eng] (deduplicated)
+      const normalizedSearchLanguages = [...new Set(
+        allLanguages.map(lang => normalizeLanguageCode(lang)).filter(Boolean)
+      )];
+
       // Build search parameters for all providers
       // Check if we have a real videoHash from Stremio (OpenSubtitles format from streaming addon)
       // Real hashes come from streaming addons like Torrentio via behaviorHints.videoHash
@@ -2381,7 +2387,7 @@ function createSubtitleHandler(config) {
         type: videoInfo.type,
         season: videoInfo.season,
         episode: videoInfo.episode,
-        languages: allLanguages,
+        languages: normalizedSearchLanguages,
         excludeHearingImpairedSubtitles: config.excludeHearingImpairedSubtitles === true,
         // Only send real hash from Stremio - our derived MD5 is useless for external providers like SCS
         // They store OpenSubtitles hashes, our MD5(filename+id) won't match anything
@@ -2407,7 +2413,7 @@ function createSubtitleHandler(config) {
       // Create user-scoped deduplication key based on video info, languages, and config hash
       // This ensures different users (or same user with different configs) get separate cached results
       // Cache automatically purges when user changes config (different hash = different cache key)
-      const dedupKey = `subtitle-search:${cacheIdComponent}:${videoInfo.type}:${videoInfo.season || ''}:${videoInfo.episode || ''}:${allLanguages.join(',')}:${userHash}:rev=${subtitleSearchRevision}`;
+      const dedupKey = `subtitle-search:${cacheIdComponent}:${videoInfo.type}:${videoInfo.season || ''}:${videoInfo.episode || ''}:${normalizedSearchLanguages.join(',')}:${userHash}:rev=${subtitleSearchRevision}`;
 
       // Collect subtitles from all enabled providers with deduplication
       let openSubsAuthFailed = false; // track OpenSubtitles auth failures to append UX hint entries later
@@ -2699,69 +2705,6 @@ function createSubtitleHandler(config) {
       // }
 
 
-      // Normalize language codes to proper ISO-639-2 format
-      const normalizeLanguageCode = (lang) => {
-        if (!lang) return '';
-        const original = lang;
-        let lower = lang.toLowerCase();
-
-        // Handle special cases for Portuguese Brazilian (various formats)
-        if (lower === 'pt-br' || lower === 'ptbr' || lower === 'pb') {
-          return 'pob';
-        }
-
-        // Handle script variants (like mni-Mtei for Meitei/Manipuri)
-        // Format: xxx-Xxxx where second part starts with uppercase (script tag)
-        const scriptMatch = lower.match(/^([a-z]{2,3})[-_][a-z]+$/i);
-        if (scriptMatch && /^[a-z]{2,3}[-_][A-Z]/.test(original)) {
-          // This is a script variant - extract base code
-          const baseCode = scriptMatch[1];
-          const { languageMap } = require('../utils/languages');
-          if (languageMap[baseCode]) {
-            return baseCode; // e.g., mni-Mtei -> mni
-          }
-        }
-
-        // Handle regional variants like es-MX, en-GB, zh-CN, ar-EG, etc.
-        // Format: xx-YY where both parts are letters (country/region code)
-        const regionalMatch = lower.match(/^([a-z]{2})[-_]([a-z]{2,4})$/i);
-        if (regionalMatch) {
-          const baseCode = regionalMatch[1]; // e.g., 'es' from 'es-MX'
-          // Special case: pt-BR should become pob
-          if (baseCode === 'pt' && regionalMatch[2].toLowerCase() === 'br') {
-            return 'pob';
-          }
-          // Convert base 2-letter code to ISO-639-2
-          const { toISO6392 } = require('../utils/languages');
-          const iso2Codes = toISO6392(baseCode);
-          if (iso2Codes && iso2Codes.length > 0) {
-            return iso2Codes[0].code2;
-          }
-          // Fallback: just use the base code
-          lower = baseCode;
-        }
-
-        // Strip any remaining hyphens/underscores for non-regional codes
-        lower = lower.replace(/[_-]/g, '');
-
-        // If it's already 3 letters, return as-is
-        if (/^[a-z]{3}$/.test(lower)) {
-          return lower;
-        }
-
-        // If it's 2 letters, try to convert to ISO-639-2
-        if (lower.length === 2) {
-          const { toISO6392 } = require('../utils/languages');
-          const iso2Codes = toISO6392(lower);
-          if (iso2Codes && iso2Codes.length > 0) {
-            return iso2Codes[0].code2;
-          }
-        }
-
-        // Return original if we can't normalize
-        return lower;
-      };
-
       // Normalize all configured languages (source + target) for filtering
       const normalizedAllLangs = new Set([...new Set(allLanguages.map(lang => normalizeLanguageCode(lang)))]);
 
@@ -2769,7 +2712,16 @@ function createSubtitleHandler(config) {
       // E.g., SubDL treats Spanish (Spain) and Spanish (Latin America) the same way
       const languageEquivalents = {
         'spa': ['spn'],  // Spanish (Spain) ↔ Spanish (Latin America)
-        'spn': ['spa']
+        'spn': ['spa'],
+        'chi': ['zhs', 'zht', 'ze'],  // Chinese ↔ Chinese Simplified/Traditional/Bilingual
+        'zhs': ['chi', 'zht', 'ze'],
+        'zht': ['chi', 'zhs', 'ze'],
+        'ze': ['chi', 'zhs', 'zht'],
+        'nor': ['nob', 'nno'],  // Norwegian ↔ Norwegian Bokmål / Nynorsk
+        'nob': ['nor', 'nno'],
+        'nno': ['nor', 'nob'],
+        'tgl': ['fil'],  // Tagalog ↔ Filipino (mutually intelligible, same written standard)
+        'fil': ['tgl'],
       };
 
       // Expand normalizedAllLangs to include equivalents
@@ -2981,21 +2933,12 @@ function createSubtitleHandler(config) {
         const translateQuery = translateQueryParts.length ? `?${translateQueryParts.join('&')}` : '';
 
 
-        // For translation buttons, use ORIGINAL target language codes (including regional variants like es-MX)
-        // This preserves regional info for AI translation prompts (e.g., Mexican Spanish vs Castilian Spanish)
-        // Deduplication is done on normalized codes to avoid duplicate buttons (es-MX and spa would both translate to Spanish)
-        const seenNormalizedTargets = new Set();
-        const targetLangsForTranslation = [];
-        for (const lang of (config.targetLanguages || [])) {
-          const normalized = normalizeLanguageCode(lang);
-          if (!seenNormalizedTargets.has(normalized)) {
-            seenNormalizedTargets.add(normalized);
-            targetLangsForTranslation.push(lang); // Keep ORIGINAL code for AI
-            if (normalized !== lang.toLowerCase()) {
-              log.debug(() => `[Subtitles] Translation target: "${lang}" (fetches as "${normalized}")`);
-            }
-          }
-        }
+        // For translation buttons, keep ALL original target language codes including regional variants
+        // (e.g., es, es-MX, es-AR each get their own button with distinct AI prompts)
+        // Only deduplicate exact duplicates, NOT by normalized form
+        const targetLangsForTranslation = [...new Set(
+          (config.targetLanguages || []).map(l => l.trim()).filter(Boolean)
+        )];
 
         // Create translation entries: for each target language, create entries for top source language subtitles
         // Note: filteredFoundSubtitles is already limited to MAX_SUBS_PER_LANGUAGE per language (including source languages)
@@ -3038,7 +2981,7 @@ function createSubtitleHandler(config) {
         // For each target language, create a translation entry for each source subtitle
         // Translation entries are created from the already-limited source subtitles (16 per source language)
         for (const targetLang of targetLangsForTranslation) {
-          const baseName = getLanguageName(targetLang);
+          const baseName = getLanguageName(targetLang) || targetLang;
           const displayName = `Make ${baseName}`;
           log.debug(() => `[Subtitles] Creating translation entries for ${displayName} (${targetLang})`);
 
@@ -4289,7 +4232,7 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
     // Stale lock detection: if the shared lock is older than the translation timeout
     // and there's no in-memory promise backing it, the original translation likely died
     // without cleaning up. Clear the stale lock and let a new translation start.
-    const staleLockThresholdMs = Math.max(10 * 60 * 1000, (parseInt(config?.advancedSettings?.translationTimeout) || 600) * 1000);
+    const staleLockThresholdMs = Math.max(10 * 60 * 1000, (parseInt(config?.advancedSettings?.translationTimeout) || 720) * 1000);
     if (sharedLockInProgress && sharedLock?.startedAt) {
       const lockAge = Date.now() - sharedLock.startedAt;
       const hasInMemoryBacking = inFlightTranslations.has(runtimeKey)
@@ -5205,13 +5148,18 @@ async function getAvailableSubtitlesForTranslation(videoId, config) {
     // Users will configure one source language, and selector shows only those subtitles
     const sourceLanguages = config.sourceLanguages;
 
+    // Normalize BCP-47 regional variants to ISO-639-2 for providers
+    const normalizedSourceLanguages = [...new Set(
+      sourceLanguages.map(lang => normalizeLanguageCode(lang)).filter(Boolean)
+    )];
+
     // Build search parameters for source language subtitles only
     const searchParams = {
       imdb_id: videoInfo.imdbId,
       type: videoInfo.type,
       season: videoInfo.season,
       episode: videoInfo.episode,
-      languages: sourceLanguages,
+      languages: normalizedSourceLanguages,
       excludeHearingImpairedSubtitles: config.excludeHearingImpairedSubtitles === true,
       // Provider timeout from config (subtract 2s buffer for orchestration overhead)
       providerTimeout: Math.max(6, ((config.subtitleProviderTimeout || 12) - 2)) * 1000
@@ -5222,7 +5170,7 @@ async function getAvailableSubtitlesForTranslation(videoId, config) {
       ? config.__configHash
       : 'default';
     const cacheIdComponent = getVideoCacheIdComponent(videoInfo);
-    const dedupKey = `translation-search:${cacheIdComponent}:${videoInfo.type}:${videoInfo.season || ''}:${videoInfo.episode || ''}:${sourceLanguages.join(',')}:${userHash}`;
+    const dedupKey = `translation-search:${cacheIdComponent}:${videoInfo.type}:${videoInfo.season || ''}:${videoInfo.episode || ''}:${normalizedSourceLanguages.join(',')}:${userHash}`;
 
     // Collect subtitles from all enabled providers with deduplication
     const subtitles = await deduplicateSearch(dedupKey, async () => {

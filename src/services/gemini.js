@@ -52,7 +52,7 @@ class GeminiService {
     // Timeout in milliseconds (env is in seconds, convert to ms)
     const timeoutSeconds = advancedSettings.translationTimeout
       || parseInt(process.env.GEMINI_TRANSLATION_TIMEOUT)
-      || 600;
+      || 720;
     this.timeout = timeoutSeconds * 1000;
 
     // Max retries (default: 3)

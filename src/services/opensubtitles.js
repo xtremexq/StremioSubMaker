@@ -887,6 +887,12 @@ class OpenSubtitlesService {
           return 'pt-br';
         }
 
+        // Handle Filipino/Tagalog: fil has a 3-letter ISO 639-1 code (non-standard),
+        // map both fil and tgl to 'tl' (Tagalog 2-letter code accepted by OpenSubtitles)
+        if (lower === 'fil' || lower === 'tgl') {
+          return 'tl';
+        }
+
         // If already 2 letters, return as-is
         if (lower.length === 2 && /^[a-z]{2}$/.test(lower)) {
           return lower;

@@ -372,6 +372,8 @@ class SubSourceService {
           'kor': 'korean',
           'chi': 'chinese',
           'zho': 'chinese',
+          'zhs': 'chinese_simplified',   // Chinese Simplified
+          'zht': 'chinese_traditional',  // Chinese Traditional
           'ara': 'arabic',
           'dut': 'dutch',
           'nld': 'dutch',
@@ -381,6 +383,8 @@ class SubSourceService {
           'dan': 'danish',
           'fin': 'finnish',
           'nor': 'norwegian',
+          'nob': 'norwegian',  // Norwegian Bokmål → generic Norwegian (SubSource has no variant split)
+          'nno': 'norwegian',  // Norwegian Nynorsk → generic Norwegian
           'heb': 'hebrew',
           'hin': 'hindi',
           'tha': 'thai',
@@ -396,6 +400,50 @@ class SubSourceService {
           'bul': 'bulgarian',
           'hrv': 'croatian',
           'ukr': 'ukrainian',
+          'srp': 'serbian',
+          'per': 'farsi_persian',   // Persian/Farsi
+          'fas': 'farsi_persian',
+          'may': 'malay',
+          'msa': 'malay',
+          'est': 'estonian',
+          'lav': 'latvian',
+          'lit': 'lithuanian',
+          'slo': 'slovak',
+          'slk': 'slovak',
+          'slv': 'slovenian',
+          'ben': 'bengali',
+          'tgl': 'tagalog',
+          'fil': 'tagalog',  // Filipino → Tagalog (same written standard, SubSource uses 'tagalog')
+          'bos': 'bosnian',
+          'mac': 'macedonian',
+          'mkd': 'macedonian',
+          'alb': 'albanian',
+          'sqi': 'albanian',
+          'geo': 'georgian',
+          'kat': 'georgian',
+          'ice': 'icelandic',
+          'isl': 'icelandic',
+          'cat': 'catalan',
+          'baq': 'basque',
+          'eus': 'basque',
+          'glg': 'galician',
+          'wel': 'welsh',
+          'cym': 'welsh',
+          'swa': 'swahili',
+          'mal': 'malayalam',
+          'tam': 'tamil',
+          'tel': 'telugu',
+          'urd': 'urdu',
+          'pan': 'punjabi',
+          'nep': 'nepali',
+          'sin': 'sinhala',
+          'khm': 'khmer',
+          'lao': 'lao',
+          'bur': 'burmese',
+          'mya': 'burmese',
+          'mon': 'mongolian',
+          'afr': 'afrikaans',
+          'kur': 'kurdish',
 
           // ISO-639-1 (2-letter codes)
           'en': 'english',
@@ -427,7 +475,40 @@ class SubSourceService {
           'el': 'greek',
           'bg': 'bulgarian',
           'hr': 'croatian',
-          'uk': 'ukrainian'
+          'uk': 'ukrainian',
+          'sr': 'serbian',
+          'fa': 'farsi_persian',
+          'ms': 'malay',
+          'et': 'estonian',
+          'lv': 'latvian',
+          'lt': 'lithuanian',
+          'sk': 'slovak',
+          'sl': 'slovenian',
+          'bn': 'bengali',
+          'tl': 'tagalog',
+          'bs': 'bosnian',
+          'mk': 'macedonian',
+          'sq': 'albanian',
+          'ka': 'georgian',
+          'is': 'icelandic',
+          'ca': 'catalan',
+          'eu': 'basque',
+          'gl': 'galician',
+          'cy': 'welsh',
+          'sw': 'swahili',
+          'ml': 'malayalam',
+          'ta': 'tamil',
+          'te': 'telugu',
+          'ur': 'urdu',
+          'pa': 'punjabi',
+          'ne': 'nepali',
+          'si': 'sinhala',
+          'km': 'khmer',
+          'lo': 'lao',
+          'my': 'burmese',
+          'mn': 'mongolian',
+          'af': 'afrikaans',
+          'ku': 'kurdish'
         };
 
         return languageMap[lower] || null;
@@ -437,6 +518,10 @@ class SubSourceService {
       const uniqueLanguages = [...new Set(convertedLanguages)];
       if (uniqueLanguages.length > 0) {
         queryParams.language = uniqueLanguages.join(',');
+      } else if (languages && languages.length > 0) {
+        // All requested languages were unmapped — don't silently fetch all languages
+        log.warn(() => `[SubSource] None of the requested languages [${languages.join(', ')}] are supported by SubSource, skipping search`);
+        return [];
       }
 
       // Note: Season filtering is handled via getMovieId(imdb_id, season)
@@ -1075,6 +1160,10 @@ class SubSourceService {
       'japanese': 'jpn',
       'korean': 'kor',
       'chinese': 'chi',
+      'chinese_simplified': 'zhs',
+      'chinese (simplified)': 'zhs',
+      'chinese_traditional': 'zht',
+      'chinese (traditional)': 'zht',
       'arabic': 'ara',
       'dutch': 'dut',
       'polish': 'pol',
@@ -1097,7 +1186,42 @@ class SubSourceService {
       'serbian': 'srp',
       'serbian (latin)': 'srp',
       'serbian (cyrillic)': 'srp',
-      'ukrainian': 'ukr'
+      'ukrainian': 'ukr',
+      'farsi_persian': 'per',
+      'farsi': 'per',
+      'persian': 'per',
+      'malay': 'may',
+      'estonian': 'est',
+      'latvian': 'lav',
+      'lithuanian': 'lit',
+      'slovak': 'slo',
+      'slovenian': 'slv',
+      'bengali': 'ben',
+      'tagalog': 'tgl',
+      'filipino': 'tgl',
+      'bosnian': 'bos',
+      'macedonian': 'mac',
+      'albanian': 'alb',
+      'georgian': 'geo',
+      'icelandic': 'ice',
+      'catalan': 'cat',
+      'basque': 'baq',
+      'galician': 'glg',
+      'welsh': 'wel',
+      'swahili': 'swa',
+      'malayalam': 'mal',
+      'tamil': 'tam',
+      'telugu': 'tel',
+      'urdu': 'urd',
+      'punjabi': 'pan',
+      'nepali': 'nep',
+      'sinhala': 'sin',
+      'khmer': 'khm',
+      'lao': 'lao',
+      'burmese': 'bur',
+      'mongolian': 'mon',
+      'afrikaans': 'afr',
+      'kurdish': 'kur'
     };
 
     // Check if it's a full language name from SubSource

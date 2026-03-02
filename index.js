@@ -33,6 +33,7 @@ const compression = require('compression');
 const cors = require('cors');
 const helmet = require('helmet');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { RedisStore: RateLimitRedisStore } = require('rate-limit-redis');
 const { LRUCache } = require('lru-cache');
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const Joi = require('joi');
@@ -81,6 +82,7 @@ const {
 const { getSessionManager, stripInternalFlags } = require('./src/utils/sessionManager');
 const { runStartupValidation } = require('./src/utils/startupValidation');
 const { StorageUnavailableError } = require('./src/storage/errors');
+const StorageFactory = require('./src/storage/StorageFactory');
 const { loadLocale, getTranslator, DEFAULT_LANG } = require('./src/utils/i18n');
 const { incrementCounter, CACHE_PREFIXES, CACHE_TTLS } = require('./src/utils/sharedCache');
 
@@ -1700,6 +1702,73 @@ app.use(helmet({
     strictTransportSecurity: false, // Disable HSTS for localhost (allows HTTP)
 }));
 
+// Redis-backed store for express-rate-limit (cross-instance accuracy)
+// The sendCommand wrapper lazily resolves the Redis client so limiters can be
+// defined at module level before the async startup initializes storage.
+// During startup, SCRIPT LOAD calls are queued and resolved once Redis connects.
+// The readiness middleware gates all real requests until storage is ready,
+// so actual rate-limit checks will always have a live Redis client.
+function createRateLimitRedisStore(prefix) {
+    // Queue for commands issued before Redis is available (SCRIPT LOAD at construction time)
+    const pendingQueue = [];
+    let redisReady = false;
+    let pollTimer = null;
+    let timeoutTimer = null;
+
+    // Drain all queued commands once Redis client becomes available
+    function drainQueue() {
+        if (redisReady) return;
+        const client = StorageFactory.getRedisClient();
+        if (!client) return;
+        redisReady = true;
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null; }
+        for (const { args, resolve, reject } of pendingQueue.splice(0)) {
+            client.call(...args).then(resolve, reject);
+        }
+    }
+
+    // Start single poll timer on first queued command; cleared on drain or timeout
+    function ensurePolling() {
+        if (pollTimer || redisReady) return;
+        pollTimer = setInterval(() => {
+            try { drainQueue(); } catch (_) { /* ignore */ }
+        }, 250);
+        // Safety: stop polling after 30s and reject if still not ready
+        timeoutTimer = setTimeout(() => {
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            if (!redisReady) {
+                for (const pending of pendingQueue.splice(0)) {
+                    pending.reject(new Error('Redis not available for rate limiting after 30s'));
+                }
+            }
+        }, 30000);
+    }
+
+    const store = new RateLimitRedisStore({
+        prefix: prefix || 'rl:',
+        sendCommand: (...args) => {
+            const client = StorageFactory.getRedisClient();
+            if (client) {
+                redisReady = true;
+                return client.call(...args);
+            }
+            // Redis not ready yet — queue the command (used for SCRIPT LOAD at construction)
+            return new Promise((resolve, reject) => {
+                pendingQueue.push({ args, resolve, reject });
+                ensurePolling();
+            });
+        },
+    });
+
+    // Swallow constructor's SCRIPT LOAD rejections to avoid unhandledRejection noise
+    // (scripts will be re-loaded on first real request via rate-limit-redis retry logic)
+    store.incrementScriptSha?.catch?.(() => {});
+    store.getScriptSha?.catch?.(() => {});
+
+    return store;
+}
+
 // Security: Rate limiting for subtitle searches and translations
 // Uses session ID or config hash instead of IP for better HA deployment support
 // This prevents all users behind a load balancer from sharing the same rate limit
@@ -1709,6 +1778,8 @@ const searchLimiter = rateLimit({
     message: 'Too many subtitle requests, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    store: createRateLimitRedisStore('rl:search:'),
+    passOnStoreError: true, // Fail open if Redis is unavailable — don't block requests
     keyGenerator: (req) => {
         // Try session ID first (if sessions are enabled)
         if (req.session?.id) {
@@ -1757,6 +1828,8 @@ const fileTranslationLimiter = rateLimit({
     message: 'Too many file translation requests, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    store: createRateLimitRedisStore('rl:filetrans:'),
+    passOnStoreError: true,
     keyGenerator: (req) => {
         // Try session ID first (if sessions are enabled)
         if (req.session?.id) {
@@ -1783,6 +1856,8 @@ const embeddedTranslationLimiter = rateLimit({
     message: 'Too many embedded translation requests, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    store: createRateLimitRedisStore('rl:embedded:'),
+    passOnStoreError: true,
     keyGenerator: (req) => {
         if (req.session?.id) {
             return `session:${req.session.id}`;
@@ -1805,6 +1880,8 @@ const autoSubLimiter = rateLimit({
     message: 'Too many auto-subtitle requests, please slow down.',
     standardHeaders: true,
     legacyHeaders: false,
+    store: createRateLimitRedisStore('rl:autosub:'),
+    passOnStoreError: true,
     keyGenerator: (req) => {
         if (req.session?.id) {
             return `session:${req.session.id}`;
@@ -1825,6 +1902,8 @@ const userDataWriteLimiter = rateLimit({
     message: 'Too many write requests, please slow down.',
     standardHeaders: true,
     legacyHeaders: false,
+    store: createRateLimitRedisStore('rl:write:'),
+    passOnStoreError: true,
     keyGenerator: (req) => {
         if (req.session?.id) {
             return `session:${req.session.id}`;
@@ -1846,6 +1925,8 @@ const sessionCreationLimiter = rateLimit({
     message: 'Too many session creation requests from this IP. Please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    store: createRateLimitRedisStore('rl:sesscreate:'),
+    passOnStoreError: true,
     // Always use IP for session creation rate limiting (not config hash)
     // This prevents attackers from bypassing the limit by changing configs
     keyGenerator: (req) => {
@@ -1860,6 +1941,8 @@ const statsLimiter = rateLimit({
     message: 'Too many stats requests, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    store: createRateLimitRedisStore('rl:stats:'),
+    passOnStoreError: true,
     keyGenerator: (req) => {
         return `stats:${ipKeyGenerator(req.ip)}`;
     }
@@ -1874,6 +1957,8 @@ const validationLimiter = rateLimit({
     message: 'Too many validation requests. Please wait a few minutes before trying again.',
     standardHeaders: true,
     legacyHeaders: false,
+    store: createRateLimitRedisStore('rl:validation:'),
+    passOnStoreError: true,
     keyGenerator: (req) => {
         return `validation:${ipKeyGenerator(req.ip)}`;
     }
@@ -3715,7 +3800,7 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
             const maxTokens = clampNumber(incoming.maxOutputTokens, 1, 200000);
             if (maxTokens !== null) parsed.maxOutputTokens = maxTokens;
 
-            const timeout = clampNumber(incoming.translationTimeout, 5, 600);
+            const timeout = clampNumber(incoming.translationTimeout, 5, 720);
             if (timeout !== null) parsed.translationTimeout = timeout;
 
             const maxRetries = clampNumber(incoming.maxRetries, 0, 5);
@@ -6734,7 +6819,7 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
             const maxTokens = clampNumber(incoming.maxOutputTokens, 1, 200000);
             if (maxTokens !== null) parsed.maxOutputTokens = maxTokens;
 
-            const timeout = clampNumber(incoming.translationTimeout, 5, 600);
+            const timeout = clampNumber(incoming.translationTimeout, 5, 720);
             if (timeout !== null) parsed.translationTimeout = timeout;
 
             const maxRetries = clampNumber(incoming.maxRetries, 0, 5);
@@ -8245,6 +8330,31 @@ app.use((error, req, res, next) => {
 
     // Also print a concise session count line
     console.startup(`Active sessions: ${sessionsInfo}`);
+
+    // =========================================================================
+    // Periodic health monitoring (every 5 minutes)
+    // Logs key operational metrics so you can spot pressure before users notice.
+    // =========================================================================
+    const HEALTH_LOG_INTERVAL_MS = parseInt(process.env.HEALTH_LOG_INTERVAL_MS, 10) || (5 * 60 * 1000);
+    setInterval(() => {
+        try {
+            const mem = process.memoryUsage();
+            const heapMB = (mem.heapUsed / (1024 * 1024)).toFixed(1);
+            const rssMB = (mem.rss / (1024 * 1024)).toFixed(1);
+            const localInFlight = inFlightRequests.size;
+            const localTranslations = inFlightTranslations.size;
+            const sessions = sessionManager.cache.size;
+            const pool = getPoolStats();
+            const httpSockets = pool?.http?.totalSockets ?? '?';
+            const httpsSockets = pool?.https?.totalSockets ?? '?';
+
+            log.warn(() =>
+                `[Health] heap=${heapMB}MB rss=${rssMB}MB inflight=${localInFlight} translations=${localTranslations} sessions=${sessions} sockets=${httpSockets}/${httpsSockets} uptime=${Math.floor(process.uptime())}s`
+            );
+        } catch (err) {
+            log.warn(() => `[Health] Periodic health log failed: ${err.message}`);
+        }
+    }, HEALTH_LOG_INTERVAL_MS).unref?.();
 })();
 
 module.exports = app;

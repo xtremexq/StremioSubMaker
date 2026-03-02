@@ -321,7 +321,7 @@ const ISO1_TO_ISO2B = {
     'hu': 'hun', 'ro': 'rum', 'el': 'gre', 'id': 'ind', 'th': 'tha',
     'vi': 'vie', 'uk': 'ukr', 'bg': 'bul', 'hr': 'hrv', 'sk': 'slo',
     'sl': 'slv', 'sr': 'srp', 'ms': 'may', 'hi': 'hin', 'bn': 'ben',
-    'fa': 'per', 'ta': 'tam', 'te': 'tel'
+    'fa': 'per', 'ta': 'tam', 'te': 'tel', 'tl': 'tgl'
 };
 
 /**

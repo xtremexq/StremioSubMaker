@@ -852,8 +852,8 @@
         "pingHint": "Execute um ping rápido antes de gravar para validar as suas credenciais."
       },
       "limits": {
-        "sourceDescription": "Pode selecionar até {max} idioma(s) de origem, mas apenas 1 é recomendado (para ter a mesma ordem de lista ao traduzir). Todas as legendas deste idioma estarão disponíveis para tradução no seletor de tradução E serão obtidas (legendas originais aparecerão).",
-        "targetDescription": "Legendas nos idiomas de destino serão obtidas e botões de tradução aparecerão para traduzir DO idioma de origem PARA estes idiomas. Pode selecionar até {max} idiomas de destino totais (incluindo Modo Aprendizagem).",
+        "sourceDescription": "Pode selecionar até {max} idioma(s) de origem, mas apenas 1 é recomendado. Desta forma terá exatamente a mesma ordem na lista de legendas \"Make (idioma)\" que no idioma de origem e poderá verificar as legendas originais quanto a problemas de sincronização antes de traduzir.<br><br>Todas as legendas encontradas no idioma de origem selecionado aparecerão no idioma original E serão utilizadas como fontes para as listas de tradução \"Make (idioma de destino)\".",
+        "targetDescription": "Legendas nos idiomas de destino serão obtidas (legendas encontradas aparecerão) E botões de tradução (listas \"Make\") aparecerão para traduzir DAS legendas do idioma de origem PARA os idiomas de destino.<br><br>Pode selecionar até {max} idiomas de destino totais (incluindo Modo Aprendizagem).",
         "noTranslationDescription": "Selecione que idiomas quer obter legendas (até {max})."
       },
       "validation": {
@@ -1425,7 +1425,7 @@
         },
         "timeout": {
           "label": "Tempo Limite de Tradução (segundos)",
-          "helper": "Tempo máximo para aguardar pela tradução (5-600). Padrões seguem o seu fornecedor selecionado."
+          "helper": "Tempo máximo para aguardar pela tradução (5-720). Padrões seguem o seu fornecedor selecionado."
         },
         "retries": {
           "label": "Máximo Tentativas",

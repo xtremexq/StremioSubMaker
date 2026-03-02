@@ -852,8 +852,8 @@
         "pingHint": "Haz un ping rápido antes de guardar para validar tus credenciales."
       },
       "limits": {
-        "sourceDescription": "Puedes seleccionar hasta {max} idioma(s) de origen, pero solo 1 es recomendable (para mantener el mismo orden al traducir). Todos los subtítulos de este idioma estarán disponibles para traducción y se obtendrán (aparecerán los originales).",
-        "targetDescription": "Los subtítulos en idiomas destino se obtendrán y aparecerán botones de traducción DESDE el idioma origen HACIA estos idiomas. Puedes elegir hasta {max} idiomas destino (incluye Learn Mode).",
+        "sourceDescription": "Puedes seleccionar hasta {max} idioma(s) de origen, pero solo 1 es recomendable. De esta forma tendrás exactamente el mismo orden en la lista de subtítulos \"Make (idioma)\" que en el idioma de origen y podrás verificar los subtítulos originales en busca de problemas de sincronización antes de traducir.<br><br>Todos los subtítulos encontrados en el idioma de origen seleccionado aparecerán en su idioma original Y se usarán como fuente para las listas de traducción \"Make (idioma destino)\".",
+        "targetDescription": "Los subtítulos en idiomas destino se obtendrán (los subtítulos encontrados aparecerán) Y aparecerán botones de traducción (listas \"Make\") para traducir DESDE los subtítulos del idioma de origen HACIA los idiomas destino.<br><br>Puedes elegir hasta {max} idiomas destino en total (incluye Learn Mode).",
         "noTranslationDescription": "Elige en qué idiomas quieres obtener subtítulos (hasta {max})."
       },
       "validation": {
@@ -1425,7 +1425,7 @@
         },
         "timeout": {
           "label": "Tiempo de espera de traducción (segundos)",
-          "helper": "Tiempo máximo de espera para traducir (5-600). Sigue tu proveedor seleccionado."
+          "helper": "Tiempo máximo de espera para traducir (5-720). Sigue tu proveedor seleccionado."
         },
         "retries": {
           "label": "Reintentos máximos",

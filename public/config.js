@@ -627,7 +627,7 @@ Translate to {target_language}.`;
                 temperature: sanitizeNumber(raw?.temperature, defaults.temperature, 0, 2),
                 topP: sanitizeNumber(raw?.topP, defaults.topP, 0, 1),
                 maxOutputTokens: sanitizeNumber(raw?.maxOutputTokens, defaults.maxOutputTokens, 1, 200000),
-                translationTimeout: sanitizeNumber(raw?.translationTimeout, defaults.translationTimeout, 5, 600),
+                translationTimeout: sanitizeNumber(raw?.translationTimeout, defaults.translationTimeout, 5, 720),
                 maxRetries: Math.max(0, Math.min(5, parseInt(raw?.maxRetries) || defaults.maxRetries || 0)),
                 reasoningEffort: sanitizeReasoningEffort(raw?.reasoningEffort, defaults.reasoningEffort),
                 thinkingBudget: (() => {
@@ -1302,13 +1302,13 @@ Translate to {target_language}.`;
         const sourceDesc = document.getElementById('sourceLanguagesDescription');
         if (sourceDesc) {
             try { sourceDesc.setAttribute('data-i18n-vars', JSON.stringify({ max: MAX_SOURCE_LANGUAGES })); } catch (_) { }
-            sourceDesc.innerHTML = tConfig('config.limits.sourceDescription', { max: MAX_SOURCE_LANGUAGES }, `You can select up to ${MAX_SOURCE_LANGUAGES} source language${MAX_SOURCE_LANGUAGES === 1 ? '' : 's'}, but only 1 is recommended (so you have the same list order when translating). All subtitles from this language will be available for translation in the translation selector AND will be fetched (original subtitles will show up).`);
+            sourceDesc.innerHTML = tConfig('config.limits.sourceDescription', { max: MAX_SOURCE_LANGUAGES }, `You can select up to ${MAX_SOURCE_LANGUAGES} source language${MAX_SOURCE_LANGUAGES === 1 ? '' : 's'}, but only 1 is recommended. This way you have the exact same &quot;Make (language)&quot; subtitles list order as the Source language and can verify the original subtitles for sync issues before translating.<br><br>All subtitles found in the selected Source language will show up in their original language AND will be used as sources for the &quot;Make (target language)&quot; translation lists.`);
         }
 
         const targetDesc = document.getElementById('targetLanguagesDescription');
         if (targetDesc) {
             try { targetDesc.setAttribute('data-i18n-vars', JSON.stringify({ max: MAX_TARGET_LANGUAGES })); } catch (_) { }
-            targetDesc.innerHTML = tConfig('config.limits.targetDescription', { max: MAX_TARGET_LANGUAGES }, `Subtitles in target languages will be fetched AND translation buttons will appear for translating FROM the source language TO these languages. You can select up to ${MAX_TARGET_LANGUAGES} total target languages (including Learn Mode).`);
+            targetDesc.innerHTML = tConfig('config.limits.targetDescription', { max: MAX_TARGET_LANGUAGES }, `Subtitles in target languages will be fetched (found subtitles will show up) AND translation buttons (&quot;Make&quot; lists) will appear for translating FROM the Source language subtitles TO the target languages.<br><br>You can select up to ${MAX_TARGET_LANGUAGES} total target languages (including Learn Mode).`);
         }
 
         const sourceError = document.getElementById('sourceLanguagesError');
@@ -1844,23 +1844,20 @@ Translate to {target_language}.`;
     }
 
     /**
-     * Update database mode dropdown state based on advanced settings, multi-provider mode, or forced modes (e.g. single-batch)
+     * Update database mode dropdown state based on advanced settings or multi-provider mode
      */
     function updateBypassCacheForAdvancedSettings() {
         const databaseModeEl = document.getElementById('databaseMode');
         const noteEl = document.getElementById('databaseModeNote');
         const reasonEl = document.getElementById('databaseModeReason');
-        const singleBatchEl = document.getElementById('singleBatchMode');
 
         if (!databaseModeEl) return;
 
         const isModified = areAdvancedSettingsModified();
-        const singleBatchEnabled = singleBatchEl ? singleBatchEl.checked === true : currentConfig?.singleBatchMode === true;
         const multiProvidersActive = isMultiProviderActiveInForm();
 
         const reasons = [];
         if (isModified) reasons.push('Advanced Settings are modified');
-        if (singleBatchEnabled) reasons.push('Single-Batch mode is enabled');
         if (multiProvidersActive) reasons.push('Multiple Providers mode is active');
 
         const forceBypass = reasons.length > 0;
@@ -3422,7 +3419,7 @@ Translate to {target_language}.`;
                 temperature: sanitizeNumber(tempEl ? tempEl.value : undefined, defaults[key].temperature, 0, 2),
                 topP: sanitizeNumber(topPEl ? topPEl.value : undefined, defaults[key].topP, 0, 1),
                 maxOutputTokens: Math.max(1, Math.min(200000, parseInt(tokensEl ? tokensEl.value : defaults[key].maxOutputTokens) || defaults[key].maxOutputTokens)),
-                translationTimeout: Math.max(5, Math.min(600, parseInt(timeoutEl ? timeoutEl.value : defaults[key].translationTimeout) || defaults[key].translationTimeout)),
+                translationTimeout: Math.max(5, Math.min(720, parseInt(timeoutEl ? timeoutEl.value : defaults[key].translationTimeout) || defaults[key].translationTimeout)),
                 maxRetries: Math.max(0, Math.min(5, parseInt(retriesEl ? retriesEl.value : defaults[key].maxRetries) || defaults[key].maxRetries)),
                 reasoningEffort: (() => {
                     const val = reasoningEl ? reasoningEl.value : baseDefaults.reasoningEffort;
@@ -5905,7 +5902,7 @@ Translate to {target_language}.`;
             const advSettingsModified = areAdvancedSettingsModified();
             const databaseModeEl = document.getElementById('databaseMode');
             const userSelectedBypass = databaseModeEl ? databaseModeEl.value === 'bypass' : false;
-            return advSettingsModified || userSelectedBypass || singleBatchEnabled || hasActiveMultiProvider;
+            return advSettingsModified || userSelectedBypass || hasActiveMultiProvider;
         };
 
         // Determine the translation prompt based on style

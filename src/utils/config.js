@@ -147,7 +147,7 @@ function mergeProviderParameters(defaults, incoming) {
       temperature: sanitizeProviderNumber(raw?.temperature, base.temperature, 0, 2),
       topP: sanitizeProviderNumber(raw?.topP, base.topP, 0, 1),
       maxOutputTokens: Math.max(1, sanitizeProviderNumber(raw?.maxOutputTokens, base.maxOutputTokens, 1, 200000)),
-      translationTimeout: Math.max(5, sanitizeProviderNumber(raw?.translationTimeout, base.translationTimeout, 5, 600)),
+      translationTimeout: Math.max(5, sanitizeProviderNumber(raw?.translationTimeout, base.translationTimeout, 5, 720)),
       maxRetries: Math.max(0, Math.min(5, parseInt(raw?.maxRetries) || base.maxRetries || 0)),
       reasoningEffort: sanitizeReasoningEffort(raw?.reasoningEffort, base.reasoningEffort),
       thinkingBudget: (() => {
@@ -343,6 +343,9 @@ function sanitizeLanguages(list) {
     let value = String(lang || '').trim().toLowerCase();
     if (!value || blocked.has(value) || value.startsWith('___')) continue;
     if (value === 'ptbr' || value === 'pt-br') value = 'pob';
+    // Filipino and Tagalog are the same language; canonicalize to 'tgl' (ISO-639-2)
+    // Frontend normalizes fil → tl (ISO-639-1), mirror that here for direct API users
+    if (value === 'fil') value = 'tgl';
     deduped.add(value);
   }
 
@@ -764,7 +767,6 @@ function normalizeConfig(config) {
   // Force bypass cache when experimental/one-off modes are enabled to avoid polluting shared cache
   const bypassReasons = [];
   if (mergedConfig.advancedSettings.enabled) bypassReasons.push('advanced-settings');
-  if (mergedConfig.singleBatchMode) bypassReasons.push('single-batch');
   if (mergedConfig.parallelBatchesEnabled === true) bypassReasons.push('parallel-batches');
   if (hasActiveMultiProvider) bypassReasons.push('multi-provider');
   if (bypassReasons.length > 0) {
@@ -971,7 +973,7 @@ function getDefaultConfig(modelName = null) {
   const advancedSettings = {
     maxOutputTokens: parseInt(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 65536,
     chunkSize: 12000,
-    translationTimeout: parseInt(process.env.GEMINI_TRANSLATION_TIMEOUT) || 600, // seconds
+    translationTimeout: parseInt(process.env.GEMINI_TRANSLATION_TIMEOUT) || 720, // seconds
     maxRetries: process.env.GEMINI_MAX_RETRIES !== undefined ? parseInt(process.env.GEMINI_MAX_RETRIES) : 3,
     // When enabled, trust the AI to return timestamps for each batch instead of reusing originals
     sendTimestampsToAI: process.env.SEND_TIMESTAMPS_TO_AI === 'true',

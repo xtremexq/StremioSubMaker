@@ -519,6 +519,130 @@ function canonicalSyncLanguageCode(raw) {
   return val;
 }
 
+/**
+ * Normalize any language code (BCP-47 regional variant, ISO-639-1, ISO-639-2, custom)
+ * to its canonical ISO-639-2 (3-letter) form suitable for subtitle providers.
+ *
+ * Examples:
+ *   'es-MX'     → 'spa'    (BCP-47 regional → ISO-639-2)
+ *   'en-GB'     → 'eng'    (BCP-47 regional → ISO-639-2)
+ *   'zh-CN'     → 'zhs'    (Chinese simplified)
+ *   'zh-TW'     → 'zht'    (Chinese traditional)
+ *   'pt-BR'     → 'pob'    (Brazilian Portuguese)
+ *   'es-419'    → 'spn'    (Latin American Spanish)
+ *   'eng'       → 'eng'    (already ISO-639-2, no-op)
+ *   'en'        → 'eng'    (ISO-639-1 → ISO-639-2)
+ *
+ * @param {string} lang - Language code in any supported format
+ * @returns {string} - Normalized ISO-639-2 code (or original lowercased if unknown)
+ */
+function normalizeLanguageCode(lang) {
+  if (!lang) return '';
+  let lower = lang.toLowerCase().trim();
+
+  // Handle special cases for Portuguese Brazilian (various formats)
+  if (lower === 'pt-br' || lower === 'ptbr' || lower === 'pb') {
+    return 'pob';
+  }
+
+  // Filipino (fil) is a custom 3-letter ISO 639-1 code for the same language as Tagalog (tgl).
+  // Canonicalize to tgl so all providers and filters use a single consistent code.
+  if (lower === 'fil') {
+    return 'tgl';
+  }
+
+  // Helper: convert a 2-or-3-letter base code to ISO-639-2
+  const baseToISO2 = (base) => {
+    if (base.length === 3 && languageMap[base]) return base;
+    if (base.length === 2) {
+      const iso2Codes = toISO6392(base);
+      if (iso2Codes && iso2Codes.length > 0) return iso2Codes[0].code2;
+    }
+    return null;
+  };
+
+  // --- BCP-47 compound tags (contains a hyphen or underscore) ---
+  // Split into parts: base[-script][-region][-variant...]
+  const parts = lower.split(/[-_]/);
+  if (parts.length >= 2) {
+    const base = parts[0];
+    const subtag1 = parts[1];
+
+    // Special case: Chinese regional/script variants → distinct codes
+    // zh-CN, zh-SG, zh-Hans, zh-Hans-CN → zhs (simplified)
+    // zh-TW, zh-HK, zh-Hant, zh-Hant-HK → zht (traditional)
+    if (base === 'zh') {
+      const fullTag = parts.join('-');
+      if (subtag1 === 'cn' || subtag1 === 'sg' || subtag1 === 'hans' ||
+          fullTag.includes('hans')) {
+        return 'zhs';
+      }
+      if (subtag1 === 'tw' || subtag1 === 'hk' || subtag1 === 'hant' ||
+          fullTag.includes('hant')) {
+        return 'zht';
+      }
+    }
+
+    // Special case: pt-BR variants (pt-BR-x-anything, etc.)
+    if (base === 'pt' && subtag1 === 'br') {
+      return 'pob';
+    }
+
+    // Special case: es-419 → spn (Latin American Spanish)
+    // UN M.49 numeric region code for Latin America
+    if (base === 'es' && subtag1 === '419') {
+      return 'spn';
+    }
+
+    // BCP-47 script subtags: exactly 4 letters (e.g., Cyrl, Latn, Mtei, Arab)
+    if (/^[a-z]{4}$/.test(subtag1)) {
+      const result = baseToISO2(base);
+      if (result) return result;
+    }
+
+    // BCP-47 region subtags: exactly 2 letters (e.g., MX, GB, CN)
+    if (/^[a-z]{2}$/.test(subtag1)) {
+      const result = baseToISO2(base);
+      if (result) return result;
+    }
+
+    // BCP-47 numeric region subtags: exactly 3 digits (e.g., 419, 150)
+    if (/^\d{3}$/.test(subtag1)) {
+      const result = baseToISO2(base);
+      if (result) return result;
+    }
+
+    // Multi-part tags (e.g., zh-Hant-HK, sr-Cyrl-ME) or variant subtags
+    // (e.g., sl-nedis, de-1996, ca-valencia) — extract the base language code
+    const result = baseToISO2(base);
+    if (result) return result;
+
+    // Last resort for compound tags: use the base as-is
+    lower = base;
+  }
+
+  // --- Simple codes (no hyphen/underscore) ---
+
+  // Strip any remaining hyphens/underscores for compacted codes (e.g., 'ptbr')
+  lower = lower.replace(/[_-]/g, '');
+
+  // If it's already 3 letters, return as-is (ISO-639-2 or custom like pob, spn)
+  if (/^[a-z]{3}$/.test(lower)) {
+    return lower;
+  }
+
+  // If it's 2 letters, try to convert to ISO-639-2
+  if (lower.length === 2) {
+    const iso2Codes = toISO6392(lower);
+    if (iso2Codes && iso2Codes.length > 0) {
+      return iso2Codes[0].code2;
+    }
+  }
+
+  // Return original if we can't normalize
+  return lower;
+}
+
 module.exports = {
   languageMap,
   reverseLanguageMap,
@@ -531,5 +655,6 @@ module.exports = {
   getAllTranslationLanguages,
   getAllLanguagesISO1,
   buildLanguageLookupMaps,
-  canonicalSyncLanguageCode
+  canonicalSyncLanguageCode,
+  normalizeLanguageCode
 };

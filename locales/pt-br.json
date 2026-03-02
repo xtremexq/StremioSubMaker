@@ -852,8 +852,8 @@
         "pingHint": "Execute um ping rápido antes de salvar para validar suas credenciais."
       },
       "limits": {
-        "sourceDescription": "Você pode selecionar até {max} idioma(s) de origem, mas apenas 1 é recomendado (para que você tenha a mesma ordem de lista ao traduzir). Todas as legendas deste idioma estarão disponíveis para tradução no seletor de tradução E serão buscadas (legendas originais aparecerão).",
-        "targetDescription": "Legendas em idiomas de destino serão buscadas E botões de tradução aparecerão para traduzir DO idioma de origem PARA estes idiomas. Você pode selecionar até {max} idiomas de destino no total (incluindo Learn Mode).",
+        "sourceDescription": "Você pode selecionar até {max} idioma(s) de origem, mas apenas 1 é recomendado. Dessa forma você terá exatamente a mesma ordem na lista de legendas \"Make (idioma)\" que no idioma de origem e poderá verificar as legendas originais em busca de problemas de sincronização antes de traduzir.<br><br>Todas as legendas encontradas no idioma de origem selecionado aparecerão no idioma original E serão usadas como fontes para as listas de tradução \"Make (idioma destino)\".",
+        "targetDescription": "Legendas nos idiomas de destino serão buscadas (legendas encontradas aparecerão) E botões de tradução (listas \"Make\") aparecerão para traduzir DAS legendas do idioma de origem PARA os idiomas de destino.<br><br>Você pode selecionar até {max} idiomas de destino no total (incluindo Learn Mode).",
         "noTranslationDescription": "Selecione em quais idiomas você deseja buscar legendas (até {max})."
       },
       "validation": {
@@ -1425,7 +1425,7 @@
         },
         "timeout": {
           "label": "Tempo Limite de Tradução (segundos)",
-          "helper": "Tempo máximo para aguardar tradução (5-600). Os padrões seguem seu provedor selecionado."
+          "helper": "Tempo máximo para aguardar tradução (5-720). Os padrões seguem seu provedor selecionado."
         },
         "retries": {
           "label": "Máximo de Tentativas",

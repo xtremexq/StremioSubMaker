@@ -15,10 +15,13 @@ const fileIdSchema = Joi.string()
   .max(600)
   .required();
 
-// Validate language code (ISO-639-2 or ISO-639-1)
-// Strict schema used for URL params where we expect codes
+// Validate language code (ISO-639-2, ISO-639-1, or BCP-47 subtags)
+// Accepts: base (2-3 letter) + optional subtag:
+//   - 2-letter alpha region (es-MX, en-GB)
+//   - 4-letter alpha script (sr-Cyrl, zh-Hant)
+//   - 3-digit numeric region (es-419)
 const languageCodeSchema = Joi.string()
-  .pattern(/^[a-z]{2,3}(-[a-zA-Z]{2})?$/)
+  .pattern(/^[a-z]{2,3}(-([a-zA-Z]{2,4}|[0-9]{3}))?$/)
   .min(2)
   .max(10)
   .required();
@@ -54,7 +57,7 @@ const providerParameterSchema = Joi.object({
   temperature: Joi.number().min(0).max(2).optional(),
   topP: Joi.number().min(0).max(1).optional(),
   maxOutputTokens: Joi.number().min(1).max(200000).optional(),
-  translationTimeout: Joi.number().min(5).max(600).optional(),
+  translationTimeout: Joi.number().min(5).max(720).optional(),
   maxRetries: Joi.number().integer().min(0).max(5).optional(),
   thinkingBudget: Joi.number().min(-1).max(200000).optional(),
   modelType: Joi.string().max(100).optional(),

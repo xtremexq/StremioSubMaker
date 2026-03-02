@@ -852,8 +852,8 @@
         "pingHint": "Run a quick ping before saving to validate your credentials."
       },
       "limits": {
-        "sourceDescription": "You can select up to {max} source language(s), but only 1 is recommended (so you have the same list order when translating). All subtitles from this language will be available for translation in the translation selector AND will be fetched (original subtitles will show up).",
-        "targetDescription": "Subtitles in target languages will be fetched AND translation buttons will appear for translating FROM the source language TO these languages. You can select up to {max} total target languages (including Learn Mode).",
+        "sourceDescription": "You can select up to {max} source language(s), but only 1 is recommended. This way you have the exact same \"Make (language)\" subtitles list order as the Source language and can verify the original subtitles for sync issues before translating.<br><br>All subtitles found in the selected Source language will show up in their original language AND will be used as sources for the \"Make (target language)\" translation lists.",
+        "targetDescription": "Subtitles in target languages will be fetched (found subtitles will show up) AND translation buttons (\"Make\" lists) will appear for translating FROM the Source language subtitles TO the target languages.<br><br>You can select up to {max} total target languages (including Learn Mode).",
         "noTranslationDescription": "Select which languages you want to fetch subtitles in (up to {max})."
       },
       "validation": {
@@ -1425,7 +1425,7 @@
         },
         "timeout": {
           "label": "Translation Timeout (seconds)",
-          "helper": "Maximum time to wait for translation (5-600). Defaults follow your selected provider."
+          "helper": "Maximum time to wait for translation (5-720). Defaults follow your selected provider."
         },
         "retries": {
           "label": "Max Retries",
