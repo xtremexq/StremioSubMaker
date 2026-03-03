@@ -104,6 +104,15 @@ function getEncryptionKey() {
     log.error(() => ['[Encryption] Failed to save encryption key to file:', error.message]);
     log.error(() => ['[Encryption] Key file path:', ENCRYPTION_KEY_FILE]);
     log.error(() => ['[Encryption] Directory exists:', fs.existsSync(path.dirname(ENCRYPTION_KEY_FILE))]);
+    try {
+      log.error(() => ['[Encryption] Current UID:GID:', process.getuid && process.getuid(), process.getgid && process.getgid()]);
+    } catch (_) { /* getuid/getgid may not exist on Windows */ }
+    log.error(() => ['[Encryption] ──────────────────────────────────────────────────────']);
+    log.error(() => ['[Encryption] FIX: Ensure the keys directory is writable by the user running this process.']);
+    log.error(() => ['[Encryption] If using Docker with "user: PUID:PGID", run on the host:']);
+    log.error(() => ['[Encryption]   chown -R <PUID>:<PGID> <host-path-to-keys-directory>']);
+    log.error(() => ['[Encryption] Or set ENCRYPTION_KEY env var directly instead of using a key file.']);
+    log.error(() => ['[Encryption] ──────────────────────────────────────────────────────']);
     // Running with an in-memory key makes all encrypted data unrecoverable after
     // a restart. Fail fast so operators fix the persistence/permissions issue
     // instead of silently generating a new key on every boot and "losing" all

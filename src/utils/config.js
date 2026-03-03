@@ -343,9 +343,6 @@ function sanitizeLanguages(list) {
     let value = String(lang || '').trim().toLowerCase();
     if (!value || blocked.has(value) || value.startsWith('___')) continue;
     if (value === 'ptbr' || value === 'pt-br') value = 'pob';
-    // Filipino and Tagalog are the same language; canonicalize to 'tgl' (ISO-639-2)
-    // Frontend normalizes fil → tl (ISO-639-1), mirror that here for direct API users
-    if (value === 'fil') value = 'tgl';
     deduped.add(value);
   }
 

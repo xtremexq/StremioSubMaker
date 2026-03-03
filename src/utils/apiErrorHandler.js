@@ -117,14 +117,15 @@ function parseApiError(error, serviceName = 'API', options = {}) {
       parsed.isRetryable = true;
       parsed.userMessage = translate('apiErrors.serverError', { service: serviceLabel }, 'Server error. Please try again later.');
     }
-    // OpenSubtitles daily quota exceeded (406 Not Acceptable used for 20/24h quota)
+    // OpenSubtitles daily quota exceeded (406 Not Acceptable used for download quota)
+    // Matches any plan: free (20), Gold (200), VIP (1000), etc.
     else if (parsed.statusCode === 406 && serviceName === 'OpenSubtitles') {
       const msg = String(error.response?.data?.message || error.message || '').toLowerCase();
-      const looksLikeQuota = msg.includes('allowed 20 subtitles') || (msg.includes('quota') && msg.includes('renew'));
+      const looksLikeQuota = (msg.includes('allowed') && msg.includes('subtitles')) || (msg.includes('quota') && msg.includes('renew'));
       if (looksLikeQuota) {
         parsed.type = 'quota_exceeded';
         parsed.isRetryable = false;
-        parsed.userMessage = translate('apiErrors.opensubsQuota', {}, 'OpenSubtitles daily download limit reached (20 per 24h). Try again after the next UTC midnight.');
+        parsed.userMessage = translate('apiErrors.opensubsQuota', {}, 'OpenSubtitles daily download limit reached. Try again after the next UTC midnight.');
       } else {
         // Fallback to generic client error if not quota text
         parsed.type = 'client_error';

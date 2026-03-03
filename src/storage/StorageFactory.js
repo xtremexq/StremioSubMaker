@@ -85,17 +85,20 @@ class StorageFactory {
         throw error;
       }
 
-      // For non-Redis deployments, keep the existing filesystem fallback behaviour
-      log.warn(() => 'Redis storage initialization failed, falling back to filesystem storage...');
+      // For non-Redis deployments, retry filesystem initialization once in case it
+      // was a transient issue (e.g. directory created by entrypoint after first attempt)
+      log.warn(() => [`[StorageFactory] ${storageType} storage initialization failed (${error.message}), retrying with fresh filesystem adapter...`]);
       adapter = new FilesystemStorageAdapter();
       try {
         await adapter.initialize();
         StorageFactory.instance = adapter;
         StorageFactory._scheduleCleanup(adapter);
-        log.debug(() => '[StorageFactory] Fallback to filesystem storage successful');
+        log.debug(() => '[StorageFactory] Retry with filesystem storage successful');
         return adapter;
       } catch (fallbackError) {
-        log.error(() => ['[StorageFactory] Filesystem fallback also failed:', fallbackError.message]);
+        log.error(() => ['[StorageFactory] Filesystem storage also failed:', fallbackError.message]);
+        log.error(() => ['[StorageFactory] This usually means the cache/data directories are not writable.']);
+        log.error(() => ['[StorageFactory] If using Docker with user: PUID:PGID, ensure host directories are owned by that UID:GID.']);
         throw fallbackError;
       }
     }

@@ -38,8 +38,15 @@ async function initSyncCache() {
     await fs.mkdir(SYNC_CACHE_DIR, { recursive: true });
     log.debug(() => ['[Sync Cache] Initialized at:', SYNC_CACHE_DIR]);
   } catch (error) {
-    log.error(() => ['[Sync Cache] Failed to initialize:', error.message]);
-    throw error;
+    // Don't throw on permission errors — the actual sync cache operations use the
+    // storage adapter (which manages its own isolation-aware directories). This
+    // legacy directory is only needed for backwards compatibility.
+    if (error.code === 'EACCES' || error.code === 'EPERM') {
+      log.warn(() => ['[Sync Cache] Cannot create legacy cache directory (permission denied). Sync cache will use storage adapter paths instead:', SYNC_CACHE_DIR]);
+    } else {
+      log.error(() => ['[Sync Cache] Failed to initialize:', error.message]);
+      throw error;
+    }
   }
 }
 

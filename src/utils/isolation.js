@@ -30,7 +30,7 @@ function loadOrCreateInstanceId() {
     try {
       fs.mkdirSync(instanceDir, { recursive: true });
     } catch (err) {
-      // Best effort – if this fails we'll log below and fall back to a transient id
+      // Best effort – if this fails we'll log below and fall back to a stable id
       log.warn(() => ['[Isolation] Failed to ensure instance id directory exists:', err.message]);
     }
 
@@ -60,6 +60,30 @@ function hashValue(value) {
   } catch (_) {
     return null;
   }
+}
+
+/**
+ * Deterministic fallback for isolation key when all other methods fail.
+ * Uses hostname (stable across restarts of the same container) so that
+ * cache/data directories remain consistent and previously stored sessions
+ * are still reachable after a restart — unlike the old random fallback
+ * which made data unreachable every time the container restarted.
+ */
+function getDeterministicFallback() {
+  try {
+    const os = require('os');
+    const hostname = os.hostname();
+    if (hostname) {
+      const hashed = hashValue(hostname);
+      if (hashed) {
+        return `host_${hashed.slice(0, 8)}`;
+      }
+    }
+  } catch (_) {
+    // ignore
+  }
+  // Ultimate fallback: fixed string so at least data stays in one place
+  return 'default';
 }
 
 function getIsolationKey() {
@@ -104,7 +128,23 @@ function getIsolationKey() {
     log.warn(() => ['[Isolation] Unable to derive isolation key from encryption key:', err.message]);
   }
 
-  return loadOrCreateInstanceId();
+  // Try to load/create a persisted instance id
+  const instanceId = loadOrCreateInstanceId();
+
+  // If the instance id is a transient random value (i.e. it couldn't be
+  // persisted), prefer a deterministic fallback based on hostname so that
+  // cache directories stay stable across restarts.
+  try {
+    if (!fs.existsSync(INSTANCE_FILE)) {
+      const fallback = getDeterministicFallback();
+      log.warn(() => `[Isolation] Using deterministic fallback isolation key: ${fallback} (instance id could not be persisted)`);
+      return fallback;
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  return instanceId;
 }
 
 module.exports = {

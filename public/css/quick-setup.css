@@ -1434,12 +1434,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.85rem;
-    padding: 1.1rem 1.5rem;
-    margin-bottom: 1.5rem;
+    gap: 0.65rem;
+    padding: 0.75rem 1.15rem;
+    margin-bottom: 0.85rem;
     background: var(--_banner-bg);
     border: 1px solid var(--_banner-border);
-    border-radius: 16px;
+    border-radius: 12px;
     cursor: pointer;
     transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
     text-decoration: none;
@@ -1488,7 +1488,7 @@
 }
 
 .qs-entry-icon {
-    font-size: 1.5rem;
+    font-size: 1.15rem;
     filter: drop-shadow(0 0 8px var(--_icon-glow));
     animation: qsEntryPulse 2.5s ease-in-out infinite;
     flex-shrink: 0;
@@ -1513,7 +1513,7 @@
 }
 
 .qs-entry-title {
-    font-size: 1.05rem;
+    font-size: 0.92rem;
     font-weight: 700;
     color: var(--_title-color);
     letter-spacing: -0.01em;
@@ -1521,7 +1521,7 @@
 }
 
 .qs-entry-desc {
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     color: var(--_desc-color);
     line-height: 1.4;
 }

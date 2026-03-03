@@ -21,29 +21,31 @@
 
 .combo-button {
   width: 100%;
-  padding: 0.875rem 1rem;
+  padding: 0.65rem 0.8rem;
   border: 2px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--surface);
   color: var(--text-primary);
   font: inherit;
+  font-size: 0.85rem;
   text-align: left;
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .combo-button::after {
   content: '';
-  width: 0.55rem;
-  height: 0.55rem;
+  width: 0.45rem;
+  height: 0.45rem;
   border-right: 2px solid var(--text-secondary);
   border-bottom: 2px solid var(--text-secondary);
   transform: rotate(45deg);
   transition: transform 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
 }
 
 .combo.open .combo-button::after {
@@ -86,12 +88,13 @@
 }
 
 .combo-option {
-  padding: 10px 12px;
-  border-radius: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
   cursor: pointer;
   border: 1px solid transparent;
   color: var(--text-primary);
   background: var(--surface);
+  font-size: 0.85rem;
 }
 
 .combo-option:hover {

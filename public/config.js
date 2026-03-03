@@ -1231,8 +1231,6 @@ Translate to {target_language}.`;
         const normalized = codes.map(c => {
             const lc = String(c || '').toLowerCase();
             if (lc === 'ptbr' || lc === 'pt-br') return 'pob';
-            // Filipino and Tagalog are the same language; canonicalize to 'tl'
-            if (lc === 'fil') return 'tl';
             return lc;
         }).filter(lc => {
             // Block UI-only fake entries from ever persisting into config
@@ -1241,7 +1239,7 @@ Translate to {target_language}.`;
             if (lc.startsWith('___')) return false; // frontend/internal placeholders
             return true;
         });
-        // Deduplicate codes that may have merged (e.g., fil + tl → two 'tl' entries)
+        // Deduplicate exact duplicate codes
         return [...new Set(normalized)];
     }
 
@@ -2101,40 +2099,46 @@ Translate to {target_language}.`;
     }
 
     function updateSelectedChips(type, languageCodes) {
-        let containerId, badgeId;
+        let containerId, badgeId, configKey;
         if (type === 'source') {
             containerId = 'selectedSourceLanguages';
             badgeId = 'sourceBadge';
+            configKey = 'sourceLanguages';
         } else if (type === 'notranslation') {
             containerId = 'selectedNoTranslationLanguages';
             badgeId = null; // No badge for no-translation
+            configKey = 'noTranslationLanguages';
         } else if (type === 'learn') {
             containerId = 'selectedLearnLanguages';
             badgeId = 'learnBadge';
+            configKey = 'learnTargetLanguages';
         } else {
             containerId = 'selectedTargetLanguages';
             badgeId = 'targetBadge';
+            configKey = 'targetLanguages';
         }
 
         const container = document.getElementById(containerId);
         const badge = badgeId ? document.getElementById(badgeId) : null;
 
         container.innerHTML = '';
-        container.classList.toggle('empty', languageCodes.length === 0);
 
-        // Update badge count
-        if (badge) {
-            badge.textContent = languageCodes.length;
-            badge.style.display = languageCodes.length > 0 ? 'inline-flex' : 'none';
+        // Prune stale codes that no longer exist in allLanguages (e.g. after normalization)
+        if (allLanguages && allLanguages.length > 0) {
+            const validCodes = new Set(allLanguages.map(l => l.code));
+            const pruned = languageCodes.filter(code => validCodes.has(code));
+            if (pruned.length !== languageCodes.length) {
+                languageCodes.length = 0;
+                pruned.forEach(c => languageCodes.push(c));
+                // Sync back to currentConfig so saved config won't contain stale codes
+                if (currentConfig[configKey]) {
+                    currentConfig[configKey].length = 0;
+                    pruned.forEach(c => currentConfig[configKey].push(c));
+                }
+            }
         }
 
-        // Live validation
-        if (type === 'source' || type === 'target' || type === 'learn') {
-            validateLanguageSelection(type);
-        } else if (type === 'notranslation') {
-            validateNoTranslationSelection();
-        }
-
+        // Render chips
         languageCodes.forEach(code => {
             const lang = allLanguages.find(l => l.code === code);
             if (!lang) return;
@@ -2147,6 +2151,25 @@ Translate to {target_language}.`;
             `;
             container.appendChild(chip);
         });
+
+        const chipCount = container.children.length;
+
+        // Update badge count based on actual rendered chips
+        if (badge) {
+            badge.textContent = chipCount;
+            badge.style.display = chipCount > 0 ? 'inline-flex' : 'none';
+        }
+
+        // Live validation
+        if (type === 'source' || type === 'target' || type === 'learn') {
+            validateLanguageSelection(type);
+        } else if (type === 'notranslation') {
+            validateNoTranslationSelection();
+        }
+
+        // Toggle empty class based on actual rendered chips,
+        // so the container hides properly when no valid chips exist
+        container.classList.toggle('empty', chipCount === 0);
     }
 
     function syncGridSelection(gridId, selectedList) {
@@ -2542,6 +2565,12 @@ Translate to {target_language}.`;
                 }
                 if (wasCollapsed && !nowCollapsed) {
                     expandHeaderlessCards(section);
+                    // Uniform reveal animation for the whole section grid
+                    if (sectionBody) {
+                        sectionBody.classList.remove('section-reveal');
+                        void sectionBody.offsetWidth; // force reflow to restart animation
+                        sectionBody.classList.add('section-reveal');
+                    }
                 }
                 if (!wasCollapsed && nowCollapsed) {
                     requestAnimationFrame(() => scrollSectionHeaderIntoView(section));
@@ -4515,6 +4544,7 @@ Translate to {target_language}.`;
         const subToolboxNoTranslationGroup = document.getElementById('subToolboxNoTranslationGroup');
         const excludeHearingImpairedNoTranslationGroup = document.getElementById('excludeHearingImpairedNoTranslationGroup');
         const enableSeasonPacksNoTranslationGroup = document.getElementById('enableSeasonPacksNoTranslationGroup');
+        const forceSRTOutputNoTranslationGroup = document.getElementById('forceSRTOutputNoTranslationGroup');
 
         ['sendTimestampsToAI', 'databaseMode', 'learnModeEnabled', 'mobileMode', 'singleBatchMode', 'betaMode'].forEach(id => {
             const group = document.getElementById(id)?.closest('.form-group');
@@ -4540,6 +4570,9 @@ Translate to {target_language}.`;
             if (enableSeasonPacksNoTranslationGroup) {
                 enableSeasonPacksNoTranslationGroup.style.display = '';
             }
+            if (forceSRTOutputNoTranslationGroup) {
+                forceSRTOutputNoTranslationGroup.style.display = '';
+            }
             return;
         }
 
@@ -4553,6 +4586,9 @@ Translate to {target_language}.`;
             }
             if (enableSeasonPacksNoTranslationGroup) {
                 enableSeasonPacksNoTranslationGroup.style.display = 'none';
+            }
+            if (forceSRTOutputNoTranslationGroup) {
+                forceSRTOutputNoTranslationGroup.style.display = 'none';
             }
             return;
         }
@@ -4574,6 +4610,9 @@ Translate to {target_language}.`;
         }
         if (enableSeasonPacksNoTranslationGroup) {
             enableSeasonPacksNoTranslationGroup.style.display = 'none';
+        }
+        if (forceSRTOutputNoTranslationGroup) {
+            forceSRTOutputNoTranslationGroup.style.display = 'none';
         }
     }
 
@@ -5637,7 +5676,9 @@ Translate to {target_language}.`;
         const singleBatchEl = document.getElementById('singleBatchMode');
         if (singleBatchEl) singleBatchEl.checked = currentConfig.singleBatchMode === true;
         const forceSRTEl = document.getElementById('forceSRTOutput');
+        const forceSRTElNoTranslation = document.getElementById('forceSRTOutputNoTranslation');
         if (forceSRTEl) forceSRTEl.checked = currentConfig.forceSRTOutput === true;
+        if (forceSRTElNoTranslation) forceSRTElNoTranslation.checked = currentConfig.forceSRTOutput === true;
         // Convert ASS/SSA defaults to enabled (true) for backwards compatibility
         const convertAssToVttEl = document.getElementById('convertAssToVtt');
         if (convertAssToVttEl) {
@@ -5648,17 +5689,7 @@ Translate to {target_language}.`;
                 convertAssToVttEl.checked = true; // Force SRT implies conversion
             }
         }
-        // Add Force SRT change listener to control ASS/SSA toggle
-        if (forceSRTEl && convertAssToVttEl) {
-            forceSRTEl.addEventListener('change', () => {
-                if (forceSRTEl.checked) {
-                    convertAssToVttEl.disabled = true;
-                    convertAssToVttEl.checked = true; // Force SRT implies conversion
-                } else {
-                    convertAssToVttEl.disabled = false;
-                }
-            });
-        }
+        // Force SRT <-> ASS/SSA toggle sync is handled by syncForceSRT listener below
         // Re-apply dev-only option visibility after config values are loaded.
         // Without this, these groups can stay hidden after reload until the user toggles Dev Mode again.
         const devEnabledAfterLoad = currentConfig.devMode === true;
@@ -5855,6 +5886,35 @@ Translate to {target_language}.`;
         if (!seasonPackToggle && !seasonPackToggleNoTranslation) {
             currentConfig.enableSeasonPacks = currentConfig.enableSeasonPacks !== false;
         }
+
+        // Track Force SRT toggles (keep both in sync)
+        const forceSRTToggle = document.getElementById('forceSRTOutput');
+        const forceSRTToggleNoTranslation = document.getElementById('forceSRTOutputNoTranslation');
+        const syncForceSRT = (value) => {
+            currentConfig.forceSRTOutput = value === true;
+            if (forceSRTToggle && forceSRTToggle.checked !== currentConfig.forceSRTOutput) {
+                forceSRTToggle.checked = currentConfig.forceSRTOutput;
+            }
+            if (forceSRTToggleNoTranslation && forceSRTToggleNoTranslation.checked !== currentConfig.forceSRTOutput) {
+                forceSRTToggleNoTranslation.checked = currentConfig.forceSRTOutput;
+            }
+            // Force SRT implies ASS/SSA conversion
+            const convertAssEl = document.getElementById('convertAssToVtt');
+            if (convertAssEl) {
+                if (currentConfig.forceSRTOutput) {
+                    convertAssEl.disabled = true;
+                    convertAssEl.checked = true;
+                } else {
+                    convertAssEl.disabled = false;
+                }
+            }
+        };
+        if (forceSRTToggle) {
+            forceSRTToggle.addEventListener('change', (e) => syncForceSRT(e.target.checked));
+        }
+        if (forceSRTToggleNoTranslation) {
+            forceSRTToggleNoTranslation.addEventListener('change', (e) => syncForceSRT(e.target.checked));
+        }
         const singleBatchToggle = document.getElementById('singleBatchMode');
         if (singleBatchToggle) {
             singleBatchToggle.addEventListener('change', (e) => {
@@ -6032,7 +6092,7 @@ Translate to {target_language}.`;
                 return el ? el.checked : (currentConfig?.enableSeasonPacks !== false);
             })(),
             forceSRTOutput: (function () {
-                const el = document.getElementById('forceSRTOutput');
+                const el = document.getElementById('forceSRTOutputNoTranslation') || document.getElementById('forceSRTOutput');
                 return el ? el.checked === true : (currentConfig?.forceSRTOutput === true);
             })(),
             convertAssToVtt: (function () {
@@ -6618,4 +6678,162 @@ Translate to {target_language}.`;
             window.location.replace(basePath + tokenSegment + qs);
         }
     }
+
+    // ── What's New Portal ────────────────────────────────────────────────
+    const LAST_SEEN_VERSION_KEY = 'submaker_whats_new_seen';
+
+    function initWhatsNewPortal() {
+        const portal = document.getElementById('whatsNewPortal');
+        const header = document.getElementById('portalHeader');
+        const content = document.getElementById('portalContent');
+        const entriesEl = document.getElementById('portalEntries');
+        const badge = document.getElementById('portalVersionBadge');
+        const newDot = document.getElementById('portalNewDot');
+        if (!portal || !header || !entriesEl) return;
+
+        fetch('/api/changelog')
+            .then(r => r.json())
+            .then(data => {
+                if (!data || !data.entries || !data.entries.length) return;
+                const { currentVersion, entries: versions } = data;
+
+                // Version badge
+                if (badge) badge.textContent = 'v' + currentVersion;
+
+                // "New" dot logic
+                let lastSeen = '';
+                try { lastSeen = localStorage.getItem(LAST_SEEN_VERSION_KEY) || ''; } catch (_) { }
+                const latestVersion = versions[0]?.version || '';
+                if (lastSeen !== latestVersion && newDot) {
+                    newDot.style.display = '';
+                }
+
+                // Render entries
+                entriesEl.innerHTML = '';
+                versions.forEach((entry, idx) => {
+                    const card = document.createElement('div');
+                    card.className = 'portal-entry' + (idx === 0 ? ' expanded' : '');
+
+                    const headerEl = document.createElement('div');
+                    headerEl.className = 'portal-entry-header';
+
+                    const left = document.createElement('div');
+                    left.style.cssText = 'display:flex;align-items:center;gap:0.4rem;';
+                    const versionEl = document.createElement('span');
+                    versionEl.className = 'portal-entry-version';
+                    versionEl.textContent = 'v' + entry.version;
+                    left.appendChild(versionEl);
+                    if (idx === 0) {
+                        const badgeEl = document.createElement('span');
+                        badgeEl.className = 'portal-entry-badge latest';
+                        badgeEl.textContent = 'Latest';
+                        left.appendChild(badgeEl);
+                    }
+                    headerEl.appendChild(left);
+
+                    const chevron = document.createElement('span');
+                    chevron.className = 'portal-entry-chevron';
+                    chevron.textContent = '▼';
+                    headerEl.appendChild(chevron);
+
+                    const contentEl = document.createElement('div');
+                    contentEl.className = 'portal-entry-content';
+                    contentEl.innerHTML = renderChangelogContent(entry.content);
+
+                    // "View on GitHub" link (sibling of content, not child — avoids max-height clipping)
+                    const ghLink = document.createElement('a');
+                    ghLink.className = 'portal-gh-link';
+                    ghLink.href = 'https://github.com/xtremexq/StremioSubMaker/releases/tag/v' + entry.version;
+                    ghLink.target = '_blank';
+                    ghLink.rel = 'noopener noreferrer';
+                    ghLink.textContent = 'View full release on GitHub →';
+
+                    headerEl.addEventListener('click', () => {
+                        card.classList.toggle('expanded');
+                    });
+
+                    card.appendChild(headerEl);
+                    card.appendChild(contentEl);
+                    card.appendChild(ghLink);
+                    entriesEl.appendChild(card);
+                });
+
+                // Portal expand/collapse toggle
+                header.addEventListener('click', () => {
+                    const isExpanded = portal.classList.toggle('expanded');
+                    if (isExpanded && newDot) {
+                        newDot.style.display = 'none';
+                        try { localStorage.setItem(LAST_SEEN_VERSION_KEY, latestVersion); } catch (_) { }
+                    }
+                });
+                header.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        header.click();
+                    }
+                });
+            })
+            .catch(err => {
+                console.warn('[WhatsNew] Failed to load changelog:', err);
+            });
+    }
+
+    function renderChangelogContent(rawContent) {
+        if (!rawContent) return '';
+        const lines = rawContent.split('\n');
+        let html = '';
+        const categoryEmojis = {
+            'improvements': '⚡',
+            'bug fixes': '🐛',
+            'new features': '🆕',
+            'breaking changes': '⚠️',
+            'performance': '🚀',
+            'security': '🔒',
+            'documentation': '📖',
+            'internal': '🔧',
+            'deprecations': '⏳'
+        };
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            // Category headers: ### Bug Fixes or **Bug Fixes:** (both formats)
+            const categoryMatch = trimmed.match(/^###\s+(.+)/) || trimmed.match(/^\*\*([^*]+?):\*\*\s*$/);
+            if (categoryMatch) {
+                const catName = categoryMatch[1].trim();
+                const catLower = catName.toLowerCase();
+                const emoji = categoryEmojis[catLower] || '📌';
+                html += '<div class="portal-category">' + emoji + ' ' + portalEscapeHtml(catName) + '</div>';
+                continue;
+            }
+
+            // Bullet items: - Some text or * Some text
+            const bulletMatch = trimmed.match(/^[-*]\s+(.+)/);
+            if (bulletMatch) {
+                let text = bulletMatch[1];
+                // Simple markdown: **bold**
+                text = portalEscapeHtml(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                html += '<div class="portal-item">' + text + '</div>';
+                continue;
+            }
+        }
+        return html;
+    }
+
+    function portalEscapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // Initialize portal after partials are loaded
+    if (window.partialsReady && typeof window.partialsReady.then === 'function') {
+        window.partialsReady.then(function () { initWhatsNewPortal(); }).catch(function () { });
+    } else if (document.getElementById('whatsNewPortal')) {
+        initWhatsNewPortal();
+    } else {
+        document.addEventListener('DOMContentLoaded', function () { initWhatsNewPortal(); });
+    }
+
 })();

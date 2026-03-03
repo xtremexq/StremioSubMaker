@@ -9,7 +9,7 @@
 
     <div class="header">
         <div class="logo">
-            <img src="/logo.png" alt="SubMaker Logo" style="width: 80px; height: 80px; border-radius: 20px;">
+            <img src="/logo.png" alt="SubMaker Logo" style="width: 80px; height: 80px; border-radius: 18px;">
         </div>
         <h1 id="heroTitle" data-i18n="config.heroTitle">SubMaker</h1>
         <div class="version-badge-wrapper">
@@ -58,6 +58,47 @@
     <!-- Disable native HTML validation: we run all validation in config.js and hidden inputs (provider advanced sliders) can trip browser validity when collapsed -->
     <form id="configForm" autocomplete="off" spellcheck="false" novalidate>
 
+        <!-- What's New Portal -->
+        <div class="whats-new-portal" id="whatsNewPortal">
+            <div class="portal-frame">
+                <div class="portal-starfield" aria-hidden="true"></div>
+                <div class="portal-glow" aria-hidden="true"></div>
+                <!-- Corner decorations -->
+                <span class="portal-corner tl" aria-hidden="true"></span>
+                <span class="portal-corner tr" aria-hidden="true"></span>
+                <span class="portal-corner bl" aria-hidden="true"></span>
+                <span class="portal-corner br" aria-hidden="true"></span>
+                <!-- Animated creatures (butterflies / fireflies / bats per theme) -->
+                <div class="portal-creatures" aria-hidden="true">
+                    <span class="portal-creature c1"></span>
+                    <span class="portal-creature c2"></span>
+                    <span class="portal-creature c3"></span>
+                    <span class="portal-creature c4"></span>
+                    <span class="portal-creature c5"></span>
+                </div>
+                <!-- Pixel runner character -->
+                <div class="portal-runner" aria-hidden="true"></div>
+                <div class="portal-header" id="portalHeader" role="button" tabindex="0"
+                    aria-label="Toggle What's New changelog">
+                    <div class="portal-header-left">
+                        <span class="portal-icon">✨</span>
+                        <span class="portal-title">What's New</span>
+                        <span class="portal-version-badge" id="portalVersionBadge"></span>
+                    </div>
+                    <div class="portal-header-right">
+                        <span class="portal-new-dot" id="portalNewDot" style="display:none;"
+                            title="New updates available!"></span>
+                        <span class="portal-toggle-arrow" id="portalToggleArrow">▼</span>
+                    </div>
+                </div>
+                <div class="portal-content" id="portalContent">
+                    <div class="portal-entries" id="portalEntries">
+                        <!-- Changelog entries rendered by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Quick Setup Entry Banner (shown on first run or via help menu) -->
         <div class="qs-entry-banner" id="quickSetupBanner" role="button" tabindex="0"
             aria-label="Open Quick Setup wizard">
@@ -71,14 +112,15 @@
 
         <!-- No Translation Mode Toggle -->
         <div
-            style="margin: 2rem 0; padding: 1.5rem; background: var(--surface-light); border: 2px solid var(--border); border-radius: 12px; display: flex; align-items: center; gap: 1rem;">
-            <span style="font-size: 1.75rem;">⏸️</span>
+            style="margin: 0.65rem 0; padding: 0.65rem 0.85rem; background: var(--surface-light); border: 2px solid var(--border); border-radius: 10px; display: flex; align-items: center; gap: 0.6rem;">
+            <span style="font-size: 1.1rem;">⏸️</span>
             <div style="flex: 1;">
                 <span id="noTranslationTitle" data-i18n="config.noTranslation.title"
-                    style="display: block; font-weight: 600; color: var(--text-primary);">Just Fetch Subtitles (No
+                    style="display: block; font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">Just Fetch
+                    Subtitles (No
                     Translation)</span>
                 <span id="noTranslationDescription" data-i18n="config.noTranslation.description"
-                    style="display: block; font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">Skip
+                    style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.15rem;">Skip
                     AI translation and just fetch subtitles in your chosen languages</span>
             </div>
             <label class="toggle-switch">
@@ -126,11 +168,11 @@
                     </div>
                     <div class="card-content">
                         <!-- OpenSubtitles -->
-                        <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
+                        <div class="form-group" style="padding: 0.85rem 0; border-bottom: 1px solid var(--border);">
                             <div
-                                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                 <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                                    <span style="font-size: 1.5rem;">📄</span>
+                                    <span style="font-size: 1.2rem;">📄</span>
                                     <div>
                                         <strong id="opensubsTitle" data-i18n="config.opensubs.title"
                                             style="display: block;">OpenSubtitles</strong>
@@ -148,7 +190,7 @@
                             <div id="opensubtitlesConfig">
                                 <!-- Implementation Type Selection -->
                                 <div
-                                    style="margin-bottom: 1rem; padding: 1rem; background: var(--surface-light); border-radius: 8px;">
+                                    style="margin-bottom: 0.75rem; padding: 0.75rem; background: var(--surface-light); border-radius: 8px;">
                                     <label id="opensubsImplTypeLabel" data-i18n="config.opensubs.implementationType"
                                         style="display: block; margin-bottom: 0.75rem; font-weight: 600;">Implementation
                                         Type</label>
@@ -232,10 +274,9 @@
 
                                             <span id="opensubsRateNote" class="label-description"
                                                 data-i18n="config.opensubs.rateNote" data-i18n-attr="innerHTML">20
-                                                subtitles a day. <a href="https://www.opensubtitles.com/en/newuser"
+                                                subtitles/day. <a href="https://www.opensubtitles.com/en/newuser"
                                                     target="_blank" style="color: var(--primary-light);">Create a free
-                                                    account</a> if
-                                                you don't
+                                                    account</a> if you don't
                                                 have one.</span>
                                         </div>
 
@@ -258,11 +299,11 @@
                         </div>
 
                         <!-- SubSource -->
-                        <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
+                        <div class="form-group" style="padding: 0.85rem 0; border-bottom: 1px solid var(--border);">
                             <div
-                                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                 <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                                    <span style="font-size: 1.5rem;">🎬</span>
+                                    <span style="font-size: 1.2rem;">🎬</span>
                                     <div>
                                         <strong id="subsourceTitle" data-i18n="config.providers.subsource.title"
                                             style="display: block;">SubSource</strong>
@@ -300,11 +341,11 @@
                         </div>
 
                         <!-- SubDL -->
-                        <div class="form-group" style="padding: 1.5rem 0; border-bottom: 1px solid var(--border);">
+                        <div class="form-group" style="padding: 0.85rem 0; border-bottom: 1px solid var(--border);">
                             <div
-                                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                 <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                                    <span style="font-size: 1.5rem;">📋</span>
+                                    <span style="font-size: 1.2rem;">📋</span>
                                     <div>
                                         <strong id="subdlTitle" data-i18n="config.providers.subdl.title"
                                             style="display: block;">SubDL</strong>
@@ -367,7 +408,7 @@
                                     <div
                                         style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                         <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                                            <span style="font-size: 1.5rem;">🔍</span>
+                                            <span style="font-size: 1.2rem;">🔍</span>
                                             <div>
                                                 <strong id="wyzieTitle" data-i18n="config.providers.wyzie.title"
                                                     style="display: block;">Wyzie Subs</strong>
@@ -443,7 +484,7 @@
                                     <div
                                         style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                         <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                                            <span style="font-size: 1.5rem;">🌐</span>
+                                            <span style="font-size: 1.2rem;">🌐</span>
                                             <div>
                                                 <strong id="scsTitle" data-i18n="config.providers.scs.title"
                                                     style="display: block;">Stremio Community Subtitles</strong>
@@ -472,9 +513,9 @@
                                 <!-- Subs.ro -->
                                 <div class="form-group" style="padding-top: 1rem;">
                                     <div
-                                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                         <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                                            <span style="font-size: 1.5rem;">🇷🇴</span>
+                                            <span style="font-size: 1.2rem;">🇷🇴</span>
                                             <div>
                                                 <strong id="subsroTitle" data-i18n="config.providers.subsro.title"
                                                     style="display: block;">Subs.ro</strong>
@@ -516,11 +557,11 @@
 
                         <!-- Subtitle Provider Timeout Setting -->
                         <div class="form-group"
-                            style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+                            style="margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--border);">
                             <div
                                 style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                 <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                                    <span style="font-size: 1.5rem;">⏱️</span>
+                                    <span style="font-size: 1.2rem;">⏱️</span>
                                     <div>
                                         <strong id="providerTimeoutTitle" data-i18n="config.providers.timeout.title"
                                             style="display: block;">Provider Timeout</strong>
@@ -748,23 +789,26 @@
                                             style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
                                             <input type="checkbox" id="provider-openai-enabled"> OpenAI
                                         </label>
-                                        <button type="button" class="validate-api-btn" data-provider="openai"
-                                            title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
-                                            data-i18n-attr="title">
-                                            <span class="validate-icon">&#8635;</span>
-                                            <span class="validate-text" data-i18n="config.providersUi.loadModels">Load
-                                                Models</span>
-                                        </button>
                                     </div>
                                     <div id="provider-openai-fields" class="provider-fields"
                                         style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
                                         <input type="text" id="provider-openai-key" placeholder="OpenAI API key"
                                             data-i18n="config.providersUi.placeholders.openai"
                                             data-i18n-attr="placeholder" class="sensitive-input masked">
-                                        <select id="provider-openai-model">
-                                            <option value="" data-i18n="config.providersUi.selectModel">Select model
-                                            </option>
-                                        </select>
+                                        <div class="provider-model-row">
+                                            <select id="provider-openai-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model
+                                                </option>
+                                            </select>
+                                            <button type="button" class="validate-api-btn" data-provider="openai"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
+                                                data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text"
+                                                    data-i18n="config.providersUi.loadModels">Load
+                                                    Models</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -775,23 +819,26 @@
                                             style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
                                             <input type="checkbox" id="provider-anthropic-enabled"> Anthropic
                                         </label>
-                                        <button type="button" class="validate-api-btn" data-provider="anthropic"
-                                            title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
-                                            data-i18n-attr="title">
-                                            <span class="validate-icon">&#8635;</span>
-                                            <span class="validate-text" data-i18n="config.providersUi.loadModels">Load
-                                                Models</span>
-                                        </button>
                                     </div>
                                     <div id="provider-anthropic-fields" class="provider-fields"
                                         style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
                                         <input type="text" id="provider-anthropic-key" placeholder="Anthropic API key"
                                             data-i18n="config.providersUi.placeholders.anthropic"
                                             data-i18n-attr="placeholder" class="sensitive-input masked">
-                                        <select id="provider-anthropic-model">
-                                            <option value="" data-i18n="config.providersUi.selectModel">Select model
-                                            </option>
-                                        </select>
+                                        <div class="provider-model-row">
+                                            <select id="provider-anthropic-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model
+                                                </option>
+                                            </select>
+                                            <button type="button" class="validate-api-btn" data-provider="anthropic"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
+                                                data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text"
+                                                    data-i18n="config.providersUi.loadModels">Load
+                                                    Models</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -802,23 +849,26 @@
                                             style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
                                             <input type="checkbox" id="provider-xai-enabled"> XAI (Grok)
                                         </label>
-                                        <button type="button" class="validate-api-btn" data-provider="xai"
-                                            title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
-                                            data-i18n-attr="title">
-                                            <span class="validate-icon">&#8635;</span>
-                                            <span class="validate-text" data-i18n="config.providersUi.loadModels">Load
-                                                Models</span>
-                                        </button>
                                     </div>
                                     <div id="provider-xai-fields" class="provider-fields"
                                         style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
                                         <input type="text" id="provider-xai-key" placeholder="XAI API key"
                                             data-i18n="config.providersUi.placeholders.xai" data-i18n-attr="placeholder"
                                             class="sensitive-input masked">
-                                        <select id="provider-xai-model">
-                                            <option value="" data-i18n="config.providersUi.selectModel">Select model
-                                            </option>
-                                        </select>
+                                        <div class="provider-model-row">
+                                            <select id="provider-xai-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model
+                                                </option>
+                                            </select>
+                                            <button type="button" class="validate-api-btn" data-provider="xai"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
+                                                data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text"
+                                                    data-i18n="config.providersUi.loadModels">Load
+                                                    Models</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -829,23 +879,26 @@
                                             style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
                                             <input type="checkbox" id="provider-deepseek-enabled"> DeepSeek
                                         </label>
-                                        <button type="button" class="validate-api-btn" data-provider="deepseek"
-                                            title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
-                                            data-i18n-attr="title">
-                                            <span class="validate-icon">&#8635;</span>
-                                            <span class="validate-text" data-i18n="config.providersUi.loadModels">Load
-                                                Models</span>
-                                        </button>
                                     </div>
                                     <div id="provider-deepseek-fields" class="provider-fields"
                                         style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
                                         <input type="text" id="provider-deepseek-key" placeholder="DeepSeek API key"
                                             data-i18n="config.providersUi.placeholders.deepseek"
                                             data-i18n-attr="placeholder" class="sensitive-input masked">
-                                        <select id="provider-deepseek-model">
-                                            <option value="" data-i18n="config.providersUi.selectModel">Select model
-                                            </option>
-                                        </select>
+                                        <div class="provider-model-row">
+                                            <select id="provider-deepseek-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model
+                                                </option>
+                                            </select>
+                                            <button type="button" class="validate-api-btn" data-provider="deepseek"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
+                                                data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text"
+                                                    data-i18n="config.providersUi.loadModels">Load
+                                                    Models</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -856,23 +909,26 @@
                                             style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
                                             <input type="checkbox" id="provider-deepl-enabled"> DeepL
                                         </label>
-                                        <button type="button" class="validate-api-btn" data-provider="deepl"
-                                            title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
-                                            data-i18n-attr="title">
-                                            <span class="validate-icon">&#8635;</span>
-                                            <span class="validate-text" data-i18n="config.providersUi.loadModels">Load
-                                                Models</span>
-                                        </button>
                                     </div>
                                     <div id="provider-deepl-fields" class="provider-fields"
                                         style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
                                         <input type="text" id="provider-deepl-key" placeholder="DeepL Auth Key"
                                             data-i18n="config.providersUi.placeholders.deepl"
                                             data-i18n-attr="placeholder" class="sensitive-input masked">
-                                        <select id="provider-deepl-model">
-                                            <option value="" data-i18n="config.providersUi.selectModel">Select model
-                                            </option>
-                                        </select>
+                                        <div class="provider-model-row">
+                                            <select id="provider-deepl-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model
+                                                </option>
+                                            </select>
+                                            <button type="button" class="validate-api-btn" data-provider="deepl"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
+                                                data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text"
+                                                    data-i18n="config.providersUi.loadModels">Load
+                                                    Models</span>
+                                            </button>
+                                        </div>
                                         <span class="label-description" data-i18n="config.providersUi.deeplHint">Free
                                             keys auto-use api-free.deepl.com. Language codes
                                             are auto-mapped from your selections.</span>
@@ -886,23 +942,26 @@
                                             style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
                                             <input type="checkbox" id="provider-mistral-enabled"> Mistral
                                         </label>
-                                        <button type="button" class="validate-api-btn" data-provider="mistral"
-                                            title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
-                                            data-i18n-attr="title">
-                                            <span class="validate-icon">&#8635;</span>
-                                            <span class="validate-text" data-i18n="config.providersUi.loadModels">Load
-                                                Models</span>
-                                        </button>
                                     </div>
                                     <div id="provider-mistral-fields" class="provider-fields"
                                         style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
                                         <input type="text" id="provider-mistral-key" placeholder="Mistral API key"
                                             data-i18n="config.providersUi.placeholders.mistral"
                                             data-i18n-attr="placeholder" class="sensitive-input masked">
-                                        <select id="provider-mistral-model">
-                                            <option value="" data-i18n="config.providersUi.selectModel">Select model
-                                            </option>
-                                        </select>
+                                        <div class="provider-model-row">
+                                            <select id="provider-mistral-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model
+                                                </option>
+                                            </select>
+                                            <button type="button" class="validate-api-btn" data-provider="mistral"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
+                                                data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text"
+                                                    data-i18n="config.providersUi.loadModels">Load
+                                                    Models</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -914,23 +973,26 @@
                                             <input type="checkbox" id="provider-cfworkers-enabled"> Cloudflare Workers
                                             AI
                                         </label>
-                                        <button type="button" class="validate-api-btn" data-provider="cfworkers"
-                                            title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
-                                            data-i18n-attr="title">
-                                            <span class="validate-icon">&#8635;</span>
-                                            <span class="validate-text" data-i18n="config.providersUi.loadModels">Load
-                                                Models</span>
-                                        </button>
                                     </div>
                                     <div id="provider-cfworkers-fields" class="provider-fields"
                                         style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
                                         <input type="text" id="provider-cfworkers-key" placeholder="ACCOUNT_ID|TOKEN"
                                             data-i18n="config.providersUi.placeholders.cfworkers"
                                             data-i18n-attr="placeholder" class="sensitive-input">
-                                        <select id="provider-cfworkers-model">
-                                            <option value="" data-i18n="config.providersUi.selectModel">Select model
-                                            </option>
-                                        </select>
+                                        <div class="provider-model-row">
+                                            <select id="provider-cfworkers-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model
+                                                </option>
+                                            </select>
+                                            <button type="button" class="validate-api-btn" data-provider="cfworkers"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
+                                                data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text"
+                                                    data-i18n="config.providersUi.loadModels">Load
+                                                    Models</span>
+                                            </button>
+                                        </div>
                                         <span class="label-description" data-i18n="config.providersUi.cfworkersHint">Use
                                             ACCOUNT|TOKEN to set account ID explicitly.</span>
                                     </div>
@@ -943,23 +1005,26 @@
                                             style="font-weight:600; margin:0; display:flex; align-items:center; gap:0.35rem;">
                                             <input type="checkbox" id="provider-openrouter-enabled"> OpenRouter
                                         </label>
-                                        <button type="button" class="validate-api-btn" data-provider="openrouter"
-                                            title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
-                                            data-i18n-attr="title">
-                                            <span class="validate-icon">&#8635;</span>
-                                            <span class="validate-text" data-i18n="config.providersUi.loadModels">Load
-                                                Models</span>
-                                        </button>
                                     </div>
                                     <div id="provider-openrouter-fields" class="provider-fields"
                                         style="display:none; margin-top:0.5rem; display: grid; gap: 0.5rem;">
                                         <input type="text" id="provider-openrouter-key" placeholder="OpenRouter API key"
                                             data-i18n="config.providersUi.placeholders.openrouter"
                                             data-i18n-attr="placeholder" class="sensitive-input masked">
-                                        <select id="provider-openrouter-model">
-                                            <option value="" data-i18n="config.providersUi.selectModel">Select model
-                                            </option>
-                                        </select>
+                                        <div class="provider-model-row">
+                                            <select id="provider-openrouter-model">
+                                                <option value="" data-i18n="config.providersUi.selectModel">Select model
+                                                </option>
+                                            </select>
+                                            <button type="button" class="validate-api-btn" data-provider="openrouter"
+                                                title="Fetch models" data-i18n="config.providersUi.loadModelsTitle"
+                                                data-i18n-attr="title">
+                                                <span class="validate-icon">&#8635;</span>
+                                                <span class="validate-text"
+                                                    data-i18n="config.providersUi.loadModels">Load
+                                                    Models</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1268,10 +1333,13 @@
                             </div>
 
                             <div class="extended-languages-toggle" style="margin: 0.5rem 0;">
-                                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; user-select: none;">
+                                <label
+                                    style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; user-select: none;">
                                     <input type="checkbox" id="extendedLanguagesToggle">
                                     <span data-i18n="config.languageCards.extendedToggle">Extended languages list</span>
-                                    <span class="label-description" style="margin-left: 0;" data-i18n="config.languageCards.extendedHint">Adds ~100 rare, ancient, and regional languages (AI translation only)</span>
+                                    <span class="label-description force-normal-whitespace" style="margin-left: 0;"
+                                        data-i18n="config.languageCards.extendedHint">Adds ~100 rare, ancient, and
+                                        regional languages (AI translation only)</span>
                                 </label>
                             </div>
 
@@ -1349,10 +1417,13 @@
                             </div>
 
                             <div class="extended-languages-toggle" style="margin: 0.5rem 0;">
-                                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; user-select: none;">
+                                <label
+                                    style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; user-select: none;">
                                     <input type="checkbox" id="extendedLanguagesToggleLearn">
                                     <span data-i18n="config.languageCards.extendedToggle">Extended languages list</span>
-                                    <span class="label-description" style="margin-left: 0;" data-i18n="config.languageCards.extendedHint">Adds ~100 rare, ancient, and regional languages (AI translation only)</span>
+                                    <span class="label-description force-normal-whitespace" style="margin-left: 0;"
+                                        data-i18n="config.languageCards.extendedHint">Adds ~100 rare, ancient, and
+                                        regional languages (AI translation only)</span>
                                 </label>
                             </div>
 
@@ -1443,7 +1514,7 @@
                         <button type="button" class="collapse-btn collapsed" data-collapse="translation"></button>
                     </div>
                     <div class="card-content">
-                        <div class="form-group" id="mainProviderGroup" style="margin-bottom: 1rem;">
+                        <div class="form-group" id="mainProviderGroup" style="margin-bottom: 0.5rem;">
                             <label for="mainProviderSelect">
                                 <span data-i18n="config.providersUi.main.label">Main Provider</span>
                                 <span class="label-description" data-i18n="config.providersUi.main.description">Choose
@@ -1598,6 +1669,16 @@
                             data-i18n="config.otherSettings.enableSeasonPacks.description">Include season pack subtitles
                             (containing multiple episodes) in results. Disable to only show episode-specific
                             subtitles.</span>
+                    </label>
+                </div>
+
+                <div class="form-group" id="forceSRTOutputNoTranslationGroup" style="display: none;">
+                    <label>
+                        <input type="checkbox" id="forceSRTOutputNoTranslation">
+                        <span data-i18n="config.otherSettings.forceSRTOutput.label">Force SRT output</span>
+                        <span class="label-description"
+                            data-i18n="config.otherSettings.forceSRTOutput.description">Convert all subtitle
+                            outputs to SRT format for maximum player compatibility.</span>
                     </label>
                 </div>
 
@@ -2085,9 +2166,9 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-openai-reasoning"
                                     data-i18n="config.providerAdvanced.labels.reasoning">Reasoning effort</label>
-                                <select id="provider-openai-reasoning">
+                                <select id="provider-openai-reasoning" class="styled-select">
                                     <option value="" data-i18n="config.providerAdvanced.reasoningDefaults.none">None
-                                        (default - for non-reasoning models)</option>
+                                        (default)</option>
                                     <option value="low" data-i18n="config.providerAdvanced.reasoningDefaults.low">Low
                                         (faster)</option>
                                     <option value="medium" selected
@@ -2270,7 +2351,7 @@
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">
                                 <label for="provider-deepl-formality"
                                     data-i18n="config.providerAdvanced.labels.formality">Formality</label>
-                                <select id="provider-deepl-formality">
+                                <select id="provider-deepl-formality" class="styled-select">
                                     <option value="default" data-i18n="config.providerAdvanced.formality.default">
                                         Default</option>
                                     <option value="more" data-i18n="config.providerAdvanced.formality.more">More formal

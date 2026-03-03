@@ -1709,6 +1709,14 @@ app.use(helmet({
 // The readiness middleware gates all real requests until storage is ready,
 // so actual rate-limit checks will always have a live Redis client.
 function createRateLimitRedisStore(prefix) {
+    // When storage type is not Redis, skip Redis-backed rate limiting entirely
+    // and let express-rate-limit use its built-in in-memory store (returns undefined).
+    // This avoids 30s timeout errors and log spam when running without Redis (e.g. local dev).
+    const storageType = (process.env.STORAGE_TYPE || 'redis').toLowerCase();
+    if (storageType !== 'redis') {
+        return undefined;
+    }
+
     // Queue for commands issued before Redis is available (SCRIPT LOAD at construction time)
     const pendingQueue = [];
     let redisReady = false;
@@ -1763,8 +1771,8 @@ function createRateLimitRedisStore(prefix) {
 
     // Swallow constructor's SCRIPT LOAD rejections to avoid unhandledRejection noise
     // (scripts will be re-loaded on first real request via rate-limit-redis retry logic)
-    store.incrementScriptSha?.catch?.(() => {});
-    store.getScriptSha?.catch?.(() => {});
+    store.incrementScriptSha?.catch?.(() => { });
+    store.getScriptSha?.catch?.(() => { });
 
     return store;
 }
@@ -2594,6 +2602,50 @@ function formatUptime(seconds) {
 
     return parts.join(' ');
 }
+
+// ── Changelog API ───────────────────────────────────────────────────────
+// Parses CHANGELOG.md once at startup and caches the result.
+// Re-parses every 5 minutes to pick up hot-reload changes during dev.
+const CHANGELOG_MAX_ENTRIES = 15;
+let _changelogCache = null;
+let _changelogCacheTime = 0;
+const CHANGELOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function parseChangelog() {
+    try {
+        const changelogPath = path.join(__dirname, 'CHANGELOG.md');
+        const raw = fs.readFileSync(changelogPath, 'utf-8');
+        const entries = [];
+        // Split by version headers: ## SubMaker vX.Y.Z
+        const versionRegex = /^## SubMaker v([\d.]+)/gm;
+        let match;
+        const positions = [];
+        while ((match = versionRegex.exec(raw)) !== null) {
+            positions.push({ version: match[1], index: match.index, headerEnd: match.index + match[0].length });
+        }
+        for (let i = 0; i < Math.min(positions.length, CHANGELOG_MAX_ENTRIES); i++) {
+            const start = positions[i].headerEnd;
+            const end = i + 1 < positions.length ? positions[i + 1].index : raw.length;
+            const content = raw.slice(start, end).trim();
+            entries.push({ version: positions[i].version, content });
+        }
+        return { currentVersion: version, entries };
+    } catch (err) {
+        log.warn(() => `[Changelog] Failed to parse CHANGELOG.md: ${err.message}`);
+        return { currentVersion: version, entries: [] };
+    }
+}
+
+app.get('/api/changelog', (req, res) => {
+    const now = Date.now();
+    if (!_changelogCache || (now - _changelogCacheTime) > CHANGELOG_CACHE_TTL) {
+        _changelogCache = parseChangelog();
+        _changelogCacheTime = now;
+    }
+    // Allow long-term caching — changelog only changes on deploy
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json(_changelogCache);
+});
 
 // API endpoint to get all languages
 app.get('/api/languages', (req, res) => {

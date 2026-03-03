@@ -632,16 +632,31 @@ ${t('subtitle.credDecryptFailBody', { fields: fieldsList }, `Your ${fieldsList} 
 }
 
 /**
- * Create an error subtitle for OpenSubtitles daily quota exceeded (20 downloads/24h)
+ * Create an error subtitle for OpenSubtitles daily quota exceeded
  * Single cue from 0 to 4h with concise guidance
+ * @param {string} uiLanguage - UI language code
+ * @param {string} [apiMessage] - Optional raw API error message (e.g. "You have downloaded the allowed 200 subtitles in the last 24h")
  * @returns {string}
  */
-function createOpenSubtitlesQuotaExceededSubtitle(uiLanguage = 'en') {
+function createOpenSubtitlesQuotaExceededSubtitle(uiLanguage = 'en', apiMessage = null) {
   const t = getTranslator(uiLanguage);
+
+  // Try to extract the actual quota from the API message
+  // OpenSubtitles returns messages like "You have downloaded the allowed 200 subtitles in the last 24h"
+  let quotaBody;
+  if (apiMessage && typeof apiMessage === 'string' && apiMessage.trim().length > 10) {
+    // Use the real API message so VIP/Gold users see their actual limit (e.g., 200, 1000)
+    // Append guidance about V3 alternative
+    quotaBody = `${apiMessage}\n${t('subtitle.osQuotaV3Hint', {}, 'Wait until UTC midnight (00:00) or change to V3 on config page.')}`;
+  } else {
+    // Fallback: generic message when API message is not available
+    quotaBody = t('subtitle.osQuotaBody', {}, 'OpenSubtitles daily download limit reached.\nWait until UTC midnight (00:00) or change to V3 on config page.');
+  }
+
   return ensureInformationalSubtitleSize(`1
 00:00:00,000 --> 04:00:00,000
 ${t('subtitle.osQuotaTitle', {}, 'OpenSubtitles daily download limit reached')}
-${t('subtitle.osQuotaBody', {}, 'You have downloaded the allowed 20 subtitles in the last 24 hours.\nWait until UTC midnight (00:00) or change to V3 on config page.')}`, null, uiLanguage);
+${quotaBody}`, null, uiLanguage);
 }
 
 /**
@@ -3736,10 +3751,12 @@ ${t('subtitle.providerServerErrorBody', {}, 'The subtitle server is experiencing
     // Only applies to OpenSubtitles Auth (v1) path where fileId has no provider prefix
     if (!fileId.startsWith('subdl_') && !fileId.startsWith('subsource_') && !fileId.startsWith('v3_') && !fileId.startsWith('wyzie_') && !fileId.startsWith('scs_') && !fileId.startsWith('subsro_')) {
       const isOsQuota = (errorStatus === 406) ||
-        lowerMsg.includes('allowed 20 subtitles') ||
+        lowerMsg.includes('allowed') && lowerMsg.includes('subtitles') ||
         (lowerMsg.includes('quota') && lowerMsg.includes('renew'));
       if (isOsQuota) {
-        return createOpenSubtitlesQuotaExceededSubtitle(config.uiLanguage || 'en');
+        // Pass the actual API error message so VIP/Gold users see their real quota (e.g., 200, 1000)
+        // instead of hardcoded "20 subtitles"
+        return createOpenSubtitlesQuotaExceededSubtitle(config.uiLanguage || 'en', rawMsg || null);
       }
     }
 

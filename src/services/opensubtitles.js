@@ -441,11 +441,20 @@ class OpenSubtitlesService {
   /**
    * Check if token is expired (also checks Redis cache)
    * MULTI-INSTANCE: Async to support Redis lookup
+   * Uses 60s safety margin to prevent race conditions:
+   * Without this, a token with e.g. 500ms TTL could pass the check
+   * but expire before the actual API request fires (especially after
+   * acquireToken() wait), causing the auth interceptor to silently
+   * drop the Bearer header → API sees unauthenticated request → 20/day limit.
    * @returns {Promise<boolean>}
    */
   async isTokenExpired() {
-    // If we have a valid local token, use it
-    if (this.tokenExpiry && Date.now() < this.tokenExpiry) {
+    // Use 60s safety margin to prevent race between check and actual request
+    // This matches the constructor's existing margin (line 348)
+    const SAFETY_MARGIN_MS = 60000;
+
+    // If we have a valid local token (with safety margin), use it
+    if (this.tokenExpiry && Date.now() < this.tokenExpiry - SAFETY_MARGIN_MS) {
       return false;
     }
 
@@ -460,7 +469,8 @@ class OpenSubtitlesService {
         this.client.defaults.baseURL = cached.baseUrl;
         this.downloadClient.defaults.baseURL = cached.baseUrl;
       }
-      return Date.now() >= this.tokenExpiry;
+      // Also apply safety margin to Redis-fetched tokens
+      return Date.now() >= this.tokenExpiry - SAFETY_MARGIN_MS;
     }
 
     return true;
@@ -1216,6 +1226,15 @@ class OpenSubtitlesService {
       // Use the primary client so Api-Key is sent (required by OpenSubtitles for /download)
       await acquireToken(); // Rate-limit: wait for token before hitting OpenSubtitles API
 
+      // Diagnostic: Log auth state before download request
+      // This helps diagnose cases where the Bearer token is silently dropped
+      const tokenTTL = this.tokenExpiry ? Math.max(0, this.tokenExpiry - Date.now()) : 0;
+      const hasToken = !!(this.token && this.tokenExpiry && Date.now() < this.tokenExpiry);
+      log.debug(() => `[OpenSubtitles] Download auth state: token=${hasToken ? 'present' : 'MISSING'}, TTL=${Math.round(tokenTTL / 1000)}s, baseUrl=${this.baseUrl ? 'VIP' : 'standard'}`);
+      if (!hasToken && this.config.username) {
+        log.warn(() => '[OpenSubtitles] WARNING: About to POST /download WITHOUT Bearer token despite having credentials configured! Token may have expired during request preparation.');
+      }
+
       let downloadResponse;
       try {
         downloadResponse = await this.client.post('/download', {
@@ -1245,6 +1264,44 @@ class OpenSubtitlesService {
           downloadResponse = await this.client.post('/download', {
             file_id: parseInt(baseFileId)
           });
+        }
+        // RETRY LOGIC: Handle 406 quota exceeded when user HAS credentials
+        // This catches the race condition where the token expired just before the request,
+        // causing the API to see an unauthenticated request and apply the free-tier 20/day limit.
+        // If the user has credentials configured, a 406 likely means the token was silently dropped.
+        else if (status === 406 && this.config.username && this.config.password) {
+          const quotaMsg = String(downloadErr?.response?.data?.message || '');
+          log.warn(() => `[OpenSubtitles] Got 406 quota error despite having credentials. API message: "${quotaMsg}". Forcing re-login and retry...`);
+
+          // 1. Clear potentially stale/expired token
+          await clearCachedToken(this.credentialsCacheKey);
+          this.token = null;
+          this.tokenExpiry = null;
+          this.baseUrl = null;
+
+          // 2. Re-acquire rate limit token
+          await acquireToken();
+
+          // 3. Force fresh login
+          const freshToken = await this.login(timeout);
+          if (freshToken) {
+            log.info(() => '[OpenSubtitles] Re-login successful after 406, retrying download with fresh token...');
+
+            // 4. Retry download with fresh token
+            try {
+              downloadResponse = await this.client.post('/download', {
+                file_id: parseInt(baseFileId)
+              });
+            } catch (retryErr) {
+              // If retry also fails with 406, this is a genuine quota limit — don't loop
+              log.warn(() => `[OpenSubtitles] Retry after 406 re-login also failed: ${retryErr?.response?.status || retryErr.message}`);
+              throw retryErr;
+            }
+          } else {
+            // Re-login failed — throw original error
+            log.warn(() => '[OpenSubtitles] Re-login after 406 failed, propagating original quota error');
+            throw downloadErr;
+          }
         } else {
           throw downloadErr;
         }
@@ -1255,6 +1312,15 @@ class OpenSubtitlesService {
       }
 
       const downloadLink = downloadResponse.data.link;
+
+      // Log remaining downloads from API response for diagnostics
+      // The /download response includes: remaining, requests, message, reset_time, reset_time_utc
+      const remaining = downloadResponse.data.remaining;
+      const requests = downloadResponse.data.requests;
+      if (remaining !== undefined) {
+        log.info(() => `[OpenSubtitles] Download quota: ${remaining} remaining${requests !== undefined ? ` (${requests} used)` : ''}`);
+      }
+
       log.debug(() => ['[OpenSubtitles] Got download link:', downloadLink]);
 
       // Download the subtitle file as raw bytes to handle BOM/ZIP cases efficiently

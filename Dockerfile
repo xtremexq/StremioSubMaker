@@ -20,10 +20,17 @@ RUN mkdir -p .cache/translations \
     logs \
     keys
 
-# Set permissions (ensure node user owns all directories including keys)
-RUN chown -R node:node /app
+# Set permissions: node owns everything, data dirs are world-writable (777)
+# so containers running with arbitrary UIDs (user: PUID:PGID) can write to them.
+# For bind mounts, host-side permissions still apply — the entrypoint checks those.
+RUN chown -R node:node /app && \
+    chmod 777 .cache data logs keys
 
-# Use non-root user
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Use non-root user (override with `user:` in docker-compose for custom UID)
 USER node
 
 # Expose port (default 7001)
@@ -33,5 +40,6 @@ EXPOSE 7001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:7001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-# Start the application
+# Entrypoint validates directories/permissions before starting the app
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["npm", "start"]

@@ -1,4 +1,9 @@
 # Local development setup without Redis (uses filesystem storage)
+#
+# If using `user: PUID:PGID` to run as a custom UID, ensure the host
+# bind-mount directories are owned by that user:
+#   chown -R <PUID>:<PGID> ./data ./.cache ./logs ./keys
+#
 services:
   submaker:
     # Use pre-built image from Docker Hub (recommended)
@@ -21,6 +26,9 @@ services:
 
     volumes:
       # Persist cache and data directories
+      # NOTE: These bind-mount directories must be writable by the user running
+      # the container. If using `user: PUID:PGID`, run:
+      #   chown -R <PUID>:<PGID> ./data ./.cache ./logs ./keys
       - ./data:/app/data
       - ./.cache:/app/.cache
       - ./logs:/app/logs
