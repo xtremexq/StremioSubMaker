@@ -2737,6 +2737,10 @@ function createSubtitleHandler(config) {
         'nno': ['nor', 'nob'],
         'tgl': ['fil'],  // Tagalog ↔ Filipino (mutually intelligible, same written standard)
         'fil': ['tgl'],
+        'prs': ['per'],  // Dari ↔ Persian (Dari is a variety of Persian; providers index under 'per')
+        'per': ['prs'],
+        'ckb': ['kur'],  // Kurdish Sorani ↔ Kurdish (Sorani is a variety of Kurdish; providers index under 'kur')
+        'kur': ['ckb'],
       };
 
       // Expand normalizedAllLangs to include equivalents

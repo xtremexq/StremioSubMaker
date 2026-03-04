@@ -574,11 +574,11 @@ function normalizeLanguageCode(lang) {
     if (base === 'zh') {
       const fullTag = parts.join('-');
       if (subtag1 === 'cn' || subtag1 === 'sg' || subtag1 === 'hans' ||
-          fullTag.includes('hans')) {
+        fullTag.includes('hans')) {
         return 'zhs';
       }
       if (subtag1 === 'tw' || subtag1 === 'hk' || subtag1 === 'hant' ||
-          fullTag.includes('hant')) {
+        fullTag.includes('hant')) {
         return 'zht';
       }
     }
@@ -591,6 +591,15 @@ function normalizeLanguageCode(lang) {
     // Special case: es-419 → spn (Latin American Spanish)
     // UN M.49 numeric region code for Latin America
     if (base === 'es' && subtag1 === '419') {
+      return 'spn';
+    }
+
+    // Special case: LatAm country codes → spn (Latin American Spanish)
+    // These are BCP-47 codes for countries in Latin America
+    // They should fetch LatAm-tagged subtitles from providers that distinguish
+    // (SubSource: spanish_latin_america, Wyzie: ea, OpenSubs V3: spn)
+    const latamCountries = new Set(['ar', 'bo', 'cl', 'co', 'cr', 'cu', 'do', 'ec', 'sv', 'gt', 'hn', 'mx', 'ni', 'pa', 'py', 'pe', 'pr', 'uy', 've']);
+    if (base === 'es' && latamCountries.has(subtag1)) {
       return 'spn';
     }
 

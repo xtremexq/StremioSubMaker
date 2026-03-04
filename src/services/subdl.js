@@ -90,7 +90,12 @@ class SubDLService {
         'mac': 'MK', 'mkd': 'MK', 'alb': 'SQ', 'sqi': 'SQ', 'bel': 'BE',
         'aze': 'AZ', 'geo': 'KA', 'kat': 'KA', 'mal': 'ML', 'tam': 'TA',
         'tel': 'TE', 'urd': 'UR', 'may': 'MS', 'msa': 'MS', 'tgl': 'TL', 'fil': 'TL',
-        'ice': 'IS', 'isl': 'IS', 'kur': 'KU'
+        'ice': 'IS', 'isl': 'IS', 'kur': 'KU', 'ckb': 'KU',
+        'prs': 'FA',
+        // Norwegian variants → generic Norwegian (SubDL only supports 'NO')
+        'nob': 'NO', 'nno': 'NO',
+        // Chinese variants → generic Chinese (SubDL only supports 'ZH')
+        'zhs': 'ZH', 'zht': 'ZH'
       };
 
       const convertedLanguages = [...new Set(languages.map(lang => {
@@ -499,11 +504,49 @@ class SubDLService {
       'lithuanian': 'lit',
       'farsi': 'per',
       'persian': 'per',
+      'farsi_persian': 'per',
+      'farsi/persian': 'per',
       'bengali': 'ben',
       'catalan': 'cat',
       'basque': 'baq',
       'galician': 'glg',
-      'albanian': 'alb'
+      'albanian': 'alb',
+      'azerbaijani': 'aze',
+      'belarusian': 'bel',
+      'bosnian': 'bos',
+      'burmese': 'bur',
+      'esperanto': 'epo',
+      'georgian': 'geo',
+      'greenlandic': 'kal',
+      'icelandic': 'ice',
+      'kurdish': 'kur',
+      'macedonian': 'mac',
+      'malayalam': 'mal',
+      'manipuri': 'mni',
+      'sinhala': 'sin',
+      'sinhalese': 'sin',
+      'tagalog': 'tgl',
+      'filipino': 'tgl',
+      'tamil': 'tam',
+      'telugu': 'tel',
+      'urdu': 'urd',
+      'ukranian': 'ukr',  // SubDL typo variant of 'ukrainian'
+      'mongolian': 'mon',
+      'afrikaans': 'afr',
+      'swahili': 'swa',
+      'welsh': 'wel',
+      'nepali': 'nep',
+      'khmer': 'khm',
+      'lao': 'lao',
+      'punjabi': 'pan',
+      'montenegrin': 'mne',
+      'luxembourgish': 'ltz',
+      'occitan': 'oci',
+      'kazakh': 'kaz',
+      'uzbek': 'uzb',
+      'turkmen': 'tuk',
+      'syriac': 'syr',
+      'breton': 'bre'
     };
 
     // Check if it's a language name

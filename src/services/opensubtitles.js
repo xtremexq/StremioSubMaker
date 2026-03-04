@@ -889,6 +889,9 @@ class OpenSubtitlesService {
       const imdbId = imdb_id.replace('tt', '');
 
       // Convert ISO-639-2 (3-letter) codes to ISO-639-1 (2-letter) codes for OpenSubtitles API
+      // IMPORTANT: OpenSubtitles API is strict about which codes it accepts.
+      // The /infos/languages endpoint returns the canonical list (74 codes).
+      // Codes NOT in that list (e.g., 'pt', 'zh', 'ea', 'nb', 'nn') silently return 0 results.
       const convertedLanguages = languages.map(lang => {
         const lower = lang.toLowerCase().trim();
 
@@ -897,10 +900,46 @@ class OpenSubtitlesService {
           return 'pt-br';
         }
 
+        // Handle European Portuguese: OS Auth requires 'pt-pt', NOT bare 'pt'
+        // (bare 'pt' returns 0 results — confirmed via live API test)
+        if (lower === 'por') {
+          return 'pt-pt';
+        }
+
+        // Handle Latin American Spanish: OS Auth does NOT support 'ea' (returns 0 results).
+        // Fall back to 'es' (Castilian) — closest available match.
+        if (lower === 'spn') {
+          return 'es';
+        }
+
+        // Handle generic Chinese: OS Auth does NOT support bare 'zh' (returns 0 results).
+        // Map to 'zh-cn' (Simplified) as the closest default.
+        if (lower === 'chi' || lower === 'zho') {
+          return 'zh-cn';
+        }
+
+        // Handle Norwegian variants: OS Auth does NOT support 'nb' or 'nn' (return 0 results).
+        // Map both to 'no' (generic Norwegian) which returns results.
+        if (lower === 'nob' || lower === 'nno') {
+          return 'no';
+        }
+
         // Handle Filipino/Tagalog: fil has a 3-letter ISO 639-1 code (non-standard),
         // map both fil and tgl to 'tl' (Tagalog 2-letter code accepted by OpenSubtitles)
         if (lower === 'fil' || lower === 'tgl') {
           return 'tl';
+        }
+
+        // Handle Dari (prs): OS Auth doesn't have a separate Dari code.
+        // Map to 'fa' (Persian/Farsi) — same script and subtitle content.
+        if (lower === 'prs') {
+          return 'fa';
+        }
+
+        // Handle Kurdish Sorani (ckb): OS Auth doesn't have a separate Sorani code.
+        // Map to 'ku' (generic Kurdish).
+        if (lower === 'ckb') {
+          return 'ku';
         }
 
         // If already 2 letters, return as-is

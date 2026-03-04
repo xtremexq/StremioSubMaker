@@ -1188,6 +1188,7 @@ class SubSourceService {
       'serbian (cyrillic)': 'srp',
       'ukrainian': 'ukr',
       'farsi_persian': 'per',
+      'farsi/persian': 'per',
       'farsi': 'per',
       'persian': 'per',
       'malay': 'may',
@@ -1216,12 +1217,67 @@ class SubSourceService {
       'punjabi': 'pan',
       'nepali': 'nep',
       'sinhala': 'sin',
+      'sinhalese': 'sin',
       'khmer': 'khm',
       'lao': 'lao',
       'burmese': 'bur',
       'mongolian': 'mon',
       'afrikaans': 'afr',
-      'kurdish': 'kur'
+      'kurdish': 'kur',
+      // SubSource-specific names (from their API language list)
+      'brazillian portuguese': 'pob',  // SubSource uses double-l typo
+      'abkhazian': 'abk',
+      'amharic': 'amh',
+      'aragonese': 'arg',
+      'armenian': 'arm',
+      'assamese': 'asm',
+      'asturian': 'ast',
+      'azerbaijani': 'aze',
+      'belarusian': 'bel',
+      'big 5 code': 'zht',  // Big5 = Traditional Chinese encoding
+      'breton': 'bre',
+      'chinese (cantonese)': 'yue',
+      'chinese bg code': 'chi',  // BG code = Chinese encoding variant
+      'chinese bilingual': 'ze',
+      'dari': 'prs',
+      'espranto': 'epo',  // SubSource typo for Esperanto
+      'esperanto': 'epo',
+      'extremaduran': 'ext',
+      'french (canada)': 'fre',  // No distinct ISO code; map to generic French
+      'french (france)': 'fre',
+      'gaelic': 'gla',  // Scottish Gaelic
+      'gaelician': 'glg',  // SubSource typo for Galician
+      'greenlandic': 'kal',
+      'igbo': 'ibo',
+      'interlingua': 'ina',
+      'irish': 'gle',
+      'kannada': 'kan',
+      'kazakh': 'kaz',
+      'kyrgyz': 'kir',
+      'luxembourgish': 'ltz',
+      'manipuri': 'mni',
+      'marathi': 'mar',
+      'montenegrin': 'mne',
+      'navajo': 'nav',
+      'northen sami': 'sme',  // SubSource typo for Northern Sami
+      'northern sami': 'sme',
+      'occitan': 'oci',
+      'odia': 'ori',
+      'pashto': 'pus',
+      'pushto': 'pus',
+      'santli': 'sat',  // SubSource typo for Santali
+      'santali': 'sat',
+      'sindhi': 'snd',
+      'somali': 'som',
+      'sorbian': 'hsb',
+      'spanish (spain)': 'spa',
+      'sylheti': 'syl',
+      'syriac': 'syr',
+      'tatar': 'tat',
+      'tetum': 'tet',
+      'toki pona': 'tok',
+      'turkmen': 'tuk',
+      'uzbek': 'uzb'
     };
 
     // Check if it's a full language name from SubSource
