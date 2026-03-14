@@ -45,7 +45,7 @@ const os = require('os');
 const { pipeline } = require('stream/promises');
 
 const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits, getDefaultProviderParameters, mergeProviderParameters, selectGeminiApiKey } = require('./src/utils/config');
-const { parseSRT, toSRT, sanitizeSubtitleText, srtPairToWebVTT, ensureSRTForTranslation } = require('./src/utils/subtitle');
+const { parseSRT, toSRT, sanitizeSubtitleText, srtPairToWebVTT, ensureSRTForTranslation, detectASSFormat } = require('./src/utils/subtitle');
 const { version } = require('./src/utils/version');
 const { redactToken } = require('./src/utils/security');
 const { getAllLanguages, getAllTranslationLanguages, getLanguageName, toISO6392, findISO6391ByName, canonicalSyncLanguageCode } = require('./src/utils/languages');
@@ -1593,9 +1593,9 @@ function checkCacheResetRateLimit(config, { consume = true } = {}) {
  * @param {string} sourceFileId - The subtitle file ID
  * @param {object} config - The user's config object
  * @param {string} targetLang - The target language
- * @returns {boolean} - True if the 3-click cache reset should be BLOCKED
+ * @returns {Promise<boolean>} - True if the 3-click cache reset should be BLOCKED
  */
-function shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang) {
+async function shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang) {
     try {
         const clickEntry = firstClickTracker.get(clickKey);
 
@@ -1609,7 +1609,7 @@ function shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang) {
 
         // SAFETY CHECK 1: Check if the user is at their concurrency limit
         // If they are, don't allow the 3-click reset because re-translation would fail with rate limit error
-        if (!canUserStartTranslation(configHash, config)) {
+        if (!(await canUserStartTranslation(configHash, config))) {
             log.warn(() => `[SafetyBlock] BLOCKING 3-click reset: User at concurrency limit, re-translation would fail (user: ${configHash || 'anonymous'})`);
             return true;
         }
@@ -4089,7 +4089,18 @@ app.get('/api/retranslate', searchLimiter, async (req, res) => {
     try {
         setNoStore(res);
         let t = res.locals?.t || getTranslatorFromRequest(req, res);
-        const { config: configStr, sourceFileId, targetLanguage } = req.query;
+        const {
+            config: configStr,
+            sourceFileId,
+            targetLanguage,
+            title,
+            filename,
+            videoId,
+            sourceLanguage,
+            videoHash,
+            season,
+            episode
+        } = req.query;
 
         if (!configStr) {
             return res.status(400).json({ success: false, error: t('server.errors.missingConfig', {}, 'Missing config') });
@@ -4107,11 +4118,43 @@ app.get('/api/retranslate', searchLimiter, async (req, res) => {
             return res.status(401).json({ success: false, error: t('server.errors.invalidSessionToken', {}, 'Invalid or expired session token') });
         }
         t = getTranslatorFromRequest(req, res, config);
-        const configKey = ensureConfigHash(config, configStr);
+        ensureConfigHash(config, configStr);
         const userHash = config.__configHash || config.userHash || '';
+        const cleanText = (value, max = 200) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
+        const parseOptionalInt = (value) => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+        const matchProviderKey = (providerName) => {
+            if (!providerName || !config?.providers || typeof config.providers !== 'object') return '';
+            const target = String(providerName).toLowerCase();
+            return Object.keys(config.providers).find(key => String(key).toLowerCase() === target) || '';
+        };
+
+        const normalizedTitle = cleanText(title, 200);
+        const normalizedFilename = cleanText(filename, 200);
+        const normalizedVideoId = cleanText(videoId, 200);
+        const normalizedSourceLanguage = cleanText(sourceLanguage, 24).toLowerCase();
+        const normalizedVideoHash = cleanText(videoHash, 128);
+        const normalizedSourceFileId = cleanText(sourceFileId, 240);
+        const normalizedTargetLanguage = cleanText(targetLanguage, 24).toLowerCase();
+        const seasonNumber = parseOptionalInt(season);
+        const episodeNumber = parseOptionalInt(episode);
+        const initialProvider = (config.multiProviderEnabled === true ? String(config.mainProvider || '').trim() : 'gemini') || 'gemini';
+        const matchedProviderKey = matchProviderKey(initialProvider);
+        const initialModel = String(initialProvider).toLowerCase() === 'gemini'
+            ? (config.geminiModel || 'default')
+            : (matchedProviderKey ? (config.providers?.[matchedProviderKey]?.model || 'default') : 'default');
+
+        if (!normalizedSourceFileId) {
+            return res.status(400).json({ success: false, error: t('server.errors.missingSourceFileId', {}, 'Missing sourceFileId') });
+        }
+        if (!normalizedTargetLanguage) {
+            return res.status(400).json({ success: false, error: t('server.errors.missingTargetLanguage', {}, 'Missing targetLanguage') });
+        }
 
         // SAFETY CHECK 1: Block if user is at concurrency limit
-        if (!canUserStartTranslation(userHash)) {
+        if (!(await canUserStartTranslation(userHash, config))) {
             log.warn(() => `[Retranslate API] BLOCKED: User at concurrency limit (user: ${userHash || 'anonymous'})`);
             return res.status(429).json({
                 success: false,
@@ -4120,7 +4163,7 @@ app.get('/api/retranslate', searchLimiter, async (req, res) => {
         }
 
         // SAFETY CHECK 2: Block if translation is currently in progress for this subtitle
-        const { cacheKey, runtimeKey, bypass, bypassEnabled } = generateCacheKeys(config, sourceFileId, targetLanguage);
+        const { cacheKey, runtimeKey, bypass, bypassEnabled } = generateCacheKeys(config, normalizedSourceFileId, normalizedTargetLanguage);
         const translationInProgress = (() => {
             if (bypassEnabled && userHash) {
                 const status = translationStatus.get(cacheKey);
@@ -4135,7 +4178,7 @@ app.get('/api/retranslate', searchLimiter, async (req, res) => {
         })();
 
         if (translationInProgress) {
-            log.warn(() => `[Retranslate API] BLOCKED: Translation already in progress for ${sourceFileId}/${targetLanguage} (user: ${userHash})`);
+            log.warn(() => `[Retranslate API] BLOCKED: Translation already in progress for ${normalizedSourceFileId}/${normalizedTargetLanguage} (user: ${userHash})`);
             return res.status(409).json({
                 success: false,
                 error: t('server.errors.retranslateInProgress', {}, 'Cannot retranslate: translation is already in progress for this subtitle. Please wait for it to complete.')
@@ -4156,12 +4199,13 @@ app.get('/api/retranslate', searchLimiter, async (req, res) => {
         }
 
         // Check if there's actually something to purge
-        const hadCache = await hasCachedTranslation(sourceFileId, targetLanguage, config);
+        const hadCache = await hasCachedTranslation(normalizedSourceFileId, normalizedTargetLanguage, config);
         const partial = (!hadCache) ? await readFromPartialCache(runtimeKey) : null;
         const hasResetTarget = hadCache || (partial && typeof partial.content === 'string' && partial.content.length > 0);
+        let remainingResets = rateLimitStatus.remaining;
 
         if (!hasResetTarget) {
-            log.debug(() => `[Retranslate API] No cache found for ${sourceFileId}/${targetLanguage} - proceeding without purge`);
+            log.debug(() => `[Retranslate API] No cache found for ${normalizedSourceFileId}/${normalizedTargetLanguage} - proceeding without purge`);
         } else {
             // Consume rate limit slot and purge cache
             const consumeStatus = checkCacheResetRateLimit(config);
@@ -4176,20 +4220,69 @@ app.get('/api/retranslate', searchLimiter, async (req, res) => {
                 });
             }
 
-            log.debug(() => `[Retranslate API] Purging cache for ${sourceFileId}/${targetLanguage}. Remaining resets this window: ${consumeStatus.remaining}`);
-            await purgeTranslationCache(sourceFileId, targetLanguage, config);
+            remainingResets = consumeStatus.remaining;
+            log.debug(() => `[Retranslate API] Purging cache for ${normalizedSourceFileId}/${normalizedTargetLanguage}. Remaining resets this window: ${consumeStatus.remaining}`);
+            const purged = await purgeTranslationCache(normalizedSourceFileId, normalizedTargetLanguage, config);
+            if (!purged) {
+                throw new Error('Failed to clear cached translation');
+            }
         }
 
-        // Build the translation URL that the client should redirect to
-        const translateUrl = `/addon/${encodeURIComponent(configStr)}/translate/${encodeURIComponent(sourceFileId)}/${encodeURIComponent(targetLanguage)}`;
+        const historyRequestId = crypto.randomUUID();
+        const historyUserHash = resolveHistoryUserHash(config, userHash);
+        const historyTitle = normalizedTitle || normalizedFilename || normalizedSourceFileId;
+        const historyFilename = normalizedFilename || historyTitle || normalizedSourceFileId;
+        const historyVideoId = normalizedVideoId || 'unknown';
+        const historySourceLanguage = normalizedSourceLanguage
+            || (Array.isArray(config.sourceLanguages) && config.sourceLanguages[0])
+            || 'auto';
+        const historySeed = {
+            id: historyRequestId,
+            status: 'processing',
+            scope: 'history',
+            title: historyTitle,
+            filename: historyFilename,
+            videoId: historyVideoId,
+            videoHash: normalizedVideoHash || deriveVideoHash(historyFilename, historyVideoId || normalizedSourceFileId || ''),
+            sourceFileId: normalizedSourceFileId,
+            sourceLanguage: historySourceLanguage,
+            targetLanguage: normalizedTargetLanguage,
+            createdAt: Date.now(),
+            provider: initialProvider,
+            model: initialModel
+        };
+        if (seasonNumber !== null) historySeed.season = seasonNumber;
+        if (episodeNumber !== null) historySeed.episode = episodeNumber;
 
-        log.info(() => `[Retranslate API] Cache purged for ${sourceFileId}/${targetLanguage}, remaining resets: ${rateLimitStatus.remaining - 1}`);
+        if (historyUserHash) {
+            await saveRequestToHistory(historyUserHash, historySeed);
+        }
+
+        const translateUrl = `/addon/${encodeURIComponent(configStr)}/translate/${encodeURIComponent(normalizedSourceFileId)}/${encodeURIComponent(normalizedTargetLanguage)}`;
+        void handleTranslation(normalizedSourceFileId, normalizedTargetLanguage, config, {
+            waitForFullTranslation: false,
+            sourceFileId: normalizedSourceFileId,
+            targetLanguage: normalizedTargetLanguage,
+            filename: historyFilename,
+            videoId: normalizedVideoId,
+            sourceLanguage: historySourceLanguage,
+            from: 'history',
+            season: seasonNumber,
+            episode: episodeNumber,
+            historyRequestId,
+            historySeed
+        }).catch(error => {
+            log.warn(() => `[Retranslate API] Background retranslation failed for ${normalizedSourceFileId}/${normalizedTargetLanguage}: ${error.message}`);
+        });
+
+        log.info(() => `[Retranslate API] Fresh translation started for ${normalizedSourceFileId}/${normalizedTargetLanguage}, remaining resets: ${remainingResets}`);
 
         return res.json({
             success: true,
-            message: t('server.retranslate.success', {}, 'Cache cleared. Translation will restart on next load.'),
+            message: t('server.retranslate.success', {}, 'Fresh translation started.'),
             translateUrl,
-            remaining: Math.max(0, rateLimitStatus.remaining - 1)
+            historyEntryId: historyRequestId,
+            remaining: Math.max(0, remainingResets)
         });
 
     } catch (error) {
@@ -4378,8 +4471,9 @@ async function resolveConfigAsync(configStr, req) {
 function detectSubtitlePayloadFormat(content) {
     const trimmed = (content || '').trimStart();
     const isVtt = trimmed.startsWith('WEBVTT');
-    const isAss = trimmed.includes('[Script Info]') && (trimmed.includes('[V4+ Styles]') || trimmed.includes('[V4 Styles]'));
-    const isSsa = trimmed.includes('[Script Info]') && trimmed.includes('[V4 Styles]') && !trimmed.includes('[V4+ Styles]');
+    const detectedAss = detectASSFormat(trimmed);
+    const isAss = detectedAss.isASS && detectedAss.format !== 'ssa';
+    const isSsa = detectedAss.isASS && detectedAss.format === 'ssa';
     const ext = isVtt ? 'vtt' : (isSsa ? 'ssa' : (isAss ? 'ass' : 'srt'));
     return { isVtt, isAss, isSsa, ext };
 }
@@ -4787,7 +4881,7 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
 
             if (entry.times.length >= 3) {
                 // SAFETY CHECK: Block cache reset if translation is in progress
-                const shouldBlock = shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang);
+                const shouldBlock = await shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang);
 
                 if (shouldBlock) {
                     log.debug(() => `[PurgeTrigger] 3 rapid loads detected but BLOCKED: Translation in progress for ${sourceFileId}/${targetLang} (user: ${config.__configHash})`);
@@ -5068,7 +5162,7 @@ app.get('/addon/:config/learn/:sourceFileId/:targetLang', normalizeSubtitleForma
 
             if (entry.times.length >= 3) {
                 // SAFETY CHECK: Block cache reset if translation is in progress
-                const shouldBlock = shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang);
+                const shouldBlock = await shouldBlockCacheReset(clickKey, sourceFileId, config, targetLang);
 
                 if (shouldBlock) {
                     log.debug(() => `[LearnPurgeTrigger] 3 rapid loads detected but BLOCKED: Translation in progress for ${sourceFileId}/${targetLang} (user: ${config.__configHash})`);
@@ -7197,11 +7291,28 @@ function generateTranslationSelectorPage(subtitles, videoId, targetLang, configS
 
     return `
 <!DOCTYPE html>
-<html lang="${escapeHtml(selectedLang)}">
+<html lang="${escapeHtml(selectedLang)}" data-third-theme="true-dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(tx('server.selector.title', { target: targetLangName }, `Select Subtitle to Translate`))}</title>
+    <script>
+        (function() {
+            var html = document.documentElement;
+            var thirdTheme = html.getAttribute('data-third-theme') === 'true-dark' ? 'true-dark' : 'blackhole';
+            var theme = 'dark';
+            var saved = null;
+            try { saved = localStorage.getItem('theme'); } catch (_) {}
+            if (saved === 'blackhole' || saved === 'true-dark') {
+                theme = thirdTheme;
+            } else if (saved === 'light' || saved === 'dark') {
+                theme = saved;
+            } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                theme = 'light';
+            }
+            html.setAttribute('data-theme', theme);
+        })();
+    </script>
     <style>
         * {
             margin: 0;
@@ -7610,6 +7721,7 @@ function generateTranslationSelectorPage(subtitles, videoId, targetLang, configS
             calc(100% - 12px) calc(100% - 12px) 0 #2b2044;
         }
     </style>
+    <script src="/js/theme-toggle.js" defer></script>
 </head>
 <body>
     <!-- Theme Toggle Button -->
@@ -7689,85 +7801,6 @@ function generateTranslationSelectorPage(subtitles, videoId, targetLang, configS
     <script>
     const PAGE = { configStr: ${JSON.stringify(configStr)}, videoId: ${JSON.stringify(videoId)}, filename: ${JSON.stringify(streamFilename || config?.lastStream?.filename || '')}, videoHash: ${JSON.stringify(config?.videoHash || '')} };
     ${quickNavScript()}
-    // Theme switching functionality
-    (function() {
-        const html = document.documentElement;
-        const themeToggle = document.getElementById('themeToggle');
-
-        // Check for saved theme preference or default to system preference
-        function getPreferredTheme() {
-            const savedTheme = localStorage.getItem('theme');
-            if (savedTheme) {
-                return savedTheme;
-            }
-
-            // Check system preference (default to dark for this page)
-            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-                return 'light';
-            }
-
-            return 'dark';
-        }
-
-        // Apply theme
-        function setTheme(theme) {
-            if (theme === 'light') {
-                html.setAttribute('data-theme', 'light');
-            } else if (theme === 'dark') {
-                html.setAttribute('data-theme', 'dark');
-            } else if (theme === 'true-dark') {
-                html.setAttribute('data-theme', 'true-dark');
-            } else {
-                html.setAttribute('data-theme', 'dark');
-            }
-            localStorage.setItem('theme', theme);
-        }
-
-        // Initialize theme on page load
-        const initialTheme = getPreferredTheme();
-        setTheme(initialTheme);
-
-        // Toggle theme on button click
-        function spawnCoin(x, y) {
-            try {
-                const c = document.createElement('div');
-                c.className = 'coin animate';
-                c.style.left = x + 'px';
-                c.style.top = y + 'px';
-                document.body.appendChild(c);
-                c.addEventListener('animationend', () => c.remove(), { once: true });
-                setTimeout(() => { if (c && c.parentNode) c.remove(); }, 1200);
-            } catch (_) {}
-        }
-
-        if (themeToggle) {
-            themeToggle.addEventListener('click', function(e) {
-                const currentTheme = html.getAttribute('data-theme');
-                let newTheme;
-                if (currentTheme === 'light') {
-                    newTheme = 'dark';
-                } else if (currentTheme === 'dark') {
-                    newTheme = 'true-dark';
-                } else {
-                    newTheme = 'light';
-                }
-                setTheme(newTheme);
-                if (e && e.clientX != null && e.clientY != null) {
-                    spawnCoin(e.clientX, e.clientY);
-                }
-            });
-        }
-
-        // Listen for system theme changes
-        if (window.matchMedia) {
-            window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function(e) {
-                // Only auto-switch if user hasn't manually set a preference
-                if (!localStorage.getItem('theme')) {
-                    setTheme(e.matches ? 'light' : 'dark');
-                }
-            });
-        }
-    })();
 
     // Episode change watcher (shared quick-nav version)
     if (typeof window.initStreamWatcher === 'function') {

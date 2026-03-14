@@ -1836,16 +1836,16 @@
                             </label>
                         </div>
 
-                        <!-- Convert ASS/SSA option (dev mode only) -->
+                        <!-- ASS/SSA passthrough option -->
                         <div class="form-group" id="convertAssToVttGroup">
                             <label>
-                                <input type="checkbox" id="convertAssToVtt" checked>
-                                <span data-i18n="config.otherSettings.convertAssToVtt.label">Convert ASS/SSA to
-                                    VTT</span>
+                                <input type="checkbox" id="convertAssToVtt">
+                                <span data-i18n="config.otherSettings.convertAssToVtt.label">ASS/SSA
+                                    Passthrough</span>
                                 <span class="label-description"
-                                    data-i18n="config.otherSettings.convertAssToVtt.description">Converts ASS/SSA
-                                    subtitles to VTT format for compatibility. Disable to send ASS/SSA subtitles as-is
-                                    to Stremio. (Translations always convert automatically)</span>
+                                    data-i18n="config.otherSettings.convertAssToVtt.description">Enable to send
+                                    ASS/SSA subtitles as-is to Stremio. Disable to convert ASS/SSA for
+                                    compatibility.</span>
                             </label>
                         </div>
 
@@ -1921,8 +1921,8 @@
                             <label>
                                 <span style="font-weight: 600; color: #f59e0b;">🧪 URL Extension Test Mode</span>
                                 <span class="label-description">Test different URL extensions for ASS/SSA subtitle
-                                    compatibility with Stremio. Only visible when "Convert ASS/SSA to VTT" is
-                                    disabled.</span>
+                                    compatibility with Stremio. Only visible when ASS/SSA Passthrough is
+                                    enabled.</span>
                             </label>
                             <div style="margin-top: 8px; padding-left: 4px;">
                                 <label style="display: block; margin-bottom: 6px;">

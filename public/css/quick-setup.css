@@ -184,7 +184,8 @@
 }
 
 /* True Dark theme (Blackhole) */
-[data-theme="true-dark"] .qs-overlay {
+[data-theme="true-dark"] .qs-overlay,
+[data-theme="blackhole"] .qs-overlay {
     --qs-backdrop: linear-gradient(135deg, #000000 0%, #050508 40%, #000000 100%);
     --qs-backdrop-blob1: rgba(8, 164, 213, 0.10);
     --qs-backdrop-blob2: rgba(236, 72, 153, 0.06);
@@ -1564,7 +1565,8 @@
 }
 
 /* ── True Dark (Blackhole) theme ── */
-[data-theme="true-dark"] .qs-entry-banner {
+[data-theme="true-dark"] .qs-entry-banner,
+[data-theme="blackhole"] .qs-entry-banner {
     --_banner-bg: linear-gradient(135deg,
             rgba(8, 164, 213, 0.06) 0%,
             rgba(51, 185, 225, 0.04) 50%,

@@ -118,7 +118,7 @@
         "retranslateFailed": "فشلت إعادة الترجمة: {reason}"
       },
       "retranslate": {
-        "success": "تم مسح الذاكرة المؤقتة. ستتم إعادة الترجمة عند التحميل التالي."
+        "success": "تم بدء ترجمة جديدة."
       },
       "session": {
         "configRequired": "الإعدادات مطلوبة",
@@ -715,12 +715,12 @@
       },
       "retranslate": {
         "button": "إعادة الترجمة",
-        "tooltip": "مسح الذاكرة المؤقتة وإعادة ترجمة هذه الترجمة",
-        "loading": "جاري المسح...",
-        "done": "تم!",
+        "tooltip": "ابدأ ترجمة جديدة لهذا العنوان الفرعي",
+        "loading": "جارٍ البدء...",
+        "done": "بدأت",
         "failed": "فشل",
         "failedReason": "فشلت إعادة الترجمة",
-        "successHint": "تم مسح الذاكرة المؤقتة! أعد تحميل الترجمة في Stremio أو انقر على تحميل للحصول على الترجمة المحدثة.",
+        "successHint": "تم بدء ترجمة جديدة. سيتم تحديث هذه الصفحة لإظهار الإدخال الجديد.",
         "missingParams": "المعلمات المطلوبة مفقودة.",
         "errorGeneric": "فشلت إعادة الترجمة. يرجى المحاولة مرة أخرى."
       }
@@ -1266,10 +1266,11 @@
         "workflow": {
           "label": "سير عمل الترجمة",
           "description": "Switching between modes is recommended if you have translation sync problems.",
-          "tooltip": "\"Original Timestamps\" mode removes timestamps and sends a numbered list of subtitle entries to the AI, then reconstructs the SRT with the original timestamps. \"Send Timestamps to AI\" sends the subtitles WITH timecodes and trusts the AI to return correct timestamps. Added for future-proofing the addon.",
-          "original": "الطوابع الزمنية الأصلية (الافتراضي)",
+          "tooltip": "\"الطوابع الزمنية الأصلية\" يرسل قائمة مرقمة ثم يعيد تركيب التوقيتات الأصلية. \"إرسال الطوابع الزمنية إلى الذكاء الاصطناعي\" يرسل ملف SRT كاملاً ويعتمد على الذكاء الاصطناعي للحفاظ على التوقيتات. \"XML Tags\" يغلّف كل سطر داخل وسوم <s id=\"N\"> لاسترجاع قوي حسب المعرّف. \"JSON\" يرسل ويستقبل مصفوفات منظّمة لتحليل واضح بلا غموض.",
+          "original": "الطوابع الزمنية الأصلية (قديم)",
           "ai": "إرسال الطوابع الزمنية إلى الذكاء الاصطناعي",
-          "xml": "XML Tags (Default)"
+          "xml": "XML Tags (الافتراضي)",
+          "json": "JSON (منظّم)"
         },
         "promptStyle": {
           "label": "نمط الموجه (Prompt)",
@@ -1327,7 +1328,7 @@
         },
         "convertAssToVtt": {
           "label": "تمرير ASS/SSA",
-          "description": "فعّل لإرسال ترجمات ASS/SSA كما هي إلى Stremio. عطّل للتحويل إلى VTT. (الترجمات تحوّل دائماً تلقائياً)"
+          "description": "فعّل لإرسال ترجمات ASS/SSA كما هي إلى Stremio والحفاظ على ASS/SSA في ترجمات الإضافة المدعومة. عطّل لتحويل ASS/SSA من أجل التوافق."
         },
         "betaMode": {
           "label": "الوضع المتقدم",

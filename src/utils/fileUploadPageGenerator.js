@@ -270,7 +270,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
 
     return `
 <!DOCTYPE html>
-<html lang="${resolveUiLang(config)}">
+<html lang="${resolveUiLang(config)}" data-third-theme="true-dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -285,15 +285,17 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
     <script>
       (function() {
         var html = document.documentElement;
+        var thirdTheme = html.getAttribute('data-third-theme') === 'true-dark' ? 'true-dark' : 'blackhole';
         var theme = 'light';
-        try {
-          var saved = localStorage.getItem('theme');
-          if (saved) {
-            theme = saved;
-          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            theme = 'dark';
-          }
-        } catch (_) {}
+        var saved = null;
+        try { saved = localStorage.getItem('theme'); } catch (_) {}
+        if (saved === 'blackhole' || saved === 'true-dark') {
+          theme = thirdTheme;
+        } else if (saved === 'light' || saved === 'dark') {
+          theme = saved;
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          theme = 'dark';
+        }
         html.setAttribute('data-theme', theme);
       })();
     </script>
@@ -1998,6 +2000,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             }
         }
     </style>
+    <script src="/js/theme-toggle.js" defer></script>
 </head>
 <body>
     <!-- Theme Toggle Button -->
@@ -3840,70 +3843,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             error.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
-        // Theme switching functionality (unchanged)
-        (function() {
-            const html = document.documentElement;
-            const themeToggle = document.getElementById('themeToggle');
-
-            function getPreferredTheme() {
-                const savedTheme = localStorage.getItem('theme');
-                if (savedTheme) {
-                    return savedTheme;
-                }
-
-                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                    return 'dark';
-                }
-
-                return 'light';
-            }
-
-            function setTheme(theme) {
-                html.setAttribute('data-theme', theme);
-                localStorage.setItem('theme', theme);
-            }
-
-            const initialTheme = getPreferredTheme();
-            setTheme(initialTheme);
-
-            function spawnCoin(x, y) {
-                try {
-                    const c = document.createElement('div');
-                    c.className = 'coin animate';
-                    c.style.left = x + 'px';
-                    c.style.top = y + 'px';
-                    document.body.appendChild(c);
-                    c.addEventListener('animationend', () => c.remove(), { once: true });
-                    setTimeout(() => { if (c && c.parentNode) c.remove(); }, 1200);
-                } catch (_) {}
-            }
-
-            if (themeToggle) {
-                themeToggle.addEventListener('click', function(e) {
-                    const currentTheme = html.getAttribute('data-theme');
-                    let newTheme;
-                    if (currentTheme === 'light') {
-                        newTheme = 'dark';
-                    } else if (currentTheme === 'dark') {
-                        newTheme = 'true-dark';
-                    } else {
-                        newTheme = 'light';
-                    }
-                    setTheme(newTheme);
-                    if (e && e.clientX != null && e.clientY != null) {
-                        spawnCoin(e.clientX, e.clientY);
-                    }
-                });
-            }
-
-            if (window.matchMedia) {
-                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
-                    if (!localStorage.getItem('theme')) {
-                        setTheme(e.matches ? 'dark' : 'light');
-                    }
-                });
-            }
-        })();
+        // Theme switching is handled by /js/theme-toggle.js
     </script>
 </body>
 </html>

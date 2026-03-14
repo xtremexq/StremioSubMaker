@@ -19,9 +19,50 @@ const originalWarn = console.warn;
 
 /**
  * Get current ISO timestamp for logging
- * @returns {string} ISO timestamp string (e.g., "2024-11-06T15:30:45.123Z")
+ * Defaults to legacy UTC output for backward compatibility.
+ * When TZ is set to a valid IANA timezone, emit local ISO-8601 with offset.
+ * @returns {string} ISO timestamp string
  */
-const getTimestamp = () => new Date().toISOString();
+const CONFIGURED_TIMEZONE = typeof process.env.TZ === 'string' ? process.env.TZ.trim() : '';
+const USE_LOCAL_TIMEZONE_TIMESTAMPS = (() => {
+    if (!CONFIGURED_TIMEZONE) return false;
+    try {
+        new Intl.DateTimeFormat('en-US', { timeZone: CONFIGURED_TIMEZONE }).format(new Date());
+        return true;
+    } catch (_) {
+        return false;
+    }
+})();
+
+function padDatePart(value, length = 2) {
+    return String(value).padStart(length, '0');
+}
+
+function formatLocalTimestamp(date = new Date()) {
+    const year = date.getFullYear();
+    const month = padDatePart(date.getMonth() + 1);
+    const day = padDatePart(date.getDate());
+    const hours = padDatePart(date.getHours());
+    const minutes = padDatePart(date.getMinutes());
+    const seconds = padDatePart(date.getSeconds());
+    const milliseconds = padDatePart(date.getMilliseconds(), 3);
+    const offsetMinutes = -date.getTimezoneOffset();
+
+    if (offsetMinutes === 0) {
+        return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}Z`;
+    }
+
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const absoluteOffset = Math.abs(offsetMinutes);
+    const offsetHours = padDatePart(Math.floor(absoluteOffset / 60));
+    const offsetMins = padDatePart(absoluteOffset % 60);
+
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}${sign}${offsetHours}:${offsetMins}`;
+}
+
+const getTimestamp = () => USE_LOCAL_TIMEZONE_TIMESTAMPS
+    ? formatLocalTimestamp()
+    : new Date().toISOString();
 
 // Log level configuration (default to 'warn' for production)
 const LOG_LEVEL = (process.env.LOG_LEVEL || 'warn').toLowerCase();

@@ -14,6 +14,8 @@ services:
     ports:
       - "${PORT:-7001}:7001"
     # Load ALL environment variables from .env file
+    # Optional: set TZ in .env (for example TZ=Europe/Berlin) to localize log timestamps.
+    # Leave TZ unset to preserve the existing UTC log format.
     env_file:
       - .env
     environment:

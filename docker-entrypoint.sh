@@ -23,9 +23,23 @@ TARGET_GID="${PGID:-1000}"
 
 DIRS="/app/.cache /app/data /app/logs /app/keys"
 CACHE_SUBDIRS="translations translations_bypass translations_partial sync_cache"
+TZ_NAME="${TZ#:}"
+
+apply_timezone() {
+  if [ -z "$TZ_NAME" ]; then
+    return
+  fi
+
+  if [ -f "/usr/share/zoneinfo/$TZ_NAME" ]; then
+    ln -snf "/usr/share/zoneinfo/$TZ_NAME" /etc/localtime
+    printf '%s\n' "$TZ_NAME" > /etc/timezone
+  fi
+}
 
 # ── ROOT PATH: fix permissions and drop privileges ──────────────────
 if [ "$(id -u)" = "0" ]; then
+  apply_timezone
+
   # Create all directories
   for dir in $DIRS; do
     mkdir -p "$dir"

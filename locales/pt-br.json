@@ -118,7 +118,7 @@
         "retranslateFailed": "Retradução falhou: {reason}"
       },
       "retranslate": {
-        "success": "Cache limpo. A tradução será reiniciada no próximo carregamento."
+        "success": "Nova tradução iniciada."
       },
       "session": {
         "configRequired": "Configuração é obrigatória",
@@ -715,12 +715,12 @@
       },
       "retranslate": {
         "button": "Retraduzir",
-        "tooltip": "Limpar cache e retraduzir esta legenda",
-        "loading": "Limpando...",
-        "done": "Pronto!",
+        "tooltip": "Iniciar uma nova tradução para esta legenda",
+        "loading": "Iniciando...",
+        "done": "Iniciada",
         "failed": "Falhou",
         "failedReason": "A retradução falhou",
-        "successHint": "Cache limpo! Recarregue a legenda no Stremio ou clique em Download para obter a tradução atualizada.",
+        "successHint": "Uma nova tradução foi iniciada. Esta página será atualizada para mostrar a nova entrada.",
         "missingParams": "Parâmetros obrigatórios ausentes.",
         "errorGeneric": "Retradução falhou. Por favor, tente novamente."
       }
@@ -1266,10 +1266,11 @@
         "workflow": {
           "label": "Fluxo de Trabalho de Tradução",
           "description": "Alternar entre modos é recomendado se você tiver problemas de sincronia de tradução.",
-          "tooltip": "O modo \"Timestamps Originais\" remove os timestamps e envia para a IA uma lista numerada de entradas, depois reconstrói o SRT com os timestamps originais. \"Enviar Timestamps para IA\" envia as legendas COM códigos de tempo e confia que a IA devolva os tempos corretos. Adicionado para preparar o addon para o futuro.",
-          "original": "Timestamps Originais (Padrão)",
+          "tooltip": "\"Timestamps Originais\" envia uma lista numerada e recoloca os timecodes originais depois. \"Enviar Timestamps para IA\" envia o SRT completo e confia na IA para preservar os tempos. \"XML Tags\" envolve cada entrada em tags <s id=\"N\"> para recuperação robusta por ID. \"JSON\" envia e recebe arrays estruturados para parsing sem ambiguidade.",
+          "original": "Timestamps Originais (Legado)",
           "ai": "Enviar Timestamps para IA",
-          "xml": "XML Tags (Default)"
+          "xml": "XML Tags (Padrão)",
+          "json": "JSON (Estruturado)"
         },
         "promptStyle": {
           "label": "Estilo de Prompt",
@@ -1327,7 +1328,7 @@
         },
         "convertAssToVtt": {
           "label": "Passthrough ASS/SSA",
-          "description": "Ative para enviar legendas ASS/SSA como estão para o Stremio. Desative para converter para VTT. (Traduções convertem sempre automaticamente)"
+          "description": "Ative para enviar legendas ASS/SSA como estão para o Stremio e preservar ASS/SSA nas traduções suportadas do addon. Desative para converter ASS/SSA por compatibilidade."
         },
         "betaMode": {
           "label": "Modo Avançado",

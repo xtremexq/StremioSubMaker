@@ -2,25 +2,42 @@
     'use strict';
 
     var html = document.documentElement;
-    var themeToggle = document.getElementById('themeToggle');
+    var darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
-    function getPreferredTheme() {
-        try {
-            var saved = localStorage.getItem('theme');
-            if (saved) return saved;
-        } catch (_) { }
-
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            return 'dark';
-        }
-        return 'light';
+    function getThirdThemeToken() {
+        return html.getAttribute('data-third-theme') === 'true-dark' ? 'true-dark' : 'blackhole';
     }
 
-    function setTheme(theme) {
-        html.setAttribute('data-theme', theme);
+    function normalizeTheme(theme) {
+        if (theme === 'true-dark' || theme === 'blackhole') return 'blackhole';
+        if (theme === 'light' || theme === 'dark') return theme;
+        return null;
+    }
+
+    function readStoredTheme() {
         try {
-            localStorage.setItem('theme', theme);
+            return localStorage.getItem('theme');
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function getPreferredTheme() {
+        var saved = normalizeTheme(readStoredTheme());
+        if (saved) return saved;
+        return darkQuery && darkQuery.matches ? 'dark' : 'light';
+    }
+
+    function setTheme(theme, persist) {
+        var normalized = normalizeTheme(theme) || 'light';
+        var applied = normalized === 'blackhole' ? getThirdThemeToken() : normalized;
+        html.setAttribute('data-theme', applied);
+        try {
+            if (persist === true) {
+                localStorage.setItem('theme', normalized);
+            }
         } catch (_) { }
+        return normalized;
     }
 
     function spawnCoin(x, y) {
@@ -36,27 +53,34 @@
     }
 
     function wireToggle() {
-        if (!themeToggle) return;
+        var themeToggle = document.getElementById('themeToggle');
+        var rawStoredTheme = readStoredTheme();
+        var normalizedStoredTheme = normalizeTheme(rawStoredTheme);
 
-        var current = html.getAttribute('data-theme') || getPreferredTheme();
-        setTheme(current);
+        if (rawStoredTheme && normalizedStoredTheme && rawStoredTheme !== normalizedStoredTheme) {
+            setTheme(normalizedStoredTheme, true);
+        } else {
+            setTheme(getPreferredTheme(), false);
+        }
 
-        themeToggle.addEventListener('click', function (e) {
-            var active = html.getAttribute('data-theme') || 'light';
-            var next = active === 'light' ? 'dark' : (active === 'dark' ? 'blackhole' : 'light');
-            setTheme(next);
-            if (e && e.clientX != null && e.clientY != null) {
-                spawnCoin(e.clientX, e.clientY);
-            }
-        });
+        if (themeToggle && themeToggle.dataset.themeToggleBound !== 'true') {
+            themeToggle.dataset.themeToggleBound = 'true';
+            themeToggle.addEventListener('click', function (e) {
+                var active = normalizeTheme(html.getAttribute('data-theme')) || 'light';
+                var next = active === 'light' ? 'dark' : (active === 'dark' ? 'blackhole' : 'light');
+                setTheme(next, true);
+                if (e && e.clientX != null && e.clientY != null) {
+                    spawnCoin(e.clientX, e.clientY);
+                }
+            });
+        }
 
-        if (window.matchMedia) {
-            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (event) {
-                try {
-                    if (!localStorage.getItem('theme')) {
-                        setTheme(event.matches ? 'dark' : 'light');
-                    }
-                } catch (_) { }
+        if (darkQuery && html.dataset.themeMediaListenerBound !== 'true') {
+            html.dataset.themeMediaListenerBound = 'true';
+            darkQuery.addEventListener('change', function (event) {
+                if (!normalizeTheme(readStoredTheme())) {
+                    setTheme(event.matches ? 'dark' : 'light', false);
+                }
             });
         }
     }

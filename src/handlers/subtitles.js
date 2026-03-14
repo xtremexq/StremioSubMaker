@@ -12,7 +12,7 @@ const animeIdResolver = require('../services/animeIdResolver');
 const StremioCommunitySubtitlesService = require('../services/stremioCommunitySubtitles');
 const WyzieSubsService = require('../services/wyzieSubs');
 const SubsRoService = require('../services/subsRo');
-const { parseSRT, toSRT, parseStremioId, appendHiddenInformationalNote, normalizeImdbId, ensureSRTForTranslation, convertToSRT } = require('../utils/subtitle');
+const { parseSRT, toSRT, parseStremioId, appendHiddenInformationalNote, normalizeImdbId, ensureSRTForTranslation, convertToSRT, detectASSFormat } = require('../utils/subtitle');
 const { getLanguageName, getDisplayName, toISO6391, toISO6392, canonicalSyncLanguageCode, normalizeLanguageCode } = require('../utils/languages');
 const { getTranslator } = require('../utils/i18n');
 const { deriveVideoHash } = require('../utils/videoHash');
@@ -3973,7 +3973,12 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
       targetLanguage
     );
     // Generate a unique ID for this translation request to track it
-    const requestId = crypto.randomUUID();
+    const requestId = (typeof options.historyRequestId === 'string' && options.historyRequestId.trim())
+      ? options.historyRequestId.trim()
+      : crypto.randomUUID();
+    const historySeed = (options.historySeed && typeof options.historySeed === 'object')
+      ? options.historySeed
+      : null;
     const historyUserHash = resolveHistoryUserHash(config, userHash);
     const historyEnabled = !!historyUserHash;
     if (!historyEnabled) {
@@ -4019,6 +4024,8 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
         }
       })();
       const fallbackFilename = pickBest(
+        historySeed?.filename,
+        historySeed?.title,
         options.filename,
         cachedMeta.filename,
         cachedMeta.title,
@@ -4029,6 +4036,7 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
         sourceFileId
       ) || 'unknown';
       const fallbackVideoId = pickBest(
+        historySeed?.videoId,
         options.videoId,
         cachedMeta.videoId,
         latestStream?.videoId,
@@ -4036,33 +4044,40 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
         config?.videoId
       ) || 'unknown';
       const fallbackSourceLang =
-        options.sourceLanguage
+        historySeed?.sourceLanguage
+        || options.sourceLanguage
         || (Array.isArray(config.sourceLanguages) && config.sourceLanguages[0])
         || 'auto';
-      const videoHash = deriveVideoHash(fallbackFilename, fallbackVideoId || sourceFileId || '');
+      const videoHash = historySeed?.videoHash || deriveVideoHash(fallbackFilename, fallbackVideoId || sourceFileId || '');
       historyEntry = {
         id: requestId,
         status: 'processing',
-        scope: options.from || 'standard',
-        title: fallbackFilename,
-        filename: fallbackFilename,
-        videoId: fallbackVideoId,
+        scope: historySeed?.scope || options.from || 'standard',
+        title: historySeed?.title || fallbackFilename,
+        filename: historySeed?.filename || fallbackFilename,
+        videoId: historySeed?.videoId || fallbackVideoId,
         videoHash: videoHash || '',
-        sourceFileId: options.sourceFileId || sourceFileId || 'unknown',
-        sourceLanguage: fallbackSourceLang, // Will update if detected
-        targetLanguage: targetLanguage,
-        createdAt: Date.now(),
-        provider: (config.multiProviderEnabled === true ? config.mainProvider : 'gemini') || 'gemini',
-        model: resolveModelNameFromConfig(config) || 'default',
-        subtitleSource: sourceFileId.startsWith('subdl_') ? 'SubDL'
+        sourceFileId: historySeed?.sourceFileId || options.sourceFileId || sourceFileId || 'unknown',
+        sourceLanguage: historySeed?.sourceLanguage || fallbackSourceLang, // Will update if detected
+        targetLanguage: historySeed?.targetLanguage || targetLanguage,
+        createdAt: Number(historySeed?.createdAt) || Date.now(),
+        provider: historySeed?.provider || ((config.multiProviderEnabled === true ? config.mainProvider : 'gemini') || 'gemini'),
+        model: historySeed?.model || resolveModelNameFromConfig(config) || 'default',
+        subtitleSource: historySeed?.subtitleSource || (sourceFileId.startsWith('subdl_') ? 'SubDL'
           : sourceFileId.startsWith('subsource_') ? 'SubSource'
             : sourceFileId.startsWith('v3_') ? 'OpenSubtitles V3'
               : sourceFileId.startsWith('scs_') ? 'Community Subtitles'
                 : sourceFileId.startsWith('wyzie_') ? 'Wyzie Subs'
                   : sourceFileId.startsWith('subsro_') ? 'Subs.ro'
                     : sourceFileId.startsWith('xembed_') ? 'Embedded'
-                      : 'OpenSubtitles'
+                      : 'OpenSubtitles')
       };
+      if (Number.isFinite(Number(historySeed?.season))) {
+        historyEntry.season = Number(historySeed.season);
+      }
+      if (Number.isFinite(Number(historySeed?.episode))) {
+        historyEntry.episode = Number(historySeed.episode);
+      }
       saveRequestToHistory(historyUserHash, historyEntry).catch(err => {
         log.warn(() => [`[History] Failed to save initial history for ${requestId}:`, err.message]);
       });
@@ -4693,20 +4708,25 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
     // translated text is re-injected after translation completes.
     const assPassthroughEnabled = config.convertAssToVtt === false && config.forceSRTOutput !== true;
     let assTranslationData = null;
+    let translatedContent;
 
     // Detect if content is actually ASS/SSA format (works regardless of download source)
-    const isASSContent = assPassthroughEnabled && sourceContent &&
-      sourceContent.includes('[Script Info]') &&
-      (sourceContent.includes('[V4+ Styles]') || sourceContent.includes('[V4 Styles]'));
+    const isASSContent = assPassthroughEnabled && detectASSFormat(sourceContent).isASS;
 
     if (isASSContent) {
       // ASS-aware translation path: parse ASS, build temp SRT, preserve structure
       const { parseASSForTranslation, buildSRTFromASSDialogue } = require('../utils/assTranslationHelper');
       assTranslationData = parseASSForTranslation(sourceContent);
-      if (assTranslationData && assTranslationData.dialogueEntries.filter(e => e.isDialogue).length > 0) {
+      const translatableDialogueCount = assTranslationData
+        ? assTranslationData.dialogueEntries.filter(e => e.isDialogue && e.cleanText.trim()).length
+        : 0;
+      if (assTranslationData && translatableDialogueCount > 0) {
         const tempSRT = buildSRTFromASSDialogue(assTranslationData.dialogueEntries);
-        log.debug(() => `[Translation] ASS-aware mode: extracted ${assTranslationData.dialogueEntries.filter(e => e.isDialogue).length} dialogue entries, built temp SRT (${tempSRT.length} chars)`);
+        log.debug(() => `[Translation] ASS-aware mode: extracted ${translatableDialogueCount} translatable dialogue entries, built temp SRT (${tempSRT.length} chars)`);
         sourceContent = tempSRT;
+      } else if (assTranslationData) {
+        log.debug(() => '[Translation] ASS-aware mode: no translatable dialogue text found, returning original ASS/SSA unchanged');
+        translatedContent = sourceContent;
       } else {
         // Fallback: can't parse ASS dialogues, convert to SRT normally
         log.warn(() => '[Translation] ASS parsing failed or no dialogues found, falling back to SRT conversion');
@@ -4723,6 +4743,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
     const targetLangName = getLanguageName(targetLanguage) || targetLanguage;
 
     // Initialize translation provider (Gemini default, others when enabled)
+    if (translatedContent === undefined) {
     const { provider, providerName: _providerName, model, fallbackProviderName } = await createTranslationProvider(config);
     providerName = _providerName;
     effectiveModel = model || config.geminiModel;
@@ -4759,7 +4780,6 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
 
     // Translate with smart partial delivery to reduce Redis I/O
     // Strategy: 1st batch -> save, then next 3 -> save, then next 5 -> save, then every 5
-    let translatedContent;
     let lastSavedBatch = 0;
     let lastStreamSequence = 0;
     let lastStreamEntries = 0;
@@ -4963,7 +4983,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
       log.debug(() => '[Translation] Translation completed successfully');
 
       // ASS-aware translation: reassemble the translated text back into the original ASS structure
-      if (assTranslationData && translatedContent) {
+      if (assTranslationData && translatedContent !== undefined && translatedContent !== null) {
         const { reassembleASS } = require('../utils/assTranslationHelper');
         translatedContent = reassembleASS(assTranslationData, translatedContent);
         log.debug(() => `[Translation] ASS reassembly complete (${translatedContent.length} chars)`);
@@ -4976,9 +4996,10 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
       }
       throw error;
     }
+    }
 
     // Capture translation diagnostics for history enrichment
-    const translationStats = translationEngine.translationStats || {};
+    const translationStats = translationEngine?.translationStats || {};
 
     log.debug(() => '[Translation] Background translation completed successfully');
 
@@ -5640,6 +5661,11 @@ function buildHistoryKey(userHash, entryId) {
   return `hist__${safeHash}__${safeId}`;
 }
 
+function buildHistoryIndexKey(userHash) {
+  const safeHash = sanitizeHistoryComponent(userHash);
+  return `histidx__${safeHash}`;
+}
+
 function buildHistoryPatterns(userHash) {
   const safeHash = sanitizeHistoryComponent(userHash);
   // Preferred key format plus legacy single-underscore and colon-delimited formats for backward compatibility
@@ -5804,6 +5830,87 @@ function auditHistorySkip(reason, context = {}) {
   log.warn(() => `[History] Skipping history: ${reason}${contextStr}`);
 }
 
+async function addHistoryEntryToRedisIndex(userHash, entry, ttlSeconds) {
+  try {
+    const normalizedHash = normalizeHistoryUserHash(userHash);
+    const client = StorageFactory.getRedisClient();
+    if (!client || !normalizedHash || !entry?.id) return false;
+
+    const indexKey = buildHistoryIndexKey(normalizedHash);
+    const score = Number(entry.createdAt) || Date.now();
+    await client.zadd(indexKey, score, entry.id);
+    if (ttlSeconds) {
+      await client.expire(indexKey, ttlSeconds);
+    }
+
+    const size = await client.zcard(indexKey);
+    if (size > MAX_HISTORY_STORE_ITEMS) {
+      await client.zremrangebyrank(indexKey, 0, size - MAX_HISTORY_STORE_ITEMS - 1);
+    }
+
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function rebuildHistoryRedisIndex(userHash, entries = [], ttlSeconds) {
+  try {
+    const normalizedHash = normalizeHistoryUserHash(userHash);
+    const client = StorageFactory.getRedisClient();
+    if (!client || !normalizedHash) return false;
+
+    const indexKey = buildHistoryIndexKey(normalizedHash);
+    const pipeline = client.pipeline();
+    pipeline.del(indexKey);
+    for (const entry of pruneHistoryEntries(entries)) {
+      if (!entry?.id) continue;
+      pipeline.zadd(indexKey, Number(entry.createdAt) || Date.now(), entry.id);
+    }
+    if (entries.length > 0 && ttlSeconds) {
+      pipeline.expire(indexKey, ttlSeconds);
+    }
+    await pipeline.exec();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function getHistoryEntriesFromRedisIndex(userHash, adapter) {
+  try {
+    const normalizedHash = normalizeHistoryUserHash(userHash);
+    const client = StorageFactory.getRedisClient();
+    if (!client || !normalizedHash) return null;
+
+    const ids = await client.zrevrange(buildHistoryIndexKey(normalizedHash), 0, MAX_HISTORY_STORE_ITEMS - 1);
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return [];
+    }
+
+    const fetched = await Promise.all(
+      ids.map(id => adapter.get(buildHistoryKey(normalizedHash, id), StorageAdapter.CACHE_TYPES.HISTORY))
+    );
+    return pruneHistoryEntries(fetched.filter(entry => entry && entry.id));
+  } catch (_) {
+    return null;
+  }
+}
+
+async function listHistoryEntryKeys(adapter, normalizedHash) {
+  const patterns = buildHistoryPatterns(normalizedHash);
+  const preferredKeys = await adapter.list(StorageAdapter.CACHE_TYPES.HISTORY, patterns[0]);
+
+  if (preferredKeys.length >= MAX_HISTORY_STORE_ITEMS || patterns.length === 1) {
+    return Array.from(new Set(preferredKeys));
+  }
+
+  const legacySets = await Promise.all(
+    patterns.slice(1).map(pattern => adapter.list(StorageAdapter.CACHE_TYPES.HISTORY, pattern))
+  );
+  return Array.from(new Set([...(preferredKeys || []), ...legacySets.flat()])).filter(Boolean);
+}
+
 async function saveRequestToHistory(userHash, entry) {
   try {
     const normalizedHash = normalizeHistoryUserHash(userHash);
@@ -5823,6 +5930,7 @@ async function saveRequestToHistory(userHash, entry) {
     const toStore = { ...entry };
     if (!toStore.createdAt) toStore.createdAt = Date.now();
     await adapter.set(entryKey, toStore, StorageAdapter.CACHE_TYPES.HISTORY, ttlSeconds);
+    await addHistoryEntryToRedisIndex(normalizedHash, toStore, ttlSeconds);
 
     // Also refresh the store key (aggregated cache) so getHistoryForUser fast-path
     // stays warm. Mark it as a cache so readers know to also check per-entry keys.
@@ -5863,6 +5971,7 @@ async function getHistoryForUser(userHash) {
     const adapter = await getStorageAdapter();
     const storeKey = buildHistoryStoreKey(normalizedHash);
     const ttlSeconds = StorageAdapter.DEFAULT_TTL[StorageAdapter.CACHE_TYPES.HISTORY];
+    let storeEntries = {};
 
     // --- FAST PATH ---
     // If the aggregated store key was refreshed recently, trust it and skip the SCAN.
@@ -5871,24 +5980,52 @@ async function getHistoryForUser(userHash) {
       const store = await adapter.get(storeKey, StorageAdapter.CACHE_TYPES.HISTORY);
       if (store && typeof store === 'object' && !Array.isArray(store)) {
         const age = store.updatedAt ? (Date.now() - store.updatedAt) : Infinity;
-        const storeEntries = (store.entries && typeof store.entries === 'object') ? store.entries : {};
+        storeEntries = (store.entries && typeof store.entries === 'object') ? store.entries : {};
         if (age < HISTORY_STORE_CACHE_TTL_MS && Object.keys(storeEntries).length > 0) {
           return pruneHistoryEntries(Object.values(storeEntries)).slice(0, MAX_HISTORY_ITEMS);
         }
       }
     } catch (_) { /* fall through to slow path */ }
 
+    // --- INDEXED PATH ---
+    // When the store key is stale in Redis mode, use a per-user sorted-set index
+    // instead of scanning the whole history namespace.
+    const indexedEntries = await getHistoryEntriesFromRedisIndex(normalizedHash, adapter);
+    if (indexedEntries && indexedEntries.length > 0) {
+      const mergedMap = { ...storeEntries };
+      for (const fetched of indexedEntries) {
+        if (!fetched?.id) continue;
+        const existing = mergedMap[fetched.id];
+        if (!existing ||
+          (fetched.completedAt || fetched.createdAt || 0) >= (existing.completedAt || existing.createdAt || 0)) {
+          mergedMap[fetched.id] = fetched;
+        }
+      }
+
+      const deduped = pruneHistoryEntries(Object.values(mergedMap));
+      const result = deduped.slice(0, MAX_HISTORY_ITEMS);
+
+      try {
+        const compactMap = Object.fromEntries(deduped.map(entry => [entry.id, entry]));
+        await adapter.set(
+          storeKey,
+          { entries: compactMap, updatedAt: Date.now(), isCacheOnly: true },
+          StorageAdapter.CACHE_TYPES.HISTORY,
+          ttlSeconds
+        );
+      } catch (_) { /* best-effort store-key refresh */ }
+
+      return result;
+    }
+
     // --- SLOW PATH ---
-    // Store key is missing, empty, or stale. Scan all per-entry keys from any pod,
-    // merge with whatever the store key had, then rebuild the store key cache.
+    // Store key is missing, empty, or stale and we have no Redis index yet.
+    // Fall back to scanning per-entry keys, then rebuild the index + store key.
 
     // Scan per-entry keys (hist__{hash}__{id}) across all pods
-    const patterns = buildHistoryPatterns(normalizedHash);
-    const keySets = await Promise.all(patterns.map(p => adapter.list(StorageAdapter.CACHE_TYPES.HISTORY, p)));
-    const perEntryKeys = Array.from(new Set((keySets || []).flat().filter(Boolean)));
+    const perEntryKeys = await listHistoryEntryKeys(adapter, normalizedHash);
 
     // Re-read the store key (may have changed since fast-path check)
-    let storeEntries = {};
     try {
       const store = await adapter.get(storeKey, StorageAdapter.CACHE_TYPES.HISTORY);
       if (store && typeof store === 'object' && !Array.isArray(store)) {
@@ -5916,6 +6053,7 @@ async function getHistoryForUser(userHash) {
 
     const deduped = pruneHistoryEntries(Object.values(mergedMap));
     const result = deduped.slice(0, MAX_HISTORY_ITEMS);
+    await rebuildHistoryRedisIndex(normalizedHash, deduped, ttlSeconds);
 
     // Rebuild the store key so the next read hits the fast path.
     try {

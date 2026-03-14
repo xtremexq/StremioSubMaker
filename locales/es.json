@@ -118,7 +118,7 @@
         "retranslateFailed": "La retraducción falló: {reason}"
       },
       "retranslate": {
-        "success": "Caché borrada. La traducción se reiniciará en la próxima carga."
+        "success": "Se inició una nueva traducción."
       },
       "session": {
         "configRequired": "Se requiere la configuración",
@@ -715,12 +715,12 @@
       },
       "retranslate": {
         "button": "Retraducir",
-        "tooltip": "Borrar caché y retraducir este subtítulo",
-        "loading": "Borrando...",
-        "done": "¡Listo!",
+        "tooltip": "Iniciar una nueva traducción para este subtítulo",
+        "loading": "Iniciando...",
+        "done": "Iniciada",
         "failed": "Falló",
         "failedReason": "La retraducción falló",
-        "successHint": "¡Caché borrada! Recarga el subtítulo en Stremio o haz clic en Descargar para obtener la traducción actualizada.",
+        "successHint": "Se inició una nueva traducción. Esta página se actualizará para mostrar la nueva entrada.",
         "missingParams": "Faltan parámetros obligatorios.",
         "errorGeneric": "La retraducción falló. Por favor, inténtalo de nuevo."
       }
@@ -1266,10 +1266,11 @@
         "workflow": {
           "label": "Flujo de traducción",
           "description": "Se recomienda alternar si tienes problemas de sincronía.",
-          "tooltip": "El modo \"Timestamps originales\" quita las marcas de tiempo y envía a la IA una lista numerada de entradas, luego reconstruye el SRT con los tiempos originales. \"Enviar marcas de tiempo a la IA\" envía los subtítulos CON tiempos y confía en que la IA los devuelva correctos. Añadido para futuro.",
-          "original": "Marcas de tiempo originales (por defecto)",
+          "tooltip": "\"Timestamps originales\" envía una lista numerada y vuelve a colocar los tiempos originales después. \"Enviar marcas de tiempo a la IA\" envía el SRT completo y confía en la IA para conservar los tiempos. \"XML Tags\" envuelve cada entrada en etiquetas <s id=\"N\"> para una recuperación robusta por ID. \"JSON\" envía y recibe arrays estructurados para un análisis sin ambigüedad.",
+          "original": "Marcas de tiempo originales (legado)",
           "ai": "Enviar marcas de tiempo a la IA",
-          "xml": "XML Tags (Default)"
+          "xml": "XML Tags (predeterminado)",
+          "json": "JSON (estructurado)"
         },
         "promptStyle": {
           "label": "Estilo de prompt",
@@ -1327,7 +1328,7 @@
         },
         "convertAssToVtt": {
           "label": "Passthrough ASS/SSA",
-          "description": "Activa para enviar subtítulos ASS/SSA tal cual a Stremio. Desactiva para convertir a VTT. (Las traducciones siempre convierten automáticamente)"
+          "description": "Activa para enviar subtítulos ASS/SSA tal cual a Stremio y preservar ASS/SSA en las traducciones compatibles del addon. Desactiva para convertir ASS/SSA por compatibilidad."
         },
         "betaMode": {
           "label": "Modo Avanzado",

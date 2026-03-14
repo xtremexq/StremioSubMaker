@@ -118,7 +118,7 @@
         "retranslateFailed": "Retranslation failed: {reason}"
       },
       "retranslate": {
-        "success": "Cache cleared. Translation will restart on next load."
+        "success": "Fresh translation started."
       },
       "session": {
         "configRequired": "Configuration is required",
@@ -715,12 +715,12 @@
       },
       "retranslate": {
         "button": "Retranslate",
-        "tooltip": "Clear cache and retranslate this subtitle",
-        "loading": "Clearing...",
-        "done": "Done!",
+        "tooltip": "Start a fresh translation for this subtitle",
+        "loading": "Starting...",
+        "done": "Started",
         "failed": "Failed",
         "failedReason": "Retranslation failed",
-        "successHint": "Cache cleared! Reload the subtitle in Stremio or click Download to get the fresh translation.",
+        "successHint": "Fresh translation started. This page will refresh to show the new entry.",
         "missingParams": "Missing required parameters.",
         "errorGeneric": "Retranslation failed. Please try again."
       }
@@ -1266,10 +1266,11 @@
         "workflow": {
           "label": "Translation Workflow",
           "description": "Switching between modes is recommended if you have translation sync problems.",
-          "tooltip": "\"Original Timestamps\" sends a numbered list and reattaches original timecodes. \"Send Timestamps to AI\" sends full SRT and trusts the AI to preserve timecodes. \"XML Tags\" wraps each entry in <s id=\"N\"> tags for robust ID-based recovery — recommended if you have sync problems.",
+          "tooltip": "\"Original Timestamps\" sends a numbered list and reattaches original timecodes. \"Send Timestamps to AI\" sends full SRT and trusts the AI to preserve timecodes. \"XML Tags\" wraps each entry in <s id=\"N\"> tags for robust ID-based recovery. \"JSON\" sends and receives structured arrays for unambiguous parsing.",
           "original": "Original Timestamps (Legacy)",
           "ai": "Send Timestamps to AI",
-          "xml": "XML Tags (Default)"
+          "xml": "XML Tags (Default)",
+          "json": "JSON (Structured)"
         },
         "jsonOutput": {
           "label": "Enable JSON Structured Output (Beta)",
@@ -1327,7 +1328,7 @@
         },
         "convertAssToVtt": {
           "label": "ASS/SSA Passthrough",
-          "description": "Enable to send ASS/SSA subtitles as-is to Stremio. Disable to convert to VTT. (Translations always convert automatically)"
+          "description": "Enable to send ASS/SSA subtitles as-is to Stremio and preserve ASS/SSA in supported addon translations. Disable to convert ASS/SSA for compatibility."
         },
         "betaMode": {
           "label": "Advanced Mode",

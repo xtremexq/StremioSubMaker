@@ -427,7 +427,7 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
     // Retranslate button (available for all entries that have sourceFileId and targetLanguage)
     const canRetranslate = entry.sourceFileId && entry.targetLanguage && entry.scope !== 'embedded';
     const retranslateBtn = canRetranslate
-      ? `<button class="history-retranslate" data-source-file-id="${escapeHtml(entry.sourceFileId)}" data-target-language="${escapeHtml(entry.targetLanguage)}" title="${t('history.retranslate.tooltip', {}, 'Clear cache and retranslate this subtitle')}">${t('history.retranslate.button', {}, 'Retranslate')}</button>`
+      ? `<button class="history-retranslate" data-source-file-id="${escapeHtml(entry.sourceFileId)}" data-target-language="${escapeHtml(entry.targetLanguage)}" data-title="${escapeHtml(entry.title || '')}" data-filename="${escapeHtml(entry.filename || '')}" data-video-id="${escapeHtml(entry.videoId || '')}" data-video-hash="${escapeHtml(entry.videoHash || '')}" data-source-language="${escapeHtml(entry.sourceLanguage || '')}" data-season="${Number.isFinite(Number(entry.season)) ? escapeHtml(entry.season) : ''}" data-episode="${Number.isFinite(Number(entry.episode)) ? escapeHtml(entry.episode) : ''}" title="${t('history.retranslate.tooltip', {}, 'Start a fresh translation for this subtitle')}">${t('history.retranslate.button', {}, 'Retranslate')}</button>`
       : '';
 
     return `
@@ -487,7 +487,7 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
 
   return `
 <!DOCTYPE html>
-<html lang="${resolveUiLang(config)}">
+<html lang="${resolveUiLang(config)}" data-third-theme="true-dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -501,15 +501,17 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
   <script>
     (function() {
       var html = document.documentElement;
+      var thirdTheme = html.getAttribute('data-third-theme') === 'true-dark' ? 'true-dark' : 'blackhole';
       var theme = 'light';
-      try {
-        var saved = localStorage.getItem('theme');
-        if (saved) {
-          theme = saved;
-        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-          theme = 'dark';
-        }
-      } catch (_) {}
+      var saved = null;
+      try { saved = localStorage.getItem('theme'); } catch (_) {}
+      if (saved === 'blackhole' || saved === 'true-dark') {
+        theme = thirdTheme;
+      } else if (saved === 'light' || saved === 'dark') {
+        theme = saved;
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        theme = 'dark';
+      }
       html.setAttribute('data-theme', theme);
     })();
   </script>
@@ -1057,6 +1059,13 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
         
         const sourceFileId = btn.dataset.sourceFileId;
         const targetLanguage = btn.dataset.targetLanguage;
+        const title = btn.dataset.title || '';
+        const filename = btn.dataset.filename || '';
+        const videoId = btn.dataset.videoId || '';
+        const videoHash = btn.dataset.videoHash || '';
+        const sourceLanguage = btn.dataset.sourceLanguage || '';
+        const season = btn.dataset.season || '';
+        const episode = btn.dataset.episode || '';
         
         if (!sourceFileId || !targetLanguage) {
           alert(tt('history.retranslate.missingParams', {}, 'Missing required parameters.'));
@@ -1064,26 +1073,32 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
         }
         
         const originalText = btn.textContent;
-        btn.textContent = tt('history.retranslate.loading', {}, 'Clearing...');
+        btn.textContent = tt('history.retranslate.loading', {}, 'Starting...');
         btn.classList.add('loading');
         btn.disabled = true;
         
         const url = '/api/retranslate?' + new URLSearchParams({
           config: CONFIG_STR,
           sourceFileId: sourceFileId,
-          targetLanguage: targetLanguage
+          targetLanguage: targetLanguage,
+          title: title,
+          filename: filename,
+          videoId: videoId,
+          videoHash: videoHash,
+          sourceLanguage: sourceLanguage,
+          season: season,
+          episode: episode
         }).toString();
         
         fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, cache: 'no-store' })
           .then(function(resp) { return resp.json().then(function(data) { return { ok: resp.ok, data: data }; }); })
           .then(function(result) {
             if (result.ok && result.data.success) {
-              btn.textContent = tt('history.retranslate.done', {}, 'Done!');
+              btn.textContent = tt('history.retranslate.done', {}, 'Started');
               btn.style.borderColor = 'var(--success)';
               btn.style.color = 'var(--success)';
               
-              // Show success message and hint
-              const hint = tt('history.retranslate.successHint', {}, 'Cache cleared! Reload the subtitle in Stremio or click Download to get the fresh translation.');
+              const hint = tt('history.retranslate.successHint', {}, 'Fresh translation started. This page will refresh to show the new entry.');
               const card = btn.closest('.history-card');
               if (card) {
                 let msgEl = card.querySelector('.retranslate-msg');
@@ -1095,15 +1110,10 @@ function generateHistoryPage(configStr, historyEntries, config, videoId, filenam
                 }
                 msgEl.textContent = hint;
               }
-              
-              // Re-enable after delay
+
               setTimeout(function() {
-                btn.textContent = originalText;
-                btn.classList.remove('loading');
-                btn.disabled = false;
-                btn.style.borderColor = '';
-                btn.style.color = '';
-              }, 3000);
+                window.location.reload();
+              }, 900);
             } else {
               throw new Error(result.data.error || tt('history.retranslate.failedReason', {}, 'Retranslation failed'));
             }

@@ -1074,6 +1074,63 @@ Translate to {target_language}.`;
         return convertAssEl ? convertAssEl.checked === true : false;
     }
 
+    function normalizeTranslationWorkflowValue(value, fallback = 'xml') {
+        const normalized = String(value || '').toLowerCase();
+        return ['xml', 'json', 'original', 'ai'].includes(normalized) ? normalized : fallback;
+    }
+
+    function getTranslationWorkflowInputs() {
+        const legacySelect = document.getElementById('sendTimestampsToAI');
+        if (legacySelect) return [legacySelect];
+        return Array.from(document.querySelectorAll('input[name="translationWorkflow"]'));
+    }
+
+    function getSelectedTranslationWorkflow(fallback = 'xml') {
+        const legacySelect = document.getElementById('sendTimestampsToAI');
+        if (legacySelect) {
+            return normalizeTranslationWorkflowValue(legacySelect.value, fallback);
+        }
+
+        const selectedRadio = document.querySelector('input[name="translationWorkflow"]:checked');
+        return normalizeTranslationWorkflowValue(selectedRadio ? selectedRadio.value : '', fallback);
+    }
+
+    function setSelectedTranslationWorkflow(workflow) {
+        const normalized = normalizeTranslationWorkflowValue(workflow, 'xml');
+        const legacySelect = document.getElementById('sendTimestampsToAI');
+        if (legacySelect) {
+            legacySelect.value = normalized;
+        }
+
+        const radioInputs = Array.from(document.querySelectorAll('input[name="translationWorkflow"]'));
+        if (radioInputs.length > 0) {
+            let matched = false;
+            radioInputs.forEach((input) => {
+                const isMatch = normalizeTranslationWorkflowValue(input.value, '') === normalized;
+                input.checked = isMatch;
+                if (isMatch) matched = true;
+            });
+            if (!matched) {
+                const xmlRadio = radioInputs.find((input) => normalizeTranslationWorkflowValue(input.value, '') === 'xml');
+                if (xmlRadio) xmlRadio.checked = true;
+            }
+        }
+
+        return normalized;
+    }
+
+    function getTranslationWorkflowContainer() {
+        const legacySelect = document.getElementById('sendTimestampsToAI');
+        if (legacySelect) {
+            return legacySelect.closest('.form-group');
+        }
+        const radioGroup = document.getElementById('translationWorkflow');
+        if (radioGroup) {
+            return radioGroup.closest('.v2-card, .v2-form-group, .form-group');
+        }
+        return null;
+    }
+
     function syncUrlExtensionTestModeUi(options = {}) {
         const { rememberCheckedSelection = false } = options;
         const radios = Array.from(document.querySelectorAll('input[name="urlExtensionTest"]'));
@@ -1905,8 +1962,7 @@ Translate to {target_language}.`;
         const mismatchRetriesEl = document.getElementById('mismatchRetries');
         const mismatchRetriesChanged = mismatchRetriesEl ? (parseInt(mismatchRetriesEl.value) !== (defaults.mismatchRetries ?? 1)) : false;
         // Workflow change (default is 'xml')
-        const workflowEl = document.getElementById('sendTimestampsToAI');
-        const workflowChanged = workflowEl ? (workflowEl.value !== 'xml') : false;
+        const workflowChanged = getSelectedTranslationWorkflow('xml') !== 'xml';
 
         return modelChanged || thinkingChanged || tempChanged || topPChanged || batchCtxChanged || ctxSizeChanged || mismatchRetriesChanged || workflowChanged;
     }
@@ -2790,7 +2846,7 @@ Translate to {target_language}.`;
             });
         }
 
-        // Function to show/hide Convert ASS/SSA to VTT option (user-facing since Phase 1)
+        // Function to show/hide ASS/SSA passthrough option (user-facing since Phase 1)
         function toggleConvertAssToVttGroup() {
             const convertAssGroup = document.getElementById('convertAssToVttGroup');
             if (!convertAssGroup) return;
@@ -2798,14 +2854,14 @@ Translate to {target_language}.`;
             convertAssGroup.style.display = 'block';
         }
 
-        // Function to show/hide URL extension test group (requires devMode AND convertAssToVtt unchecked)
+        // Function to show/hide URL extension test group (requires devMode AND passthrough enabled)
         function toggleUrlExtensionTestGroup() {
             const urlExtTestGroup = document.getElementById('urlExtensionTestGroup');
             if (!urlExtTestGroup) return;
             const devModeEl = document.getElementById('devMode');
             const convertAssEl = document.getElementById('convertAssToVtt');
             const devEnabled = devModeEl && devModeEl.checked;
-            // Inverted UI: checked = passthrough (ASS conversion OFF)
+            // checked = passthrough (ASS conversion OFF)
             const assConversionDisabled = convertAssEl && convertAssEl.checked;
             // Show only when devMode is ON and ASS conversion is OFF (raw ASS mode)
             urlExtTestGroup.style.display = (devEnabled && assConversionDisabled) ? 'block' : 'none';
@@ -3027,7 +3083,7 @@ Translate to {target_language}.`;
         const advThinkingEl = document.getElementById('advancedThinkingBudget');
         const advTempEl = document.getElementById('advancedTemperature');
         const advTopPEl = document.getElementById('advancedTopP');
-        const sendTimestampsEl = document.getElementById('sendTimestampsToAI');
+        const workflowInputs = getTranslationWorkflowInputs();
 
         // Fetch models when dropdown is clicked (on-demand fallback)
         if (advModelEl) {
@@ -3065,7 +3121,7 @@ Translate to {target_language}.`;
             tryFetchAdvancedModels();
         });
 
-        [advModelEl, advThinkingEl, advTempEl, advTopPEl, sendTimestampsEl].forEach(el => {
+        [advModelEl, advThinkingEl, advTempEl, advTopPEl, ...workflowInputs].forEach(el => {
             if (el) {
                 el.addEventListener('change', updateBypassCacheForAdvancedSettings);
                 el.addEventListener('input', updateBypassCacheForAdvancedSettings);
@@ -3086,10 +3142,6 @@ Translate to {target_language}.`;
         if (contextSizeEl) {
             contextSizeEl.addEventListener('change', updateBypassCacheForAdvancedSettings);
             contextSizeEl.addEventListener('input', updateBypassCacheForAdvancedSettings);
-        }
-        if (sendTimestampsEl) {
-            sendTimestampsEl.addEventListener('change', updateBypassCacheForAdvancedSettings);
-            sendTimestampsEl.addEventListener('input', updateBypassCacheForAdvancedSettings);
         }
         const mismatchRetriesEl = document.getElementById('mismatchRetries');
         if (mismatchRetriesEl) {
@@ -4628,8 +4680,10 @@ Translate to {target_language}.`;
         const excludeHearingImpairedNoTranslationGroup = document.getElementById('excludeHearingImpairedNoTranslationGroup');
         const enableSeasonPacksNoTranslationGroup = document.getElementById('enableSeasonPacksNoTranslationGroup');
         const forceSRTOutputNoTranslationGroup = document.getElementById('forceSRTOutputNoTranslationGroup');
+        const workflowGroup = getTranslationWorkflowContainer();
+        if (workflowGroup) groupsToHide.push(workflowGroup);
 
-        ['sendTimestampsToAI', 'databaseMode', 'learnModeEnabled', 'mobileMode', 'singleBatchMode', 'betaMode'].forEach(id => {
+        ['databaseMode', 'learnModeEnabled', 'mobileMode', 'singleBatchMode', 'betaMode'].forEach(id => {
             const group = document.getElementById(id)?.closest('.form-group');
             if (group) groupsToHide.push(group);
         });
@@ -5764,7 +5818,8 @@ Translate to {target_language}.`;
         const forceSRTElNoTranslation = document.getElementById('forceSRTOutputNoTranslation');
         if (forceSRTEl) forceSRTEl.checked = currentConfig.forceSRTOutput === true;
         if (forceSRTElNoTranslation) forceSRTElNoTranslation.checked = currentConfig.forceSRTOutput === true;
-        // Inverted UI: checked = passthrough (convertAssToVtt false), unchecked = convert (true)
+        // Checkbox represents passthrough, but stored config uses convertAssToVtt.
+        // checked = passthrough ON => convertAssToVtt false
         const convertAssToVttEl = document.getElementById('convertAssToVtt');
         if (convertAssToVttEl) {
             convertAssToVttEl.checked = currentConfig.convertAssToVtt === false;
@@ -5863,15 +5918,14 @@ Translate to {target_language}.`;
             }
         }
         if (contextSizeEl) contextSizeEl.value = currentConfig.advancedSettings?.contextSize || 8;
-        const sendTimestampsEl = document.getElementById('sendTimestampsToAI');
-        if (sendTimestampsEl) {
+        {
             let workflow = currentConfig.advancedSettings?.translationWorkflow ||
                 ((currentConfig.advancedSettings?.sendTimestampsToAI === true) ? 'ai' : 'xml');
             // Backward compat: migrate enableJsonOutput toggle → 'json' workflow
             if (currentConfig.advancedSettings?.enableJsonOutput === true && workflow !== 'ai') {
                 workflow = 'json';
             }
-            sendTimestampsEl.value = workflow;
+            setSelectedTranslationWorkflow(workflow);
         }
 
         // Load mismatch retries setting
@@ -6084,7 +6138,7 @@ Translate to {target_language}.`;
             urlExtensionTest: (function () {
                 // When ASS passthrough is enabled, force 'none' to avoid extension/payload mismatch
                 const convertAssEl = document.getElementById('convertAssToVtt');
-                const assPassthroughEnabled = convertAssEl && convertAssEl.checked; // Inverted UI: checked = passthrough
+                const assPassthroughEnabled = convertAssEl && convertAssEl.checked;
                 if (assPassthroughEnabled) {
                     return 'none'; // ASS content can't use .srt extension
                 }
@@ -6189,7 +6243,7 @@ Translate to {target_language}.`;
             })(),
             convertAssToVtt: (function () {
                 const el = document.getElementById('convertAssToVtt');
-                // Inverted UI: checked = passthrough (false), unchecked = convert (true)
+                // Checkbox represents passthrough; stored config keeps convertAssToVtt.
                 // Default to true if element not found (backwards compatible)
                 return el ? !el.checked : (currentConfig?.convertAssToVtt !== false);
             })(),
@@ -6222,7 +6276,7 @@ Translate to {target_language}.`;
                 topK: 40, // Keep default topK
                 enableBatchContext: (function () { const el = document.getElementById('enableBatchContext'); return el ? el.checked : false; })(),
                 contextSize: (function () { const el = document.getElementById('contextSize'); return el ? parseInt(el.value) : 8; })(),
-                translationWorkflow: (function () { const el = document.getElementById('sendTimestampsToAI'); return el ? el.value : 'xml'; })(),
+                translationWorkflow: getSelectedTranslationWorkflow('xml'),
                 mismatchRetries: (function () { const el = document.getElementById('mismatchRetries'); return el ? Math.max(0, Math.min(3, parseInt(el.value) || 1)) : 1; })()
             }
         };

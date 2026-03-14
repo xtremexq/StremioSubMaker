@@ -1,8 +1,8 @@
 # Use Node.js LTS version
 FROM node:20-alpine
 
-# Install su-exec for privilege dropping in entrypoint (tiny, no overhead)
-RUN apk add --no-cache su-exec
+# Install su-exec for privilege dropping and tzdata for IANA timezone support
+RUN apk add --no-cache su-exec tzdata
 
 # Set working directory
 WORKDIR /app

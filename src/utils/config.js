@@ -524,7 +524,7 @@ function normalizeConfig(config) {
       if (advSettings.enableJsonOutput === true) return 'json';
       // Backward compat: if sendTimestampsToAI was true, map to 'ai'
       if (advSettings.sendTimestampsToAI === true) return 'ai';
-      return 'original';
+      return 'xml';
     })(),
     enableJsonOutput: advSettings.enableJsonOutput === true, // kept for one version (backward compat)
     mismatchRetries: (() => {
@@ -991,7 +991,7 @@ function getDefaultConfig(modelName = null) {
     // When enabled, trust the AI to return timestamps for each batch instead of reusing originals
     sendTimestampsToAI: process.env.SEND_TIMESTAMPS_TO_AI === 'true',
     // Translation workflow: 'original' (numbered list), 'ai' (send timestamps), 'xml' (XML-tagged), 'json' (structured JSON I/O)
-    translationWorkflow: process.env.TRANSLATION_WORKFLOW || 'original',
+    translationWorkflow: process.env.TRANSLATION_WORKFLOW || 'xml',
     // DEPRECATED: Use translationWorkflow: 'json' instead. Kept for backward compat (auto-migrates in validation).
     enableJsonOutput: process.env.ENABLE_JSON_OUTPUT === 'true',
     // Extended thinking (priority: .env > model-specific > global default)

@@ -318,7 +318,7 @@ async function generateSmdbPage(configStr, videoId, filename, config = {}) {
   const themeToggleLabel = t('fileUpload.themeToggle', {}, 'Toggle theme');
 
   return `<!DOCTYPE html>
-<html lang="${escapeHtml(uiLang)}">
+<html lang="${escapeHtml(uiLang)}" data-third-theme="true-dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -330,12 +330,13 @@ async function generateSmdbPage(configStr, videoId, filename, config = {}) {
   <script>
     (function() {
       var html = document.documentElement;
+      var thirdTheme = html.getAttribute('data-third-theme') === 'true-dark' ? 'true-dark' : 'blackhole';
       var theme = 'light';
-      try {
-        var saved = localStorage.getItem('theme');
-        if (saved) theme = saved;
-        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
-      } catch (_) {}
+      var saved = null;
+      try { saved = localStorage.getItem('theme'); } catch (_) {}
+      if (saved === 'blackhole' || saved === 'true-dark') theme = thirdTheme;
+      else if (saved === 'light' || saved === 'dark') theme = saved;
+      else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
       html.setAttribute('data-theme', theme);
     })();
   </script>

@@ -5,9 +5,9 @@
  * the original document structure (Script Info, Styles, Events).
  *
  * Strategy:
- *   1. parseASSForTranslation()  — parse ASS, extract dialogue text + tags
- *   2. buildSRTFromASSDialogue() — build a temporary SRT for the translation engine
- *   3. reassembleASS()           — re-inject translated text into the original ASS structure
+ *   1. parseASSForTranslation() - parse ASS, extract translatable text + preserved segments
+ *   2. buildSRTFromASSDialogue() - build a temporary SRT for the translation engine
+ *   3. reassembleASS() - re-inject translated text and timings into the original ASS structure
  */
 
 const log = require('./logger');
@@ -34,92 +34,216 @@ function assTimeToSRT(assTime) {
 }
 
 /**
- * Extract override tags and their positions from ASS dialogue text.
- * Tags are `{...}` blocks (typically starting with `\`).
+ * Convert SRT timecode (HH:MM:SS,mmm) to ASS timecode (h:mm:ss.cc)
+ * @param {string} srtTime - SRT format timecode, e.g. "00:01:23,450"
+ * @returns {string} ASS format timecode, e.g. "0:01:23.45"
+ */
+function srtTimeToASS(srtTime) {
+  const m = String(srtTime || '').trim().match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/);
+  if (!m) return '0:00:00.00';
+
+  const totalMs = (
+    (((parseInt(m[1], 10) || 0) * 60 + (parseInt(m[2], 10) || 0)) * 60 + (parseInt(m[3], 10) || 0)) * 1000
+  ) + (parseInt(m[4], 10) || 0);
+
+  let totalCentiseconds = Math.round(totalMs / 10);
+  const cs = totalCentiseconds % 100;
+  totalCentiseconds = Math.floor(totalCentiseconds / 100);
+  const s = totalCentiseconds % 60;
+  totalCentiseconds = Math.floor(totalCentiseconds / 60);
+  const mi = totalCentiseconds % 60;
+  const h = Math.floor(totalCentiseconds / 60);
+
+  return (
+    String(h) + ':' +
+    String(mi).padStart(2, '0') + ':' +
+    String(s).padStart(2, '0') + '.' +
+    String(cs).padStart(2, '0')
+  );
+}
+
+/**
+ * Parse an SRT timecode range into ASS start/end timestamps.
+ * @param {string} srtTimecode - SRT range, e.g. "00:00:01,000 --> 00:00:03,500"
+ * @returns {{ startTime: string, endTime: string }|null}
+ */
+function parseSrtTimecodeRange(srtTimecode) {
+  const m = String(srtTimecode || '').trim().match(
+    /(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/
+  );
+  if (!m) return null;
+  return {
+    startTime: srtTimeToASS(m[1]),
+    endTime: srtTimeToASS(m[2])
+  };
+}
+
+/**
+ * Track ASS drawing mode switches from override tags.
+ * @param {number} currentMode - Current drawing mode (0 = text)
+ * @param {string} tagBlock - ASS override block, e.g. "{\p1\an7}"
+ * @returns {number}
+ */
+function updateDrawingMode(currentMode, tagBlock) {
+  let nextMode = currentMode > 0 ? currentMode : 0;
+  const drawingModePattern = /\\p(-?\d+)/gi;
+  let match;
+
+  while ((match = drawingModePattern.exec(String(tagBlock || ''))) !== null) {
+    const value = parseInt(match[1], 10);
+    if (Number.isFinite(value)) {
+      nextMode = value > 0 ? value : 0;
+    }
+  }
+
+  return nextMode;
+}
+
+/**
+ * Replace a field value while preserving surrounding whitespace from the source.
+ * @param {string} originalField - Original ASS field text
+ * @param {string} newValue - Replacement value
+ * @returns {string}
+ */
+function replaceFieldValuePreservingWhitespace(originalField, newValue) {
+  const match = String(originalField || '').match(/^(\s*)(.*?)(\s*)$/);
+  if (!match) return newValue;
+  return `${match[1]}${newValue}${match[3]}`;
+}
+
+/**
+ * Extract translatable text plus preserved raw ASS segments from dialogue text.
+ * Preserved segments include override tags ({...}) and drawing payloads that
+ * appear while \p drawing mode is active.
  *
  * @param {string} rawText - Raw ASS dialogue text field (with tags and \N)
- * @returns {{ cleanText: string, tags: Array<{position: number, tag: string}> }}
+ * @returns {{ cleanText: string, preservedSegments: Array<{position: number, raw: string}> }}
  */
 function extractTags(rawText) {
-  const tags = [];
+  const preservedSegments = [];
   let clean = '';
   let inTag = false;
   let currentTag = '';
   let cleanPos = 0;
+  let drawingMode = 0;
+  let drawingBuffer = '';
+  let drawingBufferPos = 0;
+
+  const flushDrawingBuffer = () => {
+    if (!drawingBuffer) return;
+    preservedSegments.push({ position: drawingBufferPos, raw: drawingBuffer });
+    drawingBuffer = '';
+  };
 
   for (let i = 0; i < rawText.length; i++) {
     const ch = rawText[i];
-    if (ch === '{') {
+
+    if (ch === '{' && !inTag) {
+      flushDrawingBuffer();
       inTag = true;
       currentTag = '{';
-    } else if (ch === '}' && inTag) {
-      currentTag += '}';
-      tags.push({ position: cleanPos, tag: currentTag });
-      inTag = false;
-      currentTag = '';
-    } else if (inTag) {
-      currentTag += ch;
-    } else {
-      clean += ch;
-      cleanPos++;
+      continue;
     }
+
+    if (inTag) {
+      currentTag += ch;
+      if (ch === '}') {
+        preservedSegments.push({ position: cleanPos, raw: currentTag });
+        drawingMode = updateDrawingMode(drawingMode, currentTag);
+        inTag = false;
+        currentTag = '';
+      }
+      continue;
+    }
+
+    if (drawingMode > 0) {
+      if (!drawingBuffer) drawingBufferPos = cleanPos;
+      drawingBuffer += ch;
+      continue;
+    }
+
+    if (ch === '\\' && i + 1 < rawText.length) {
+      const next = rawText[i + 1];
+      if (next === 'N' || next === 'n') {
+        clean += '\n';
+        cleanPos++;
+        i++;
+        continue;
+      }
+      if (next === 'h') {
+        clean += ' ';
+        cleanPos++;
+        i++;
+        continue;
+      }
+    }
+
+    clean += ch;
+    cleanPos++;
   }
 
-  // Convert ASS line breaks to \n for SRT, non-breaking space to space
-  clean = clean
-    .replace(/\\N/g, '\n')
-    .replace(/\\n/g, '\n')
-    .replace(/\\h/g, ' ');
+  if (inTag && currentTag) {
+    preservedSegments.push({ position: cleanPos, raw: currentTag });
+  }
+  flushDrawingBuffer();
 
-  return { cleanText: clean, tags };
+  return { cleanText: clean, preservedSegments };
 }
 
 /**
- * Re-insert override tags into translated text using proportional position mapping.
+ * Re-insert preserved ASS raw segments into translated text using proportional
+ * position mapping.
  *
  * @param {string} translatedText - Translated clean text (may contain \n)
- * @param {Array<{position: number, tag: string}>} tags - Original tags with positions
+ * @param {Array<{position: number, raw: string}>} preservedSegments - Original raw ASS segments
  * @param {number} originalLength - Length of the original clean text (for proportion calc)
- * @returns {string} - Text with tags re-inserted and \n converted back to \N
+ * @returns {string} - Text with preserved ASS segments re-inserted and \n converted back to \N
  */
-function reinsertTags(translatedText, tags, originalLength) {
-  if (!tags || tags.length === 0) {
-    // No tags to reinsert — just convert line breaks back
-    return translatedText.replace(/\n/g, '\\N');
+function reinsertTags(translatedText, preservedSegments, originalLength) {
+  const normalizedTranslatedText = String(translatedText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  if (!preservedSegments || preservedSegments.length === 0) {
+    return normalizedTranslatedText.replace(/\n/g, '\\N');
   }
 
-  const translatedLen = translatedText.length;
+  const translatedLen = normalizedTranslatedText.length;
 
-  // Build an array of { mappedPos, tag } sorted by position
-  const mappedTags = tags.map(t => {
-    let mappedPos;
-    if (t.position === 0) {
-      mappedPos = 0; // Tags at start stay at start
-    } else if (originalLength > 0 && t.position >= originalLength) {
-      mappedPos = translatedLen; // Tags at end stay at end
-    } else if (originalLength > 0) {
-      // Proportional mapping
-      mappedPos = Math.round((t.position / originalLength) * translatedLen);
-      mappedPos = Math.min(mappedPos, translatedLen);
-    } else {
-      mappedPos = 0;
-    }
-    return { mappedPos, tag: t.tag };
+  const mappedSegments = preservedSegments
+    .filter(segment => segment && typeof segment.raw === 'string' && segment.raw.length > 0)
+    .map((segment, index) => {
+      let mappedPos;
+      if (segment.position <= 0) {
+        mappedPos = 0;
+      } else if (originalLength > 0 && segment.position >= originalLength) {
+        mappedPos = translatedLen;
+      } else if (originalLength > 0) {
+        mappedPos = Math.round((segment.position / originalLength) * translatedLen);
+        mappedPos = Math.max(0, Math.min(mappedPos, translatedLen));
+      } else {
+        mappedPos = 0;
+      }
+
+      return {
+        mappedPos,
+        raw: segment.raw,
+        order: index
+      };
+    });
+
+  // Insert from right to left. Within the same mapped position, reverse the
+  // original order so the final rendered order still matches the source line.
+  mappedSegments.sort((a, b) => {
+    if (a.mappedPos !== b.mappedPos) return b.mappedPos - a.mappedPos;
+    return b.order - a.order;
   });
 
-  // Sort by position descending so we can insert from right to left without shifting indices
-  mappedTags.sort((a, b) => b.mappedPos - a.mappedPos);
-
-  let result = translatedText;
-  for (const { mappedPos, tag } of mappedTags) {
-    const pos = Math.min(mappedPos, result.length);
-    result = result.slice(0, pos) + tag + result.slice(pos);
+  let result = normalizedTranslatedText;
+  for (const { mappedPos, raw } of mappedSegments) {
+    const pos = Math.max(0, Math.min(mappedPos, result.length));
+    result = result.slice(0, pos) + raw + result.slice(pos);
   }
 
-  // Convert \n back to ASS line breaks
-  result = result.replace(/\n/g, '\\N');
-
-  return result;
+  return result.replace(/\n/g, '\\N');
 }
 
 /**
@@ -186,8 +310,8 @@ function parseASSForTranslation(assContent) {
     return null;
   }
 
-  // The text field is always the last field — commas inside text are NOT separators
-  const numFieldsBeforeText = idxText; // Number of commas to split on
+  // The text field is always the last field - commas inside text are not separators
+  const numFieldsBeforeText = idxText;
 
   // Parse dialogue entries
   const dialogueEntries = [];
@@ -198,7 +322,6 @@ function parseASSForTranslation(assContent) {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // Check for next section (signals end of Events)
     if (/^\[.*\]/.test(trimmed)) {
       pastDialogue = true;
       footerLines.push(line);
@@ -210,10 +333,7 @@ function parseASSForTranslation(assContent) {
       continue;
     }
 
-    // Skip non-Dialogue lines (Comments, empty lines, etc.) — preserve them
     if (!/^dialogue\s*:/i.test(trimmed)) {
-      // Non-dialogue lines within Events (comments like "Comment:", empty lines)
-      // We'll store them as non-dialogue entries to preserve order
       dialogueEntries.push({
         isDialogue: false,
         originalLine: line
@@ -221,8 +341,6 @@ function parseASSForTranslation(assContent) {
       continue;
     }
 
-    // Parse Dialogue line
-    // Split on commas, but only up to numFieldsBeforeText splits
     const colonPos = line.indexOf(':');
     if (colonPos === -1) continue;
     const payload = line.substring(colonPos + 1);
@@ -240,26 +358,22 @@ function parseASSForTranslation(assContent) {
         current += ch;
       }
     }
-    parts.push(current); // The remaining text field
+    parts.push(current);
 
-    // Extract times and text
     const startTime = (idxStart >= 0 && idxStart < parts.length) ? parts[idxStart].trim() : '';
     const endTime = (idxEnd >= 0 && idxEnd < parts.length) ? parts[idxEnd].trim() : '';
-    const rawText = parts[parts.length - 1] || ''; // Text is always last
-
-    // Build prefix: everything before the text field (for reconstruction)
+    const rawText = parts[parts.length - 1] || '';
     const prefix = 'Dialogue:' + parts.slice(0, numFieldsBeforeText).join(',') + ',';
-
-    // Extract tags and clean text
-    const { cleanText, tags } = extractTags(rawText);
+    const { cleanText, preservedSegments } = extractTags(rawText);
 
     dialogueEntries.push({
       isDialogue: true,
       originalLine: line,
       prefix,
+      partsBeforeText: parts.slice(0, numFieldsBeforeText),
       rawText,
       cleanText,
-      tags,
+      preservedSegments,
       startTime,
       endTime,
       originalCleanLength: cleanText.length
@@ -277,6 +391,8 @@ function parseASSForTranslation(assContent) {
   return {
     header,
     formatLine,
+    startFieldIndex: idxStart,
+    endFieldIndex: idxEnd,
     dialogueEntries,
     footer: footerLines.join('\n'),
     format
@@ -297,7 +413,7 @@ function buildSRTFromASSDialogue(dialogueEntries) {
   for (const entry of dialogueEntries) {
     if (!entry.isDialogue) continue;
 
-    // Skip entries with empty clean text (e.g., drawing commands only)
+    // Skip entries with empty clean text (e.g. drawing commands only)
     const text = entry.cleanText.trim();
     if (!text) continue;
 
@@ -310,7 +426,7 @@ function buildSRTFromASSDialogue(dialogueEntries) {
     srtIndex++;
   }
 
-  return srtBlocks.join('\n\n') + '\n';
+  return srtBlocks.length > 0 ? `${srtBlocks.join('\n\n')}\n` : '';
 }
 
 /**
@@ -322,78 +438,108 @@ function buildSRTFromASSDialogue(dialogueEntries) {
  * @returns {string} - Complete ASS/SSA file with translated dialogue text
  */
 function reassembleASS(parsedASS, translatedSRTContent) {
-  if (!parsedASS || !translatedSRTContent) {
+  if (!parsedASS) {
     log.warn(() => '[ASSTranslationHelper] reassembleASS: missing input');
     return translatedSRTContent || '';
   }
 
-  // Parse the translated SRT
-  const translatedEntries = parseSRT(translatedSRTContent);
-  if (!translatedEntries || translatedEntries.length === 0) {
-    log.warn(() => '[ASSTranslationHelper] reassembleASS: no entries in translated SRT, returning original');
-    // Rebuild the original ASS untranslated
+  if (translatedSRTContent === undefined || translatedSRTContent === null) {
+    log.warn(() => '[ASSTranslationHelper] reassembleASS: missing translated SRT, returning original');
     return rebuildASSFromParsed(parsedASS, null);
   }
 
-  // Build translated text lookup by SRT index (1-based)
-  const translatedTexts = new Map();
-  for (const entry of translatedEntries) {
-    translatedTexts.set(entry.id, entry.text);
+  const translatedEntries = parseSRT(translatedSRTContent);
+  if (!translatedEntries || translatedEntries.length === 0) {
+    log.warn(() => '[ASSTranslationHelper] reassembleASS: no entries in translated SRT, returning original');
+    return rebuildASSFromParsed(parsedASS, null);
   }
 
-  return rebuildASSFromParsed(parsedASS, translatedTexts);
+  const translatedLookup = new Map();
+  for (const entry of translatedEntries) {
+    translatedLookup.set(entry.id, {
+      text: entry.text,
+      timecode: entry.timecode
+    });
+  }
+
+  return rebuildASSFromParsed(parsedASS, translatedLookup);
 }
 
 /**
  * Rebuild the ASS file from parsed structure, optionally replacing dialogue text.
  *
  * @param {Object} parsedASS - Parsed ASS structure
- * @param {Map<number, string>|null} translatedTexts - Map of SRT index → translated text (null = keep original)
+ * @param {Map<number, {text: string, timecode: string}>|null} translatedLookup - Map of SRT index -> translated entry
  * @returns {string}
  */
-function rebuildASSFromParsed(parsedASS, translatedTexts) {
+function rebuildASSFromParsed(parsedASS, translatedLookup) {
   const outputLines = [];
 
-  // Header (Script Info + Styles + [Events])
   outputLines.push(parsedASS.header);
 
-  // Format line
   if (parsedASS.formatLine) {
     outputLines.push(parsedASS.formatLine);
   }
 
-  // Dialogue entries (and non-dialogue lines like comments)
+  const startFieldIndex = Number.isInteger(parsedASS.startFieldIndex) ? parsedASS.startFieldIndex : -1;
+  const endFieldIndex = Number.isInteger(parsedASS.endFieldIndex) ? parsedASS.endFieldIndex : -1;
+
   let srtIndex = 1;
   for (const entry of parsedASS.dialogueEntries) {
     if (!entry.isDialogue) {
-      // Non-dialogue line — preserve as-is
       outputLines.push(entry.originalLine);
       continue;
     }
 
-    // Skip empty-text entries (same as buildSRTFromASSDialogue)
     const originalClean = entry.cleanText.trim();
     if (!originalClean) {
-      // Preserve the original line (no SRT entry was generated for this)
       outputLines.push(entry.originalLine);
       continue;
     }
 
-    // Look up translated text
-    const translated = translatedTexts ? translatedTexts.get(srtIndex) : null;
+    const translatedEntry = translatedLookup ? translatedLookup.get(srtIndex) : null;
     srtIndex++;
 
-    if (translated !== undefined && translated !== null) {
-      // Re-insert tags into translated text
-      const taggedText = reinsertTags(translated, entry.tags, entry.originalCleanLength);
-      outputLines.push(entry.prefix + taggedText);
+    if (translatedEntry !== undefined && translatedEntry !== null) {
+      const translatedText = translatedEntry.text !== undefined && translatedEntry.text !== null
+        ? String(translatedEntry.text)
+        : '';
+
+      const taggedText = reinsertTags(
+        translatedText,
+        entry.preservedSegments || entry.tags,
+        entry.originalCleanLength
+      );
+
+      let linePrefix = entry.prefix;
+      const translatedTiming = parseSrtTimecodeRange(translatedEntry.timecode);
+      if (
+        translatedTiming &&
+        Array.isArray(entry.partsBeforeText) &&
+        entry.partsBeforeText.length > 0
+      ) {
+        const rebuiltParts = entry.partsBeforeText.slice();
+        if (startFieldIndex >= 0 && startFieldIndex < rebuiltParts.length) {
+          rebuiltParts[startFieldIndex] = replaceFieldValuePreservingWhitespace(
+            rebuiltParts[startFieldIndex],
+            translatedTiming.startTime
+          );
+        }
+        if (endFieldIndex >= 0 && endFieldIndex < rebuiltParts.length) {
+          rebuiltParts[endFieldIndex] = replaceFieldValuePreservingWhitespace(
+            rebuiltParts[endFieldIndex],
+            translatedTiming.endTime
+          );
+        }
+        linePrefix = 'Dialogue:' + rebuiltParts.join(',') + ',';
+      }
+
+      outputLines.push(linePrefix + taggedText);
     } else {
-      // No translation available — keep original line
       outputLines.push(entry.originalLine);
     }
   }
 
-  // Footer (any sections after Events, or trailing content)
   if (parsedASS.footer) {
     outputLines.push(parsedASS.footer);
   }
@@ -405,8 +551,9 @@ module.exports = {
   parseASSForTranslation,
   buildSRTFromASSDialogue,
   reassembleASS,
-  // Exported for testing
   assTimeToSRT,
+  srtTimeToASS,
   extractTags,
-  reinsertTags
+  reinsertTags,
+  parseSrtTimecodeRange
 };

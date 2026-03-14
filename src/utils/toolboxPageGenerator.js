@@ -469,7 +469,7 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
 
   return `
 <!DOCTYPE html>
-<html lang="${resolveUiLang(config)}">
+<html lang="${resolveUiLang(config)}" data-third-theme="true-dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -482,15 +482,17 @@ function generateSubToolboxPage(configStr, videoId, filename, config) {
   <script>
     (function() {
       var html = document.documentElement;
+      var thirdTheme = html.getAttribute('data-third-theme') === 'true-dark' ? 'true-dark' : 'blackhole';
       var theme = 'light';
-      try {
-        var saved = localStorage.getItem('theme');
-        if (saved) {
-          theme = saved;
-        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-          theme = 'dark';
-        }
-      } catch (_) {}
+      var saved = null;
+      try { saved = localStorage.getItem('theme'); } catch (_) {}
+      if (saved === 'blackhole' || saved === 'true-dark') {
+        theme = thirdTheme;
+      } else if (saved === 'light' || saved === 'dark') {
+        theme = saved;
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        theme = 'dark';
+      }
       html.setAttribute('data-theme', theme);
     })();
   </script>
@@ -1940,7 +1942,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
 
   return `
 <!DOCTYPE html>
-<html lang="${resolveUiLang(config)}">
+<html lang="${resolveUiLang(config)}" data-third-theme="true-dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1954,15 +1956,17 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
   <script>
     (function() {
       var html = document.documentElement;
+      var thirdTheme = html.getAttribute('data-third-theme') === 'true-dark' ? 'true-dark' : 'blackhole';
       var theme = 'light';
-      try {
-        var saved = localStorage.getItem('theme');
-        if (saved) {
-          theme = saved;
-        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-          theme = 'dark';
-        }
-      } catch (_) {}
+      var saved = null;
+      try { saved = localStorage.getItem('theme'); } catch (_) {}
+      if (saved === 'blackhole' || saved === 'true-dark') {
+        theme = thirdTheme;
+      } else if (saved === 'light' || saved === 'dark') {
+        theme = saved;
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        theme = 'dark';
+      }
       html.setAttribute('data-theme', theme);
     })();
   </script>
@@ -8265,7 +8269,7 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
 
   return `
 <!DOCTYPE html>
-<html lang="${resolveUiLang(config)}">
+<html lang="${resolveUiLang(config)}" data-third-theme="true-dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8279,15 +8283,17 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     <script>
       (function() {
         var html = document.documentElement;
+        var thirdTheme = html.getAttribute('data-third-theme') === 'true-dark' ? 'true-dark' : 'blackhole';
         var theme = 'light';
-        try {
-          var saved = localStorage.getItem('theme');
-          if (saved) {
-            theme = saved;
-          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            theme = 'dark';
-          }
-        } catch (_) {}
+        var saved = null;
+        try { saved = localStorage.getItem('theme'); } catch (_) {}
+        if (saved === 'blackhole' || saved === 'true-dark') {
+          theme = thirdTheme;
+        } else if (saved === 'light' || saved === 'dark') {
+          theme = saved;
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          theme = 'dark';
+        }
         html.setAttribute('data-theme', theme);
       })();
     </script>

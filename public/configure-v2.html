@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-third-theme="blackhole">
 
 <head>
     <meta charset="UTF-8">
@@ -16,15 +16,17 @@
     <script>
         (function () {
             var html = document.documentElement;
+            var thirdTheme = html.getAttribute('data-third-theme') === 'true-dark' ? 'true-dark' : 'blackhole';
             var theme = 'dark'; // V2 defaults to dark
-            try {
-                var saved = localStorage.getItem('theme');
-                if (saved) {
-                    theme = saved;
-                } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-                    theme = 'light';
-                }
-            } catch (_) { }
+            var saved = null;
+            try { saved = localStorage.getItem('theme'); } catch (_) { }
+            if (saved === 'blackhole' || saved === 'true-dark') {
+                theme = thirdTheme;
+            } else if (saved === 'light' || saved === 'dark') {
+                theme = saved;
+            } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                theme = 'light';
+            }
             html.setAttribute('data-theme', theme);
         })();
     </script>
