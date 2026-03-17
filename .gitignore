@@ -60,6 +60,8 @@ temp
 .temp
 native/
 scripts/
+.tests
+.tests/
 tests/
 tests
 !tests/

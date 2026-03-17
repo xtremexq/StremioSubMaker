@@ -5523,6 +5523,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         updateExtensionStatus(true, readyWithVersion);
         setXsyncVersionWarning(msg.version || '');
       } else if (msg.type === 'SUBMAKER_DEBUG_LOG') {
+        refreshExtractionWatchdog();
         const level = (msg.level || 'info').toUpperCase();
         const text = msg.text || (window.t ? window.t('toolbox.logs.event', {}, 'Log event') : 'Log event');
         logExtract('[' + level + '] ' + text);
