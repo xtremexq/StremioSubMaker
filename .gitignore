@@ -64,6 +64,3 @@ scripts/
 .tests/
 tests/
 tests
-!tests/
-tests/*
-!tests/*.test.js

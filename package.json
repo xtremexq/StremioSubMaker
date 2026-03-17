@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "node --test tests/configPageState.test.js tests/sessionManager.test.js tests/localSubtitleHashResolver.test.js tests/streamActivity.test.js tests/assConversion.test.js tests/subdl.test.js tests/changelog.test.js tests/dockerIgnore.test.js",
+    "test": "node --test",
     "update:anime-list": "node update-anime-list.js",
     "check:locale-headers": "node scripts/check-locale-headers.js",
     "sync:locales": "node scripts/sync-locales.js"
