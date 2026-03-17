@@ -1,8 +1,8 @@
 /**
- * Quick Setup Wizard — Standalone controller
+ * Quick Setup Wizard â€” Standalone controller
  * 
  * Self-contained IIFE that manages the 7-step setup wizard overlay.
- * Does NOT depend on config.js internals — it builds its own config object
+ * Does NOT depend on config.js internals â€” it builds its own config object
  * and POSTs directly to /api/create-session.
  * 
  * To remove Quick Setup entirely:
@@ -15,16 +15,16 @@
 (function () {
     'use strict';
 
-    // ─── Constants ───────────────────────────────────────────────────
+    // â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const TOKEN_KEY = 'submaker_session_token';
     const QS_DISMISSED_KEY = 'submaker_qs_dismissed';
     const QS_STATE_KEY = 'submaker_qs_state';
     const TOTAL_STEPS = 7;
 
-    // No popular languages — all shown alphabetically
+    // No popular languages â€” all shown alphabetically
     const POPULAR_LANG_CODES = [];
 
-    // ─── Wizard State ────────────────────────────────────────────────
+    // â”€â”€â”€ Wizard State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const state = {
         currentStep: 1,
         mode: null,           // 'translate' | 'fetch'
@@ -53,6 +53,30 @@
         learnTargetLanguages: []
     };
 
+    function getFirstGeminiModelOptionValue() {
+        const select = document.getElementById('geminiModel');
+        if (select && select.options && select.options.length > 0) {
+            const firstValue = String(select.options[0].value || '').trim();
+            if (firstValue) return firstValue;
+        }
+        return 'gemini-3.1-flash-lite-preview';
+    }
+
+    function getQuickSetupGeminiAdvancedDefaults(modelName) {
+        switch (String(modelName || '').trim()) {
+            case 'gemini-2.5-flash':
+            case 'gemini-3-flash-preview':
+                return { thinkingBudget: -1, temperature: 0.5 };
+            case 'gemini-2.5-pro':
+            case 'gemini-3-pro-preview':
+                return { thinkingBudget: 1000, temperature: 0.5 };
+            case 'gemini-2.5-flash-lite':
+            case 'gemini-3.1-flash-lite-preview':
+            default:
+                return { thinkingBudget: 0, temperature: 0.8 };
+        }
+    }
+
     // Track whether the user has saved successfully (for reload-on-close)
     let hasSaved = false;
 
@@ -60,11 +84,11 @@
     let allLanguages = [];
     let languagesLoaded = false;
 
-    // ─── Utility ─────────────────────────────────────────────────────
+    // â”€â”€â”€ Utility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function $(id) { return document.getElementById(id); }
 
-    /** Quick Setup translation helper — wraps window.t() for the config.quickSetup namespace */
+    /** Quick Setup translation helper â€” wraps window.t() for the config.quickSetup namespace */
     function tQs(key, vars, fallback) {
         const fullKey = 'config.quickSetup.' + key;
         if (typeof window.t === 'function') return window.t(fullKey, vars, fallback);
@@ -76,7 +100,7 @@
         const container = $('quickSetupOverlay');
         if (!container || typeof window.t !== 'function') return;
 
-        // Handle data-i18n → textContent (or innerHTML if value contains HTML tags)
+        // Handle data-i18n â†’ textContent (or innerHTML if value contains HTML tags)
         container.querySelectorAll('[data-i18n]').forEach(el => {
             const key = el.getAttribute('data-i18n');
             if (!key) return;
@@ -91,7 +115,7 @@
             }
         });
 
-        // Handle data-i18n-placeholder → placeholder attribute
+        // Handle data-i18n-placeholder â†’ placeholder attribute
         container.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
             const key = el.getAttribute('data-i18n-placeholder');
             if (!key) return;
@@ -100,7 +124,7 @@
             if (value && value !== key) el.setAttribute('placeholder', value);
         });
 
-        // Handle data-i18n-title → title attribute
+        // Handle data-i18n-title â†’ title attribute
         container.querySelectorAll('[data-i18n-title]').forEach(el => {
             const key = el.getAttribute('data-i18n-title');
             if (!key) return;
@@ -119,7 +143,7 @@
         if (el) el.style.display = 'none';
     }
 
-    // ─── Initialization ──────────────────────────────────────────────
+    // â”€â”€â”€ Initialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function waitForPartials() {
         // init.js sets window.partialsReady to a Promise that resolves
@@ -213,7 +237,7 @@
         loadLanguages();
     }
 
-    // ─── Wizard Open / Close ─────────────────────────────────────────
+    // â”€â”€â”€ Wizard Open / Close â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async function openWizard() {
         const overlay = $('quickSetupOverlay');
@@ -251,10 +275,10 @@
                 console.warn('[QuickSetup] Failed to load existing config:', e);
             }
 
-            // API fetch failed — fall through to sessionStorage or reset
+            // API fetch failed â€” fall through to sessionStorage or reset
         }
 
-        // No saved token — try to restore mid-wizard progress from sessionStorage
+        // No saved token â€” try to restore mid-wizard progress from sessionStorage
         // (user was mid-setup for the first time and closed/reopened the wizard)
         if (!hasValidToken && restoreStateFromSession()) {
             hasSaved = false;
@@ -285,7 +309,7 @@
         }
     }
 
-    // ─── Step Navigation ─────────────────────────────────────────────
+    // â”€â”€â”€ Step Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function getEffectiveStep(step) {
         // Skip step 3 (AI Translation) in fetch mode
@@ -388,7 +412,7 @@
 
         if (nextBtn) {
             if (step === TOTAL_STEPS) {
-                // Last step — hide next, we have install buttons
+                // Last step â€” hide next, we have install buttons
                 hide(nextBtn);
             } else {
                 show(nextBtn);
@@ -396,9 +420,9 @@
                 // Update button text based on next step
                 const next = getNextStep(step);
                 if (next === TOTAL_STEPS) {
-                    nextBtn.textContent = tQs('reviewInstall', null, 'Review & Install →');
+                    nextBtn.textContent = tQs('reviewInstall', null, 'Review & Install â†’');
                 } else {
-                    nextBtn.textContent = tQs('next', null, 'Next →');
+                    nextBtn.textContent = tQs('next', null, 'Next â†’');
                 }
             }
         }
@@ -436,7 +460,7 @@
         }
     }
 
-    // ─── Read Data from Step UI ──────────────────────────────────────
+    // â”€â”€â”€ Read Data from Step UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function readStepData(step) {
         switch (step) {
@@ -478,7 +502,7 @@
         }
     }
 
-    // ─── Step 1: Mode Selection ──────────────────────────────────────
+    // â”€â”€â”€ Step 1: Mode Selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function wireStep1() {
         const cards = document.querySelectorAll('.qs-mode-card');
@@ -493,7 +517,7 @@
         });
     }
 
-    // ─── Step 2: Subtitle Sources ────────────────────────────────────
+    // â”€â”€â”€ Step 2: Subtitle Sources â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function wireStep2() {
         // OpenSubtitles auth toggle
@@ -547,7 +571,7 @@
             if (wyzieCheck.checked) wyzieSources.style.display = '';
         }
 
-        // ─── Test / Validate Buttons ─────────────────────────────
+        // â”€â”€â”€ Test / Validate Buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         // OpenSubtitles auth test
         const osBtn = $('qsValidateOpenSubs');
@@ -593,7 +617,7 @@
         }
     }
 
-    // ─── Step 3: AI Translation ──────────────────────────────────────
+    // â”€â”€â”€ Step 3: AI Translation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function wireStep3() {
         const keyInput = $('qsGeminiApiKey');
@@ -630,12 +654,12 @@
 
                     if (result.valid) {
                         state.geminiKeyValid = true;
-                        showKeyStatus(tQs('status.keyValid', null, '✓ API key is valid!'), 'success');
+                        showKeyStatus(tQs('status.keyValid', null, 'âœ“ API key is valid!'), 'success');
                     } else {
-                        showKeyStatus(tQs('status.keyInvalidPrefix', null, '✗') + ' ' + (result.error || tQs('status.keyInvalidDefault', null, 'Invalid API key — please double-check')), 'error');
+                        showKeyStatus(tQs('status.keyInvalidPrefix', null, 'âœ—') + ' ' + (result.error || tQs('status.keyInvalidDefault', null, 'Invalid API key â€” please double-check')), 'error');
                     }
                 } catch (err) {
-                    showKeyStatus(tQs('status.networkError', null, '✗ Network error — try again'), 'error');
+                    showKeyStatus(tQs('status.networkError', null, 'âœ— Network error â€” try again'), 'error');
                 } finally {
                     validateBtn.disabled = false;
                 }
@@ -651,7 +675,7 @@
         if (type) statusEl.classList.add(type);
     }
 
-    // ─── Generic Quick-Setup validation helpers ──────────────────────
+    // â”€â”€â”€ Generic Quick-Setup validation helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function showQsStatus(el, message, type) {
         if (!el) return;
@@ -666,9 +690,9 @@
         btn.classList.remove('valid', 'invalid');
         const iconEl = btn.querySelector('.qs-validate-icon');
         const textEl = btn.querySelector('.qs-validate-text');
-        const origIcon = iconEl ? iconEl.textContent : '✓';
+        const origIcon = iconEl ? iconEl.textContent : 'âœ“';
         const origText = textEl ? textEl.textContent : '';
-        if (iconEl) iconEl.textContent = '⟳';
+        if (iconEl) iconEl.textContent = 'âŸ³';
         if (textEl) textEl.textContent = tQs('status.testingBtn', null, 'Testing...');
         showQsStatus(statusEl, tQs('status.validating', null, 'Validating...'), 'validating');
 
@@ -685,13 +709,13 @@
 
             if (result.valid) {
                 btn.classList.add('valid');
-                if (iconEl) iconEl.textContent = '✓';
+                if (iconEl) iconEl.textContent = 'âœ“';
                 if (textEl) textEl.textContent = tQs('status.validBtn', null, 'Valid');
                 let msg = result.message || 'Valid!';
                 if (result.resultsCount !== undefined) {
                     msg += ` (${result.resultsCount} test results)`;
                 }
-                showQsStatus(statusEl, '✓ ' + msg, 'success');
+                showQsStatus(statusEl, 'âœ“ ' + msg, 'success');
                 setTimeout(() => {
                     btn.classList.remove('valid');
                     if (iconEl) iconEl.textContent = origIcon;
@@ -699,9 +723,9 @@
                 }, 3000);
             } else {
                 btn.classList.add('invalid');
-                if (iconEl) iconEl.textContent = '✗';
+                if (iconEl) iconEl.textContent = 'âœ—';
                 if (textEl) textEl.textContent = tQs('status.failedBtn', null, 'Failed');
-                showQsStatus(statusEl, tQs('status.keyInvalidPrefix', null, '✗') + ' ' + (result.error || tQs('status.validationFailed', null, 'Validation failed')), 'error');
+                showQsStatus(statusEl, tQs('status.keyInvalidPrefix', null, 'âœ—') + ' ' + (result.error || tQs('status.validationFailed', null, 'Validation failed')), 'error');
                 setTimeout(() => {
                     btn.classList.remove('invalid');
                     if (iconEl) iconEl.textContent = origIcon;
@@ -713,11 +737,11 @@
             btn.disabled = false;
             if (iconEl) iconEl.textContent = origIcon;
             if (textEl) textEl.textContent = origText;
-            showQsStatus(statusEl, tQs('status.networkError', null, '✗ Network error — try again'), 'error');
+            showQsStatus(statusEl, tQs('status.networkError', null, 'âœ— Network error â€” try again'), 'error');
         }
     }
 
-    // ─── Step 4: Language Selection ──────────────────────────────────
+    // â”€â”€â”€ Step 4: Language Selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async function loadLanguages() {
         try {
@@ -875,7 +899,7 @@
             const lang = allLanguages.find(l => l.code === code);
             const chip = document.createElement('span');
             chip.className = 'qs-lang-chip';
-            chip.innerHTML = `${lang ? lang.name : code} <button type="button" class="qs-lang-chip-remove" data-code="${code}">×</button>`;
+            chip.innerHTML = `${lang ? lang.name : code} <button type="button" class="qs-lang-chip-remove" data-code="${code}">Ã—</button>`;
             container.appendChild(chip);
         });
 
@@ -904,7 +928,7 @@
         }
     }
 
-    // ─── Step 5: Extras ──────────────────────────────────────────────
+    // â”€â”€â”€ Step 5: Extras â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function wireStep5() {
         const toolboxToggle = $('qsSubToolbox');
@@ -941,7 +965,7 @@
         }
     }
 
-    // ─── Step 6: Learn Language Selection ─────────────────────────────
+    // â”€â”€â”€ Step 6: Learn Language Selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function onEnterStep6Learn() {
         renderLearnLangGrid();
@@ -1028,7 +1052,7 @@
             const lang = allLanguages.find(l => l.code === code);
             const chip = document.createElement('span');
             chip.className = 'qs-lang-chip';
-            chip.innerHTML = `${lang ? lang.name : code} <button type="button" class="qs-lang-chip-remove" data-code="${code}">×</button>`;
+            chip.innerHTML = `${lang ? lang.name : code} <button type="button" class="qs-lang-chip-remove" data-code="${code}">Ã—</button>`;
             container.appendChild(chip);
         });
 
@@ -1056,7 +1080,7 @@
         }
     }
 
-    // ─── Step 7: Summary & Install ───────────────────────────────────
+    // â”€â”€â”€ Step 7: Summary & Install â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function onEnterStep7() {
         // Read any remaining unsaved data
@@ -1076,13 +1100,13 @@
 
         const items = [
             {
-                icon: state.mode === 'translate' ? '🌐' : '📥',
+                icon: state.mode === 'translate' ? 'ðŸŒ' : 'ðŸ“¥',
                 label: tQs('summary.mode', null, 'Mode'),
                 value: state.mode === 'translate' ? tQs('summary.modeTranslate', null, 'Translate Subtitles') : tQs('summary.modeFetch', null, 'Just Fetch Subtitles'),
                 cls: 'qs-on'
             },
             {
-                icon: '🎬',
+                icon: 'ðŸŽ¬',
                 label: 'OpenSubtitles',
                 value: state.openSubsAuth ? tQs('summary.opensubsAuth', null, 'Auth (logged in)') : tQs('summary.opensubsV3', null, 'V3 (no login)'),
                 cls: 'qs-on'
@@ -1091,23 +1115,23 @@
 
         // Source providers
         if (state.subdlEnabled) {
-            items.push({ icon: '📥', label: 'SubDL', value: tQs('summary.enabled', null, 'Enabled'), cls: 'qs-on' });
+            items.push({ icon: 'ðŸ“¥', label: 'SubDL', value: tQs('summary.enabled', null, 'Enabled'), cls: 'qs-on' });
         }
         if (state.subsourceEnabled) {
-            items.push({ icon: '📡', label: 'SubSource', value: tQs('summary.enabled', null, 'Enabled'), cls: 'qs-on' });
+            items.push({ icon: 'ðŸ“¡', label: 'SubSource', value: tQs('summary.enabled', null, 'Enabled'), cls: 'qs-on' });
         }
         if (state.scsEnabled) {
-            items.push({ icon: '🌐', label: 'Stremio Community Subs', value: tQs('summary.scsTimeout', null, 'Enabled (30s timeout)'), cls: 'qs-on' });
+            items.push({ icon: 'ðŸŒ', label: 'Stremio Community Subs', value: tQs('summary.scsTimeout', null, 'Enabled (30s timeout)'), cls: 'qs-on' });
         }
         if (state.wyzieEnabled) {
             const activeSources = Object.entries(state.wyzieSources).filter(([, v]) => v).map(([k]) => k);
-            items.push({ icon: '🔍', label: 'Wyzie Subs', value: tQs('summary.wyzieSources', { count: activeSources.length }, `Enabled (${activeSources.length} sources)`), cls: 'qs-on' });
+            items.push({ icon: 'ðŸ”', label: 'Wyzie Subs', value: tQs('summary.wyzieSources', { count: activeSources.length }, `Enabled (${activeSources.length} sources)`), cls: 'qs-on' });
         }
 
         // AI
         if (state.mode === 'translate') {
             items.push({
-                icon: '✨',
+                icon: 'âœ¨',
                 label: tQs('summary.aiTranslation', null, 'AI Translation'),
                 value: state.geminiApiKey ? tQs('summary.aiConfigured', null, 'Gemini 3.0 Flash') : tQs('summary.aiNotConfigured', null, 'Not configured'),
                 cls: state.geminiApiKey ? 'qs-on' : 'qs-off'
@@ -1120,7 +1144,7 @@
             return lang ? lang.name : code.toUpperCase();
         });
         items.push({
-            icon: '🗣️',
+            icon: 'ðŸ—£ï¸',
             label: state.mode === 'translate' ? tQs('summary.targetLanguages', null, 'Target Languages') : tQs('summary.subtitleLanguages', null, 'Subtitle Languages'),
             value: langNames.join(', ') || tQs('summary.none', null, 'None'),
             cls: langNames.length > 0 ? 'qs-on' : 'qs-off'
@@ -1128,20 +1152,20 @@
 
         // Extras
         items.push({
-            icon: '🧰',
+            icon: 'ðŸ§°',
             label: 'Sub Toolbox',
             value: state.subToolbox ? tQs('summary.enabled', null, 'Enabled') : tQs('summary.disabled', null, 'Disabled'),
             cls: state.subToolbox ? 'qs-on' : 'qs-off'
         });
         items.push({
-            icon: '📦',
+            icon: 'ðŸ“¦',
             label: tQs('summary.seasonPacks', null, 'Season Packs'),
             value: state.seasonPacks ? tQs('summary.enabled', null, 'Enabled') : tQs('summary.disabled', null, 'Disabled'),
             cls: state.seasonPacks ? 'qs-on' : 'qs-off'
         });
         if (state.hideSDH) {
             items.push({
-                icon: '🔇',
+                icon: 'ðŸ”‡',
                 label: tQs('summary.hideSdh', null, 'Hide SDH/HI'),
                 value: tQs('summary.enabled', null, 'Enabled'),
                 cls: 'qs-on'
@@ -1155,7 +1179,7 @@
                 return lang ? lang.name : code.toUpperCase();
             });
             items.push({
-                icon: '📖',
+                icon: 'ðŸ“–',
                 label: tQs('summary.learnLanguages', null, 'Learn Languages'),
                 value: learnNames.join(', ') || tQs('summary.none', null, 'None'),
                 cls: learnNames.length > 0 ? 'qs-on' : 'qs-off'
@@ -1220,6 +1244,8 @@
 
     function buildConfigObject() {
         const isTranslate = state.mode === 'translate';
+        const geminiModel = getFirstGeminiModelOptionValue();
+        const geminiAdvancedDefaults = getQuickSetupGeminiAdvancedDefaults(geminiModel);
 
         // Start from default config shape
         const config = {
@@ -1244,7 +1270,7 @@
                 defaultMode: 'cloudflare',
                 sendFullVideoToAssembly: false
             },
-            geminiModel: 'gemini-flash-latest',
+            geminiModel,
             betaModeEnabled: false,
             devMode: false,
             multiProviderEnabled: false,
@@ -1312,12 +1338,12 @@
             advancedSettings: {
                 enabled: false,
                 geminiModel: '',
-                thinkingBudget: 0,
-                temperature: 1.0,
+                thinkingBudget: geminiAdvancedDefaults.thinkingBudget,
+                temperature: geminiAdvancedDefaults.temperature,
                 topP: 0.95,
                 topK: 40,
                 enableBatchContext: false,
-                contextSize: 3,
+                contextSize: 8,
                 sendTimestampsToAI: false,
                 translationWorkflow: 'xml',
                 enableJsonOutput: false,
@@ -1407,7 +1433,7 @@
 
                             // 4. Preserve Advanced Settings
                             // Only overwrite geminiModel if the old config didn't have one set,
-                            // because QS defaults it to 'flash-preview' without asking.
+                            // because QS seeds it from the first visible Gemini dropdown entry.
                             if (qsConfig.geminiModel && !finalConfig.geminiModel) {
                                 finalConfig.geminiModel = qsConfig.geminiModel;
                             }
@@ -1488,7 +1514,7 @@
 
             // Show success
             if (statusEl) {
-                statusEl.textContent = tQs('status.savedOk', null, '✓ Configuration saved successfully!');
+                statusEl.textContent = tQs('status.savedOk', null, 'âœ“ Configuration saved successfully!');
                 statusEl.className = 'qs-install-status success';
             }
 
@@ -1508,18 +1534,18 @@
             // Transform save button into install button
             const saveBtnEl = $('qsSaveInstallBtn');
             if (saveBtnEl) {
-                saveBtnEl.innerHTML = `<span class="qs-btn-icon">📥</span> <span>${tQs('step7.installOnStremio', null, 'Install on Stremio')}</span>`;
+                saveBtnEl.innerHTML = `<span class="qs-btn-icon">ðŸ“¥</span> <span>${tQs('step7.installOnStremio', null, 'Install on Stremio')}</span>`;
                 const newInstallBtn = saveBtnEl.cloneNode(true);
                 saveBtnEl.parentNode.replaceChild(newInstallBtn, saveBtnEl);
                 newInstallBtn.addEventListener('click', () => handleInstallStremio());
             }
 
             // Keep the banner visible (permanent entry point)
-            // No need to toggle — banner always stays shown
+            // No need to toggle â€” banner always stays shown
 
         } catch (err) {
             if (statusEl) {
-                statusEl.textContent = '✗ ' + err.message;
+                statusEl.textContent = 'âœ— ' + err.message;
                 statusEl.className = 'qs-install-status error';
             }
         } finally {
@@ -1534,7 +1560,7 @@
         navigator.clipboard.writeText(url).then(() => {
             const statusEl = $('qsInstallStatus');
             if (statusEl) {
-                statusEl.textContent = tQs('status.copiedOk', null, '✓ Install URL copied to clipboard!');
+                statusEl.textContent = tQs('status.copiedOk', null, 'âœ“ Install URL copied to clipboard!');
                 statusEl.className = 'qs-install-status success';
             }
         }).catch(() => {
@@ -1566,7 +1592,7 @@
         localStorage.setItem(QS_DISMISSED_KEY, 'true');
 
         if (hasSaved) {
-            // Config was already saved to server — just reload to pick it up
+            // Config was already saved to server â€” just reload to pick it up
             const overlay = $('quickSetupOverlay');
             if (overlay) overlay.classList.remove('active');
             document.body.style.overflow = '';
@@ -1587,13 +1613,13 @@
         window.dispatchEvent(new CustomEvent('quickSetupApply', { detail: config }));
     }
 
-    // ─── Reset UI ────────────────────────────────────────────────────
+    // â”€â”€â”€ Reset UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function resetAllStepUIs() {
-        // Step 1 — deselect mode cards
+        // Step 1 â€” deselect mode cards
         document.querySelectorAll('.qs-mode-card').forEach(c => c.classList.remove('selected'));
 
-        // Step 2 — reset toggles and inputs
+        // Step 2 â€” reset toggles and inputs
         const subdlCheck = $('qsEnableSubDL');
         const ssCheck = $('qsEnableSubSource');
         if (subdlCheck) subdlCheck.checked = false;
@@ -1612,19 +1638,19 @@
         if (un) un.value = '';
         if (pw) pw.value = '';
 
-        // Step 3 — reset key input
+        // Step 3 â€” reset key input
         const keyInput = $('qsGeminiApiKey');
         if (keyInput) keyInput.value = '';
         const keyStatus = $('qsGeminiKeyStatus');
         if (keyStatus) { keyStatus.textContent = ''; keyStatus.className = 'qs-key-status'; }
 
-        // Step 4 — clear language selection
+        // Step 4 â€” clear language selection
         const searchInput = $('qsLangSearch');
         if (searchInput) searchInput.value = '';
         const selContainer = $('qsSelectedLangs');
         if (selContainer) selContainer.innerHTML = '<span style="color: #64748b; font-size: 0.82rem;">No languages selected yet</span>';
 
-        // Step 5 — reset extras + learn mode
+        // Step 5 â€” reset extras + learn mode
         const toolbox = $('qsSubToolbox');
         const season = $('qsSeasonPacks');
         const sdh = $('qsExcludeHI');
@@ -1635,13 +1661,13 @@
         if (learnToggle) learnToggle.checked = false;
         hide('qsLearnModeItem');
 
-        // Step 6 — clear learn language selection
+        // Step 6 â€” clear learn language selection
         const learnSearch = $('qsLearnLangSearch');
         if (learnSearch) learnSearch.value = '';
         const learnChips = $('qsSelectedLearnLangs');
         if (learnChips) learnChips.innerHTML = '<span style="color: #64748b; font-size: 0.82rem;">No learn languages selected yet</span>';
 
-        // Step 7 — clear summary
+        // Step 7 â€” clear summary
         const summaryList = $('qsSummary');
         if (summaryList) summaryList.innerHTML = '';
         const installStatus = $('qsInstallStatus');
@@ -1653,7 +1679,7 @@
         if (bar) bar.style.width = '0%';
     }
 
-    // ─── Session State Persistence ───────────────────────────────────
+    // â”€â”€â”€ Session State Persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     function saveStateToSession() {
         try {
@@ -1758,12 +1784,12 @@
     }
 
     function restoreUIFromState() {
-        // Step 1 — mode cards
+        // Step 1 â€” mode cards
         document.querySelectorAll('.qs-mode-card').forEach(c => {
             c.classList.toggle('selected', c.dataset.mode === state.mode);
         });
 
-        // Step 2 — checkboxes and inputs
+        // Step 2 â€” checkboxes and inputs
         const subdlCheck = $('qsEnableSubDL');
         const ssCheck = $('qsEnableSubSource');
         const scsCheck = $('qsEnableSCS');
@@ -1805,11 +1831,11 @@
             }
         }
 
-        // Step 3 — Gemini key
+        // Step 3 â€” Gemini key
         const geminiKey = $('qsGeminiApiKey');
         if (geminiKey) geminiKey.value = state.geminiApiKey || '';
 
-        // Step 5 — extras
+        // Step 5 â€” extras
         const toolbox = $('qsSubToolbox');
         const season = $('qsSeasonPacks');
         const sdh = $('qsExcludeHI');
@@ -1820,7 +1846,7 @@
         if (learnToggle) learnToggle.checked = state.learnMode;
     }
 
-    // ─── Boot ────────────────────────────────────────────────────────
+    // â”€â”€â”€ Boot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

@@ -5,7 +5,7 @@ const DeepLProvider = require('./providers/deepl');
 const GoogleTranslateProvider = require('./providers/googleTranslate');
 const log = require('../utils/logger');
 const { validateCustomBaseUrl, areInternalEndpointsAllowed, createSsrfSafeLookup } = require('../utils/ssrfProtection');
-const { getDefaultProviderParameters, mergeProviderParameters, selectGeminiApiKey } = require('../utils/config');
+const { getDefaultProviderParameters, mergeProviderParameters, selectGeminiApiKey, getEffectiveGeminiModel } = require('../utils/config');
 
 const KEY_OPTIONAL_PROVIDERS = new Set(['googletranslate']);
 
@@ -417,10 +417,10 @@ async function createTranslationProvider(config) {
     providerName: 'gemini',
     provider: new GeminiService(
       await selectGeminiApiKey(config),
-      config?.geminiModel,
+      getEffectiveGeminiModel(config),
       getGeminiAdvancedSettings()
     ),
-    model: config?.geminiModel
+    model: getEffectiveGeminiModel(config)
   });
 
   if (!multiEnabled) {
@@ -466,30 +466,30 @@ async function createTranslationProvider(config) {
   const selectedConfig = findProviderConfig(mainProvider) || {};
   if (!isConfigured(selectedConfig, mainProvider)) {
     log.warn(() => `[Providers] Missing configuration for main provider '${mainProvider}', falling back to Gemini`);
-    return {
-      providerName: 'gemini',
-      provider: new GeminiService(
-        await selectGeminiApiKey(config),
-        config?.geminiModel,
-        getGeminiAdvancedSettings()
-      ),
-      model: config?.geminiModel
-    };
+        return {
+          providerName: 'gemini',
+          provider: new GeminiService(
+            await selectGeminiApiKey(config),
+            getEffectiveGeminiModel(config),
+            getGeminiAdvancedSettings()
+          ),
+          model: getEffectiveGeminiModel(config)
+        };
   }
 
   const providerParams = findProviderParams(mainProvider);
   const provider = await createProviderInstance(mainProvider, selectedConfig, providerParams, jsonOutputOptions);
   if (!provider) {
     log.warn(() => `[Providers] Unsupported provider '${mainProvider}', falling back to Gemini`);
-    return {
-      providerName: 'gemini',
-      provider: new GeminiService(
-        await selectGeminiApiKey(config),
-        config?.geminiModel,
-        getGeminiAdvancedSettings()
-      ),
-      model: config?.geminiModel
-    };
+      return {
+        providerName: 'gemini',
+        provider: new GeminiService(
+          await selectGeminiApiKey(config),
+          getEffectiveGeminiModel(config),
+          getGeminiAdvancedSettings()
+        ),
+        model: getEffectiveGeminiModel(config)
+      };
   }
 
   let fallbackProvider = null;

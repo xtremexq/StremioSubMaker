@@ -55,10 +55,12 @@ function convertToSRT(content, logPrefix = '[SRT Conversion]') {
     try {
       const subsrt = require('subsrt-ts');
       const converted = subsrt.convert(content, { to: 'srt', from: 'vtt' });
-      if (converted && typeof converted === 'string' && converted.trim().length > 0) {
-        log.debug(() => `${logPrefix} Converted VTT to SRT (${converted.length} chars)`);
-        return converted;
+      if (converted && typeof converted === 'string' && validateSRT(converted)) {
+        const normalized = normalizeSRTIndices(converted);
+        log.debug(() => `${logPrefix} Converted VTT to SRT (${normalized.length} chars)`);
+        return normalized;
       }
+      log.warn(() => `${logPrefix} VTT to SRT conversion returned invalid SRT; proceeding with original content`);
     } catch (e) {
       log.warn(() => [`${logPrefix} VTT to SRT conversion failed; proceeding with original content:`, e.message]);
     }
@@ -77,11 +79,12 @@ function convertToSRT(content, logPrefix = '[SRT Conversion]') {
       if (vttResult && vttResult.success && vttResult.content) {
         const subsrt = require('subsrt-ts');
         const srtContent = subsrt.convert(vttResult.content, { to: 'srt', from: 'vtt' });
-        if (srtContent && typeof srtContent === 'string' && srtContent.trim().length > 0) {
-          log.debug(() => `${logPrefix} Converted ${(format || 'ass').toUpperCase()} → VTT → SRT successfully (${srtContent.length} chars)`);
-          return srtContent;
+        if (srtContent && typeof srtContent === 'string' && validateSRT(srtContent)) {
+          const normalized = normalizeSRTIndices(srtContent);
+          log.debug(() => `${logPrefix} Converted ${(format || 'ass').toUpperCase()} → VTT → SRT successfully (${normalized.length} chars)`);
+          return normalized;
         }
-        log.warn(() => `${logPrefix} VTT→SRT step returned empty after successful ASS→VTT conversion`);
+        log.warn(() => `${logPrefix} VTT→SRT step returned invalid SRT after successful ASS→VTT conversion`);
       } else {
         log.warn(() => [`${logPrefix} Enhanced ASS→VTT conversion failed:`, vttResult?.error || 'unknown error']);
       }
@@ -95,10 +98,12 @@ function convertToSRT(content, logPrefix = '[SRT Conversion]') {
       const assConverter = require('./assConverter');
       const preprocessed = assConverter.preprocessASS(content, format || 'ass');
       const directSrt = subsrt.convert(preprocessed, { to: 'srt', from: format || 'ass' });
-      if (directSrt && typeof directSrt === 'string' && directSrt.trim().length > 0) {
-        log.debug(() => `${logPrefix} Direct subsrt-ts ${(format || 'ass').toUpperCase()} → SRT succeeded (${directSrt.length} chars)`);
-        return directSrt;
+      if (directSrt && typeof directSrt === 'string' && validateSRT(directSrt)) {
+        const normalized = normalizeSRTIndices(directSrt);
+        log.debug(() => `${logPrefix} Direct subsrt-ts ${(format || 'ass').toUpperCase()} → SRT succeeded (${normalized.length} chars)`);
+        return normalized;
       }
+      log.warn(() => `${logPrefix} Direct subsrt-ts ${(format || 'ass').toUpperCase()} → SRT returned invalid output`);
     } catch (e) {
       log.warn(() => [`${logPrefix} Direct subsrt-ts ASS/SSA → SRT failed:`, e.message]);
     }
@@ -125,10 +130,12 @@ function convertToSRT(content, logPrefix = '[SRT Conversion]') {
     const assConverter = require('./assConverter');
     const preprocessed = assConverter.preprocessASS(content);
     const generic = subsrt.convert(preprocessed, { to: 'srt' });
-    if (generic && typeof generic === 'string' && generic.trim().length > 0) {
-      log.debug(() => `${logPrefix} Generic subsrt-ts conversion to SRT succeeded (${generic.length} chars)`);
-      return generic;
+    if (generic && typeof generic === 'string' && validateSRT(generic)) {
+      const normalized = normalizeSRTIndices(generic);
+      log.debug(() => `${logPrefix} Generic subsrt-ts conversion to SRT succeeded (${normalized.length} chars)`);
+      return normalized;
     }
+    log.warn(() => `${logPrefix} Generic subsrt-ts conversion returned invalid SRT; proceeding with original content`);
   } catch (_) { }
 
   return content;
@@ -327,6 +334,24 @@ function toSRT(entries) {
       return `${entry.id}\n${entry.timecode}\n${normalizedText}`;
     })
     .join('\n\n') + '\n';
+}
+
+/**
+ * Normalize SRT cue numbering to 1..N while preserving timing/text.
+ * Some third-party converters keep internal meta rows in their cue counter.
+ * @param {string} srtContent - SRT content
+ * @returns {string} - Renumbered SRT content
+ */
+function normalizeSRTIndices(srtContent) {
+  const entries = parseSRT(srtContent);
+  if (!entries.length) {
+    return srtContent;
+  }
+
+  return toSRT(entries.map((entry, index) => ({
+    ...entry,
+    id: index + 1
+  })));
 }
 
 /**

@@ -191,8 +191,16 @@ function logGeminiConfigThrottled(mergedConfig) {
     return val;
   })();
 
+  const effectiveModel = getEffectiveGeminiModel(mergedConfig);
+  const baseModel = typeof mergedConfig.geminiModel === 'string' ? mergedConfig.geminiModel : '';
+  const overrideModel = typeof mergedConfig.advancedSettings?.geminiModel === 'string'
+    ? mergedConfig.advancedSettings.geminiModel.trim()
+    : '';
+  const modelLabel = overrideModel && overrideModel !== baseModel
+    ? `${effectiveModel} (base=${baseModel || 'default'}, override=${overrideModel})`
+    : effectiveModel;
   const suffix = suppressed > 0 ? ` (suppressed ${suppressed} duplicate logs)` : '';
-  log.debug(() => `[Config] Gemini API config: model=${mergedConfig.geminiModel}, temperature=${mergedConfig.advancedSettings.temperature}, topK=${mergedConfig.advancedSettings.topK}, topP=${mergedConfig.advancedSettings.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${mergedConfig.advancedSettings.maxOutputTokens}, timeout=${mergedConfig.advancedSettings.translationTimeout}s, maxRetries=${mergedConfig.advancedSettings.maxRetries}, sendTimestampsToAI=${mergedConfig.advancedSettings.sendTimestampsToAI ? 'enabled' : 'disabled'}${suffix}`);
+  log.debug(() => `[Config] Gemini API config: model=${modelLabel}, temperature=${mergedConfig.advancedSettings.temperature}, topK=${mergedConfig.advancedSettings.topK}, topP=${mergedConfig.advancedSettings.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${mergedConfig.advancedSettings.maxOutputTokens}, timeout=${mergedConfig.advancedSettings.translationTimeout}s, maxRetries=${mergedConfig.advancedSettings.maxRetries}, sendTimestampsToAI=${mergedConfig.advancedSettings.sendTimestampsToAI ? 'enabled' : 'disabled'}${suffix}`);
 }
 
 function getDefaultProviderParameters() {
@@ -639,12 +647,6 @@ function normalizeConfig(config) {
     mergedConfig.geminiModel = defaults.geminiModel;
   }
 
-  // Apply advanced settings model override if enabled
-  if (mergedConfig.advancedSettings.enabled && mergedConfig.advancedSettings?.geminiModel) {
-    log.debug(() => `[Config] Advanced settings enabled: Overriding model '${mergedConfig.geminiModel}' with '${mergedConfig.advancedSettings.geminiModel}'`);
-    mergedConfig.geminiModel = mergedConfig.advancedSettings.geminiModel;
-  }
-
   // Enforce permanent disk caching regardless of client config
   mergedConfig.translationCache.enabled = true;
   mergedConfig.translationCache.persistent = true;
@@ -715,7 +717,7 @@ function normalizeConfig(config) {
 
   if (mergedConfig.multiProviderEnabled) {
     const mainKey = mergedConfig.mainProvider || 'gemini';
-    const geminiConfigured = !!(mergedConfig.geminiApiKey && mergedConfig.geminiModel);
+    const geminiConfigured = !!(mergedConfig.geminiApiKey && getEffectiveGeminiModel(mergedConfig));
     const mainConfigured = mainKey === 'gemini' ? geminiConfigured : providerIsConfigured(mainKey);
     if (!mainConfigured) {
       const fallbackProvider = firstConfiguredProvider();
@@ -739,7 +741,7 @@ function normalizeConfig(config) {
       mergedConfig.secondaryProviderEnabled = false;
       mergedConfig.secondaryProvider = '';
     } else if (mergedConfig.secondaryProvider === 'gemini') {
-      if (!mergedConfig.geminiApiKey || !mergedConfig.geminiModel) {
+      if (!mergedConfig.geminiApiKey || !getEffectiveGeminiModel(mergedConfig)) {
         log.warn(() => '[Config] Secondary provider Gemini is missing API key/model; disabling fallback');
         mergedConfig.secondaryProviderEnabled = false;
         mergedConfig.secondaryProvider = '';
@@ -971,6 +973,18 @@ function getModelSpecificDefaults(modelName) {
   };
 }
 
+function getEffectiveGeminiModel(config = {}) {
+  const advancedSettings = config?.advancedSettings || {};
+  const advancedOverride = typeof advancedSettings.geminiModel === 'string'
+    ? advancedSettings.geminiModel.trim()
+    : '';
+  if (advancedSettings.enabled === true && advancedOverride) {
+    return advancedOverride;
+  }
+  const baseModel = typeof config?.geminiModel === 'string' ? config.geminiModel.trim() : '';
+  return baseModel || process.env.GEMINI_MODEL || 'gemini-flash-latest';
+}
+
 /**
  * Get default configuration
  * @param {string} modelName - Optional model name to get model-specific defaults
@@ -1169,7 +1183,7 @@ function validateConfig(config) {
 
   // Check if Gemini is properly configured (handles both single key and rotation modes)
   const geminiConfigured = (() => {
-    const hasModel = !!(config.geminiModel && config.geminiModel.trim() !== '');
+    const hasModel = !!getEffectiveGeminiModel(config);
     if (!hasModel) return false;
 
     // When rotation is enabled, check the keys array
@@ -1339,7 +1353,7 @@ function buildManifest(config, baseUrl = '') {
   }
 
   const geminiConfigured = config.geminiApiKey && config.geminiApiKey.trim() !== '' &&
-    config.geminiModel && String(config.geminiModel).trim() !== '';
+    getEffectiveGeminiModel(config);
   const providerIsConfigured = (key) => {
     const providers = config.providers || {};
     const matchKey = Object.keys(providers).find(k => String(k).toLowerCase() === String(key).toLowerCase()) || key;
@@ -1490,6 +1504,7 @@ module.exports = {
   getLanguageSelectionLimits,
   getDefaultProviderParameters,
   mergeProviderParameters,
+  getEffectiveGeminiModel,
   // Gemini key rotation
   selectGeminiApiKey,
   getMaxGeminiApiKeys,

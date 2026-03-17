@@ -943,14 +943,16 @@
           "step5": "Siga os passos na tela e arraste o resultado de volta para o Stremio, se necessário."
         },
         "reset": {
-          "title": "Redefinir Todas as Configurações",
-          "intro": "<strong>Isso redefinirá literalmente tudo para este site:</strong>",
-          "item1": "- Armazenamento local, armazenamento de sessão, configuração em cache e tokens",
-          "item2": "- Service worker e todos os caches",
-          "item3": "- Quaisquer dados do site armazenados por este app",
-          "footer": "A página recarregará depois.",
+          "title": "Redefinir os Dados do SubMaker neste Navegador",
+          "intro": "<strong>Este é um reset local completo para este navegador neste site. Ele vai:</strong>",
+          "item1": "Esquecer o token atual, a configuração em cache, as entradas do Token Vault / Gerenciador de Perfis e qualquer progresso do Quick Setup salvo neste navegador",
+          "item2": "Redefinir preferências do site e das ferramentas, como idioma da interface, tema, estado de painéis/seções, status de Novidades, instruções dispensadas e opções salvas de ferramentas",
+          "item3": "Limpar os dados de navegador usados pelo SubMaker neste site: localStorage, sessionStorage, cookies, service worker, Cache Storage e qualquer IndexedDB criado aqui",
+          "item4": "Recarregar Configurar como um rascunho em branco com as configurações padrão e sem perfil local salvo selecionado",
+          "item5": "Não excluir tokens ou perfis do servidor; qualquer URL de token salva em outro lugar ainda poderá reabri-los",
+          "footer": "Depois do recarregamento, este navegador começa do zero.",
           "cancel": "Cancelar",
-          "confirm": "Redefinir Tudo"
+          "confirm": "Limpar Dados do Navegador"
         }
       },
       "noTranslation": {
@@ -1443,8 +1445,8 @@
         "title": "Desenvolvimento"
       },
       "reset": {
-        "hint": "Algum problema? Redefinir configurações para o padrão ->",
-        "cta": "Redefinir"
+        "hint": "Precisa de um reset limpo? Limpe os dados do SubMaker neste navegador ->",
+        "cta": "Limpar Dados"
       }
     },
     "nav": {

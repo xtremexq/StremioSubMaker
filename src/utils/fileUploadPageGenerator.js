@@ -1,4 +1,4 @@
-const { getDefaultProviderParameters, mergeProviderParameters } = require('./config');
+const { getDefaultProviderParameters, mergeProviderParameters, getEffectiveGeminiModel } = require('./config');
 const { getLanguageName, buildLanguageLookupMaps } = require('./languages');
 const { allLanguages } = require('./allLanguages');
 const { quickNavStyles, quickNavScript, renderQuickNav, renderRefreshBadge } = require('./quickNav');
@@ -51,6 +51,7 @@ function resolveUiLang(config) {
 function buildFileTranslationClientConfig(config) {
     const defaults = getDefaultProviderParameters();
     const mergedParams = mergeProviderParameters(defaults, config?.providerParameters || {});
+    const effectiveGeminiModel = getEffectiveGeminiModel(config);
 
     const safeProviders = {};
     if (config?.providers && typeof config.providers === 'object') {
@@ -72,7 +73,7 @@ function buildFileTranslationClientConfig(config) {
         mainProvider: config?.mainProvider || '',
         secondaryProviderEnabled: config?.secondaryProviderEnabled === true,
         secondaryProvider: config?.secondaryProvider || '',
-        geminiModel: config?.geminiModel || '',
+        geminiModel: effectiveGeminiModel,
         providers: safeProviders,
         providerParameters: mergedParams,
         fileTranslationEnabled: config?.fileTranslationEnabled !== false,
@@ -86,6 +87,7 @@ function buildFileTranslationClientConfig(config) {
 function buildProviderSummary(config) {
     const defaults = getDefaultProviderParameters();
     const mergedParams = mergeProviderParameters(defaults, config?.providerParameters || {});
+    const effectiveGeminiModel = getEffectiveGeminiModel(config);
     const multiEnabled = config?.multiProviderEnabled === true;
     const normalizeProvider = (key) => String(key || '').toLowerCase();
     const mainProvider = normalizeProvider(multiEnabled ? config?.mainProvider || 'gemini' : 'gemini');
@@ -95,7 +97,7 @@ function buildProviderSummary(config) {
     const getModel = (key) => {
         if (!key) return '';
         const providers = config?.providers || {};
-        if (key === 'gemini') return config?.geminiModel || '';
+        if (key === 'gemini') return effectiveGeminiModel;
         const matchKey = Object.keys(providers).find(k => String(k).toLowerCase() === key);
         return matchKey ? providers[matchKey]?.model || '' : '';
     };

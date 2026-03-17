@@ -943,14 +943,16 @@
           "step5": "Follow the on-screen steps, then drag the result back into Stremio if needed."
         },
         "reset": {
-          "title": "Reset All Settings",
-          "intro": "<strong>This will reset literally everything for this site:</strong>",
-          "item1": "- Local storage, session storage, cached config and tokens",
-          "item2": "- Service worker and all caches",
-          "item3": "- Any site data stored by this app",
-          "footer": "The page will reload afterward.",
+          "title": "Reset This Browser's SubMaker Data",
+          "intro": "<strong>This is a full local reset for this browser on this site. It will:</strong>",
+          "item1": "Forget the current config token, cached config, Token Vault / Profile Manager entries, and any Quick Setup draft progress saved in this browser",
+          "item2": "Reset site and tool preferences such as UI language, theme, panel/section state, What's New status, dismissed instructions, and saved tool options",
+          "item3": "Clear SubMaker browser storage for this site: localStorage, sessionStorage, cookies, service worker, Cache Storage, and any IndexedDB created here",
+          "item4": "Reload Configure as a fresh blank draft with default settings and no saved local profile selected",
+          "item5": "Not delete server-side tokens or profiles; any token URL saved elsewhere can still reopen them",
+          "footer": "After reload, this browser starts from scratch.",
           "cancel": "Cancel",
-          "confirm": "Reset Everything"
+          "confirm": "Clear Browser Data"
         }
       },
       "noTranslation": {
@@ -1443,8 +1445,8 @@
         "title": "Dev"
       },
       "reset": {
-        "hint": "Any problems? Reset settings to default ->",
-        "cta": "Reset"
+        "hint": "Need a clean reset? Clear this browser's SubMaker data ->",
+        "cta": "Clear Data"
       }
     },
     "nav": {

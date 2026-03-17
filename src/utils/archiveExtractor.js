@@ -826,8 +826,19 @@ async function convertSubtitleToVtt(content, filename, providerName, options = {
         }
 
         if (converted && typeof converted === 'string' && converted.trim().length > 0) {
-            log.debug(() => `[${providerName}] subsrt-ts conversion succeeded: ${filename} -> VTT (${converted.length} chars)`);
-            return converted;
+            if (isAss) {
+                const postprocessed = assConverterMod.postprocessVTT(converted);
+                if (assConverterMod.validateVTT(postprocessed)) {
+                    log.debug(() => `[${providerName}] subsrt-ts conversion succeeded: ${filename} -> VTT (${postprocessed.length} chars)`);
+                    return postprocessed;
+                }
+
+                const preview = postprocessed.trim().slice(0, 120).replace(/\s+/g, ' ');
+                log.warn(() => `[${providerName}] subsrt-ts conversion produced invalid VTT, rejecting result: ${preview || '<empty>'}`);
+            } else {
+                log.debug(() => `[${providerName}] subsrt-ts conversion succeeded: ${filename} -> VTT (${converted.length} chars)`);
+                return converted;
+            }
         }
         log.warn(() => `[${providerName}] subsrt-ts conversion returned empty or invalid result`);
     } catch (convErr) {

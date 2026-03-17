@@ -25,6 +25,8 @@
     --border: #dbe3ea;
     --shadow: rgba(0, 0, 0, 0.08);
     --glow: rgba(8, 164, 213, 0.25);
+    --vault-display-font: "Aptos Display", "Aptos", "Segoe UI Variable Display", "Segoe UI", "Inter", sans-serif;
+    --floating-bottom-safe-zone: 0px;
 }
 
 /* Theme-aware color-scheme for native controls (select dropdowns, etc.) */
@@ -271,6 +273,7 @@ body {
     color: var(--text-primary);
     min-height: 100vh;
     overflow-x: hidden;
+    padding-bottom: calc(var(--floating-bottom-safe-zone) + env(safe-area-inset-bottom));
     /* Reserve scrollbar space to prevent layout shift when modals lock/unlock scroll */
     scrollbar-gutter: stable both-edges;
 }
@@ -2676,6 +2679,13 @@ textarea {
     margin-top: 1.25rem;
 }
 
+#alertContainer {
+    position: fixed;
+    inset: 0;
+    z-index: 11000;
+    pointer-events: none;
+}
+
 /* Alert System */
 .alert {
     position: fixed;
@@ -2688,7 +2698,8 @@ textarea {
     gap: 0.75rem;
     min-width: 300px;
     max-width: 500px;
-    z-index: 9999;
+    z-index: 1;
+    pointer-events: auto;
     animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     box-shadow: 0 12px 48px var(--shadow);
 }
@@ -3379,9 +3390,21 @@ label:has(#subToolboxEnabled:disabled) {
     max-width: fit-content;
 }
 
+.modal-content .reset-checklist {
+    margin: 0.85rem 0 0;
+    padding-left: 1.35rem;
+    color: var(--text-primary);
+    line-height: 1.75;
+    text-align: left;
+}
+
 .modal-content li {
     margin: 0.5rem 0;
     color: var(--text-primary);
+}
+
+.modal-content .reset-footer-note {
+    margin-top: 1rem;
 }
 
 .modal-content p {
@@ -4098,6 +4121,7 @@ label:has(#subToolboxEnabled:disabled) {
 .toolbox-button {
     left: 2rem;
     right: auto;
+    bottom: calc(2rem - 4px);
     width: 64px;
     height: 64px;
     border-radius: 18px;
@@ -4135,7 +4159,7 @@ label:has(#subToolboxEnabled:disabled) {
 }
 
 .toolbox-button:hover {
-    transform: translateY(-4px) scale(1.03);
+    transform: translateY(-2px) scale(1.03);
     box-shadow:
         0 14px 24px rgba(0, 0, 0, 0.35),
         0 16px 34px rgba(255, 77, 122, 0.45),
@@ -4244,6 +4268,4161 @@ label:has(#subToolboxEnabled:disabled) {
     background: #2b2044;
     box-shadow: calc(100% - 12px) 0 0 #2b2044;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TOKEN VAULT  —  Launcher · Rail · Modal
+   Complete visual overhaul — 3D blocks, gradients, glass, shimmer
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Launcher Button ───────────────────────────────────────────────── */
+.token-vault-launcher {
+    left: 50%;
+    right: auto;
+    bottom: 1.55rem;
+    width: 56px;
+    height: 56px;
+    min-width: 0;
+    padding: 0;
+    border-radius: 16px;
+    border: 2px solid rgba(10, 87, 122, 0.45);
+    background:
+        radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.72), transparent 28%),
+        linear-gradient(180deg, #2bc0e4 0%, #1095cf 42%, #0b5e88 100%);
+    color: #f8fafc;
+    box-shadow:
+        inset 0 2px 0 rgba(255, 255, 255, 0.72),
+        inset 0 -3px 0 rgba(5, 53, 76, 0.5),
+        0 7px 0 rgba(4, 45, 65, 0.5),
+        0 14px 28px rgba(8, 164, 213, 0.28);
+    transform: translateX(-50%);
+    overflow: visible;
+    backdrop-filter: none;
+    position: fixed;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+    animation: titlePulse 3s ease-in-out infinite;
+    will-change: transform;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Glow aura behind launcher */
+.token-vault-launcher::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 22px;
+    background: radial-gradient(circle, rgba(8, 164, 213, 0.28), transparent);
+    opacity: 0;
+    z-index: -1;
+    filter: blur(8px);
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+/* Glass highlight */
+.token-vault-launcher::after {
+    content: '';
+    position: absolute;
+    inset: 5px 5px 18px;
+    border-radius: 12px;
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0));
+    pointer-events: none;
+    z-index: 1;
+}
+
+.token-vault-launcher:hover {
+    transform: translateX(-50%) translateY(-3px) scale(1.04);
+    box-shadow:
+        inset 0 2px 0 rgba(255, 255, 255, 0.82),
+        inset 0 -3px 0 rgba(5, 53, 76, 0.5),
+        0 10px 0 rgba(4, 45, 65, 0.45),
+        0 18px 36px rgba(8, 164, 213, 0.38);
+}
+
+.token-vault-launcher:hover::before {
+    opacity: 0.9;
+}
+
+.token-vault-launcher:active {
+    transform: translateX(-50%) translateY(2px);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.5),
+        inset 0 -1px 0 rgba(5, 53, 76, 0.3),
+        0 2px 0 rgba(4, 45, 65, 0.3),
+        0 4px 12px rgba(8, 164, 213, 0.2);
+}
+
+/* Launcher icon */
+.token-vault-launcher-icon {
+    width: 28px;
+    height: 28px;
+    display: block;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+    pointer-events: none;
+    position: relative;
+    z-index: 1;
+}
+
+/* Launcher ribbon */
+.token-vault-launcher-ribbon {
+    position: absolute;
+    left: 5px;
+    right: 5px;
+    bottom: 4px;
+    height: 11px;
+    padding: 0 5px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    background: rgba(3, 18, 28, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: #f8fafc;
+    font-size: 0.48rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    backdrop-filter: blur(8px);
+    z-index: 2;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.token-vault-launcher-label {
+    width: 100%;
+    text-align: center;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+    text-transform: uppercase;
+}
+
+/* ── Launcher state colors ─────────────────────────────────────────── */
+.token-vault-launcher[data-state="draft"] {
+    border-color: rgba(133, 77, 14, 0.45);
+    background:
+        radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.74), transparent 28%),
+        linear-gradient(180deg, #f9c74f 0%, #f59e0b 42%, #d97706 100%);
+    box-shadow:
+        inset 0 2px 0 rgba(255, 249, 222, 0.76),
+        inset 0 -3px 0 rgba(128, 66, 8, 0.44),
+        0 7px 0 rgba(127, 67, 8, 0.42),
+        0 14px 28px rgba(245, 158, 11, 0.24);
+}
+
+.token-vault-launcher[data-state="recovered"] {
+    border-color: rgba(12, 116, 98, 0.42);
+    background:
+        radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.74), transparent 28%),
+        linear-gradient(180deg, #4dd4c6 0%, #14b8a6 42%, #0f766e 100%);
+    box-shadow:
+        inset 0 2px 0 rgba(220, 255, 248, 0.7),
+        inset 0 -3px 0 rgba(8, 80, 68, 0.44),
+        0 7px 0 rgba(8, 82, 68, 0.38),
+        0 14px 28px rgba(20, 184, 166, 0.22);
+}
+
+.token-vault-launcher[data-state="disabled"] {
+    border-color: rgba(127, 29, 29, 0.45);
+    background:
+        radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.55), transparent 28%),
+        linear-gradient(180deg, #fb7185 0%, #ef4444 42%, #991b1b 100%);
+    box-shadow:
+        inset 0 2px 0 rgba(255, 230, 235, 0.72),
+        inset 0 -3px 0 rgba(110, 17, 37, 0.44),
+        0 7px 0 rgba(111, 18, 38, 0.38),
+        0 14px 28px rgba(239, 68, 68, 0.2);
+}
+
+.token-vault-launcher[data-state="live"] {
+    /* default cyan gradient — already set above */
+}
+
+/* ── Dark theme launcher ───────────────────────────────────────────── */
+[data-theme="dark"] .token-vault-launcher {
+    border-color: rgba(93, 151, 255, 0.3);
+    background:
+        radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.6), transparent 28%),
+        linear-gradient(180deg, #5b82ff 0%, #2563eb 44%, #1d336e 100%);
+    box-shadow:
+        inset 0 2px 0 rgba(214, 228, 255, 0.42),
+        inset 0 -3px 0 rgba(24, 41, 90, 0.7),
+        0 7px 0 rgba(22, 37, 82, 0.7),
+        0 14px 28px rgba(37, 99, 235, 0.24);
+}
+
+[data-theme="dark"] .token-vault-launcher-ribbon {
+    background: rgba(4, 10, 24, 0.55);
+}
+
+/* ── Blackhole theme launcher ──────────────────────────────────────── */
+[data-theme="blackhole"] .token-vault-launcher {
+    border-color: rgba(92, 94, 255, 0.32);
+    background:
+        radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.46), transparent 28%),
+        linear-gradient(180deg, #33218c 0%, #17112f 46%, #090711 100%);
+    box-shadow:
+        inset 0 2px 0 rgba(167, 180, 255, 0.18),
+        inset 0 -3px 0 rgba(16, 12, 40, 0.82),
+        0 7px 0 rgba(16, 12, 40, 0.82),
+        0 14px 28px rgba(92, 94, 255, 0.22);
+}
+
+[data-theme="blackhole"] .token-vault-launcher-ribbon {
+    background: rgba(8, 4, 18, 0.55);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   VAULT RAIL (fly-out list)
+   ═══════════════════════════════════════════════════════════════════════ */
+.token-vault-rail {
+    position: fixed;
+    left: 50%;
+    bottom: 5.4rem;
+    transform: translateX(-50%);
+    width: min(420px, calc(100vw - 1.2rem));
+    max-height: 56vh;
+    overflow: hidden auto;
+    z-index: 9990;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.65rem;
+    border-radius: 18px;
+    border: 1.5px solid rgba(8, 164, 213, 0.18);
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow:
+        0 16px 48px rgba(15, 23, 42, 0.12),
+        0 0 0 1px rgba(8, 164, 213, 0.08);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.97);
+    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) var(--surface-light);
+    will-change: transform, opacity;
+}
+
+[data-theme="dark"] .token-vault-rail {
+    background: rgba(10, 16, 30, 0.94);
+    border-color: rgba(91, 130, 255, 0.16);
+    box-shadow:
+        0 16px 48px rgba(0, 0, 0, 0.35),
+        0 0 0 1px rgba(91, 130, 255, 0.1);
+}
+
+[data-theme="blackhole"] .token-vault-rail {
+    background: rgba(5, 4, 12, 0.95);
+    border-color: rgba(92, 94, 255, 0.16);
+    box-shadow:
+        0 20px 56px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(92, 94, 255, 0.12);
+}
+
+.token-vault-rail.show {
+    pointer-events: auto;
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* Items stagger in when rail opens */
+.token-vault-rail .token-vault-rail-add,
+.token-vault-rail .token-vault-rail-item,
+.token-vault-rail .token-vault-rail-empty {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease;
+    will-change: transform, opacity;
+}
+
+.token-vault-rail.show .token-vault-rail-add,
+.token-vault-rail.show .token-vault-rail-item,
+.token-vault-rail.show .token-vault-rail-empty {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition-delay: calc(var(--vault-index, 0) * 35ms);
+}
+
+[data-theme="dark"] .token-vault-rail .token-vault-rail-empty {
+    background:
+        linear-gradient(180deg, rgba(16, 24, 44, 0.97), rgba(20, 30, 52, 0.95));
+    border-color: rgba(91, 130, 255, 0.14);
+    color: #e2e8f0;
+}
+
+[data-theme="blackhole"] .token-vault-rail .token-vault-rail-empty {
+    background:
+        linear-gradient(180deg, rgba(14, 10, 28, 0.97), rgba(18, 14, 32, 0.95));
+    border-color: rgba(92, 94, 255, 0.12);
+    color: #ede9fe;
+}
+
+/* ── Rail list ─────────────────────────────────────────────────────── */
+.token-vault-rail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.26rem;
+}
+
+.token-vault-rail-item {
+    --vault-rail-item-hover-shadow: 0 5px 14px rgba(8, 164, 213, 0.1);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.48rem;
+    padding: 0.4rem 0.58rem 0.4rem 0.72rem;
+    border-radius: 11px;
+    border: 1.5px solid rgba(8, 164, 213, 0.15);
+    border-left: 4px solid #0ea5e9;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(243, 249, 252, 0.9) 100%);
+    cursor: default;
+    transition:
+        transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.2s ease;
+    position: relative;
+    isolation: isolate;
+    box-shadow:
+        0 3px 10px rgba(15, 23, 42, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.token-vault-rail-item::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--vault-rail-item-hover-shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    will-change: opacity;
+}
+
+.token-vault-rail-item.menu-open {
+    z-index: 8;
+}
+
+.token-vault-rail-item:hover {
+    border-color: rgba(8, 164, 213, 0.3);
+    transform: translateY(-1px);
+}
+
+.token-vault-rail-item:hover::after {
+    opacity: 1;
+}
+
+.token-vault-rail-item.is-active {
+    border-color: rgba(8, 164, 213, 0.3);
+    border-left-color: #08A4D5;
+    background:
+        linear-gradient(180deg, rgba(240, 249, 255, 0.97) 0%, rgba(224, 242, 254, 0.92) 100%);
+}
+
+/* Status-based left accent on rail items */
+.token-vault-rail-item.disabled { border-left-color: #ef4444; }
+.token-vault-rail-item.draft { border-left-color: #f59e0b; }
+.token-vault-rail-item.recovered { border-left-color: #14b8a6; }
+
+[data-theme="dark"] .token-vault-rail-item {
+    background:
+        linear-gradient(180deg, rgba(20, 30, 52, 0.95) 0%, rgba(16, 24, 44, 0.9) 100%);
+    border-color: rgba(91, 130, 255, 0.14);
+    border-left-color: #5b82ff;
+    box-shadow:
+        0 3px 10px rgba(0, 0, 0, 0.18),
+        inset 0 1px 0 rgba(91, 130, 255, 0.05);
+}
+
+[data-theme="dark"] .token-vault-rail-shortcut {
+    --vault-rail-shortcut-accent: rgba(91, 130, 255, 0.14);
+    --vault-rail-shortcut-border: rgba(91, 130, 255, 0.16);
+    --vault-rail-shortcut-border-hover: rgba(147, 197, 253, 0.3);
+    --vault-rail-shortcut-top: rgba(20, 30, 52, 0.9);
+    --vault-rail-shortcut-bottom: rgba(14, 22, 39, 0.84);
+    --vault-rail-shortcut-base: rgba(12, 18, 36, 0.88);
+    --vault-rail-shortcut-text: #e2e8f0;
+    --vault-rail-shortcut-glow: rgba(91, 130, 255, 0.16);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(147, 197, 253, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+        0 6px 14px rgba(0, 0, 0, 0.16);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .token-vault-rail-shortcut[data-vault-action="switch-token"] {
+    --vault-rail-shortcut-accent: rgba(125, 211, 252, 0.24);
+    --vault-rail-shortcut-border: rgba(125, 211, 252, 0.34);
+    --vault-rail-shortcut-border-hover: rgba(186, 230, 253, 0.5);
+    --vault-rail-shortcut-top: rgba(37, 99, 235, 0.98);
+    --vault-rail-shortcut-bottom: rgba(29, 78, 216, 0.95);
+    --vault-rail-shortcut-base: rgba(30, 64, 175, 0.9);
+    --vault-rail-shortcut-text: #eff6ff;
+    --vault-rail-shortcut-glow: rgba(59, 130, 246, 0.24);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(219, 234, 254, 0.2),
+        inset 0 -1px 0 rgba(30, 64, 175, 0.26),
+        0 6px 14px rgba(37, 99, 235, 0.2);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(30, 64, 175, 0.3);
+    text-shadow: 0 1px 2px rgba(30, 64, 175, 0.28);
+}
+
+[data-theme="dark"] .token-vault-rail-shortcut[data-vault-action="toggle-state"]:not(.danger) {
+    --vault-rail-shortcut-accent: rgba(134, 239, 172, 0.22);
+    --vault-rail-shortcut-border: rgba(134, 239, 172, 0.34);
+    --vault-rail-shortcut-border-hover: rgba(187, 247, 208, 0.48);
+    --vault-rail-shortcut-top: rgba(34, 197, 94, 0.98);
+    --vault-rail-shortcut-bottom: rgba(22, 163, 74, 0.95);
+    --vault-rail-shortcut-base: rgba(20, 83, 45, 0.9);
+    --vault-rail-shortcut-text: #f0fdf4;
+    --vault-rail-shortcut-glow: rgba(34, 197, 94, 0.22);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(220, 252, 231, 0.2),
+        inset 0 -1px 0 rgba(20, 83, 45, 0.26),
+        0 6px 14px rgba(22, 163, 74, 0.18);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(20, 83, 45, 0.3);
+    text-shadow: 0 1px 2px rgba(20, 83, 45, 0.28);
+}
+
+[data-theme="dark"] .token-vault-rail-shortcut[data-vault-action="toggle-state"].danger {
+    --vault-rail-shortcut-accent: rgba(251, 191, 36, 0.24);
+    --vault-rail-shortcut-border: rgba(251, 191, 36, 0.34);
+    --vault-rail-shortcut-border-hover: rgba(253, 224, 71, 0.5);
+    --vault-rail-shortcut-top: rgba(245, 158, 11, 0.98);
+    --vault-rail-shortcut-bottom: rgba(217, 119, 6, 0.95);
+    --vault-rail-shortcut-base: rgba(120, 53, 15, 0.9);
+    --vault-rail-shortcut-text: #fffbeb;
+    --vault-rail-shortcut-glow: rgba(245, 158, 11, 0.24);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(254, 243, 199, 0.18),
+        inset 0 -1px 0 rgba(120, 53, 15, 0.26),
+        0 6px 14px rgba(217, 119, 6, 0.18);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(120, 53, 15, 0.3);
+    text-shadow: 0 1px 2px rgba(120, 53, 15, 0.28);
+}
+
+[data-theme="dark"] .token-vault-rail-menu-toggle,
+[data-theme="dark"] .token-vault-rail-menu-panel {
+    background:
+        linear-gradient(180deg, rgba(20, 30, 52, 0.95) 0%, rgba(14, 22, 39, 0.92) 100%);
+    color: #e2e8f0;
+    border-color: rgba(91, 130, 255, 0.12);
+}
+
+[data-theme="dark"] .token-vault-rail-menu-item {
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .token-vault-rail-menu-item.danger {
+    color: #fca5a5;
+}
+
+[data-theme="blackhole"] .token-vault-rail-item {
+    background:
+        linear-gradient(180deg, rgba(18, 14, 32, 0.95) 0%, rgba(14, 10, 28, 0.9) 100%);
+    border-color: rgba(92, 94, 255, 0.12);
+    border-left-color: #8b5cf6;
+    box-shadow:
+        0 3px 10px rgba(0, 0, 0, 0.22),
+        inset 0 1px 0 rgba(107, 101, 255, 0.05);
+}
+
+[data-theme="blackhole"] .token-vault-rail-shortcut {
+    --vault-rail-shortcut-accent: rgba(139, 92, 246, 0.16);
+    --vault-rail-shortcut-border: rgba(139, 92, 246, 0.18);
+    --vault-rail-shortcut-border-hover: rgba(196, 181, 253, 0.34);
+    --vault-rail-shortcut-top: rgba(18, 14, 32, 0.9);
+    --vault-rail-shortcut-bottom: rgba(12, 9, 24, 0.84);
+    --vault-rail-shortcut-base: rgba(9, 7, 18, 0.88);
+    --vault-rail-shortcut-text: #ede9fe;
+    --vault-rail-shortcut-glow: rgba(139, 92, 246, 0.18);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(196, 181, 253, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.26),
+        0 8px 18px rgba(0, 0, 0, 0.22);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.24);
+}
+
+[data-theme="blackhole"] .token-vault-rail-shortcut[data-vault-action="switch-token"] {
+    --vault-rail-shortcut-accent: rgba(125, 211, 252, 0.24);
+    --vault-rail-shortcut-border: rgba(125, 211, 252, 0.36);
+    --vault-rail-shortcut-border-hover: rgba(186, 230, 253, 0.54);
+    --vault-rail-shortcut-top: rgba(59, 130, 246, 0.98);
+    --vault-rail-shortcut-bottom: rgba(29, 78, 216, 0.95);
+    --vault-rail-shortcut-base: rgba(23, 37, 84, 0.92);
+    --vault-rail-shortcut-text: #eff6ff;
+    --vault-rail-shortcut-glow: rgba(59, 130, 246, 0.26);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(219, 234, 254, 0.18),
+        inset 0 -1px 0 rgba(23, 37, 84, 0.28),
+        0 8px 18px rgba(37, 99, 235, 0.2);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(23, 37, 84, 0.32);
+    text-shadow: 0 1px 2px rgba(23, 37, 84, 0.32);
+}
+
+[data-theme="blackhole"] .token-vault-rail-shortcut[data-vault-action="toggle-state"]:not(.danger) {
+    --vault-rail-shortcut-accent: rgba(134, 239, 172, 0.22);
+    --vault-rail-shortcut-border: rgba(134, 239, 172, 0.34);
+    --vault-rail-shortcut-border-hover: rgba(187, 247, 208, 0.5);
+    --vault-rail-shortcut-top: rgba(34, 197, 94, 0.98);
+    --vault-rail-shortcut-bottom: rgba(21, 128, 61, 0.95);
+    --vault-rail-shortcut-base: rgba(5, 46, 22, 0.92);
+    --vault-rail-shortcut-text: #f0fdf4;
+    --vault-rail-shortcut-glow: rgba(34, 197, 94, 0.24);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(220, 252, 231, 0.18),
+        inset 0 -1px 0 rgba(5, 46, 22, 0.28),
+        0 8px 18px rgba(21, 128, 61, 0.2);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(5, 46, 22, 0.32);
+    text-shadow: 0 1px 2px rgba(5, 46, 22, 0.32);
+}
+
+[data-theme="blackhole"] .token-vault-rail-shortcut[data-vault-action="toggle-state"].danger {
+    --vault-rail-shortcut-accent: rgba(251, 191, 36, 0.24);
+    --vault-rail-shortcut-border: rgba(251, 191, 36, 0.34);
+    --vault-rail-shortcut-border-hover: rgba(253, 224, 71, 0.52);
+    --vault-rail-shortcut-top: rgba(245, 158, 11, 0.98);
+    --vault-rail-shortcut-bottom: rgba(217, 119, 6, 0.95);
+    --vault-rail-shortcut-base: rgba(69, 26, 3, 0.92);
+    --vault-rail-shortcut-text: #fffbeb;
+    --vault-rail-shortcut-glow: rgba(245, 158, 11, 0.26);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(254, 243, 199, 0.18),
+        inset 0 -1px 0 rgba(69, 26, 3, 0.28),
+        0 8px 18px rgba(217, 119, 6, 0.2);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(69, 26, 3, 0.32);
+    text-shadow: 0 1px 2px rgba(69, 26, 3, 0.32);
+}
+
+[data-theme="blackhole"] .token-vault-rail-menu-toggle,
+[data-theme="blackhole"] .token-vault-rail-menu-panel {
+    background:
+        linear-gradient(180deg, rgba(18, 14, 32, 0.96) 0%, rgba(12, 9, 24, 0.94) 100%);
+    color: #ede9fe;
+    border-color: rgba(92, 94, 255, 0.14);
+}
+
+[data-theme="blackhole"] .token-vault-rail-menu-item {
+    color: #ede9fe;
+}
+
+[data-theme="blackhole"] .token-vault-rail-menu-item.danger {
+    color: #fda4af;
+}
+
+.token-vault-rail-label {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The main clickable area of a rail entry — needs button reset */
+.token-vault-rail-main {
+    appearance: none;
+    display: block;
+    width: 100%;
+    border: 0;
+    background: none;
+    min-width: 0;
+    text-align: left;
+    cursor: pointer;
+    padding: 0.08rem 0.1rem;
+    color: inherit;
+    font-family: inherit;
+    border-radius: 8px;
+    transition: background 0.15s ease;
+}
+
+.token-vault-rail-main:hover {
+    background: rgba(8, 164, 213, 0.04);
+}
+
+.token-vault-rail-main:focus-visible {
+    outline: 2px solid rgba(8, 164, 213, 0.45);
+    outline-offset: 2px;
+}
+
+.token-vault-rail-title-row {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+    flex-wrap: nowrap;
+    min-width: 0;
+}
+
+.token-vault-rail-title-row strong {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 0.81rem;
+    font-weight: 760;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.token-vault-rail-title-row .token-vault-inline-chip {
+    padding: 0.08rem 0.34rem;
+    border-radius: 999px;
+    font-size: 0.53rem;
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: 0.06em;
+    font-family: var(--vault-display-font);
+}
+
+.token-vault-rail-meta {
+    display: block;
+    margin-top: 0.06rem;
+    font-size: 0.66rem;
+    line-height: 1.2;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.01em;
+}
+
+.token-vault-rail-state {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.45rem;
+    border-radius: 6px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(0, 0, 0, 0.03) 100%);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.06),
+        0 1px 0 rgba(0, 0, 0, 0.05);
+}
+
+.token-vault-rail-actions {
+    display: flex;
+    gap: 0.18rem;
+    align-items: center;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.token-vault-rail-shortcut {
+    --vault-rail-shortcut-accent: rgba(8, 164, 213, 0.08);
+    --vault-rail-shortcut-border: rgba(8, 164, 213, 0.12);
+    --vault-rail-shortcut-border-hover: rgba(8, 164, 213, 0.24);
+    --vault-rail-shortcut-top: rgba(255, 255, 255, 0.85);
+    --vault-rail-shortcut-bottom: rgba(243, 249, 252, 0.7);
+    --vault-rail-shortcut-base: rgba(255, 255, 255, 0.9);
+    --vault-rail-shortcut-text: #0f172a;
+    --vault-rail-shortcut-glow: rgba(8, 164, 213, 0.1);
+    --vault-rail-shortcut-hover-shadow: 0 4px 10px var(--vault-rail-shortcut-glow);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.7),
+        0 2px 4px rgba(15, 23, 42, 0.06);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 3px rgba(15, 23, 42, 0.08);
+    border: 1px solid var(--vault-rail-shortcut-border);
+    border-radius: 9px;
+    min-height: 1.72rem;
+    padding: 0.26rem 0.56rem;
+    font-size: 0.62rem;
+    font-weight: 760;
+    letter-spacing: 0.045em;
+    color: var(--vault-rail-shortcut-text);
+    font-family: var(--vault-display-font);
+    background:
+        radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0) 42%),
+        linear-gradient(145deg, var(--vault-rail-shortcut-accent) 0%, transparent 72%),
+        linear-gradient(180deg, var(--vault-rail-shortcut-top) 0%, var(--vault-rail-shortcut-bottom) 100%),
+        var(--vault-rail-shortcut-base);
+    box-shadow: var(--vault-rail-shortcut-shadow);
+    cursor: pointer;
+    position: relative;
+    isolation: isolate;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.18s ease,
+                border-color 0.18s ease;
+}
+
+.token-vault-rail-shortcut::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--vault-rail-shortcut-hover-shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+    will-change: opacity;
+}
+
+.token-vault-rail-shortcut.danger {
+    --vault-rail-shortcut-accent: rgba(251, 146, 60, 0.16);
+    --vault-rail-shortcut-border: rgba(251, 146, 60, 0.22);
+    --vault-rail-shortcut-border-hover: rgba(249, 115, 22, 0.34);
+    --vault-rail-shortcut-top: rgba(255, 247, 237, 0.96);
+    --vault-rail-shortcut-bottom: rgba(255, 237, 213, 0.84);
+    --vault-rail-shortcut-base: rgba(255, 251, 235, 0.88);
+    --vault-rail-shortcut-text: #9a3412;
+    --vault-rail-shortcut-glow: rgba(249, 115, 22, 0.14);
+}
+
+.token-vault-rail-shortcut:hover:not(:disabled) {
+    border-color: var(--vault-rail-shortcut-border-hover);
+    transform: translate3d(0, -1px, 0);
+}
+
+.token-vault-rail-shortcut:hover:not(:disabled)::after {
+    opacity: 1;
+}
+
+.token-vault-rail-shortcut:active:not(:disabled) {
+    transform: translate3d(0, 0, 0);
+    box-shadow: var(--vault-rail-shortcut-active-shadow);
+    transition-duration: 0.06s;
+}
+
+.token-vault-rail-shortcut:active:not(:disabled)::after {
+    opacity: 0;
+    transition-duration: 0.06s;
+}
+
+.token-vault-rail-shortcut:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+}
+
+.token-vault-rail-menu {
+    position: relative;
+}
+
+.token-vault-rail-menu-toggle {
+    --vault-rail-menu-toggle-hover-shadow: 0 4px 10px rgba(8, 164, 213, 0.12);
+    width: 1.46rem;
+    min-width: 1.46rem;
+    height: 1.46rem;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(8, 164, 213, 0.12);
+    border-radius: 7px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(243, 249, 252, 0.72) 100%),
+        rgba(8, 164, 213, 0.06);
+    color: #0f172a;
+    cursor: pointer;
+    position: relative;
+    isolation: isolate;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.7),
+        0 2px 4px rgba(15, 23, 42, 0.06);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 0.18s ease,
+                background 0.18s ease;
+}
+
+.token-vault-rail-menu-toggle::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--vault-rail-menu-toggle-hover-shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+    will-change: opacity;
+}
+
+.token-vault-rail-menu-toggle:hover {
+    transform: translate3d(0, -1px, 0);
+}
+
+.token-vault-rail-menu-toggle:hover::after {
+    opacity: 1;
+}
+
+.token-vault-rail-menu-toggle:active::after {
+    opacity: 0;
+    transition-duration: 0.06s;
+}
+
+.token-vault-rail-menu.is-open .token-vault-rail-menu-toggle {
+    background:
+        linear-gradient(180deg, rgba(224, 242, 254, 0.98) 0%, rgba(186, 230, 253, 0.88) 100%);
+    border-color: rgba(8, 164, 213, 0.22);
+}
+
+.token-vault-rail-menu-dots {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1rem;
+}
+
+.token-vault-rail-menu-dots span {
+    display: block;
+    width: 0.16rem;
+    height: 0.16rem;
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.token-vault-rail-menu-panel {
+    position: absolute;
+    right: calc(100% + 0.18rem);
+    top: 50%;
+    transform: translateY(-50%);
+    display: none;
+    flex-direction: column;
+    gap: 0.08rem;
+    min-width: 6.25rem;
+    padding: 0.14rem;
+    border-radius: 9px;
+    border: 1px solid rgba(8, 164, 213, 0.14);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 250, 253, 0.95) 100%);
+    box-shadow:
+        0 10px 18px rgba(15, 23, 42, 0.14),
+        0 2px 8px rgba(8, 164, 213, 0.06);
+    z-index: 12;
+}
+
+.token-vault-rail-menu.is-open .token-vault-rail-menu-panel {
+    display: flex;
+}
+
+.token-vault-rail-floating-menu {
+    position: fixed;
+    left: -9999px;
+    top: -9999px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.08rem;
+    min-width: 6.25rem;
+    padding: 0.16rem;
+    border-radius: 10px;
+    border: 1px solid rgba(8, 164, 213, 0.14);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 250, 253, 0.95) 100%);
+    box-shadow:
+        0 10px 18px rgba(15, 23, 42, 0.14),
+        0 2px 8px rgba(8, 164, 213, 0.06);
+    z-index: 9994;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translate3d(0, 6px, 0) scale(0.97);
+    transform-origin: center;
+    transition: opacity 0.16s ease, transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.token-vault-rail-floating-menu.show {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translate3d(0, 0, 0) scale(1);
+}
+
+.token-vault-rail-menu-item {
+    --vault-rail-menu-item-hover-bg: rgba(8, 164, 213, 0.08);
+    width: 100%;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--text-primary);
+    text-align: left;
+    font-family: var(--vault-display-font);
+    font-size: 0.63rem;
+    font-weight: 700;
+    line-height: 1.15;
+    padding: 0.3rem 0.4rem;
+    cursor: pointer;
+    position: relative;
+    isolation: isolate;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    transition: color 0.14s ease, transform 0.14s ease;
+}
+
+.token-vault-rail-menu-item::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--vault-rail-menu-item-hover-bg);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.14s ease;
+    will-change: opacity;
+}
+
+.token-vault-rail-menu-item:hover {
+    transform: translate3d(1px, 0, 0);
+}
+
+.token-vault-rail-menu-item:hover::before {
+    opacity: 1;
+}
+
+.token-vault-rail-menu-item.danger {
+    --vault-rail-menu-item-hover-bg: rgba(239, 68, 68, 0.1);
+    color: #b91c1c;
+}
+
+[data-theme="dark"] .token-vault-rail-menu-toggle,
+[data-theme="dark"] .token-vault-rail-menu-panel,
+[data-theme="dark"] .token-vault-rail-floating-menu {
+    background:
+        linear-gradient(180deg, rgba(20, 30, 52, 0.95) 0%, rgba(14, 22, 39, 0.92) 100%);
+    color: #e2e8f0;
+    border-color: rgba(91, 130, 255, 0.12);
+}
+
+[data-theme="dark"] .token-vault-rail-menu-item {
+    --vault-rail-menu-item-hover-bg: rgba(91, 130, 255, 0.12);
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .token-vault-rail-menu-item.danger {
+    color: #fca5a5;
+}
+
+[data-theme="blackhole"] .token-vault-rail-menu-toggle,
+[data-theme="blackhole"] .token-vault-rail-menu-panel,
+[data-theme="blackhole"] .token-vault-rail-floating-menu {
+    background:
+        linear-gradient(180deg, rgba(18, 14, 32, 0.96) 0%, rgba(12, 9, 24, 0.94) 100%);
+    color: #ede9fe;
+    border-color: rgba(92, 94, 255, 0.14);
+}
+
+[data-theme="blackhole"] .token-vault-rail-menu-item {
+    --vault-rail-menu-item-hover-bg: rgba(139, 92, 246, 0.14);
+    color: #ede9fe;
+}
+
+[data-theme="blackhole"] .token-vault-rail-menu-item.danger {
+    color: #fda4af;
+}
+
+.token-vault-rail-add {
+    --vault-rail-add-hover-shadow: 0 10px 24px rgba(8, 164, 213, 0.18);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.58rem;
+    width: 100%;
+    padding: 0.58rem 0.72rem;
+    border-radius: 14px;
+    border: 1.5px solid rgba(8, 164, 213, 0.2);
+    background:
+        radial-gradient(circle at 18% 18%, rgba(8, 164, 213, 0.2), transparent 38%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(232, 248, 255, 0.92));
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+    position: relative;
+    isolation: isolate;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.85),
+        0 7px 18px rgba(8, 164, 213, 0.14);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.2s ease;
+}
+
+.token-vault-rail-add::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--vault-rail-add-hover-shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    will-change: opacity;
+}
+
+.token-vault-rail-add:hover {
+    border-color: rgba(8, 164, 213, 0.4);
+    transform: translateY(-1px);
+}
+
+.token-vault-rail-add:hover::after {
+    opacity: 1;
+}
+
+.token-vault-rail-add:active:not(:disabled)::after {
+    opacity: 0;
+    transition-duration: 0.06s;
+}
+
+.token-vault-rail-add:disabled {
+    opacity: 0.78;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.token-vault-rail-add-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.04rem;
+    font-weight: 800;
+    color: #f0f9ff;
+    background:
+        radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.3), transparent 45%),
+        linear-gradient(180deg, #1cb5e8 0%, #0f9bbf 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        0 6px 14px rgba(8, 164, 213, 0.26);
+}
+
+.token-vault-rail-add-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 0.08rem;
+}
+
+.token-vault-rail-add-title {
+    font-size: 0.82rem;
+    font-weight: 780;
+    line-height: 1.05;
+    letter-spacing: 0.012em;
+    font-family: var(--vault-display-font);
+    color: var(--text-primary);
+}
+
+.token-vault-rail-add-meta {
+    font-size: 0.65rem;
+    line-height: 1.28;
+    color: var(--text-secondary);
+}
+
+.token-vault-rail-add-cap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    padding: 0.24rem 0.42rem;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 780;
+    letter-spacing: 0.06em;
+    font-family: var(--vault-display-font);
+    color: var(--primary);
+    background: rgba(8, 164, 213, 0.08);
+    border: 1px solid rgba(8, 164, 213, 0.14);
+}
+
+[data-theme="dark"] .token-vault-rail-add {
+    background:
+        radial-gradient(circle at 15% 20%, rgba(91, 130, 255, 0.18), transparent 42%),
+        linear-gradient(135deg, rgba(16, 24, 44, 0.96), rgba(18, 30, 58, 0.92));
+    border-color: rgba(91, 130, 255, 0.18);
+    box-shadow:
+        inset 0 1px 0 rgba(91, 130, 255, 0.08),
+        0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+[data-theme="dark"] .token-vault-rail-add-cap {
+    color: #8bb5ff;
+    background: rgba(91, 130, 255, 0.12);
+    border-color: rgba(91, 130, 255, 0.16);
+}
+
+[data-theme="blackhole"] .token-vault-rail-add {
+    background:
+        radial-gradient(circle at 15% 20%, rgba(139, 92, 246, 0.2), transparent 42%),
+        linear-gradient(135deg, rgba(14, 10, 28, 0.96), rgba(18, 12, 34, 0.92));
+    border-color: rgba(139, 92, 246, 0.16);
+    box-shadow:
+        inset 0 1px 0 rgba(167, 139, 250, 0.08),
+        0 10px 28px rgba(0, 0, 0, 0.34);
+}
+
+[data-theme="blackhole"] .token-vault-rail-add-cap {
+    color: #c4b5fd;
+    background: rgba(139, 92, 246, 0.12);
+    border-color: rgba(139, 92, 246, 0.16);
+}
+
+.token-vault-rail-empty {
+    text-align: center;
+    padding: 1.25rem 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   VAULT MODAL — Panel
+   ═══════════════════════════════════════════════════════════════════════ */
+.token-vault-overlay {
+    padding: 1.5rem;
+}
+
+.token-vault-overlay.show {
+    display: flex;
+}
+
+.token-vault-override-overlay {
+    padding: 1.5rem;
+    align-items: center;
+    justify-content: center;
+}
+
+.token-vault-override-overlay.show {
+    display: flex;
+}
+
+.token-vault-override-panel {
+    position: relative;
+    width: min(520px, calc(100vw - 1.5rem));
+    border-radius: 24px;
+    border: 1.5px solid rgba(8, 164, 213, 0.18);
+    background:
+        radial-gradient(circle at top left, rgba(8, 164, 213, 0.14), transparent 42%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 249, 255, 0.94));
+    box-shadow:
+        0 28px 72px rgba(15, 23, 42, 0.18),
+        0 0 0 1px rgba(8, 164, 213, 0.08);
+    overflow: hidden;
+    animation: modalSlideIn 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity;
+}
+
+.token-vault-override-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 4px;
+    background: linear-gradient(90deg, #08A4D5, #33B9E1, #0ea5e9);
+    opacity: 0.95;
+}
+
+.token-vault-override-panel[data-tone="danger"] {
+    border-color: rgba(239, 68, 68, 0.2);
+    background:
+        radial-gradient(circle at top left, rgba(239, 68, 68, 0.16), transparent 42%),
+        linear-gradient(180deg, rgba(255, 250, 251, 0.98), rgba(255, 244, 246, 0.94));
+    box-shadow:
+        0 28px 72px rgba(127, 29, 29, 0.18),
+        0 0 0 1px rgba(239, 68, 68, 0.08);
+}
+
+.token-vault-override-panel[data-tone="danger"]::before {
+    background: linear-gradient(90deg, #ef4444, #f97316, #f43f5e);
+}
+
+[data-theme="dark"] .token-vault-override-panel {
+    background:
+        radial-gradient(circle at top left, rgba(91, 130, 255, 0.16), transparent 42%),
+        linear-gradient(180deg, rgba(16, 24, 44, 0.98), rgba(14, 22, 39, 0.94));
+    border-color: rgba(91, 130, 255, 0.16);
+}
+
+[data-theme="dark"] .token-vault-override-panel[data-tone="danger"] {
+    background:
+        radial-gradient(circle at top left, rgba(248, 113, 113, 0.2), transparent 42%),
+        linear-gradient(180deg, rgba(40, 12, 18, 0.98), rgba(24, 10, 16, 0.94));
+    border-color: rgba(248, 113, 113, 0.22);
+}
+
+[data-theme="blackhole"] .token-vault-override-panel {
+    background:
+        radial-gradient(circle at top left, rgba(139, 92, 246, 0.16), transparent 42%),
+        linear-gradient(180deg, rgba(14, 10, 28, 0.98), rgba(12, 9, 24, 0.94));
+    border-color: rgba(139, 92, 246, 0.14);
+}
+
+[data-theme="blackhole"] .token-vault-override-panel[data-tone="danger"] {
+    background:
+        radial-gradient(circle at top left, rgba(244, 63, 94, 0.18), transparent 42%),
+        linear-gradient(180deg, rgba(28, 10, 22, 0.98), rgba(18, 8, 18, 0.94));
+    border-color: rgba(244, 63, 94, 0.2);
+}
+
+.token-vault-override-close {
+    position: absolute;
+    top: 0.9rem;
+    right: 0.9rem;
+    z-index: 2;
+}
+
+.token-vault-override-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    padding: 1.15rem;
+}
+
+.token-vault-override-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+}
+
+.token-vault-override-emblem {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.35rem;
+    font-weight: 900;
+    color: #ecfeff;
+    background:
+        radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.34), transparent 40%),
+        linear-gradient(180deg, #22d3ee 0%, #0891b2 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.3),
+        0 10px 24px rgba(8, 145, 178, 0.22);
+}
+
+.token-vault-override-copy-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.token-vault-override-copy-danger .token-vault-override-emblem {
+    color: #fff1f2;
+    background:
+        radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.26), transparent 42%),
+        linear-gradient(180deg, #fb7185 0%, #dc2626 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        0 10px 24px rgba(220, 38, 38, 0.22);
+}
+
+.token-vault-override-copy h3 {
+    margin: 0.2rem 0 0;
+    font-size: 1.18rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+}
+
+.token-vault-override-copy p {
+    margin: 0.45rem 0 0;
+    font-size: 0.84rem;
+    line-height: 1.52;
+    color: var(--text-secondary);
+}
+
+.token-vault-override-eyebrow {
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--primary);
+}
+
+.token-vault-override-copy-danger .token-vault-override-eyebrow {
+    color: #dc2626;
+}
+
+.token-vault-override-detail {
+    padding: 0.65rem 0.75rem;
+    border-radius: 12px;
+    border: 1px solid rgba(8, 164, 213, 0.12);
+    background: rgba(8, 164, 213, 0.05);
+}
+
+.token-vault-override-copy-danger .token-vault-override-detail {
+    border-color: rgba(239, 68, 68, 0.18);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.token-vault-override-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.token-vault-override-victim {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0.85rem;
+    border-radius: 14px;
+    border: 1px solid rgba(8, 164, 213, 0.12);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(244, 249, 253, 0.74));
+}
+
+.token-vault-override-victim.is-active {
+    border-color: rgba(245, 158, 11, 0.22);
+    background:
+        linear-gradient(180deg, rgba(255, 251, 235, 0.9), rgba(254, 243, 199, 0.66));
+}
+
+.token-vault-override-victim-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.token-vault-override-victim-copy strong {
+    font-size: 0.86rem;
+    color: var(--text-primary);
+}
+
+.token-vault-override-victim-copy span {
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+}
+
+.token-vault-override-victim-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.token-vault-override-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.18rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.12);
+    color: #b45309;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    font-weight: 700;
+}
+
+.token-vault-override-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.45rem;
+}
+
+[data-theme="dark"] .token-vault-override-detail,
+[data-theme="blackhole"] .token-vault-override-detail {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .token-vault-override-copy-danger .token-vault-override-eyebrow,
+[data-theme="blackhole"] .token-vault-override-copy-danger .token-vault-override-eyebrow {
+    color: #f87171;
+}
+
+[data-theme="dark"] .token-vault-override-victim {
+    background:
+        linear-gradient(180deg, rgba(20, 30, 52, 0.94), rgba(16, 24, 44, 0.9));
+    border-color: rgba(91, 130, 255, 0.14);
+}
+
+[data-theme="blackhole"] .token-vault-override-victim {
+    background:
+        linear-gradient(180deg, rgba(18, 14, 32, 0.94), rgba(14, 10, 28, 0.9));
+    border-color: rgba(139, 92, 246, 0.12);
+}
+
+.token-vault-panel {
+    width: min(680px, calc(100vw - 1.5rem));
+    max-height: 88vh;
+    border-radius: 22px;
+    border: 1px solid var(--border);
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow:
+        0 24px 72px var(--shadow),
+        0 0 0 1px rgba(8, 164, 213, 0.14);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalSlideIn 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+    position: relative;
+    will-change: transform, opacity;
+    isolation: isolate;
+}
+
+.token-vault-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.78) 100%),
+        var(--bg-secondary);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.token-vault-panel > * {
+    position: relative;
+    z-index: 1;
+}
+
+[data-theme="dark"] .token-vault-panel::before {
+    background:
+        radial-gradient(circle at top left, rgba(91, 130, 255, 0.14), transparent 40%),
+        linear-gradient(180deg, rgba(10, 16, 30, 0.98), rgba(14, 22, 39, 0.96));
+}
+
+[data-theme="blackhole"] .token-vault-panel {
+    border-color: rgba(92, 94, 255, 0.16);
+    box-shadow:
+        0 28px 72px rgba(0, 0, 0, 0.5),
+        0 0 48px rgba(92, 94, 255, 0.12);
+}
+
+[data-theme="dark"] .token-vault-panel {
+    border-color: rgba(91, 130, 255, 0.16);
+    box-shadow: 0 24px 72px var(--shadow), 0 0 0 1px rgba(91, 130, 255, 0.12);
+}
+
+[data-theme="blackhole"] .token-vault-panel::before {
+    background:
+        radial-gradient(circle at top left, rgba(92, 94, 255, 0.12), transparent 40%),
+        linear-gradient(180deg, rgba(5, 4, 12, 0.98), rgba(11, 8, 20, 0.96));
+}
+
+/* Panel Header */
+.token-vault-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, rgba(8, 164, 213, 0.06) 0%, rgba(51, 185, 225, 0.06) 100%);
+    position: relative;
+    z-index: 2;
+}
+
+[data-theme="dark"] .token-vault-panel-header {
+    background: linear-gradient(135deg, rgba(91, 130, 255, 0.08) 0%, rgba(56, 189, 248, 0.06) 100%);
+    border-bottom-color: rgba(91, 130, 255, 0.12);
+}
+
+[data-theme="dark"] .token-vault-panel-header h2 {
+    background: linear-gradient(135deg, #93bbff, #60a5fa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+[data-theme="blackhole"] .token-vault-panel-header {
+    background: linear-gradient(135deg, rgba(92, 94, 255, 0.06) 0%, rgba(139, 92, 246, 0.05) 100%);
+    border-bottom-color: rgba(92, 94, 255, 0.12);
+}
+
+[data-theme="blackhole"] .token-vault-panel-header h2 {
+    background: linear-gradient(135deg, #a78bfa, #c4b5fd);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.token-vault-panel-eyebrow {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--primary);
+    margin-bottom: 0.15rem;
+}
+
+.token-vault-panel-header h2 {
+    font-size: 1.3rem;
+    font-weight: 800;
+    margin: 0;
+    background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.02em;
+}
+
+/* Close button — matches modal-close */
+.token-vault-close {
+    width: 36px;
+    height: 36px;
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.token-vault-close:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--danger);
+    color: var(--danger);
+    transform: rotate(90deg);
+}
+
+/* Panel Body */
+.token-vault-panel-body {
+    padding: 1rem 1.25rem 1.25rem;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1 1 auto;
+    min-height: 0;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) var(--surface-light);
+    contain: layout style;
+    will-change: scroll-position;
+}
+
+.token-vault-panel-body::-webkit-scrollbar { width: 10px; }
+.token-vault-panel-body::-webkit-scrollbar-track { background: var(--surface-light); border-radius: 12px; margin: 8px; }
+.token-vault-panel-body::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    border-radius: 8px;
+    border: 2px solid var(--surface-light);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   VAULT CONTENT — Grid, Hero, Actions, Import, List
+   ═══════════════════════════════════════════════════════════════════════ */
+.token-vault-create-panel {
+    width: min(720px, calc(100vw - 1.5rem));
+}
+
+.token-vault-create-body {
+    padding-top: 0.9rem;
+}
+
+.token-vault-create-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.token-vault-create-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.85rem;
+    padding: 1rem;
+    border-radius: 16px;
+    border: 1.5px solid rgba(8, 164, 213, 0.16);
+    background:
+        radial-gradient(circle at top left, rgba(8, 164, 213, 0.12), transparent 44%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(240, 248, 255, 0.88));
+    box-shadow:
+        0 8px 22px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.token-vault-create-hero-copy {
+    min-width: 0;
+}
+
+.token-vault-create-hero h3 {
+    margin: 0;
+    font-size: 1.16rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+}
+
+.token-vault-create-hero p {
+    margin: 0.28rem 0 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.token-vault-create-hero-badges {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+.token-vault-create-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    gap: 0.85rem;
+}
+
+.token-vault-create-card {
+    min-width: 0;
+    padding: 0.95rem;
+    border-radius: 16px;
+    border: 1.5px solid rgba(8, 164, 213, 0.15);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(243, 249, 252, 0.88));
+    box-shadow:
+        0 8px 22px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
+.token-vault-create-card-primary {
+    background:
+        radial-gradient(circle at top left, rgba(8, 164, 213, 0.14), transparent 46%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(236, 247, 255, 0.9));
+}
+
+.token-vault-create-card-head,
+.token-vault-create-tools-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.token-vault-create-card-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.token-vault-create-card-meta {
+    margin-top: 0.22rem;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.token-vault-create-primary-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.9rem;
+    text-align: center;
+}
+
+.token-vault-create-primary-meta {
+    margin-top: 0;
+}
+
+.token-vault-create-primary-stack .token-vault-action {
+    min-width: min(100%, 220px);
+}
+
+.token-vault-create-draft-btn {
+    min-width: min(100%, 320px) !important;
+    padding: 0.85rem 1.4rem;
+    border-radius: 14px;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    line-height: 1.15;
+}
+
+.token-vault-create-hint {
+    font-size: 0.74rem;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    text-align: center;
+    max-width: 28rem;
+}
+
+.token-vault-create-import-block {
+    margin-top: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.token-vault-create-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.token-vault-create-divider::before,
+.token-vault-create-divider::after {
+    content: '';
+    flex: 1;
+    min-width: 0;
+    height: 1px;
+    background: rgba(8, 164, 213, 0.14);
+}
+
+.token-vault-create-tools-note {
+    margin-top: 0.55rem;
+    font-size: 0.74rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.token-vault-create-card-wide {
+    grid-column: 1 / -1;
+}
+
+.token-vault-create-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.token-vault-create-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.32rem 0.58rem;
+    border-radius: 999px;
+    border: 1px solid rgba(8, 164, 213, 0.14);
+    background: rgba(8, 164, 213, 0.08);
+    color: var(--text-primary);
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.token-vault-create-spotlight {
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+    margin-top: 0.75rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: 14px;
+    border: 1px solid rgba(8, 164, 213, 0.14);
+    background: rgba(8, 164, 213, 0.06);
+}
+
+.token-vault-create-spotlight.is-warning {
+    border-color: rgba(245, 158, 11, 0.22);
+    background: rgba(245, 158, 11, 0.08);
+}
+
+.token-vault-create-spotlight strong {
+    font-size: 0.8rem;
+    color: var(--text-primary);
+}
+
+.token-vault-create-spotlight span {
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.token-vault-create-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    margin-top: 0.85rem;
+}
+
+.token-vault-create-actions-stack {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+}
+
+.token-vault-create-actions-stack .token-vault-action {
+    width: 100%;
+}
+
+.token-vault-create-preview {
+    margin-top: 0.7rem;
+    padding: 0.85rem 0.9rem;
+    border-radius: 14px;
+    border: 1px solid rgba(8, 164, 213, 0.14);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(243, 249, 252, 0.84));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.78),
+        0 6px 16px rgba(15, 23, 42, 0.05);
+}
+
+.token-vault-create-preview[data-tone="checking"] {
+    border-color: rgba(59, 130, 246, 0.2);
+    background: rgba(59, 130, 246, 0.08);
+}
+
+.token-vault-create-preview[data-tone="live"] {
+    border-color: rgba(8, 164, 213, 0.18);
+    background: rgba(8, 164, 213, 0.07);
+}
+
+.token-vault-create-preview[data-tone="recovered"] {
+    border-color: rgba(20, 184, 166, 0.22);
+    background: rgba(20, 184, 166, 0.08);
+}
+
+.token-vault-create-preview[data-tone="disabled"],
+.token-vault-create-preview[data-tone="error"] {
+    border-color: rgba(239, 68, 68, 0.22);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.token-vault-create-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.token-vault-create-preview-head code {
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.token-vault-create-preview strong {
+    display: block;
+    margin-top: 0.48rem;
+    font-size: 0.86rem;
+    color: var(--text-primary);
+}
+
+.token-vault-create-preview p {
+    margin: 0.25rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.token-vault-create-preview-meta {
+    margin-top: 0.48rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.token-vault-create-backup-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    align-items: center;
+}
+
+.token-vault-create-capacity {
+    min-width: 0;
+}
+
+.token-vault-create-capacity-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.token-vault-create-capacity-top strong {
+    font-size: 0.82rem;
+    color: var(--text-primary);
+}
+
+.token-vault-create-meter {
+    position: relative;
+    margin-top: 0.55rem;
+    height: 12px;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid rgba(8, 164, 213, 0.14);
+    background: rgba(148, 163, 184, 0.16);
+}
+
+.token-vault-create-meter-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #08A4D5, #33B9E1, #0ea5e9);
+    box-shadow: 0 0 18px rgba(8, 164, 213, 0.25);
+}
+
+.token-vault-create-capacity p {
+    margin: 0.55rem 0 0;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .token-vault-create-hero,
+[data-theme="dark"] .token-vault-create-card {
+    background:
+        linear-gradient(180deg, rgba(16, 24, 44, 0.94), rgba(14, 22, 39, 0.9));
+    border-color: rgba(91, 130, 255, 0.14);
+    box-shadow:
+        0 8px 22px rgba(0, 0, 0, 0.22),
+        inset 0 1px 0 rgba(91, 130, 255, 0.06);
+}
+
+[data-theme="dark"] .token-vault-create-card-primary,
+[data-theme="dark"] .token-vault-create-hero {
+    background:
+        radial-gradient(circle at top left, rgba(91, 130, 255, 0.14), transparent 46%),
+        linear-gradient(180deg, rgba(16, 24, 44, 0.96), rgba(14, 22, 39, 0.92));
+}
+
+[data-theme="dark"] .token-vault-create-divider::before,
+[data-theme="dark"] .token-vault-create-divider::after {
+    background: rgba(91, 130, 255, 0.16);
+}
+
+[data-theme="dark"] .token-vault-create-pill {
+    border-color: rgba(91, 130, 255, 0.16);
+    background: rgba(91, 130, 255, 0.1);
+}
+
+[data-theme="dark"] .token-vault-create-spotlight {
+    border-color: rgba(91, 130, 255, 0.14);
+    background: rgba(91, 130, 255, 0.08);
+}
+
+[data-theme="dark"] .token-vault-create-spotlight.is-warning {
+    border-color: rgba(251, 191, 36, 0.22);
+    background: rgba(251, 191, 36, 0.08);
+}
+
+[data-theme="dark"] .token-vault-create-preview {
+    background:
+        linear-gradient(180deg, rgba(20, 30, 52, 0.94), rgba(16, 24, 44, 0.9));
+    border-color: rgba(91, 130, 255, 0.14);
+}
+
+[data-theme="dark"] .token-vault-create-meter {
+    border-color: rgba(91, 130, 255, 0.14);
+    background: rgba(59, 130, 246, 0.14);
+}
+
+[data-theme="blackhole"] .token-vault-create-hero,
+[data-theme="blackhole"] .token-vault-create-card {
+    background:
+        linear-gradient(180deg, rgba(14, 10, 28, 0.96), rgba(12, 9, 24, 0.92));
+    border-color: rgba(139, 92, 246, 0.14);
+    box-shadow:
+        0 10px 26px rgba(0, 0, 0, 0.32),
+        inset 0 1px 0 rgba(167, 139, 250, 0.06);
+}
+
+[data-theme="blackhole"] .token-vault-create-card-primary,
+[data-theme="blackhole"] .token-vault-create-hero {
+    background:
+        radial-gradient(circle at top left, rgba(139, 92, 246, 0.16), transparent 46%),
+        linear-gradient(180deg, rgba(14, 10, 28, 0.98), rgba(12, 9, 24, 0.94));
+}
+
+[data-theme="blackhole"] .token-vault-create-divider::before,
+[data-theme="blackhole"] .token-vault-create-divider::after {
+    background: rgba(139, 92, 246, 0.16);
+}
+
+[data-theme="blackhole"] .token-vault-create-pill {
+    border-color: rgba(139, 92, 246, 0.16);
+    background: rgba(139, 92, 246, 0.12);
+}
+
+[data-theme="blackhole"] .token-vault-create-spotlight {
+    border-color: rgba(139, 92, 246, 0.14);
+    background: rgba(139, 92, 246, 0.08);
+}
+
+[data-theme="blackhole"] .token-vault-create-spotlight.is-warning {
+    border-color: rgba(251, 113, 133, 0.22);
+    background: rgba(251, 113, 133, 0.08);
+}
+
+[data-theme="blackhole"] .token-vault-create-preview {
+    background:
+        linear-gradient(180deg, rgba(18, 14, 32, 0.96), rgba(14, 10, 28, 0.92));
+    border-color: rgba(139, 92, 246, 0.14);
+}
+
+[data-theme="blackhole"] .token-vault-create-meter {
+    border-color: rgba(139, 92, 246, 0.16);
+    background: rgba(139, 92, 246, 0.16);
+}
+
+[data-theme="blackhole"] .token-vault-create-meter-fill {
+    background: linear-gradient(90deg, #8b5cf6, #a78bfa, #6366f1);
+    box-shadow: 0 0 18px rgba(139, 92, 246, 0.28);
+}
+
+[data-theme="dark"] .token-vault-create-flow .token-vault-action:not(.token-vault-action-primary) {
+    background: linear-gradient(180deg, var(--vault-action-top) 0%, var(--vault-action-bottom) 100%);
+    box-shadow: var(--vault-action-shadow);
+    text-shadow: none;
+}
+
+[data-theme="dark"] .token-vault-create-flow .token-vault-action[data-vault-action="paste-clipboard"],
+[data-theme="dark"] .token-vault-create-flow .token-vault-action[data-vault-action="import-file"] {
+    --vault-action-accent: rgba(255, 255, 255, 0.02);
+    --vault-action-border: rgba(148, 163, 184, 0.18);
+    --vault-action-border-hover: rgba(203, 213, 225, 0.3);
+    --vault-action-top: rgba(43, 51, 65, 0.98);
+    --vault-action-bottom: rgba(24, 31, 43, 0.98);
+    --vault-action-base: rgba(21, 27, 38, 0.98);
+    --vault-action-text: #e6f0ff;
+    --vault-action-glow: rgba(15, 23, 42, 0.18);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.34),
+        0 1px 0 rgba(0, 0, 0, 0.24),
+        0 10px 18px rgba(0, 0, 0, 0.22);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.3),
+        0 1px 0 rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="blackhole"] .token-vault-create-flow .token-vault-action:not(.token-vault-action-primary) {
+    background: linear-gradient(180deg, var(--vault-action-top) 0%, var(--vault-action-bottom) 100%);
+    box-shadow: var(--vault-action-shadow);
+    text-shadow: none;
+}
+
+[data-theme="blackhole"] .token-vault-create-flow .token-vault-action[data-vault-action="paste-clipboard"],
+[data-theme="blackhole"] .token-vault-create-flow .token-vault-action[data-vault-action="import-file"] {
+    --vault-action-accent: rgba(255, 255, 255, 0.02);
+    --vault-action-border: rgba(134, 143, 190, 0.18);
+    --vault-action-border-hover: rgba(196, 181, 253, 0.28);
+    --vault-action-top: rgba(34, 28, 52, 0.98);
+    --vault-action-bottom: rgba(19, 14, 31, 0.98);
+    --vault-action-base: rgba(14, 10, 24, 0.98);
+    --vault-action-text: #f3efff;
+    --vault-action-glow: rgba(8, 4, 18, 0.22);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+        0 1px 0 rgba(0, 0, 0, 0.28),
+        0 12px 22px rgba(0, 0, 0, 0.32);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.38),
+        0 1px 0 rgba(0, 0, 0, 0.16);
+}
+
+.token-vault-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.token-vault-manager {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.token-vault-manager-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.85rem;
+    align-items: start;
+}
+
+.token-vault-manager-grid > section {
+    min-width: 0;
+    height: 100%;
+}
+
+/* ── Confirm Banner ────────────────────────────────────────────────── */
+.token-vault-confirm {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+    border: 1.5px solid rgba(245, 158, 11, 0.28);
+    border-left: 4px solid #f59e0b;
+    background:
+        linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(251, 191, 36, 0.06));
+    box-shadow:
+        0 4px 12px rgba(245, 158, 11, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    animation: fadeInDown 0.3s ease;
+}
+
+.token-vault-confirm strong {
+    color: var(--warning);
+    font-size: 0.9rem;
+}
+
+.token-vault-confirm p {
+    margin: 0.2rem 0 0;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.token-vault-confirm-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-shrink: 0;
+}
+
+/* ── Hero Section ──────────────────────────────────────────────────── */
+.token-vault-hero {
+    border-radius: 16px;
+    border: 1.5px solid rgba(8, 164, 213, 0.22);
+    padding: 1rem;
+    background:
+        radial-gradient(circle at 15% 20%, rgba(8, 164, 213, 0.12), transparent 45%),
+        radial-gradient(circle at 85% 80%, rgba(51, 185, 225, 0.05), transparent 50%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(240, 248, 255, 0.9) 100%);
+    box-shadow:
+        0 6px 18px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Top accent gradient stripe */
+.token-vault-hero::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #08A4D5, #33B9E1, #0ea5e9, #06b6d4);
+    border-radius: 16px 16px 0 0;
+}
+
+/* Left accent bar */
+.token-vault-hero::after {
+    content: '';
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    left: -1px;
+    width: 3px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, var(--primary) 0%, var(--secondary) 100%);
+    opacity: 0.85;
+    box-shadow: 0 0 8px rgba(8, 164, 213, 0.3);
+}
+
+/* State-colored accents */
+.token-vault-hero.draft {
+    border-color: rgba(245, 158, 11, 0.22);
+}
+.token-vault-hero.draft::before { background: linear-gradient(90deg, #f59e0b, #fbbf24, #d97706); }
+.token-vault-hero.draft::after { background: linear-gradient(180deg, #f59e0b, #d97706); box-shadow: 0 0 8px rgba(245, 158, 11, 0.3); }
+
+.token-vault-hero.recovered {
+    border-color: rgba(20, 184, 166, 0.22);
+    background:
+        radial-gradient(circle at 15% 20%, rgba(20, 184, 166, 0.12), transparent 45%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(242, 255, 252, 0.92) 100%);
+}
+.token-vault-hero.recovered::before { background: linear-gradient(90deg, #14b8a6, #2dd4bf, #0f766e); }
+.token-vault-hero.recovered::after { background: linear-gradient(180deg, #14b8a6, #0d9488); box-shadow: 0 0 8px rgba(20, 184, 166, 0.3); }
+
+.token-vault-hero.disabled {
+    border-color: rgba(239, 68, 68, 0.22);
+    background:
+        radial-gradient(circle at 15% 20%, rgba(239, 68, 68, 0.12), transparent 45%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 245, 246, 0.92) 100%);
+}
+.token-vault-hero.disabled::before { background: linear-gradient(90deg, #ef4444, #f87171, #dc2626); }
+.token-vault-hero.disabled::after { background: linear-gradient(180deg, #ef4444, #dc2626); box-shadow: 0 0 8px rgba(239, 68, 68, 0.3); }
+
+[data-theme="dark"] .token-vault-hero {
+    background:
+        radial-gradient(circle at 15% 20%, rgba(91, 130, 255, 0.16), transparent 45%),
+        radial-gradient(circle at 85% 80%, rgba(56, 189, 248, 0.06), transparent 50%),
+        linear-gradient(180deg, rgba(16, 24, 44, 0.94) 0%, rgba(14, 22, 39, 0.9) 100%);
+    border-color: rgba(91, 130, 255, 0.18);
+}
+
+[data-theme="dark"] .token-vault-hero::before {
+    background: linear-gradient(90deg, #5b82ff, #60a5fa, #2563eb);
+}
+
+[data-theme="dark"] .token-vault-section-title::before {
+    background: linear-gradient(180deg, #5b82ff, #60a5fa);
+}
+
+[data-theme="dark"] .token-vault-section-title,
+[data-theme="dark"] .token-vault-eyebrow,
+[data-theme="dark"] .token-vault-panel-eyebrow {
+    color: #8bb5ff;
+}
+
+[data-theme="blackhole"] .token-vault-hero {
+    background:
+        radial-gradient(circle at 15% 20%, rgba(167, 139, 250, 0.16), transparent 45%),
+        radial-gradient(circle at 85% 80%, rgba(107, 101, 255, 0.06), transparent 50%),
+        linear-gradient(180deg, rgba(14, 10, 28, 0.94) 0%, rgba(12, 9, 24, 0.9) 100%);
+    border-color: rgba(92, 94, 255, 0.16);
+}
+
+[data-theme="blackhole"] .token-vault-hero::before {
+    background: linear-gradient(90deg, #8b5cf6, #a78bfa, #6366f1);
+}
+
+[data-theme="blackhole"] .token-vault-section-title::before {
+    background: linear-gradient(180deg, #8b5cf6, #a78bfa);
+}
+
+[data-theme="blackhole"] .token-vault-section-title,
+[data-theme="blackhole"] .token-vault-eyebrow,
+[data-theme="blackhole"] .token-vault-panel-eyebrow {
+    color: #a78bfa;
+}
+
+[data-theme="blackhole"] .token-vault-hero::after {
+    background: linear-gradient(180deg, #8b5cf6, #6366f1);
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.3);
+}
+
+.token-vault-hero-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.token-vault-hero-copy {
+    min-width: 0;
+}
+
+.token-vault-title-trigger {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.12rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.token-vault-title-trigger:hover .token-vault-title-trigger-text,
+.token-vault-title-trigger:focus-visible .token-vault-title-trigger-text {
+    color: var(--primary);
+    text-decoration-color: currentColor;
+}
+
+.token-vault-title-trigger:focus-visible {
+    outline: none;
+}
+
+.token-vault-title-trigger-text {
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    text-decoration: underline dotted rgba(8, 164, 213, 0.38);
+    text-underline-offset: 0.18em;
+    transition: color 0.18s ease, text-decoration-color 0.18s ease;
+}
+
+.token-vault-title-editor {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.token-vault-title-input {
+    width: min(260px, 100%);
+    min-width: 0;
+    max-width: 100%;
+    padding: 0.35rem 0.6rem;
+    border-radius: 10px;
+    border: 1.5px solid rgba(8, 164, 213, 0.18);
+    background: var(--surface);
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+    font-family: inherit;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.token-vault-title-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--glow);
+}
+
+.token-vault-title-save {
+    flex-shrink: 0;
+}
+
+.token-vault-title-hint {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 0.05rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.token-vault-title-hint.is-editing {
+    color: var(--primary);
+}
+
+.token-vault-eyebrow {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--primary);
+    margin-bottom: 0.15rem;
+}
+
+.token-vault-hero h3 {
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.token-vault-hero p {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin: 0.2rem 0 0;
+    line-height: 1.4;
+}
+
+/* Badges */
+.token-vault-badges {
+    display: flex;
+    gap: 0.35rem;
+    flex-shrink: 0;
+    align-items: flex-start;
+}
+
+.token-vault-status-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.22rem 0.6rem;
+    border-radius: 8px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1.5px solid rgba(8, 164, 213, 0.2);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(0, 0, 0, 0.04) 100%),
+        rgba(8, 164, 213, 0.04);
+    color: var(--text-secondary);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.15),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.06),
+        0 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.token-vault-status-chip.live {
+    background: linear-gradient(135deg, rgba(8, 164, 213, 0.15), rgba(51, 185, 225, 0.1));
+    border-color: rgba(8, 164, 213, 0.4);
+    color: var(--primary);
+}
+
+.token-vault-status-chip.draft {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(217, 119, 6, 0.08));
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #b45309;
+}
+
+[data-theme="dark"] .token-vault-status-chip.draft,
+[data-theme="blackhole"] .token-vault-status-chip.draft {
+    color: #fbbf24;
+}
+
+.token-vault-status-chip.recovered {
+    background: linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(13, 148, 136, 0.08));
+    border-color: rgba(20, 184, 166, 0.4);
+    color: #0d9488;
+}
+
+[data-theme="dark"] .token-vault-status-chip.recovered,
+[data-theme="blackhole"] .token-vault-status-chip.recovered {
+    color: #2dd4bf;
+}
+
+.token-vault-status-chip.disabled {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(220, 38, 38, 0.08));
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #dc2626;
+}
+
+[data-theme="dark"] .token-vault-status-chip.disabled,
+[data-theme="blackhole"] .token-vault-status-chip.disabled {
+    color: #f87171;
+}
+
+.token-vault-meta-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.22rem 0.6rem;
+    border-radius: 8px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    border: 1.5px solid rgba(8, 164, 213, 0.16);
+    background:
+        radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0) 42%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(240, 248, 255, 0.64) 100%),
+        rgba(8, 164, 213, 0.06);
+    color: var(--text-secondary);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.58),
+        inset 0 -1px 0 rgba(15, 23, 42, 0.04),
+        0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="dark"] .token-vault-meta-chip {
+    border-color: rgba(91, 130, 255, 0.2);
+    background:
+        radial-gradient(circle at 18% 18%, rgba(191, 219, 254, 0.16) 0%, rgba(191, 219, 254, 0) 42%),
+        linear-gradient(180deg, rgba(31, 46, 80, 0.9) 0%, rgba(17, 25, 46, 0.84) 100%),
+        rgba(96, 165, 250, 0.08);
+    color: #dbeafe;
+    box-shadow:
+        inset 0 1px 0 rgba(147, 197, 253, 0.1),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.26),
+        0 1px 0 rgba(0, 0, 0, 0.16);
+}
+
+[data-theme="blackhole"] .token-vault-meta-chip {
+    border-color: rgba(139, 92, 246, 0.22);
+    background:
+        radial-gradient(circle at 18% 18%, rgba(196, 181, 253, 0.18) 0%, rgba(196, 181, 253, 0) 42%),
+        linear-gradient(180deg, rgba(33, 23, 61, 0.94) 0%, rgba(14, 10, 28, 0.9) 100%),
+        rgba(139, 92, 246, 0.08);
+    color: #ede9fe;
+    box-shadow:
+        inset 0 1px 0 rgba(196, 181, 253, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.34),
+        0 1px 0 rgba(0, 0, 0, 0.22);
+}
+
+/* Token row */
+.token-vault-token-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+    padding: 0.5rem 0.65rem;
+    border-radius: 10px;
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="dark"] .token-vault-token-row {
+    background: rgba(10, 14, 39, 0.6);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="blackhole"] .token-vault-token-row {
+    background: rgba(0, 0, 0, 0.4);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.token-vault-token {
+    flex: 1;
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    word-break: break-all;
+    user-select: all;
+}
+
+.token-vault-hero-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.65rem;
+}
+
+/* ── Stats Grid ────────────────────────────────────────────────────── */
+.token-vault-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.4rem;
+    margin-top: 0.65rem;
+}
+
+.token-vault-stats div {
+    padding: 0.5rem 0.6rem;
+    border-radius: 10px;
+    border: 1px solid rgba(8, 164, 213, 0.1);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.75) 0%, rgba(245, 249, 253, 0.6) 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.04),
+        0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="dark"] .token-vault-stats div {
+    background:
+        linear-gradient(180deg, rgba(20, 30, 52, 0.92) 0%, rgba(16, 24, 44, 0.88) 100%);
+    border-color: rgba(91, 130, 255, 0.1);
+    box-shadow:
+        inset 0 1px 0 rgba(91, 130, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.15),
+        0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="blackhole"] .token-vault-stats div {
+    background:
+        linear-gradient(180deg, rgba(18, 14, 32, 0.92) 0%, rgba(14, 10, 28, 0.88) 100%);
+    border-color: rgba(92, 94, 255, 0.08);
+    box-shadow:
+        inset 0 1px 0 rgba(107, 101, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+        0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.token-vault-stats span {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin-bottom: 0.15rem;
+}
+
+.token-vault-stats strong {
+    display: block;
+    font-size: 0.7rem;
+    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    white-space: nowrap;
+    word-break: normal;
+    overflow-wrap: normal;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   VAULT ACTIONS — Buttons
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Base action button — 3D beveled pill */
+.token-vault-action {
+    --vault-action-accent: rgba(8, 164, 213, 0.12);
+    --vault-action-border: rgba(8, 164, 213, 0.16);
+    --vault-action-border-hover: rgba(8, 164, 213, 0.28);
+    --vault-action-top: rgba(255, 255, 255, 0.9);
+    --vault-action-bottom: rgba(240, 245, 250, 0.76);
+    --vault-action-base: rgba(243, 247, 251, 0.9);
+    --vault-action-text: var(--text-primary);
+    --vault-action-glow: rgba(8, 164, 213, 0.14);
+    --vault-action-hover-shadow: 0 14px 26px var(--vault-action-glow);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.85),
+        inset 0 -1px 0 rgba(15, 23, 42, 0.06),
+        0 2px 0 rgba(15, 23, 42, 0.04),
+        0 10px 18px rgba(15, 23, 42, 0.06);
+    --vault-action-active-shadow:
+        inset 0 2px 3px rgba(0, 0, 0, 0.1),
+        0 1px 0 rgba(0, 0, 0, 0.06);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.42rem 0.82rem;
+    border-radius: 10px;
+    border: 1.5px solid var(--vault-action-border);
+    background:
+        radial-gradient(circle at 16% 18%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 42%),
+        linear-gradient(135deg, var(--vault-action-accent) 0%, transparent 68%),
+        linear-gradient(180deg, var(--vault-action-top) 0%, var(--vault-action-bottom) 100%),
+        var(--vault-action-base);
+    color: var(--vault-action-text);
+    font-size: 0.76rem;
+    font-weight: 700;
+    font-family: var(--vault-display-font);
+    letter-spacing: 0.012em;
+    cursor: pointer;
+    transition:
+        transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.2s ease,
+        color 0.2s ease,
+        opacity 0.2s ease;
+    white-space: nowrap;
+    position: relative;
+    isolation: isolate;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    box-shadow: var(--vault-action-shadow);
+}
+
+.token-vault-action::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--vault-action-hover-shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    will-change: opacity;
+}
+
+.token-vault-action:hover:not(:disabled) {
+    border-color: var(--vault-action-border-hover);
+    transform: translate3d(0, -2px, 0);
+}
+
+.token-vault-action:hover:not(:disabled)::after {
+    opacity: 1;
+}
+
+.token-vault-action:active:not(:disabled) {
+    transform: translate3d(0, 1px, 0);
+    box-shadow: var(--vault-action-active-shadow);
+    transition-duration: 0.06s;
+}
+
+.token-vault-action:active:not(:disabled)::after {
+    opacity: 0;
+    transition-duration: 0.06s;
+}
+
+.token-vault-action:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.token-vault-hero-actions .token-vault-action {
+    min-height: 2.18rem;
+    padding: 0.3rem 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.015em;
+}
+
+.token-vault-action-grid .token-vault-action {
+    min-height: 2.72rem;
+    padding-inline: 0.9rem;
+    font-weight: 700;
+    letter-spacing: 0.015em;
+}
+
+.token-vault-action-grid .token-vault-action {
+    white-space: normal;
+    line-height: 1.25;
+}
+
+/* Primary action — cyan gradient 3D block */
+.token-vault-action-primary {
+    --vault-action-hover-shadow: 0 10px 28px var(--glow);
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), transparent 50%),
+        linear-gradient(180deg, #1cb5e8 0%, #0891b2 100%);
+    color: #f0f9ff;
+    border: 1.5px solid rgba(8, 164, 213, 0.4);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.32),
+        inset 0 -1px 0 rgba(6, 90, 120, 0.3),
+        0 3px 0 rgba(6, 90, 120, 0.25),
+        0 6px 16px rgba(8, 164, 213, 0.28);
+}
+
+.token-vault-action-primary:hover:not(:disabled) {
+    color: #fff;
+    border-color: rgba(0, 0, 0, 0.25);
+    transform: translate3d(0, -2px, 0);
+}
+
+.token-vault-action-primary:active:not(:disabled) {
+    transform: translate3d(0, 1px, 0);
+    box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.2),
+        0 1px 0 rgba(0, 0, 0, 0.12);
+}
+
+/* Warning action */
+.token-vault-action-warning {
+    --vault-action-hover-shadow: 0 10px 24px rgba(245, 158, 11, 0.28);
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), transparent 50%),
+        linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+    color: #fff7ed;
+    border: 1.5px solid rgba(217, 119, 6, 0.42);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.28),
+        inset 0 -1px 0 rgba(146, 64, 14, 0.28),
+        0 3px 0 rgba(146, 64, 14, 0.22),
+        0 6px 16px rgba(245, 158, 11, 0.24);
+}
+
+.token-vault-action-warning:hover:not(:disabled) {
+    color: #fff;
+    transform: translate3d(0, -2px, 0);
+}
+
+.token-vault-action-warning:active:not(:disabled) {
+    transform: translate3d(0, 1px, 0);
+    box-shadow:
+        inset 0 2px 4px rgba(120, 53, 15, 0.28),
+        0 1px 0 rgba(146, 64, 14, 0.12);
+    transition-duration: 0.06s;
+}
+
+/* Success action */
+.token-vault-action-success {
+    --vault-action-hover-shadow: 0 10px 24px rgba(34, 197, 94, 0.28);
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), transparent 50%),
+        linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+    color: #f0fdf4;
+    border: 1.5px solid rgba(22, 163, 74, 0.38);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.28),
+        inset 0 -1px 0 rgba(21, 128, 61, 0.28),
+        0 3px 0 rgba(21, 128, 61, 0.22),
+        0 6px 16px rgba(34, 197, 94, 0.22);
+}
+
+.token-vault-action-success:hover:not(:disabled) {
+    color: #fff;
+    transform: translate3d(0, -2px, 0);
+}
+
+.token-vault-action-success:active:not(:disabled) {
+    transform: translate3d(0, 1px, 0);
+    box-shadow:
+        inset 0 2px 4px rgba(20, 83, 45, 0.28),
+        0 1px 0 rgba(21, 128, 61, 0.12);
+    transition-duration: 0.06s;
+}
+
+/* Danger button */
+.token-vault-action-danger {
+    --vault-action-hover-shadow: 0 10px 24px rgba(239, 68, 68, 0.3);
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.15), transparent 50%),
+        linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+    color: #fff1f2;
+    border: 1.5px solid rgba(220, 38, 38, 0.4);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        inset 0 -1px 0 rgba(127, 29, 29, 0.3),
+        0 3px 0 rgba(127, 29, 29, 0.25),
+        0 6px 16px rgba(239, 68, 68, 0.22);
+}
+
+.token-vault-action-danger:hover:not(:disabled) {
+    color: #fff;
+    transform: translate3d(0, -2px, 0);
+}
+
+.token-vault-action-danger:active:not(:disabled) {
+    transform: translate3d(0, 1px, 0);
+    box-shadow:
+        inset 0 2px 4px rgba(80, 10, 10, 0.3),
+        0 1px 0 rgba(120, 20, 20, 0.12);
+    transition-duration: 0.06s;
+}
+
+/* Mini button — compact pill */
+.token-vault-mini-btn {
+    --vault-mini-accent: rgba(8, 164, 213, 0.1);
+    --vault-mini-border: rgba(8, 164, 213, 0.14);
+    --vault-mini-border-hover: rgba(8, 164, 213, 0.24);
+    --vault-mini-top: rgba(255, 255, 255, 0.88);
+    --vault-mini-bottom: rgba(243, 247, 252, 0.74);
+    --vault-mini-base: rgba(243, 247, 252, 0.8);
+    --vault-mini-text: var(--text-secondary);
+    --vault-mini-glow: rgba(8, 164, 213, 0.12);
+    --vault-mini-hover-shadow: 0 8px 18px var(--vault-mini-glow);
+    --vault-mini-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        0 2px 4px rgba(15, 23, 42, 0.06);
+    --vault-mini-active-shadow: inset 0 2px 3px rgba(15, 23, 42, 0.08);
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.55rem;
+    border-radius: 8px;
+    border: 1px solid var(--vault-mini-border);
+    background:
+        radial-gradient(circle at 16% 18%, rgba(255, 255, 255, 0.86) 0%, rgba(255, 255, 255, 0) 42%),
+        linear-gradient(135deg, var(--vault-mini-accent) 0%, transparent 68%),
+        linear-gradient(180deg, var(--vault-mini-top) 0%, var(--vault-mini-bottom) 100%),
+        var(--vault-mini-base);
+    color: var(--vault-mini-text);
+    font-size: 0.69rem;
+    font-weight: 700;
+    font-family: var(--vault-display-font);
+    letter-spacing: 0.015em;
+    cursor: pointer;
+    transition:
+        transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.18s ease,
+        color 0.18s ease,
+        opacity 0.18s ease;
+    white-space: nowrap;
+    position: relative;
+    isolation: isolate;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    box-shadow: var(--vault-mini-shadow);
+}
+
+.token-vault-mini-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--vault-mini-hover-shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+    will-change: opacity;
+}
+
+.token-vault-mini-btn:hover:not(:disabled) {
+    border-color: var(--vault-mini-border-hover);
+    color: var(--vault-action-text, var(--primary));
+    transform: translate3d(0, -1px, 0);
+}
+
+.token-vault-mini-btn:hover:not(:disabled)::after {
+    opacity: 1;
+}
+
+.token-vault-mini-btn:active:not(:disabled) {
+    transform: translate3d(0, 0, 0);
+    box-shadow: var(--vault-mini-active-shadow);
+    transition-duration: 0.06s;
+}
+
+.token-vault-mini-btn:active:not(:disabled)::after {
+    opacity: 0;
+    transition-duration: 0.06s;
+}
+
+.token-vault-mini-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.token-vault-action:focus-visible,
+.token-vault-mini-btn:focus-visible {
+    outline: none;
+    border-color: var(--vault-action-border-hover, var(--vault-mini-border-hover));
+    box-shadow:
+        0 0 0 3px rgba(8, 164, 213, 0.18),
+        0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+[data-theme="dark"] .token-vault-action {
+    --vault-action-accent: rgba(96, 165, 250, 0.12);
+    --vault-action-border: rgba(91, 130, 255, 0.22);
+    --vault-action-border-hover: rgba(147, 197, 253, 0.4);
+    --vault-action-top: rgba(31, 46, 80, 0.96);
+    --vault-action-bottom: rgba(17, 25, 46, 0.92);
+    --vault-action-base: rgba(12, 18, 36, 0.92);
+    --vault-action-text: #e6f0ff;
+    --vault-action-glow: rgba(91, 130, 255, 0.18);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(147, 197, 253, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+        0 2px 0 rgba(0, 0, 0, 0.2),
+        0 12px 22px rgba(0, 0, 0, 0.18);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.24),
+        0 1px 0 rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="dark"] .token-vault-mini-btn {
+    --vault-mini-accent: rgba(96, 165, 250, 0.12);
+    --vault-mini-border: rgba(91, 130, 255, 0.18);
+    --vault-mini-border-hover: rgba(147, 197, 253, 0.34);
+    --vault-mini-top: rgba(31, 46, 80, 0.92);
+    --vault-mini-bottom: rgba(17, 25, 46, 0.88);
+    --vault-mini-base: rgba(12, 18, 36, 0.88);
+    --vault-mini-text: #dbeafe;
+    --vault-mini-glow: rgba(91, 130, 255, 0.16);
+    --vault-mini-shadow:
+        inset 0 1px 0 rgba(147, 197, 253, 0.08),
+        0 6px 14px rgba(0, 0, 0, 0.16);
+    --vault-mini-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="blackhole"] .token-vault-action {
+    --vault-action-accent: rgba(167, 139, 250, 0.14);
+    --vault-action-border: rgba(139, 92, 246, 0.24);
+    --vault-action-border-hover: rgba(196, 181, 253, 0.42);
+    --vault-action-top: rgba(33, 23, 61, 0.96);
+    --vault-action-bottom: rgba(15, 11, 30, 0.94);
+    --vault-action-base: rgba(9, 7, 18, 0.96);
+    --vault-action-text: #f3efff;
+    --vault-action-glow: rgba(139, 92, 246, 0.22);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(196, 181, 253, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.36),
+        0 2px 0 rgba(0, 0, 0, 0.26),
+        0 14px 24px rgba(0, 0, 0, 0.28);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.32),
+        0 1px 0 rgba(0, 0, 0, 0.16);
+}
+
+[data-theme="blackhole"] .token-vault-mini-btn {
+    --vault-mini-accent: rgba(167, 139, 250, 0.14);
+    --vault-mini-border: rgba(139, 92, 246, 0.2);
+    --vault-mini-border-hover: rgba(196, 181, 253, 0.38);
+    --vault-mini-top: rgba(33, 23, 61, 0.94);
+    --vault-mini-bottom: rgba(15, 11, 30, 0.9);
+    --vault-mini-base: rgba(9, 7, 18, 0.94);
+    --vault-mini-text: #ede9fe;
+    --vault-mini-glow: rgba(139, 92, 246, 0.18);
+    --vault-mini-shadow:
+        inset 0 1px 0 rgba(196, 181, 253, 0.06),
+        0 8px 16px rgba(0, 0, 0, 0.24);
+    --vault-mini-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.24);
+}
+
+[data-theme="blackhole"] .token-vault-action-primary {
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.08), transparent 50%),
+        linear-gradient(180deg, #7c3aed 0%, #5b21b6 100%);
+    border-color: rgba(124, 58, 237, 0.4);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.15),
+        inset 0 -1px 0 rgba(49, 10, 101, 0.4),
+        0 3px 0 rgba(49, 10, 101, 0.35),
+        0 6px 16px rgba(107, 101, 255, 0.25);
+}
+
+[data-theme="blackhole"] .token-vault-action-primary:hover:not(:disabled) {
+    box-shadow:
+        inset 0 2px 0 rgba(255, 255, 255, 0.2),
+        0 4px 0 rgba(49, 10, 101, 0.28),
+        0 10px 28px rgba(107, 101, 255, 0.28);
+}
+
+.token-vault-action[data-vault-action="copy-config-url"],
+.token-vault-action[data-vault-action="copy-token"],
+.token-vault-mini-btn[data-vault-action="copy-token"] {
+    --vault-action-accent: rgba(34, 211, 238, 0.18);
+    --vault-action-border: rgba(34, 211, 238, 0.24);
+    --vault-action-border-hover: rgba(34, 211, 238, 0.38);
+    --vault-action-glow: rgba(34, 211, 238, 0.18);
+    --vault-mini-accent: rgba(34, 211, 238, 0.18);
+    --vault-mini-border: rgba(34, 211, 238, 0.22);
+    --vault-mini-border-hover: rgba(34, 211, 238, 0.36);
+    --vault-mini-glow: rgba(34, 211, 238, 0.18);
+}
+
+.token-vault-action[data-vault-action="export-current"],
+.token-vault-action[data-vault-action="export-all"] {
+    --vault-action-accent: rgba(168, 85, 247, 0.18);
+    --vault-action-border: rgba(168, 85, 247, 0.24);
+    --vault-action-border-hover: rgba(168, 85, 247, 0.38);
+    --vault-action-glow: rgba(168, 85, 247, 0.18);
+}
+
+.token-vault-action[data-vault-action="install-addon"] {
+    --vault-action-accent: rgba(34, 197, 94, 0.18);
+    --vault-action-border: rgba(34, 197, 94, 0.24);
+    --vault-action-border-hover: rgba(34, 197, 94, 0.38);
+    --vault-action-glow: rgba(34, 197, 94, 0.18);
+}
+
+.token-vault-action[data-vault-action="open-toolbox"] {
+    --vault-action-accent: rgba(59, 130, 246, 0.18);
+    --vault-action-border: rgba(59, 130, 246, 0.24);
+    --vault-action-border-hover: rgba(59, 130, 246, 0.38);
+    --vault-action-glow: rgba(59, 130, 246, 0.18);
+}
+
+.token-vault-action[data-vault-action="open-history"] {
+    --vault-action-accent: rgba(99, 102, 241, 0.18);
+    --vault-action-border: rgba(99, 102, 241, 0.24);
+    --vault-action-border-hover: rgba(99, 102, 241, 0.38);
+    --vault-action-glow: rgba(99, 102, 241, 0.18);
+}
+
+.token-vault-action[data-vault-action="validate-token"] {
+    --vault-action-accent: rgba(245, 158, 11, 0.18);
+    --vault-action-border: rgba(245, 158, 11, 0.24);
+    --vault-action-border-hover: rgba(245, 158, 11, 0.38);
+    --vault-action-glow: rgba(245, 158, 11, 0.18);
+}
+
+.token-vault-mini-btn[data-vault-action="reveal-token"] {
+    --vault-mini-accent: rgba(148, 163, 184, 0.18);
+    --vault-mini-border: rgba(148, 163, 184, 0.22);
+    --vault-mini-border-hover: rgba(148, 163, 184, 0.34);
+    --vault-mini-glow: rgba(148, 163, 184, 0.16);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   VAULT SECTIONS — Actions Card, Import Card, List Card
+   ═══════════════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] .token-vault-action[data-vault-action="copy-config-url"],
+[data-theme="dark"] .token-vault-action[data-vault-action="copy-token"] {
+    --vault-action-accent: rgba(34, 211, 238, 0.28);
+    --vault-action-border: rgba(103, 232, 249, 0.4);
+    --vault-action-border-hover: rgba(165, 243, 252, 0.58);
+    --vault-action-top: rgba(8, 145, 178, 0.98);
+    --vault-action-bottom: rgba(14, 116, 144, 0.96);
+    --vault-action-base: rgba(8, 47, 73, 0.96);
+    --vault-action-text: #ecfeff;
+    --vault-action-glow: rgba(34, 211, 238, 0.32);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(207, 250, 254, 0.2),
+        inset 0 -1px 0 rgba(8, 47, 73, 0.28),
+        0 3px 0 rgba(8, 47, 73, 0.28),
+        0 12px 26px rgba(8, 145, 178, 0.24);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(8, 47, 73, 0.32),
+        0 1px 0 rgba(8, 47, 73, 0.18);
+    text-shadow: 0 1px 2px rgba(8, 47, 73, 0.32);
+}
+
+[data-theme="dark"] .token-vault-action[data-vault-action="export-current"],
+[data-theme="dark"] .token-vault-action[data-vault-action="export-all"] {
+    --vault-action-accent: rgba(216, 180, 254, 0.26);
+    --vault-action-border: rgba(216, 180, 254, 0.4);
+    --vault-action-border-hover: rgba(233, 213, 255, 0.56);
+    --vault-action-top: rgba(147, 51, 234, 0.98);
+    --vault-action-bottom: rgba(109, 40, 217, 0.96);
+    --vault-action-base: rgba(59, 7, 100, 0.94);
+    --vault-action-text: #faf5ff;
+    --vault-action-glow: rgba(168, 85, 247, 0.34);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(245, 208, 254, 0.22),
+        inset 0 -1px 0 rgba(76, 29, 149, 0.3),
+        0 3px 0 rgba(76, 29, 149, 0.3),
+        0 12px 24px rgba(109, 40, 217, 0.22);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(59, 7, 100, 0.34),
+        0 1px 0 rgba(59, 7, 100, 0.2);
+    text-shadow: 0 1px 2px rgba(59, 7, 100, 0.32);
+}
+
+[data-theme="dark"] .token-vault-action[data-vault-action="install-addon"] {
+    --vault-action-accent: rgba(134, 239, 172, 0.22);
+    --vault-action-border: rgba(134, 239, 172, 0.36);
+    --vault-action-border-hover: rgba(187, 247, 208, 0.5);
+    --vault-action-top: rgba(34, 197, 94, 0.98);
+    --vault-action-bottom: rgba(22, 163, 74, 0.96);
+    --vault-action-base: rgba(20, 83, 45, 0.92);
+    --vault-action-text: #f0fdf4;
+    --vault-action-glow: rgba(34, 197, 94, 0.28);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(220, 252, 231, 0.2),
+        inset 0 -1px 0 rgba(20, 83, 45, 0.28),
+        0 3px 0 rgba(20, 83, 45, 0.28),
+        0 12px 24px rgba(22, 163, 74, 0.2);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(20, 83, 45, 0.32),
+        0 1px 0 rgba(20, 83, 45, 0.18);
+    text-shadow: 0 1px 2px rgba(20, 83, 45, 0.28);
+}
+
+[data-theme="dark"] .token-vault-action[data-vault-action="open-toolbox"] {
+    --vault-action-accent: rgba(147, 197, 253, 0.24);
+    --vault-action-border: rgba(147, 197, 253, 0.38);
+    --vault-action-border-hover: rgba(191, 219, 254, 0.56);
+    --vault-action-top: rgba(59, 130, 246, 0.98);
+    --vault-action-bottom: rgba(37, 99, 235, 0.96);
+    --vault-action-base: rgba(30, 64, 175, 0.92);
+    --vault-action-text: #eff6ff;
+    --vault-action-glow: rgba(59, 130, 246, 0.28);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(219, 234, 254, 0.2),
+        inset 0 -1px 0 rgba(30, 64, 175, 0.28),
+        0 3px 0 rgba(30, 64, 175, 0.3),
+        0 12px 24px rgba(37, 99, 235, 0.22);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(30, 64, 175, 0.34),
+        0 1px 0 rgba(30, 64, 175, 0.18);
+    text-shadow: 0 1px 2px rgba(30, 64, 175, 0.3);
+}
+
+[data-theme="dark"] .token-vault-action[data-vault-action="open-history"] {
+    --vault-action-accent: rgba(165, 180, 252, 0.24);
+    --vault-action-border: rgba(165, 180, 252, 0.38);
+    --vault-action-border-hover: rgba(199, 210, 254, 0.54);
+    --vault-action-top: rgba(99, 102, 241, 0.98);
+    --vault-action-bottom: rgba(79, 70, 229, 0.96);
+    --vault-action-base: rgba(49, 46, 129, 0.94);
+    --vault-action-text: #eef2ff;
+    --vault-action-glow: rgba(99, 102, 241, 0.3);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(224, 231, 255, 0.2),
+        inset 0 -1px 0 rgba(49, 46, 129, 0.3),
+        0 3px 0 rgba(49, 46, 129, 0.3),
+        0 12px 24px rgba(79, 70, 229, 0.22);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(49, 46, 129, 0.34),
+        0 1px 0 rgba(49, 46, 129, 0.18);
+    text-shadow: 0 1px 2px rgba(49, 46, 129, 0.3);
+}
+
+[data-theme="dark"] .token-vault-action[data-vault-action="validate-token"] {
+    --vault-action-accent: rgba(251, 191, 36, 0.24);
+    --vault-action-border: rgba(251, 191, 36, 0.38);
+    --vault-action-border-hover: rgba(253, 224, 71, 0.54);
+    --vault-action-top: rgba(245, 158, 11, 0.98);
+    --vault-action-bottom: rgba(217, 119, 6, 0.96);
+    --vault-action-base: rgba(120, 53, 15, 0.92);
+    --vault-action-text: #fffbeb;
+    --vault-action-glow: rgba(245, 158, 11, 0.28);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(254, 243, 199, 0.18),
+        inset 0 -1px 0 rgba(120, 53, 15, 0.28),
+        0 3px 0 rgba(120, 53, 15, 0.28),
+        0 12px 24px rgba(217, 119, 6, 0.2);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(120, 53, 15, 0.34),
+        0 1px 0 rgba(120, 53, 15, 0.18);
+    text-shadow: 0 1px 2px rgba(120, 53, 15, 0.28);
+}
+
+[data-theme="dark"] .token-vault-mini-btn[data-vault-action="copy-token"] {
+    --vault-mini-accent: rgba(34, 211, 238, 0.28);
+    --vault-mini-border: rgba(103, 232, 249, 0.38);
+    --vault-mini-border-hover: rgba(165, 243, 252, 0.54);
+    --vault-mini-top: rgba(14, 165, 233, 0.98);
+    --vault-mini-bottom: rgba(8, 145, 178, 0.96);
+    --vault-mini-base: rgba(8, 47, 73, 0.94);
+    --vault-mini-text: #ecfeff;
+    --vault-mini-glow: rgba(34, 211, 238, 0.28);
+    --vault-mini-shadow:
+        inset 0 1px 0 rgba(207, 250, 254, 0.22),
+        inset 0 -1px 0 rgba(8, 47, 73, 0.24),
+        0 6px 16px rgba(8, 145, 178, 0.22);
+    --vault-mini-active-shadow: inset 0 2px 4px rgba(8, 47, 73, 0.3);
+    text-shadow: 0 1px 2px rgba(8, 47, 73, 0.3);
+}
+
+[data-theme="dark"] .token-vault-mini-btn[data-vault-action="reveal-token"] {
+    --vault-mini-accent: rgba(148, 163, 184, 0.22);
+    --vault-mini-border: rgba(203, 213, 225, 0.34);
+    --vault-mini-border-hover: rgba(226, 232, 240, 0.5);
+    --vault-mini-top: rgba(100, 116, 139, 0.98);
+    --vault-mini-bottom: rgba(71, 85, 105, 0.96);
+    --vault-mini-base: rgba(30, 41, 59, 0.92);
+    --vault-mini-text: #f8fafc;
+    --vault-mini-glow: rgba(148, 163, 184, 0.24);
+    --vault-mini-shadow:
+        inset 0 1px 0 rgba(241, 245, 249, 0.2),
+        inset 0 -1px 0 rgba(30, 41, 59, 0.24),
+        0 6px 14px rgba(30, 41, 59, 0.2);
+    --vault-mini-active-shadow: inset 0 2px 4px rgba(30, 41, 59, 0.3);
+    text-shadow: 0 1px 2px rgba(30, 41, 59, 0.28);
+}
+
+[data-theme="blackhole"] .token-vault-action[data-vault-action="copy-config-url"],
+[data-theme="blackhole"] .token-vault-action[data-vault-action="copy-token"] {
+    --vault-action-accent: rgba(103, 232, 249, 0.28);
+    --vault-action-border: rgba(103, 232, 249, 0.4);
+    --vault-action-border-hover: rgba(165, 243, 252, 0.58);
+    --vault-action-top: rgba(6, 182, 212, 0.98);
+    --vault-action-bottom: rgba(8, 145, 178, 0.96);
+    --vault-action-base: rgba(8, 30, 43, 0.96);
+    --vault-action-text: #ecfeff;
+    --vault-action-glow: rgba(34, 211, 238, 0.34);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(207, 250, 254, 0.18),
+        inset 0 -1px 0 rgba(8, 30, 43, 0.3),
+        0 3px 0 rgba(8, 30, 43, 0.3),
+        0 12px 28px rgba(6, 182, 212, 0.22);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(8, 30, 43, 0.34),
+        0 1px 0 rgba(8, 30, 43, 0.18);
+    text-shadow: 0 1px 2px rgba(8, 30, 43, 0.34);
+}
+
+[data-theme="blackhole"] .token-vault-action[data-vault-action="export-current"],
+[data-theme="blackhole"] .token-vault-action[data-vault-action="export-all"] {
+    --vault-action-accent: rgba(233, 213, 255, 0.26);
+    --vault-action-border: rgba(216, 180, 254, 0.42);
+    --vault-action-border-hover: rgba(243, 232, 255, 0.62);
+    --vault-action-top: rgba(168, 85, 247, 0.98);
+    --vault-action-bottom: rgba(126, 34, 206, 0.96);
+    --vault-action-base: rgba(59, 7, 100, 0.96);
+    --vault-action-text: #faf5ff;
+    --vault-action-glow: rgba(192, 132, 252, 0.36);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(245, 208, 254, 0.2),
+        inset 0 -1px 0 rgba(59, 7, 100, 0.34),
+        0 3px 0 rgba(59, 7, 100, 0.32),
+        0 12px 28px rgba(126, 34, 206, 0.24);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(45, 12, 72, 0.36),
+        0 1px 0 rgba(45, 12, 72, 0.2);
+    text-shadow: 0 1px 2px rgba(45, 12, 72, 0.34);
+}
+
+[data-theme="blackhole"] .token-vault-action[data-vault-action="install-addon"] {
+    --vault-action-accent: rgba(134, 239, 172, 0.22);
+    --vault-action-border: rgba(134, 239, 172, 0.36);
+    --vault-action-border-hover: rgba(187, 247, 208, 0.52);
+    --vault-action-top: rgba(34, 197, 94, 0.98);
+    --vault-action-bottom: rgba(21, 128, 61, 0.96);
+    --vault-action-base: rgba(5, 46, 22, 0.94);
+    --vault-action-text: #f0fdf4;
+    --vault-action-glow: rgba(34, 197, 94, 0.3);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(220, 252, 231, 0.18),
+        inset 0 -1px 0 rgba(5, 46, 22, 0.32),
+        0 3px 0 rgba(5, 46, 22, 0.3),
+        0 12px 28px rgba(21, 128, 61, 0.22);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(5, 46, 22, 0.36),
+        0 1px 0 rgba(5, 46, 22, 0.2);
+    text-shadow: 0 1px 2px rgba(5, 46, 22, 0.32);
+}
+
+[data-theme="blackhole"] .token-vault-action[data-vault-action="open-toolbox"] {
+    --vault-action-accent: rgba(147, 197, 253, 0.24);
+    --vault-action-border: rgba(125, 211, 252, 0.38);
+    --vault-action-border-hover: rgba(186, 230, 253, 0.56);
+    --vault-action-top: rgba(59, 130, 246, 0.98);
+    --vault-action-bottom: rgba(29, 78, 216, 0.96);
+    --vault-action-base: rgba(23, 37, 84, 0.96);
+    --vault-action-text: #eff6ff;
+    --vault-action-glow: rgba(59, 130, 246, 0.32);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(219, 234, 254, 0.18),
+        inset 0 -1px 0 rgba(23, 37, 84, 0.32),
+        0 3px 0 rgba(23, 37, 84, 0.32),
+        0 12px 28px rgba(37, 99, 235, 0.24);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(23, 37, 84, 0.36),
+        0 1px 0 rgba(23, 37, 84, 0.2);
+    text-shadow: 0 1px 2px rgba(23, 37, 84, 0.34);
+}
+
+[data-theme="blackhole"] .token-vault-action[data-vault-action="open-history"] {
+    --vault-action-accent: rgba(196, 181, 253, 0.26);
+    --vault-action-border: rgba(196, 181, 253, 0.42);
+    --vault-action-border-hover: rgba(221, 214, 254, 0.62);
+    --vault-action-top: rgba(139, 92, 246, 0.98);
+    --vault-action-bottom: rgba(109, 40, 217, 0.96);
+    --vault-action-base: rgba(46, 16, 101, 0.96);
+    --vault-action-text: #f5f3ff;
+    --vault-action-glow: rgba(139, 92, 246, 0.34);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(237, 233, 254, 0.18),
+        inset 0 -1px 0 rgba(46, 16, 101, 0.34),
+        0 3px 0 rgba(46, 16, 101, 0.32),
+        0 12px 28px rgba(109, 40, 217, 0.24);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(32, 12, 73, 0.36),
+        0 1px 0 rgba(32, 12, 73, 0.2);
+    text-shadow: 0 1px 2px rgba(32, 12, 73, 0.34);
+}
+
+[data-theme="blackhole"] .token-vault-action[data-vault-action="validate-token"] {
+    --vault-action-accent: rgba(251, 191, 36, 0.24);
+    --vault-action-border: rgba(251, 191, 36, 0.38);
+    --vault-action-border-hover: rgba(253, 224, 71, 0.56);
+    --vault-action-top: rgba(245, 158, 11, 0.98);
+    --vault-action-bottom: rgba(217, 119, 6, 0.96);
+    --vault-action-base: rgba(69, 26, 3, 0.94);
+    --vault-action-text: #fffbeb;
+    --vault-action-glow: rgba(245, 158, 11, 0.3);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(254, 243, 199, 0.18),
+        inset 0 -1px 0 rgba(69, 26, 3, 0.32),
+        0 3px 0 rgba(69, 26, 3, 0.32),
+        0 12px 28px rgba(217, 119, 6, 0.22);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(69, 26, 3, 0.36),
+        0 1px 0 rgba(69, 26, 3, 0.2);
+    text-shadow: 0 1px 2px rgba(69, 26, 3, 0.32);
+}
+
+[data-theme="blackhole"] .token-vault-mini-btn[data-vault-action="copy-token"] {
+    --vault-mini-accent: rgba(103, 232, 249, 0.28);
+    --vault-mini-border: rgba(103, 232, 249, 0.38);
+    --vault-mini-border-hover: rgba(165, 243, 252, 0.58);
+    --vault-mini-top: rgba(34, 211, 238, 0.98);
+    --vault-mini-bottom: rgba(8, 145, 178, 0.96);
+    --vault-mini-base: rgba(8, 30, 43, 0.94);
+    --vault-mini-text: #ecfeff;
+    --vault-mini-glow: rgba(34, 211, 238, 0.3);
+    --vault-mini-shadow:
+        inset 0 1px 0 rgba(207, 250, 254, 0.18),
+        inset 0 -1px 0 rgba(8, 30, 43, 0.28),
+        0 8px 18px rgba(6, 182, 212, 0.24);
+    --vault-mini-active-shadow: inset 0 2px 4px rgba(8, 30, 43, 0.32);
+    text-shadow: 0 1px 2px rgba(8, 30, 43, 0.34);
+}
+
+[data-theme="blackhole"] .token-vault-mini-btn[data-vault-action="reveal-token"] {
+    --vault-mini-accent: rgba(196, 181, 253, 0.2);
+    --vault-mini-border: rgba(221, 214, 254, 0.34);
+    --vault-mini-border-hover: rgba(243, 232, 255, 0.52);
+    --vault-mini-top: rgba(91, 33, 182, 0.98);
+    --vault-mini-bottom: rgba(76, 29, 149, 0.96);
+    --vault-mini-base: rgba(30, 10, 60, 0.92);
+    --vault-mini-text: #f5f3ff;
+    --vault-mini-glow: rgba(167, 139, 250, 0.28);
+    --vault-mini-shadow:
+        inset 0 1px 0 rgba(237, 233, 254, 0.18),
+        inset 0 -1px 0 rgba(30, 10, 60, 0.26),
+        0 8px 18px rgba(91, 33, 182, 0.22);
+    --vault-mini-active-shadow: inset 0 2px 4px rgba(30, 10, 60, 0.3);
+    text-shadow: 0 1px 2px rgba(30, 10, 60, 0.34);
+}
+
+/* Dark and blackhole manager buttons stay neutral except the modal Enable/Disable action */
+[data-theme="dark"] .token-vault-manager .token-vault-action:not([data-vault-action="toggle-state"]):not([data-vault-action="forget-token"]) {
+    --vault-action-accent: rgba(255, 255, 255, 0.02);
+    --vault-action-border: rgba(148, 163, 184, 0.18);
+    --vault-action-border-hover: rgba(203, 213, 225, 0.3);
+    --vault-action-top: rgba(43, 51, 65, 0.98);
+    --vault-action-bottom: rgba(24, 31, 43, 0.98);
+    --vault-action-base: rgba(21, 27, 38, 0.98);
+    --vault-action-text: #e6f0ff;
+    --vault-action-glow: rgba(15, 23, 42, 0.18);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.34),
+        0 1px 0 rgba(0, 0, 0, 0.24),
+        0 10px 18px rgba(0, 0, 0, 0.22);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.3),
+        0 1px 0 rgba(0, 0, 0, 0.12);
+    border: 1.5px solid var(--vault-action-border);
+    background: linear-gradient(180deg, var(--vault-action-top) 0%, var(--vault-action-bottom) 100%);
+    color: var(--vault-action-text);
+    box-shadow: var(--vault-action-shadow);
+    text-shadow: none;
+}
+
+[data-theme="dark"] .token-vault-manager .token-vault-mini-btn {
+    --vault-mini-accent: rgba(255, 255, 255, 0.02);
+    --vault-mini-border: rgba(148, 163, 184, 0.16);
+    --vault-mini-border-hover: rgba(203, 213, 225, 0.28);
+    --vault-mini-top: rgba(42, 50, 64, 0.96);
+    --vault-mini-bottom: rgba(25, 32, 43, 0.96);
+    --vault-mini-base: rgba(21, 27, 38, 0.96);
+    --vault-mini-text: #dbeafe;
+    --vault-mini-glow: rgba(15, 23, 42, 0.16);
+    --vault-mini-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 6px 14px rgba(0, 0, 0, 0.18);
+    --vault-mini-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.24);
+    border: 1px solid var(--vault-mini-border);
+    background: linear-gradient(180deg, var(--vault-mini-top) 0%, var(--vault-mini-bottom) 100%);
+    color: var(--vault-mini-text);
+    box-shadow: var(--vault-mini-shadow);
+    text-shadow: none;
+}
+
+[data-theme="blackhole"] .token-vault-manager .token-vault-action:not([data-vault-action="toggle-state"]):not([data-vault-action="forget-token"]) {
+    --vault-action-accent: rgba(255, 255, 255, 0.02);
+    --vault-action-border: rgba(134, 143, 190, 0.18);
+    --vault-action-border-hover: rgba(196, 181, 253, 0.28);
+    --vault-action-top: rgba(34, 28, 52, 0.98);
+    --vault-action-bottom: rgba(19, 14, 31, 0.98);
+    --vault-action-base: rgba(14, 10, 24, 0.98);
+    --vault-action-text: #f3efff;
+    --vault-action-glow: rgba(8, 4, 18, 0.22);
+    --vault-action-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+        0 1px 0 rgba(0, 0, 0, 0.28),
+        0 12px 22px rgba(0, 0, 0, 0.32);
+    --vault-action-active-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.38),
+        0 1px 0 rgba(0, 0, 0, 0.16);
+    border: 1.5px solid var(--vault-action-border);
+    background: linear-gradient(180deg, var(--vault-action-top) 0%, var(--vault-action-bottom) 100%);
+    color: var(--vault-action-text);
+    box-shadow: var(--vault-action-shadow);
+    text-shadow: none;
+}
+
+[data-theme="blackhole"] .token-vault-manager .token-vault-mini-btn {
+    --vault-mini-accent: rgba(255, 255, 255, 0.02);
+    --vault-mini-border: rgba(134, 143, 190, 0.16);
+    --vault-mini-border-hover: rgba(196, 181, 253, 0.26);
+    --vault-mini-top: rgba(34, 28, 52, 0.96);
+    --vault-mini-bottom: rgba(18, 13, 30, 0.96);
+    --vault-mini-base: rgba(14, 10, 24, 0.96);
+    --vault-mini-text: #ede9fe;
+    --vault-mini-glow: rgba(8, 4, 18, 0.2);
+    --vault-mini-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 8px 16px rgba(0, 0, 0, 0.26);
+    --vault-mini-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--vault-mini-border);
+    background: linear-gradient(180deg, var(--vault-mini-top) 0%, var(--vault-mini-bottom) 100%);
+    color: var(--vault-mini-text);
+    box-shadow: var(--vault-mini-shadow);
+    text-shadow: none;
+}
+
+/* Dark and blackhole rail Enable/Disable buttons stay neutral like the default shortcut button */
+[data-theme="dark"] .token-vault-rail-shortcut[data-vault-action="toggle-state"]:not(.danger),
+[data-theme="dark"] .token-vault-rail-shortcut[data-vault-action="toggle-state"].danger {
+    --vault-rail-shortcut-accent: rgba(255, 255, 255, 0.02);
+    --vault-rail-shortcut-border: rgba(148, 163, 184, 0.16);
+    --vault-rail-shortcut-border-hover: rgba(203, 213, 225, 0.26);
+    --vault-rail-shortcut-top: rgba(41, 49, 63, 0.96);
+    --vault-rail-shortcut-bottom: rgba(24, 31, 42, 0.96);
+    --vault-rail-shortcut-base: rgba(21, 27, 38, 0.96);
+    --vault-rail-shortcut-text: #e2e8f0;
+    --vault-rail-shortcut-glow: rgba(15, 23, 42, 0.16);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.26),
+        0 6px 14px rgba(0, 0, 0, 0.18);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.24);
+    text-shadow: none;
+}
+
+[data-theme="blackhole"] .token-vault-rail-shortcut[data-vault-action="toggle-state"]:not(.danger),
+[data-theme="blackhole"] .token-vault-rail-shortcut[data-vault-action="toggle-state"].danger {
+    --vault-rail-shortcut-accent: rgba(255, 255, 255, 0.02);
+    --vault-rail-shortcut-border: rgba(134, 143, 190, 0.16);
+    --vault-rail-shortcut-border-hover: rgba(196, 181, 253, 0.24);
+    --vault-rail-shortcut-top: rgba(34, 28, 52, 0.96);
+    --vault-rail-shortcut-bottom: rgba(18, 13, 30, 0.96);
+    --vault-rail-shortcut-base: rgba(14, 10, 24, 0.96);
+    --vault-rail-shortcut-text: #ede9fe;
+    --vault-rail-shortcut-glow: rgba(8, 4, 18, 0.18);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+        0 8px 18px rgba(0, 0, 0, 0.24);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.28);
+    text-shadow: none;
+}
+
+/* Remove the glossy glare from rail Use/Live/Enable/Disable buttons in dark themes */
+[data-theme="dark"] .token-vault-rail-shortcut,
+[data-theme="blackhole"] .token-vault-rail-shortcut {
+    background: linear-gradient(180deg, var(--vault-rail-shortcut-top) 0%, var(--vault-rail-shortcut-bottom) 100%);
+    box-shadow: var(--vault-rail-shortcut-shadow);
+}
+
+[data-theme="dark"] .token-vault-rail-shortcut[data-vault-action="switch-token"] {
+    --vault-rail-shortcut-accent: rgba(255, 255, 255, 0.02);
+    --vault-rail-shortcut-border: rgba(125, 145, 194, 0.2);
+    --vault-rail-shortcut-border-hover: rgba(191, 204, 235, 0.32);
+    --vault-rail-shortcut-top: rgba(50, 61, 86, 0.98);
+    --vault-rail-shortcut-bottom: rgba(31, 39, 58, 0.98);
+    --vault-rail-shortcut-base: rgba(25, 32, 48, 0.98);
+    --vault-rail-shortcut-text: #eff6ff;
+    --vault-rail-shortcut-glow: rgba(15, 23, 42, 0.18);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+        0 6px 14px rgba(0, 0, 0, 0.18);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.26);
+    text-shadow: none;
+}
+
+[data-theme="blackhole"] .token-vault-rail-shortcut[data-vault-action="switch-token"] {
+    --vault-rail-shortcut-accent: rgba(255, 255, 255, 0.02);
+    --vault-rail-shortcut-border: rgba(143, 132, 191, 0.2);
+    --vault-rail-shortcut-border-hover: rgba(206, 195, 244, 0.3);
+    --vault-rail-shortcut-top: rgba(43, 35, 63, 0.98);
+    --vault-rail-shortcut-bottom: rgba(23, 18, 38, 0.98);
+    --vault-rail-shortcut-base: rgba(17, 13, 28, 0.98);
+    --vault-rail-shortcut-text: #f3efff;
+    --vault-rail-shortcut-glow: rgba(8, 4, 18, 0.2);
+    --vault-rail-shortcut-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.34),
+        0 8px 18px rgba(0, 0, 0, 0.24);
+    --vault-rail-shortcut-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+    text-shadow: none;
+}
+
+.token-vault-section-title {
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--primary);
+    margin-bottom: 0.55rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid rgba(8, 164, 213, 0.12);
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.token-vault-section-title::before {
+    content: '';
+    width: 3px;
+    height: 1em;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #08A4D5, #33B9E1);
+    flex-shrink: 0;
+}
+
+.token-vault-section-copy {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    margin: 0 0 0.65rem;
+}
+
+/* Actions Card */
+.token-vault-actions-card {
+    padding: 0.85rem;
+    border-radius: 14px;
+    border: 1.5px solid rgba(8, 164, 213, 0.15);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(243, 249, 252, 0.88) 100%);
+    box-shadow:
+        0 6px 18px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+[data-theme="dark"] .token-vault-actions-card {
+    background:
+        linear-gradient(180deg, rgba(16, 24, 44, 0.92) 0%, rgba(14, 22, 39, 0.88) 100%);
+    border-color: rgba(91, 130, 255, 0.14);
+    box-shadow:
+        0 6px 18px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(91, 130, 255, 0.06);
+}
+
+[data-theme="blackhole"] .token-vault-actions-card {
+    background:
+        linear-gradient(180deg, rgba(14, 10, 28, 0.94) 0%, rgba(12, 9, 24, 0.9) 100%);
+    border-color: rgba(92, 94, 255, 0.12);
+    box-shadow:
+        0 6px 18px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(107, 101, 255, 0.06);
+}
+
+.token-vault-action-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+}
+
+.token-vault-security-warning {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    margin-top: 0.75rem;
+    padding: 0.8rem 0.95rem;
+    border-radius: 14px;
+    border: 1px solid rgba(245, 158, 11, 0.32);
+    background:
+        radial-gradient(circle at top, rgba(251, 191, 36, 0.2), transparent 58%),
+        linear-gradient(180deg, rgba(255, 251, 235, 0.96) 0%, rgba(255, 247, 237, 0.92) 100%);
+    color: #9a3412;
+    text-align: center;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.75),
+        0 8px 22px rgba(245, 158, 11, 0.12);
+}
+
+.token-vault-security-warning::before {
+    content: '!';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+    color: #fff;
+    font-size: 0.92rem;
+    font-weight: 900;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.28),
+        0 4px 12px rgba(245, 158, 11, 0.22);
+    flex-shrink: 0;
+}
+
+.token-vault-security-warning strong {
+    color: #7c2d12;
+}
+
+[data-theme="dark"] .token-vault-security-warning {
+    border-color: rgba(251, 191, 36, 0.22);
+    background:
+        radial-gradient(circle at top, rgba(251, 191, 36, 0.14), transparent 58%),
+        linear-gradient(180deg, rgba(49, 28, 8, 0.96) 0%, rgba(35, 22, 9, 0.92) 100%);
+    color: #fcd34d;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 10px 24px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .token-vault-security-warning strong {
+    color: #fde68a;
+}
+
+[data-theme="blackhole"] .token-vault-security-warning {
+    border-color: rgba(251, 191, 36, 0.2);
+    background:
+        radial-gradient(circle at top, rgba(251, 191, 36, 0.12), transparent 58%),
+        linear-gradient(180deg, rgba(31, 19, 8, 0.98) 0%, rgba(17, 12, 7, 0.96) 100%);
+    color: #fcd34d;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.03),
+        0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+[data-theme="blackhole"] .token-vault-security-warning strong {
+    color: #fef3c7;
+}
+
+/* Import Card */
+.token-vault-import-card {
+    padding: 0.85rem;
+    border-radius: 14px;
+    border: 1.5px solid rgba(8, 164, 213, 0.15);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(243, 249, 252, 0.88) 100%);
+    box-shadow:
+        0 6px 18px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+[data-theme="dark"] .token-vault-import-card {
+    background:
+        linear-gradient(180deg, rgba(16, 24, 44, 0.92) 0%, rgba(14, 22, 39, 0.88) 100%);
+    border-color: rgba(91, 130, 255, 0.14);
+    box-shadow:
+        0 6px 18px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(91, 130, 255, 0.06);
+}
+
+[data-theme="blackhole"] .token-vault-import-card {
+    background:
+        linear-gradient(180deg, rgba(14, 10, 28, 0.94) 0%, rgba(12, 9, 24, 0.9) 100%);
+    border-color: rgba(92, 94, 255, 0.12);
+    box-shadow:
+        0 6px 18px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(107, 101, 255, 0.06);
+}
+
+.token-vault-import-row {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.token-vault-import-input,
+.token-vault-import-row textarea {
+    width: 100%;
+    min-height: 46px;
+    padding: 0.72rem 0.9rem;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(245, 249, 253, 0.88) 100%);
+    border: 1.5px solid rgba(8, 164, 213, 0.16);
+    border-radius: 14px;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    font-family: 'SF Mono', 'Cascadia Code', monospace;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.82),
+        0 6px 16px rgba(8, 164, 213, 0.08);
+}
+
+.token-vault-import-input::placeholder,
+.token-vault-import-row textarea::placeholder {
+    color: var(--text-secondary);
+}
+
+.token-vault-import-row textarea {
+    resize: none;
+}
+
+[data-theme="dark"] .token-vault-import-input,
+[data-theme="dark"] .token-vault-import-row textarea {
+    background:
+        linear-gradient(180deg, rgba(20, 30, 52, 0.94) 0%, rgba(16, 24, 44, 0.9) 100%);
+    border-color: rgba(91, 130, 255, 0.14);
+    box-shadow:
+        inset 0 1px 0 rgba(91, 130, 255, 0.06),
+        0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="blackhole"] .token-vault-import-input,
+[data-theme="blackhole"] .token-vault-import-row textarea {
+    background:
+        linear-gradient(180deg, rgba(18, 14, 32, 0.94) 0%, rgba(14, 10, 28, 0.9) 100%);
+    border-color: rgba(92, 94, 255, 0.14);
+    box-shadow:
+        inset 0 1px 0 rgba(107, 101, 255, 0.06),
+        0 6px 16px rgba(0, 0, 0, 0.24);
+}
+
+.token-vault-import-input:focus,
+.token-vault-import-row textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow:
+        0 0 0 4px rgba(8, 164, 213, 0.12),
+        0 10px 24px rgba(8, 164, 213, 0.12);
+}
+
+.token-vault-import-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+}
+
+.token-vault-import-actions .token-vault-action,
+.token-vault-secondary-grid .token-vault-action {
+    width: 100%;
+}
+
+.token-vault-secondary-grid {
+    margin-top: 0.65rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LIST CARD & LIST ENTRIES — the most important visual fix
+   ═══════════════════════════════════════════════════════════════════════ */
+.token-vault-list-card {
+    padding: 0.85rem;
+    border-radius: 14px;
+    border: 1.5px solid rgba(8, 164, 213, 0.15);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(243, 249, 252, 0.88) 100%);
+    box-shadow:
+        0 6px 18px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+[data-theme="dark"] .token-vault-list-card {
+    background:
+        linear-gradient(180deg, rgba(16, 24, 44, 0.92) 0%, rgba(14, 22, 39, 0.88) 100%);
+    border-color: rgba(91, 130, 255, 0.14);
+    box-shadow:
+        0 6px 18px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(91, 130, 255, 0.06);
+}
+
+[data-theme="blackhole"] .token-vault-list-card {
+    background:
+        linear-gradient(180deg, rgba(14, 10, 28, 0.94) 0%, rgba(12, 9, 24, 0.9) 100%);
+    border-color: rgba(92, 94, 255, 0.12);
+    box-shadow:
+        0 6px 18px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(107, 101, 255, 0.06);
+}
+
+.token-vault-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+/* ── Individual list entries — VISUALLY DISTINCT with solid left accent ── */
+.token-vault-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 0.75rem 0.65rem 0.9rem;
+    border-radius: 12px;
+    border: 1.5px solid rgba(8, 164, 213, 0.15);
+    border-left: 4px solid #0ea5e9;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(245, 249, 253, 0.8) 100%);
+    box-shadow:
+        0 3px 10px rgba(15, 23, 42, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 0.18s ease;
+    position: relative;
+    overflow: hidden;
+    animation: fadeInUp 0.25s ease both;
+}
+
+.token-vault-list-item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(8, 164, 213, 0.3);
+    box-shadow:
+        0 6px 18px rgba(8, 164, 213, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Status-based left accent colors on list entries */
+.token-vault-list-item:has(.token-vault-inline-chip.disabled) { border-left-color: #ef4444; }
+.token-vault-list-item:has(.token-vault-inline-chip.draft) { border-left-color: #f59e0b; }
+.token-vault-list-item:has(.token-vault-inline-chip.recovered) { border-left-color: #14b8a6; }
+.token-vault-list-item:has(.token-vault-inline-chip.unknown),
+.token-vault-list-item:has(.token-vault-inline-chip.error) { border-left-color: #94a3b8; }
+
+/* Dark theme entries */
+[data-theme="dark"] .token-vault-list-item {
+    background:
+        linear-gradient(180deg, rgba(20, 30, 52, 0.95) 0%, rgba(16, 24, 44, 0.9) 100%);
+    border-color: rgba(91, 130, 255, 0.14);
+    border-left-color: #5b82ff;
+    box-shadow:
+        0 3px 10px rgba(0, 0, 0, 0.18),
+        inset 0 1px 0 rgba(91, 130, 255, 0.05);
+}
+
+[data-theme="dark"] .token-vault-list-item:hover {
+    background:
+        linear-gradient(180deg, rgba(24, 36, 62, 0.96) 0%, rgba(20, 30, 52, 0.94) 100%);
+    border-color: rgba(91, 130, 255, 0.25);
+    box-shadow:
+        0 6px 18px rgba(91, 130, 255, 0.08),
+        inset 0 1px 0 rgba(91, 130, 255, 0.08);
+}
+
+/* Blackhole theme entries */
+[data-theme="blackhole"] .token-vault-list-item {
+    background:
+        linear-gradient(180deg, rgba(18, 14, 32, 0.95) 0%, rgba(14, 10, 28, 0.9) 100%);
+    border-color: rgba(92, 94, 255, 0.12);
+    border-left-color: #8b5cf6;
+    box-shadow:
+        0 3px 10px rgba(0, 0, 0, 0.22),
+        inset 0 1px 0 rgba(107, 101, 255, 0.05);
+}
+
+[data-theme="blackhole"] .token-vault-list-item:hover {
+    background:
+        linear-gradient(180deg, rgba(22, 16, 38, 0.96) 0%, rgba(18, 14, 32, 0.94) 100%);
+    border-color: rgba(92, 94, 255, 0.25);
+    box-shadow:
+        0 6px 18px rgba(107, 101, 255, 0.08),
+        inset 0 1px 0 rgba(107, 101, 255, 0.08);
+}
+
+/* Stagger animation for list items */
+.token-vault-list-item:nth-child(2) { animation-delay: 0.05s; }
+.token-vault-list-item:nth-child(3) { animation-delay: 0.1s; }
+.token-vault-list-item:nth-child(4) { animation-delay: 0.15s; }
+.token-vault-list-item:nth-child(5) { animation-delay: 0.2s; }
+
+.token-vault-list-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.token-vault-list-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.15rem;
+    min-width: 0;
+}
+
+.token-vault-list-title-row strong {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Inline status chip on list entries */
+.token-vault-inline-chip {
+    display: inline-flex;
+    padding: 0.1rem 0.35rem;
+    border-radius: 6px;
+    font-size: 0.58rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid var(--border);
+    background: var(--surface-light);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.token-vault-inline-chip.active,
+.token-vault-inline-chip.live {
+    background: rgba(8, 164, 213, 0.1);
+    border-color: rgba(8, 164, 213, 0.3);
+    color: var(--primary);
+}
+
+.token-vault-inline-chip.disabled {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: var(--danger);
+}
+
+.token-vault-inline-chip.draft {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #b45309;
+}
+
+.token-vault-inline-chip.recovered {
+    background: rgba(20, 184, 166, 0.08);
+    border-color: rgba(20, 184, 166, 0.3);
+    color: #0f766e;
+}
+
+.token-vault-inline-chip.unknown {
+    background: rgba(107, 114, 128, 0.08);
+    border-color: rgba(107, 114, 128, 0.3);
+    color: var(--text-secondary);
+}
+
+.token-vault-inline-chip.error {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: var(--danger);
+}
+
+.token-vault-list-meta {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.token-vault-list-actions {
+    display: flex;
+    gap: 0.3rem;
+    flex-shrink: 0;
+}
+
+/* Empty state */
+.token-vault-empty {
+    text-align: center;
+    padding: 1.5rem 1rem;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    border: 2px dashed rgba(8, 164, 213, 0.18);
+    border-radius: 12px;
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.02), rgba(15, 23, 42, 0.04));
+    line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+    .token-vault-create-grid,
+    .token-vault-manager-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .token-vault-create-card-wide {
+        grid-column: auto;
+    }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+    .token-vault-launcher {
+        width: 50px;
+        height: 50px;
+        bottom: 1.15rem;
+        border-radius: 14px;
+    }
+
+    .token-vault-launcher-icon {
+        width: 24px;
+        height: 24px;
+    }
+
+    .token-vault-launcher-ribbon {
+        left: 4px;
+        right: 4px;
+        bottom: 3px;
+        height: 10px;
+        font-size: 0.44rem;
+    }
+
+    .token-vault-rail {
+        width: min(400px, calc(100vw - 0.85rem));
+        bottom: 4.8rem;
+    }
+
+    .token-vault-rail-add {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .token-vault-rail-add-cap {
+        grid-column: auto;
+        justify-self: end;
+        min-width: 42px;
+        padding: 0.22rem 0.38rem;
+        font-size: 0.58rem;
+    }
+
+    .token-vault-rail-item {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+    }
+
+    .token-vault-rail-actions {
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        max-width: 8.5rem;
+    }
+
+    .token-vault-rail-menu-panel,
+    .token-vault-rail-floating-menu {
+        min-width: 6.25rem;
+    }
+
+    .token-vault-overlay {
+        padding: 0;
+        align-items: flex-end;
+    }
+
+    .token-vault-override-overlay {
+        padding: 0.85rem;
+    }
+
+    .token-vault-override-panel {
+        width: 100%;
+    }
+
+    .token-vault-panel {
+        width: 100vw;
+        max-height: 92vh;
+        border-radius: 22px 22px 0 0;
+    }
+
+    .token-vault-create-panel {
+        width: 100vw;
+    }
+
+    .token-vault-panel-body {
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    }
+
+    .token-vault-create-hero,
+    .token-vault-confirm,
+    .token-vault-hero-top {
+        flex-direction: column;
+    }
+
+    .token-vault-create-card-head,
+    .token-vault-create-tools-top {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .token-vault-hero-actions {
+        flex-wrap: wrap;
+    }
+
+    .token-vault-hero-actions .token-vault-action {
+        width: auto;
+    }
+
+    .token-vault-override-header,
+    .token-vault-override-victim,
+    .token-vault-override-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .token-vault-create-backup-row,
+    .token-vault-action-grid,
+    .token-vault-import-row {
+        grid-template-columns: 1fr;
+    }
+
+    .token-vault-create-hero-badges {
+        justify-content: flex-start;
+    }
+
+    .token-vault-import-actions,
+    .token-vault-secondary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .token-vault-security-warning {
+        flex-direction: column;
+        padding: 0.85rem;
+    }
+
+    .token-vault-stats {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .token-vault-list-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.45rem;
+    }
+
+    .token-vault-list-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .token-vault-launcher,
+    .token-vault-rail-add,
+    .token-vault-rail-item,
+    .token-vault-rail-empty,
+    .token-vault-rail-shortcut,
+    .token-vault-rail-menu-toggle,
+    .token-vault-rail-menu-item,
+    .token-vault-action,
+    .token-vault-mini-btn,
+    .token-vault-close,
+    .token-vault-panel,
+    .token-vault-create-card,
+    .token-vault-list-item {
+        transition: none;
+        animation: none;
+    }
+}
+
 
 /* V3 Warning Tooltip - Responsive Design */
 .v3-warning-tooltip {

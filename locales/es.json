@@ -943,14 +943,16 @@
           "step5": "Sigue los pasos en pantalla y arrastra el resultado a Stremio si es necesario."
         },
         "reset": {
-          "title": "Restablecer toda la configuración",
-          "intro": "<strong>Esto reiniciará absolutamente todo de este sitio:</strong>",
-          "item1": "- Almacenamiento local, de sesión, configuración en caché y tokens",
-          "item2": "- Service worker y todas las cachés",
-          "item3": "- Cualquier dato del sitio guardado por esta app",
-          "footer": "La página se recargará después.",
+          "title": "Restablecer los datos de SubMaker en este navegador",
+          "intro": "<strong>Este es un reinicio local completo para este navegador en este sitio. Hará lo siguiente:</strong>",
+          "item1": "Olvidar el token actual de configuración, la configuración en caché, las entradas de Token Vault / Gestor de Perfiles y cualquier progreso de Quick Setup guardado en este navegador",
+          "item2": "Restablecer las preferencias del sitio y de las herramientas, como idioma de la interfaz, tema, estado de paneles/secciones, estado de Novedades, instrucciones descartadas y opciones guardadas de herramientas",
+          "item3": "Borrar los datos del navegador que usa SubMaker en este sitio: localStorage, sessionStorage, cookies, service worker, Cache Storage y cualquier IndexedDB creado aquí",
+          "item4": "Recargar Configurar como un borrador en blanco con los ajustes predeterminados y sin ningún perfil local guardado seleccionado",
+          "item5": "No borrar tokens ni perfiles del servidor; cualquier URL de token guardada en otro lugar todavía podrá reabrirlos",
+          "footer": "Después de recargar, este navegador empezará desde cero.",
           "cancel": "Cancelar",
-          "confirm": "Restablecer todo"
+          "confirm": "Borrar datos del navegador"
         }
       },
       "noTranslation": {
@@ -1443,8 +1445,8 @@
         "title": "Desarrollo"
       },
       "reset": {
-        "hint": "¿Problemas? Restablece la configuración a los valores predeterminados ->",
-        "cta": "Restablecer"
+        "hint": "¿Necesitas un reinicio limpio? Borra los datos de SubMaker en este navegador ->",
+        "cta": "Borrar datos"
       }
     },
     "nav": {

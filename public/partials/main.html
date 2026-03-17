@@ -52,6 +52,28 @@
             </svg>
         </span>
     </button>
+    <button class="help-button token-vault-launcher" id="tokenVaultLauncher" title="Open Token Vault"
+        aria-label="Open Token Vault" aria-expanded="false" aria-controls="tokenVaultRail" data-state="draft">
+        <svg class="token-vault-launcher-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+            <defs>
+                <linearGradient id="tvShield" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="rgba(255,255,255,0.95)"/>
+                    <stop offset="100%" stop-color="rgba(255,255,255,0.55)"/>
+                </linearGradient>
+            </defs>
+            <path d="M16 3L5 8v7c0 7.73 4.66 14.28 11 16 6.34-1.72 11-8.27 11-16V8L16 3z"
+                  fill="url(#tvShield)" stroke="rgba(255,255,255,0.4)" stroke-width="1.2"
+                  stroke-linejoin="round"/>
+            <circle cx="16" cy="14" r="3" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.8"/>
+            <path d="M16 17v4" stroke="rgba(255,255,255,0.9)" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <span class="token-vault-launcher-ribbon">
+            <span class="token-vault-launcher-label">VAULT</span>
+        </span>
+    </button>
+    <div class="token-vault-rail" id="tokenVaultRail" aria-hidden="true">
+        <div class="token-vault-rail-list" id="tokenVaultRailList"></div>
+    </div>
     <button class="help-button mario" id="configHelp" title="Help" aria-label="Help" data-i18n="config.quickActionHelp"
         data-i18n-attr="title,aria-label">?</button>
 
@@ -2592,8 +2614,8 @@
 
     <!-- Full Reset CTA (positioned vertically by JS) -->
     <div id="resetBarWrapper" class="reset-bar">
-        <div class="reset-text" data-i18n="config.reset.hint">Any problems- Reset settings to default -></div>
-        <button type="button" id="resetSettingsBtn" class="reset-btn" data-i18n="config.reset.cta">Reset</button>
+        <div class="reset-text" data-i18n="config.reset.hint">Need a clean reset? Clear this browser's SubMaker data -></div>
+        <button type="button" id="resetSettingsBtn" class="reset-btn" data-i18n="config.reset.cta">Clear Data</button>
     </div>
     <div class="support-link-hint">
         <span data-i18n="config.support.hint">Still having issues?</span>

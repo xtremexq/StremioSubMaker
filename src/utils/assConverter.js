@@ -25,6 +25,11 @@ function preprocessASS(content, format = 'ass') {
   // 2. Normalize line endings to \n
   processed = processed.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
+  // 2.5. Remove blank lines inside [Events].
+  // subsrt-ts splits ASS/SSA content on blank lines, so blank spacing between
+  // Format/Dialogue lines causes it to drop all cues and emit only metadata.
+  processed = normalizeEventsSectionSpacing(processed);
+
   // 3. Fix subsrt-ts bug: library consumes first char of text field in Dialogue lines
   // Solution: Add leading space before text field (after 9th comma in ASS format)
   // ASS Dialogue format: Dialogue: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -74,6 +79,42 @@ function preprocessASS(content, format = 'ass') {
   // Instead, we clean up ASS tags in the VTT output during post-processing.
 
   return processed;
+}
+
+/**
+ * Remove blank spacer lines inside the [Events] section.
+ * These lines are harmless to ASS renderers, but they break subsrt-ts parsing.
+ * @param {string} content - ASS/SSA content
+ * @returns {string} - Content with normalized [Events] spacing
+ */
+function normalizeEventsSectionSpacing(content) {
+  const lines = content.split('\n');
+  const normalized = [];
+  let inEvents = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (/^\[events\]/i.test(trimmed)) {
+      inEvents = true;
+      normalized.push(line);
+      continue;
+    }
+
+    if (inEvents && /^\[[^\]]+\]$/.test(trimmed)) {
+      inEvents = false;
+      normalized.push(line);
+      continue;
+    }
+
+    if (inEvents && trimmed.length === 0) {
+      continue;
+    }
+
+    normalized.push(line);
+  }
+
+  return normalized.join('\n');
 }
 
 /**
@@ -174,20 +215,7 @@ function postprocessVTT(vttContent) {
     return vttContent;
   }
 
-  let processed = vttContent;
-
-  // Defensive cleanup before deeper processing:
-  // - Remove stray lines that are exactly 'undefined' (should never appear in valid VTT)
-  // - Normalize the first non-empty line to the proper 'WEBVTT' header
-  try {
-    const prim = processed.split('\n');
-    const filtered = prim.filter(l => l.trim().toLowerCase() !== 'undefined');
-    const firstIdx = filtered.findIndex(l => l.trim().length > 0);
-    if (firstIdx >= 0) {
-      filtered[firstIdx] = 'WEBVTT';
-    }
-    processed = filtered.join('\n');
-  } catch (_) { }
+  let processed = vttContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
   // Defensive cleanup before deeper processing:
   // - Remove stray lines that are exactly 'undefined' (should never appear in valid VTT)
@@ -206,6 +234,10 @@ function postprocessVTT(vttContent) {
   if (!processed.startsWith('WEBVTT')) {
     processed = 'WEBVTT\n\n' + processed;
   }
+
+  // subsrt-ts may emit numeric cue identifiers that include skipped meta/style rows.
+  // WebVTT does not require cue ids, so strip numeric-only ids before timestamps.
+  processed = processed.replace(/(^|\n)\d+\n(?=\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->)/g, '$1');
 
   // 2. Remove empty cues (cues with no text)
   const lines = processed.split('\n');
@@ -365,35 +397,34 @@ function validateVTT(vttContent) {
     return false;
   }
 
+  const normalized = vttContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
   // Check for WEBVTT header
-  if (!vttContent.trim().startsWith('WEBVTT')) {
+  if (!normalized.trim().startsWith('WEBVTT')) {
     return false;
   }
 
-  // Check for at least one timing cue
-  const hasTimingCues = /\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(vttContent);
-
-  if (!hasTimingCues) {
-    return false;
-  }
-
-  // Check that there's actual text content (not just empty cues)
-  const lines = vttContent.split('\n');
-  let hasTextContent = false;
+  const lines = normalized.split('\n');
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    // If line has text and is not a header, timestamp, or empty
-    if (line.length > 0 &&
-      !line.startsWith('WEBVTT') &&
-      !/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(line) &&
-      !/^NOTE\s/.test(line)) {
-      hasTextContent = true;
-      break;
+    if (!/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(line)) {
+      continue;
+    }
+
+    for (let j = i + 1; j < lines.length; j++) {
+      const cueLine = lines[j].trim();
+      if (!cueLine) {
+        break;
+      }
+      if (/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(cueLine)) {
+        break;
+      }
+      return true;
     }
   }
 
-  return hasTextContent;
+  return false;
 }
 
 /**

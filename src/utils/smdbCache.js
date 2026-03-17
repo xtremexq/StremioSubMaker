@@ -7,6 +7,7 @@
 const log = require('./logger');
 const { handleCaughtError } = require('./errorClassifier');
 const { StorageFactory, StorageAdapter } = require('../storage');
+const videoHashAssociations = require('./videoHashAssociations');
 
 let storageAdapter = null;
 
@@ -398,6 +399,6 @@ module.exports = {
     checkOverrideLimit,
     recordOverride,
     exists,
-    saveHashMapping,
-    getAssociatedHashes
+    saveHashMapping: videoHashAssociations.saveHashMapping,
+    getAssociatedHashes: videoHashAssociations.getAssociatedHashes
 };

@@ -85,23 +85,62 @@
         </div>
     </div>
 
+    <div class="modal-overlay token-vault-overlay" id="tokenVaultModal">
+        <div class="token-vault-panel" role="dialog" aria-modal="true" aria-labelledby="tokenVaultTitle">
+            <div class="token-vault-panel-header">
+                <div>
+                    <div class="token-vault-panel-eyebrow">Profile Manager</div>
+                    <h2 id="tokenVaultTitle">Token Vault</h2>
+                </div>
+                <button type="button" class="token-vault-close" data-vault-action="close-vault" aria-label="Close Token Vault">&times;</button>
+            </div>
+            <div class="token-vault-panel-body" id="tokenVaultContent"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay token-vault-overlay token-vault-create-overlay" id="tokenVaultCreateModal">
+        <div class="token-vault-panel token-vault-create-panel" role="dialog" aria-modal="true" aria-labelledby="tokenVaultCreateTitle">
+            <div class="token-vault-panel-header token-vault-create-header">
+                <div>
+                    <div class="token-vault-panel-eyebrow">Profiles</div>
+                    <h2 id="tokenVaultCreateTitle">Add Profile</h2>
+                </div>
+                <button type="button" class="token-vault-close" data-vault-action="close-creator" aria-label="Close Add Profile">&times;</button>
+            </div>
+            <div class="token-vault-panel-body token-vault-create-body" id="tokenVaultCreateContent"></div>
+            <input type="file" id="tokenVaultImportFile" accept=".json,application/json" hidden>
+        </div>
+    </div>
+
+    <div class="modal-overlay token-vault-override-overlay" id="tokenVaultOverrideModal">
+        <div class="token-vault-override-panel" role="dialog" aria-modal="true" aria-labelledby="tokenVaultOverrideTitle">
+            <button type="button" class="token-vault-close token-vault-override-close" data-vault-override-action="cancel"
+                aria-label="Close vault confirmation">&times;</button>
+            <div class="token-vault-override-content" id="tokenVaultOverrideContent"></div>
+        </div>
+    </div>
+
     <!-- Reset Confirmation Modal -->
     <div class="modal-overlay" id="resetConfirmModal">
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="resetConfirmTitle">
             <div class="modal-header">
-                <h2 id="resetConfirmTitle" data-i18n="config.overlays.reset.title">Reset All Settings</h2>
+                <h2 id="resetConfirmTitle" data-i18n="config.overlays.reset.title">Reset This Browser's SubMaker Data</h2>
                 <div class="modal-close" id="closeResetConfirmBtn">&times;</div>
             </div>
             <div class="modal-content">
-                <p data-i18n="config.overlays.reset.intro" data-i18n-attr="innerHTML"><strong>This will reset literally everything for this site:</strong></p>
-                <p data-i18n="config.overlays.reset.item1">- Local storage, session storage, cached config and tokens</p>
-                <p data-i18n="config.overlays.reset.item2">- Service worker and all caches</p>
-                <p data-i18n="config.overlays.reset.item3">- Any site data stored by this app</p>
-                <p style="margin-top: 0.75rem;" data-i18n="config.overlays.reset.footer">The page will reload afterward.</p>
+                <p data-i18n="config.overlays.reset.intro" data-i18n-attr="innerHTML"><strong>This is a full local reset for this browser on this site. It will:</strong></p>
+                <ul class="reset-checklist">
+                    <li data-i18n="config.overlays.reset.item1">Forget the current config token, cached config, Token Vault / Profile Manager entries, and any Quick Setup draft progress saved in this browser</li>
+                    <li data-i18n="config.overlays.reset.item2">Reset site and tool preferences such as UI language, theme, panel/section state, What's New status, dismissed instructions, and saved tool options</li>
+                    <li data-i18n="config.overlays.reset.item3">Clear SubMaker browser storage for this site: localStorage, sessionStorage, cookies, service worker, Cache Storage, and any IndexedDB created here</li>
+                    <li data-i18n="config.overlays.reset.item4">Reload Configure as a fresh blank draft with default settings and no saved local profile selected</li>
+                    <li data-i18n="config.overlays.reset.item5">Not delete server-side tokens or profiles; any token URL saved elsewhere can still reopen them</li>
+                </ul>
+                <p class="reset-footer-note" data-i18n="config.overlays.reset.footer">After reload, this browser starts from scratch.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="cancelResetBtn" data-i18n="config.overlays.reset.cancel">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmResetBtn" data-i18n="config.overlays.reset.confirm">Reset Everything</button>
+                <button type="button" class="btn btn-danger" id="confirmResetBtn" data-i18n="config.overlays.reset.confirm">Clear Browser Data</button>
             </div>
         </div>
     </div>

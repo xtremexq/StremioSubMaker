@@ -44,7 +44,7 @@ const fs = require('fs');
 const os = require('os');
 const { pipeline } = require('stream/promises');
 
-const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits, getDefaultProviderParameters, mergeProviderParameters, selectGeminiApiKey } = require('./src/utils/config');
+const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits, getDefaultProviderParameters, mergeProviderParameters, selectGeminiApiKey, getEffectiveGeminiModel } = require('./src/utils/config');
 const { parseSRT, toSRT, sanitizeSubtitleText, srtPairToWebVTT, ensureSRTForTranslation, detectASSFormat } = require('./src/utils/subtitle');
 const { version } = require('./src/utils/version');
 const { redactToken } = require('./src/utils/security');
@@ -79,7 +79,7 @@ const {
     configStringSchema,
     validateInput
 } = require('./src/utils/validation');
-const { getSessionManager, stripInternalFlags } = require('./src/utils/sessionManager');
+const { MAX_SESSION_BRIEF_BATCH, getSessionManager, stripInternalFlags } = require('./src/utils/sessionManager');
 const { runStartupValidation } = require('./src/utils/startupValidation');
 const { StorageUnavailableError } = require('./src/storage/errors');
 const StorageFactory = require('./src/storage/StorageFactory');
@@ -240,7 +240,12 @@ function isSafeToCache(config) {
 
 async function resolveConfigGuarded(configStr, req, res, contextLabel = '[ConfigResolver]', translator = null) {
     try {
-        return await resolveConfigAsync(configStr, req);
+        const config = await resolveConfigAsync(configStr, req);
+        if (config && config.__sessionDisabled === true) {
+            respondDisabledSession(req, res, config, translator);
+            return null;
+        }
+        return config;
     } catch (error) {
         if (respondStorageUnavailable(res, error, contextLabel, translator || res?.locals?.t)) {
             return null;
@@ -649,7 +654,7 @@ async function resolveAutoSubTranslationProvider(config, providerKeyOverride, mo
             return {
                 enabled: true,
                 apiKey: await selectGeminiApiKey(config),
-                model: modelOverride || config?.geminiModel
+                model: modelOverride || getEffectiveGeminiModel(config)
             };
         }
         return null;
@@ -657,7 +662,7 @@ async function resolveAutoSubTranslationProvider(config, providerKeyOverride, mo
     const providerConfig = await findProviderConfig();
     if (providerConfig && providerConfig.enabled !== false) {
         const params = mergedParams[desiredKey] || mergedParams.default || {};
-        const cfg = { ...providerConfig, model: modelOverride || providerConfig.model || config?.geminiModel };
+        const cfg = { ...providerConfig, model: modelOverride || providerConfig.model || getEffectiveGeminiModel(config) };
         const provider = await createProviderInstance(desiredKey, cfg, params);
         if (provider) {
             return {
@@ -674,7 +679,7 @@ async function resolveAutoSubTranslationProvider(config, providerKeyOverride, mo
         const fallback = await maybeBuildProvider('gemini', {
             enabled: true,
             apiKey: geminiKey,
-            model: modelOverride || config?.geminiModel
+            model: modelOverride || getEffectiveGeminiModel(config)
         });
         if (fallback) {
             fallback.fallbackProviderName = desiredKey || 'gemini';
@@ -1032,6 +1037,83 @@ async function deduplicate(key, fn) {
 
 function isInvalidSessionConfig(config) {
     return !!(config && config.__sessionTokenError === true);
+}
+
+function isDisabledSessionConfig(config) {
+    return !!(config && config.__sessionDisabled === true);
+}
+
+function buildConfigRecoveryUrl(req, token = '') {
+    const normalizedToken = /^[a-f0-9]{32}$/.test(String(token || '').trim().toLowerCase())
+        ? String(token).trim().toLowerCase()
+        : '';
+    const host = getSafeHost(req);
+    const localhost = isLocalhost(req);
+    const protocol = localhost
+        ? (req.get('x-forwarded-proto') || req.protocol || 'http')
+        : (req.get('x-forwarded-proto') || 'https');
+    const baseUrl = `${protocol}://${host}`;
+    return `${baseUrl}/configure${normalizedToken ? `?config=${encodeURIComponent(normalizedToken)}` : ''}`;
+}
+
+function respondDisabledSession(req, res, config, translator = null) {
+    if (!res || res.headersSent) return;
+
+    setNoStore(res);
+    const t = translator || res.locals?.t || getTranslatorFromRequest(req, res, config);
+    const message = t('server.errors.sessionDisabled', {}, 'This token is disabled. Open the configuration page to re-enable it.');
+    const configureUrl = buildConfigRecoveryUrl(
+        req,
+        config?.__originalToken || req?.params?.config || req?.query?.config || ''
+    );
+    const pathName = String(req?.path || req?.originalUrl || '').toLowerCase();
+
+    if (
+        pathName.includes('/subtitle') ||
+        pathName.includes('/translate') ||
+        pathName.includes('/learn') ||
+        pathName.includes('/error-subtitle') ||
+        pathName.includes('/xsync') ||
+        pathName.includes('/auto/') ||
+        pathName.includes('/xembedded')
+    ) {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.status(403).end(`${message}\n${configureUrl}`);
+        return;
+    }
+
+    if (pathName.includes('/manifest.json') || pathName.startsWith('/api/')) {
+        res.status(403).json({
+            error: message,
+            disabled: true,
+            configureUrl
+        });
+        return;
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(403).end(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Token Disabled</title>
+  <style>
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at top,#243b6b 0%,#0f172a 55%,#020617 100%);color:#e2e8f0;font:16px/1.5 Segoe UI,system-ui,sans-serif}
+    .card{max-width:560px;margin:24px;padding:28px 24px;border-radius:24px;background:rgba(15,23,42,.82);border:1px solid rgba(148,163,184,.24);box-shadow:0 24px 60px rgba(2,6,23,.45)}
+    h1{margin:0 0 10px;font-size:1.5rem}
+    p{margin:0 0 18px;color:#cbd5e1}
+    a{display:inline-flex;align-items:center;justify-content:center;padding:12px 18px;border-radius:999px;background:linear-gradient(135deg,#f8b84e,#ff6d7a);color:#111827;font-weight:700;text-decoration:none}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${escapeHtml(t('server.errors.sessionDisabledTitle', {}, 'Token Disabled'))}</h1>
+    <p>${escapeHtml(message)}</p>
+    <a href="${escapeHtml(configureUrl)}">${escapeHtml(t('server.errors.sessionDisabledCta', {}, 'Open configuration'))}</a>
+  </div>
+</body>
+</html>`);
 }
 
 // Create Express app
@@ -2007,6 +2089,21 @@ const sessionUpdateLimiter = rateLimit({
     }
 });
 
+// Security: Rate limiting for session brief metadata lookups used by the config Token Vault UI.
+// Keep this loose enough for normal page refreshes while preventing storage hot-spot abuse.
+const sessionBriefsLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 60, // 60 metadata refreshes per minute per IP
+    message: 'Too many session brief requests from this IP. Please try again shortly.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: createRateLimitRedisStore('rl:sessbrief:'),
+    passOnStoreError: true,
+    keyGenerator: (req) => {
+        return `session-briefs:${ipKeyGenerator(req.ip)}`;
+    }
+});
+
 // Security: Rate limiting for stats endpoint (prevents abuse and monitoring)
 const statsLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute
@@ -2377,7 +2474,6 @@ app.use((req, res, next) => {
         '/js/config-loader.js',
         '/js/ui-widgets.js',
         '/js/theme-toggle.js',
-        '/js/help-modal.js',
         '/js/sw-register.js',
         '/js/subtitle-menu.js',
         '/sw.js'
@@ -2909,7 +3005,7 @@ app.post('/api/gemini-models', async (req, res) => {
 
         const gemini = new GeminiService(
             String(geminiApiKey).trim(),
-            resolvedConfig?.geminiModel || '',
+            getEffectiveGeminiModel(resolvedConfig),
             resolvedConfig?.advancedSettings || {}
         );
         const models = await gemini.getAvailableModels({ silent: true });
@@ -2956,7 +3052,7 @@ app.post('/api/models/:provider', async (req, res) => {
             if (providerKey === 'gemini') {
                 return {
                     apiKey: await selectGeminiApiKey(resolvedConfig) || process.env.GEMINI_API_KEY,
-                    model: resolvedConfig?.geminiModel || '',
+                    model: getEffectiveGeminiModel(resolvedConfig),
                     params: resolvedConfig?.advancedSettings || {}
                 };
             }
@@ -3588,12 +3684,14 @@ app.post('/api/create-session', sessionCreationLimiter, enforceConfigPayloadSize
 
         // Production mode: create session
         const token = await sessionManager.createSession(config);
+        const sessionBrief = await sessionManager.getSessionBrief(token);
         log.debug(() => `[Session API] Created session token: ${redactToken(token)}`);
 
         res.json({
             token,
             type: 'session',
-            expiresIn: process.env.SESSION_MAX_AGE || 90 * 24 * 60 * 60 * 1000
+            expiresIn: process.env.SESSION_MAX_AGE || 90 * 24 * 60 * 60 * 1000,
+            session: sessionBrief
         });
     } catch (error) {
         // Respond with 503 if storage is temporarily unavailable to signal retry-ability
@@ -3660,6 +3758,7 @@ app.post('/api/update-session/:token', sessionUpdateLimiter, enforceConfigPayloa
             // Session doesn't exist - create new one instead
             log.debug(() => `[Session API] Session not found, creating new one`);
             const newToken = await sessionManager.createSession(config);
+            const sessionBrief = await sessionManager.getSessionBrief(newToken);
             invalidateRouterCache(token, 'session token expired');
             return res.json({
                 token: newToken,
@@ -3667,10 +3766,12 @@ app.post('/api/update-session/:token', sessionUpdateLimiter, enforceConfigPayloa
                 updated: false,
                 created: true,
                 message: t('server.session.expiredCreated', {}, 'Session expired or not found, created new session'),
-                expiresIn: process.env.SESSION_MAX_AGE || 90 * 24 * 60 * 60 * 1000
+                expiresIn: process.env.SESSION_MAX_AGE || 90 * 24 * 60 * 60 * 1000,
+                session: sessionBrief
             });
         }
 
+        const sessionBrief = await sessionManager.getSessionBrief(token);
         log.debug(() => `[Session API] Updated session token: ${redactToken(token)}`);
         invalidateRouterCache(token, 'session update via API');
 
@@ -3678,7 +3779,8 @@ app.post('/api/update-session/:token', sessionUpdateLimiter, enforceConfigPayloa
             token,
             type: 'session',
             updated: true,
-            message: t('server.session.updateSuccess', {}, 'Session configuration updated successfully')
+            message: t('server.session.updateSuccess', {}, 'Session configuration updated successfully'),
+            session: sessionBrief
         });
     } catch (error) {
         // CRITICAL: Respond with 503 if storage is temporarily unavailable.
@@ -3722,6 +3824,7 @@ app.get('/api/validate-session/:token', async (req, res) => {
         if (!config) {
             return res.status(404).json({ error: t('server.errors.sessionNotFound', {}, 'Session not found') });
         }
+        const sessionBrief = await sessionManager.getSessionBrief(token);
 
         // Return diagnostic information
         const clientIP = req.ip || req.connection?.remoteAddress || 'unknown';
@@ -3736,7 +3839,8 @@ app.get('/api/validate-session/:token', async (req, res) => {
             hasRouterCache: cachedRouter,
             hasConfigCache: cachedConfig,
             clientIP: clientIP,
-            serverTime: new Date().toISOString()
+            serverTime: new Date().toISOString(),
+            session: sessionBrief
         });
 
         log.info(() => `[Session Validation] Token ${redactToken(token)} validated from IP ${clientIP}, targets: ${JSON.stringify(config.targetLanguages || [])}`);
@@ -3745,6 +3849,84 @@ app.get('/api/validate-session/:token', async (req, res) => {
         if (respondStorageUnavailable(res, error, '[Session API] validate-session', t)) return;
         log.error(() => '[Session API] Error validating session:', error);
         res.status(500).json({ error: t('server.errors.sessionValidateFailed', {}, 'Failed to validate session') });
+    }
+});
+
+app.get('/api/session-brief/:token', async (req, res) => {
+    try {
+        setNoStore(res);
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const { token } = req.params;
+
+        if (!token || !/^[a-f0-9]{32}$/.test(token)) {
+            return res.status(400).json({ error: t('server.errors.sessionTokenFormat', {}, 'Invalid session token format') });
+        }
+
+        const brief = await sessionManager.getSessionBrief(token);
+        if (!brief) {
+            return res.status(404).json({ error: t('server.errors.sessionNotFound', {}, 'Session not found') });
+        }
+
+        res.json({ session: brief });
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[Session API] session-brief', t)) return;
+        log.error(() => '[Session API] Error fetching session brief:', error);
+        res.status(500).json({ error: t('server.errors.sessionFetchFailed', {}, 'Failed to fetch session configuration') });
+    }
+});
+
+app.post('/api/session-briefs', sessionBriefsLimiter, async (req, res) => {
+    try {
+        setNoStore(res);
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const tokens = Array.isArray(req.body?.tokens) ? req.body.tokens : [];
+        if (tokens.length > MAX_SESSION_BRIEF_BATCH) {
+            return res.status(400).json({
+                error: t('server.errors.tooManySessionBriefTokens', { max: MAX_SESSION_BRIEF_BATCH }, `Too many tokens requested at once (max ${MAX_SESSION_BRIEF_BATCH})`)
+            });
+        }
+        const sessions = await sessionManager.getSessionBriefs(tokens, { maxTokens: MAX_SESSION_BRIEF_BATCH });
+        res.json({ sessions });
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[Session API] session-briefs', t)) return;
+        log.error(() => '[Session API] Error fetching session briefs:', error);
+        res.status(500).json({ error: t('server.errors.sessionFetchFailed', {}, 'Failed to fetch session configuration') });
+    }
+});
+
+app.post('/api/session-state/:token', async (req, res) => {
+    try {
+        setNoStore(res);
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const { token } = req.params;
+        const disabled = req.body?.disabled === true;
+
+        if (!token || !/^[a-f0-9]{32}$/.test(token)) {
+            return res.status(400).json({ error: t('server.errors.sessionTokenFormat', {}, 'Invalid session token format') });
+        }
+
+        const brief = await sessionManager.setSessionDisabled(token, disabled);
+        if (!brief) {
+            return res.status(404).json({ error: t('server.errors.sessionNotFound', {}, 'Session not found') });
+        }
+
+        invalidateRouterCache(token, disabled ? 'session disabled' : 'session enabled');
+        invalidateResolveConfigCache(token);
+
+        res.json({
+            success: true,
+            session: brief,
+            message: disabled
+                ? t('server.session.disabled', {}, 'Session disabled')
+                : t('server.session.enabled', {}, 'Session enabled')
+        });
+    } catch (error) {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (respondStorageUnavailable(res, error, '[Session API] session-state', t)) return;
+        log.error(() => '[Session API] Error updating session state:', error);
+        res.status(500).json({ error: t('server.errors.sessionUpdateFailed', {}, 'Failed to update session') });
     }
 });
 
@@ -3782,7 +3964,8 @@ app.get('/api/get-session/:token', async (req, res) => {
                     config: freshConfig,
                     token: freshToken,
                     regenerated: true,
-                    reason: t('server.errors.sessionNotFoundReason', {}, 'Session not found or expired')
+                    reason: t('server.errors.sessionNotFoundReason', {}, 'Session not found or expired'),
+                    session: await sessionManager.getSessionBrief(freshToken)
                 });
             }
 
@@ -3806,11 +3989,17 @@ app.get('/api/get-session/:token', async (req, res) => {
                 config: freshConfig,
                 token: freshToken,
                 regenerated: true,
-                reason: t('server.errors.sessionConfigCorrupted', {}, 'Config payload was empty or corrupted (empty_config_00)')
+                reason: t('server.errors.sessionConfigCorrupted', {}, 'Config payload was empty or corrupted (empty_config_00)'),
+                session: await sessionManager.getSessionBrief(freshToken)
             });
         }
 
-        return res.json({ config: normalized, token, regenerated: false });
+        return res.json({
+            config: normalized,
+            token,
+            regenerated: false,
+            session: await sessionManager.getSessionBrief(token)
+        });
     } catch (error) {
         const t = res.locals?.t || getTranslatorFromRequest(req, res);
         if (respondStorageUnavailable(res, error, '[Session API] get-session', t)) return;
@@ -3866,7 +4055,7 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
             });
             // Check if Gemini is configured (handles both single key and rotation modes)
             const geminiKey = await selectGeminiApiKey(config);
-            if (geminiKey && config.geminiModel) {
+            if (geminiKey && getEffectiveGeminiModel(config)) {
                 providers.push('gemini');
             } else if (config.multiProviderEnabled !== true) {
                 // Legacy single-provider configs default to Gemini
@@ -3938,7 +4127,13 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
             };
         }
         if (advancedSettings && typeof advancedSettings.geminiModel === 'string' && advancedSettings.geminiModel.trim()) {
-            config.geminiModel = advancedSettings.geminiModel.trim();
+            const requestedGeminiModel = advancedSettings.geminiModel.trim();
+            config.geminiModel = requestedGeminiModel;
+            config.advancedSettings = {
+                ...config.advancedSettings,
+                enabled: true,
+                geminiModel: requestedGeminiModel
+            };
         }
         if (advancedSettings && typeof advancedSettings.translationPrompt === 'string') {
             const prompt = advancedSettings.translationPrompt.trim();
@@ -3962,6 +4157,11 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
                 const modelOverride = overrides.providerModel.trim();
                 if (activeProvider === 'gemini') {
                     config.geminiModel = modelOverride;
+                    config.advancedSettings = {
+                        ...config.advancedSettings,
+                        enabled: true,
+                        geminiModel: modelOverride
+                    };
                 } else {
                     config.providers = config.providers || {};
                     const current = config.providers[activeProvider] || {};
@@ -4061,7 +4261,7 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
         if (!translationProvider || typeof translationProvider.translateSubtitle !== 'function') {
             throw new Error('Translation provider is not configured correctly');
         }
-        const effectiveModel = model || config.geminiModel;
+        const effectiveModel = model || getEffectiveGeminiModel(config);
         log.debug(() => `[File Translation API] Using provider=${providerName} model=${effectiveModel}`);
 
         const effectiveWorkflow = config.advancedSettings?.translationWorkflow || 'xml';
@@ -4194,7 +4394,7 @@ app.get('/api/retranslate', searchLimiter, async (req, res) => {
         const initialProvider = (config.multiProviderEnabled === true ? String(config.mainProvider || '').trim() : 'gemini') || 'gemini';
         const matchedProviderKey = matchProviderKey(initialProvider);
         const initialModel = String(initialProvider).toLowerCase() === 'gemini'
-            ? (config.geminiModel || 'default')
+            ? (getEffectiveGeminiModel(config) || 'default')
             : (matchedProviderKey ? (config.providers?.[matchedProviderKey]?.model || 'default') : 'default');
 
         if (!normalizedSourceFileId) {
@@ -4493,6 +4693,14 @@ async function resolveConfigAsync(configStr, req) {
 
         // CRITICAL: Deep clone to prevent shared references between concurrent requests
         ensureConfigHash(normalized, configStr);
+        try {
+            const sessionBrief = await sessionManager.getSessionBrief(configStr);
+            if (sessionBrief && sessionBrief.disabled === true) {
+                normalized.__sessionDisabled = true;
+            }
+        } catch (metaErr) {
+            log.debug(() => `[ConfigResolver] Failed to inspect session state for ${redactToken(configStr)}: ${metaErr.message}`);
+        }
         // SECURITY: NEVER cache configs retrieved via session tokens
         return deepCloneConfig(normalized);
     }
@@ -5659,7 +5867,7 @@ app.post('/api/smdb/translate', userDataWriteLimiter, async (req, res) => {
 
         // 4. Create translation provider and engine (same as Stremio "Make" workflow)
         const { provider, providerName, model, fallbackProviderName } = await createTranslationProvider(resolvedConfig);
-        const effectiveModel = model || resolvedConfig.geminiModel;
+        const effectiveModel = model || getEffectiveGeminiModel(resolvedConfig);
 
         const keyRotationConfig = (resolvedConfig.geminiKeyRotationEnabled === true && providerName === 'gemini') ? {
             enabled: true,
@@ -6875,8 +7083,26 @@ app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId/original', async (re
             return res.status(404).send(t('server.errors.originalEmbeddedMissing', {}, 'Original embedded subtitle not found'));
         }
 
+        const metadata = match.metadata || {};
+        const encoding = String(metadata.encoding || 'text').toLowerCase();
+        if (encoding === 'base64') {
+            const binaryMime = metadata.mime || 'application/octet-stream';
+            const binaryExt = /matroska/i.test(binaryMime) ? 'mkv' : 'bin';
+            res.setHeader('Content-Type', binaryMime);
+            res.setHeader('Content-Disposition', `attachment; filename="${safeVideoHash}_${safeLang}_original.${binaryExt}"`);
+            setSubtitleCacheHeaders(res, 'final');
+            return res.send(Buffer.from(String(match.content || ''), 'base64'));
+        }
+
         const strictSrtHeaders = String(config.androidSubtitleCompatMode || 'off').toLowerCase() === 'aggressive';
-        if (strictSrtHeaders) {
+        const { isVtt, isAss, isSsa, ext } = detectSubtitlePayloadFormat(match.content);
+        if (isVtt) {
+            res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${safeVideoHash}_${safeLang}_original.vtt"`);
+        } else if (isAss || isSsa) {
+            res.setHeader('Content-Type', 'text/x-ssa; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${safeVideoHash}_${safeLang}_original.${ext}"`);
+        } else if (strictSrtHeaders) {
             res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
             res.setHeader('Content-Disposition', `inline; filename="${safeVideoHash}_${safeLang}_original.srt"`);
         } else {
@@ -6884,7 +7110,7 @@ app.get('/addon/:config/xembedded/:videoHash/:lang/:trackId/original', async (re
             res.setHeader('Content-Disposition', `attachment; filename="${safeVideoHash}_${safeLang}_original.srt"`);
         }
         setSubtitleCacheHeaders(res, 'final');
-        res.send(maybeConvertToSRT(match.content, config));
+        res.send(match.content);
     } catch (error) {
         const t = res.locals?.t || getTranslatorFromRequest(req, res);
         if (respondStorageUnavailable(res, error, '[xEmbed Original]', t)) return;
@@ -6946,6 +7172,10 @@ app.post('/api/save-embedded-subtitle', userDataWriteLimiter, async (req, res) =
             log.debug(() => `[Save Embedded] Discarded original for ${normalizedVideoHash}_${normalizedLang}_${normalizedTrackId} (KEEP_EMBEDDED_ORIGINALS disabled)`);
         }
 
+        if (kept) {
+            await bumpUserSubtitleSearchRevision(config);
+        }
+
         return res.json({ success: true, kept, cacheKey, metadata: normalizedMetadata });
     } catch (error) {
         const t = res.locals?.t || getTranslatorFromRequest(req, res);
@@ -6960,6 +7190,8 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
     let historyEntry = null;
     let historyUserHash = '';
     let historyEnabled = false;
+    let revisionConfig = null;
+    let embeddedCacheUpdated = false;
     const persistHistory = (status, extra = {}) => {
         if (!historyEnabled || !historyEntry || !historyUserHash) return;
         const nextEntry = { ...historyEntry };
@@ -7027,6 +7259,7 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
             return res.status(401).json({ error: t('server.errors.invalidSessionToken', {}, 'Invalid or expired session token') });
         }
         ensureConfigHash(baseConfig, configStr);
+        revisionConfig = baseConfig;
         t = getTranslatorFromRequest(req, res, baseConfig);
         const workingConfig = {
             ...baseConfig,
@@ -7099,7 +7332,13 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
                 ? String(workingConfig.mainProvider).toLowerCase()
                 : 'gemini';
             if (providerKey === 'gemini') {
-                workingConfig.geminiModel = overrides.providerModel.trim();
+                const geminiModelOverride = overrides.providerModel.trim();
+                workingConfig.geminiModel = geminiModelOverride;
+                workingConfig.advancedSettings = {
+                    ...workingConfig.advancedSettings,
+                    enabled: true,
+                    geminiModel: geminiModelOverride
+                };
             } else {
                 workingConfig.providers = workingConfig.providers || {};
                 const current = workingConfig.providers[providerKey] || {};
@@ -7118,7 +7357,7 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
                 return overrides.providerModel.trim();
             }
             if (requestedProviderName === 'gemini') {
-                return workingConfig.geminiModel || '';
+                return getEffectiveGeminiModel(workingConfig);
             }
             const providers = workingConfig.providers || {};
             const matchKey = Object.keys(providers).find(k => String(k).toLowerCase() === requestedProviderName);
@@ -7161,7 +7400,7 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
                 targetLanguage: safeTargetLanguage,
                 createdAt: Date.now(),
                 provider: requestedProviderName || workingConfig.mainProvider || 'unknown',
-                model: requestedModel || workingConfig.geminiModel || 'default',
+                model: requestedModel || getEffectiveGeminiModel(workingConfig) || 'default',
                 scope: 'embedded'
             };
             persistHistory('processing');
@@ -7268,6 +7507,7 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
                         sourceContent,
                         mergedMetadata || {}
                     );
+                    embeddedCacheUpdated = true;
                     originalEntry = persisted.entry;
                     log.debug(() => `[Embedded Translate] Persisted inline original ${safeTrackId} for ${safeVideoHash}`);
                 } else {
@@ -7297,12 +7537,12 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
         const { provider, providerName, model, fallbackProviderName } = await createTranslationProvider(workingConfig);
         if (historyEntry) {
             historyEntry.provider = providerName || fallbackProviderName || historyEntry.provider || requestedProviderName || 'unknown';
-            historyEntry.model = model || requestedModel || historyEntry.model || workingConfig.geminiModel || 'default';
+            historyEntry.model = model || requestedModel || historyEntry.model || getEffectiveGeminiModel(workingConfig) || 'default';
             persistHistory('processing');
         }
         const engine = new TranslationEngine(
             provider,
-            model || workingConfig.geminiModel,
+            model || getEffectiveGeminiModel(workingConfig),
             workingConfig.advancedSettings || {},
             { singleBatchMode, providerName, fallbackProviderName, enableStreaming: false }
         );
@@ -7318,7 +7558,7 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
         const saveMeta = {
             ...(mergedMetadata || {}),
             provider: providerName,
-            model: model || requestedModel || workingConfig.geminiModel,
+            model: model || requestedModel || getEffectiveGeminiModel(workingConfig),
             translatedAt: Date.now(),
             singleBatchMode,
             sendTimestampsToAI,
@@ -7334,18 +7574,23 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
                 translatedContent,
                 saveMeta
             );
+            embeddedCacheUpdated = true;
         } else {
             log.debug(() => `[Embedded Translate] Skipped cache write for ${safeVideoHash}_${safeTargetLanguage}_${safeTrackId} (skipCache=true)`);
         }
 
         persistHistory('completed', {
             provider: providerName || historyEntry?.provider || 'unknown',
-            model: model || requestedModel || historyEntry?.model || workingConfig.geminiModel || 'default',
+            model: model || requestedModel || historyEntry?.model || getEffectiveGeminiModel(workingConfig) || 'default',
             cached: false,
             // Spread engine translationStats so embedded history cards get full diagnostics
             // (secondary provider use, error types, rate limits, batch details, etc.)
             ...(engine.translationStats || {})
         });
+
+        if (embeddedCacheUpdated && revisionConfig) {
+            await bumpUserSubtitleSearchRevision(revisionConfig);
+        }
 
         res.json({
             success: true,
@@ -7355,6 +7600,9 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
             metadata: { ...saveMeta, skipCache: skipCacheWrites || undefined }
         });
     } catch (error) {
+        if (embeddedCacheUpdated && revisionConfig) {
+            await bumpUserSubtitleSearchRevision(revisionConfig);
+        }
         persistHistory('failed', { error: error?.message || 'Unknown error' });
         const t = res.locals?.t || getTranslatorFromRequest(req, res);
         if (respondStorageUnavailable(res, error, '[Embedded Translate]', t)) return;

@@ -258,8 +258,19 @@ class SubDLService {
         const beforeCount = subtitles.length;
 
         subtitles = subtitles.filter(sub => {
-          // Always keep season packs (already marked from API metadata)
-          if (sub.is_season_pack) return true;
+          // Keep full-season packs, but drop explicit episode ranges that do not
+          // contain the requested episode. Otherwise users can select a pack for
+          // episodes 5-7 while searching episode 2 and only fail at download time.
+          if (sub.is_season_pack) {
+            if (sub.is_multi_episode_pack && sub.episode_range) {
+              const from = parseInt(sub.episode_range.from, 10);
+              const to = parseInt(sub.episode_range.to, 10);
+              if (!Number.isNaN(from) && !Number.isNaN(to)) {
+                return episode >= from && episode <= to;
+              }
+            }
+            return true;
+          }
 
           // Use the _subdlEpisode metadata we stored from the API response
           const subEp = sub._subdlEpisode;

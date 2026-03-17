@@ -13,6 +13,7 @@ const { handleCaughtError } = require('./errorClassifier');
 const { encryptUserConfig, decryptUserConfig, getDecryptionWarnings } = require('./encryption');
 const { redactToken } = require('./security');
 const { getRedisPassword } = require('./redisHelper');
+const { MAX_SESSION_BRIEF_BATCH, SESSION_BRIEF_LOOKUP_CONCURRENCY, normalizeSessionBriefTokens } = require('./sessionBriefBatch');
 
 // Cache decrypted configs briefly to avoid redundant decryption on rapid navigation
 const DECRYPTED_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -263,6 +264,52 @@ function validateEncryptedSessionPayload(sessionData) {
         missingFingerprint: !hasFingerprint,
         missingIntegrity: !hasIntegrity
     };
+}
+
+function normalizeSessionLifecycleMetadata(sessionData) {
+    if (!sessionData || typeof sessionData !== 'object') {
+        return false;
+    }
+
+    let changed = false;
+    const now = Date.now();
+    const createdAt = Number(sessionData.createdAt);
+    const normalizedCreatedAt = Number.isFinite(createdAt) && createdAt > 0 ? createdAt : now;
+    if (sessionData.createdAt !== normalizedCreatedAt) {
+        sessionData.createdAt = normalizedCreatedAt;
+        changed = true;
+    }
+
+    const updatedAt = Number(sessionData.updatedAt);
+    const normalizedUpdatedAt = Number.isFinite(updatedAt) && updatedAt > 0
+        ? updatedAt
+        : normalizedCreatedAt;
+    if (sessionData.updatedAt !== normalizedUpdatedAt) {
+        sessionData.updatedAt = normalizedUpdatedAt;
+        changed = true;
+    }
+
+    const disabled = sessionData.disabled === true || sessionData.status === 'disabled';
+    if (sessionData.disabled !== disabled) {
+        sessionData.disabled = disabled;
+        changed = true;
+    }
+
+    if (disabled) {
+        const disabledAt = Number(sessionData.disabledAt);
+        const normalizedDisabledAt = Number.isFinite(disabledAt) && disabledAt > 0
+            ? disabledAt
+            : normalizedUpdatedAt;
+        if (sessionData.disabledAt !== normalizedDisabledAt) {
+            sessionData.disabledAt = normalizedDisabledAt;
+            changed = true;
+        }
+    } else if (sessionData.disabledAt !== null) {
+        sessionData.disabledAt = null;
+        changed = true;
+    }
+
+    return changed;
 }
 
 // Storage adapter (lazy loaded)
@@ -863,13 +910,17 @@ class SessionManager extends EventEmitter {
         const encryptedConfig = encryptUserConfig(configWithMetadata);
         const integrity = computeIntegrityHash(token, fingerprint);
 
+        const now = Date.now();
         const sessionData = {
             token,
             tokenFingerprint,
             historyUserHash: computeHistoryUserHash(token),
             config: encryptedConfig,
-            createdAt: Date.now(),
-            lastAccessedAt: Date.now(),
+            createdAt: now,
+            updatedAt: now,
+            lastAccessedAt: now,
+            disabled: false,
+            disabledAt: null,
             fingerprint,
             integrity
         };
@@ -982,6 +1033,9 @@ class SessionManager extends EventEmitter {
 
         if (!sessionData.historyUserHash) {
             sessionData.historyUserHash = computeHistoryUserHash(token);
+            needsPersist = true;
+        }
+        if (normalizeSessionLifecycleMetadata(sessionData)) {
             needsPersist = true;
         }
 
@@ -1244,13 +1298,16 @@ class SessionManager extends EventEmitter {
 
         // Update config but keep creation time
         sessionData.config = encryptedConfig;
-        sessionData.lastAccessedAt = Date.now();
+        const now = Date.now();
+        sessionData.lastAccessedAt = now;
+        sessionData.updatedAt = now;
         sessionData.fingerprint = fingerprint;
         sessionData.integrity = integrity;
         sessionData.tokenFingerprint = tokenFingerprint;
         if (!sessionData.historyUserHash) {
             sessionData.historyUserHash = computeHistoryUserHash(token);
         }
+        normalizeSessionLifecycleMetadata(sessionData);
 
         this.cache.set(token, sessionData);
         const configForCache = cloneConfig(config);
@@ -1285,6 +1342,121 @@ class SessionManager extends EventEmitter {
         this.emit('sessionUpdated', { token, source: 'local' });
         log.debug(() => `[SessionManager] Session updated: ${redactToken(token)}`);
         return true;
+    }
+
+    async _peekSessionData(token) {
+        if (!token) return null;
+
+        const cached = this.cache.get(token);
+        if (cached) {
+            return cached;
+        }
+
+        const adapter = await getStorageAdapter();
+        const stored = await adapter.get(token, StorageAdapter.CACHE_TYPES.SESSION);
+        if (!stored) {
+            return null;
+        }
+
+        const tokenValidation = ensureTokenMetadata(stored, token);
+        if (tokenValidation.status === 'missing_token' || tokenValidation.status === 'mismatch_token' || tokenValidation.status === 'mismatch_fingerprint') {
+            return null;
+        }
+        if (tokenValidation.status === 'missing_fingerprint') {
+            stored.tokenFingerprint = tokenValidation.expectedTokenFingerprint || computeTokenFingerprint(token);
+        }
+
+        const payloadValidation = validateEncryptedSessionPayload(stored);
+        if (!payloadValidation.valid) {
+            return null;
+        }
+
+        if (!stored.historyUserHash) {
+            stored.historyUserHash = computeHistoryUserHash(token);
+        }
+        normalizeSessionLifecycleMetadata(stored);
+        this.cache.set(token, stored);
+        return stored;
+    }
+
+    buildSessionBrief(token, sessionData) {
+        if (!token || !sessionData) return null;
+        normalizeSessionLifecycleMetadata(sessionData);
+        const createdAt = Number(sessionData.createdAt) || 0;
+        const updatedAt = Number(sessionData.updatedAt) || createdAt || 0;
+        const lastAccessedAt = Number(sessionData.lastAccessedAt) || createdAt || 0;
+        const disabledAt = sessionData.disabled === true ? (Number(sessionData.disabledAt) || updatedAt || createdAt || 0) : null;
+
+        return {
+            token,
+            createdAt,
+            updatedAt,
+            lastAccessedAt,
+            disabled: sessionData.disabled === true,
+            disabledAt,
+            status: sessionData.disabled === true ? 'disabled' : 'active'
+        };
+    }
+
+    async getSessionBrief(token) {
+        const sessionData = await this._peekSessionData(token);
+        if (!sessionData) return null;
+        return this.buildSessionBrief(token, sessionData);
+    }
+
+    async getSessionBriefs(tokens = [], options = {}) {
+        const uniqueTokens = normalizeSessionBriefTokens(tokens, options.maxTokens);
+        const briefs = new Array(uniqueTokens.length);
+        let index = 0;
+
+        const worker = async () => {
+            while (index < uniqueTokens.length) {
+                const currentIndex = index++;
+                const token = uniqueTokens[currentIndex];
+                try {
+                    const brief = await this.getSessionBrief(token);
+                    briefs[currentIndex] = brief || { token, exists: false, status: 'missing' };
+                } catch (err) {
+                    log.debug(() => `[SessionManager] Failed to inspect session brief for ${redactToken(token)}: ${err.message}`);
+                    briefs[currentIndex] = { token, exists: false, status: 'error' };
+                }
+            }
+        };
+
+        await Promise.all(Array.from({
+            length: Math.min(SESSION_BRIEF_LOOKUP_CONCURRENCY, uniqueTokens.length || 1)
+        }, worker));
+
+        return briefs.map(brief => ({
+            exists: brief.status !== 'missing' && brief.status !== 'error',
+            ...brief
+        }));
+    }
+
+    async setSessionDisabled(token, disabled) {
+        const sessionData = await this._peekSessionData(token);
+        if (!sessionData) {
+            return null;
+        }
+
+        const now = Date.now();
+        sessionData.disabled = disabled === true;
+        sessionData.disabledAt = sessionData.disabled ? now : null;
+        sessionData.updatedAt = now;
+        normalizeSessionLifecycleMetadata(sessionData);
+
+        this.cache.set(token, sessionData);
+        this.dirty = true;
+
+        const adapter = await getStorageAdapter();
+        const ttlSeconds = this._calculateTtlSeconds();
+        const persisted = await adapter.set(token, sessionData, StorageAdapter.CACHE_TYPES.SESSION, ttlSeconds);
+        if (!persisted) {
+            throw new Error(`Failed to persist ${sessionData.disabled ? 'disabled' : 'enabled'} session state`);
+        }
+
+        await this._publishInvalidation(token, sessionData.disabled ? 'disable' : 'enable');
+        return this.buildSessionBrief(token, sessionData);
     }
 
     /**
@@ -1443,6 +1615,9 @@ class SessionManager extends EventEmitter {
 
             if (!stored.historyUserHash) {
                 stored.historyUserHash = computeHistoryUserHash(token);
+                needsPersist = true;
+            }
+            if (normalizeSessionLifecycleMetadata(stored)) {
                 needsPersist = true;
             }
 
@@ -2252,7 +2427,9 @@ function getSessionManager(options = {}) {
 }
 
 module.exports = {
+    MAX_SESSION_BRIEF_BATCH,
     SessionManager,
     getSessionManager,
+    normalizeSessionBriefTokens,
     stripInternalFlags
 };

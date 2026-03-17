@@ -5,6 +5,7 @@
     const DEFAULT_LOCALE = { lang: 'en', messages: {} };
     const RTL_LANGS = new Set(['ar', 'he', 'fa', 'ur']);
     const UI_LANGUAGE_STORAGE_KEY = 'submaker_ui_language';
+    const FLOATING_BOTTOM_SAFE_ZONE_SELECTOR = '#configHelp, #subToolboxLauncher, #tokenVaultLauncher, #tokenVaultRail.show';
     let locale = DEFAULT_LOCALE;
     let localeReadyPromise = null; // Track when locale is ready
 
@@ -344,6 +345,319 @@
         }
     ];
     const KEY_OPTIONAL_PROVIDERS = new Set(['googletranslate', 'custom']);
+    const configPageState = (typeof window !== 'undefined' && window.SubMakerConfigPageState)
+        ? window.SubMakerConfigPageState
+        : null;
+
+    function configHasSubToolboxEnabled(config) {
+        if (configPageState && typeof configPageState.configHasSubToolboxEnabled === 'function') {
+            return configPageState.configHasSubToolboxEnabled(config);
+        }
+        return !!(config && (
+            config.subToolboxEnabled === true
+            || config.fileTranslationEnabled === true
+            || config.syncSubtitlesEnabled === true
+        ));
+    }
+
+    function getInitialConfigLoadPlan(options = {}) {
+        if (configPageState && typeof configPageState.getInitialConfigLoadPlan === 'function') {
+            return configPageState.getInitialConfigLoadPlan(options);
+        }
+        const urlSessionToken = options.urlSessionToken || '';
+        const persistentSessionToken = options.persistentSessionToken || '';
+        const hasCachedConfig = options.hasCachedConfig === true;
+        const intendedToken = urlSessionToken || persistentSessionToken || '';
+        const hasExplicitUrlConfig = !!urlSessionToken;
+        const shouldFetchSession = hasExplicitUrlConfig || (!hasCachedConfig && !!intendedToken);
+        return {
+            hasExplicitUrlConfig,
+            intendedToken,
+            shouldUseCachedConfig: hasCachedConfig && !hasExplicitUrlConfig,
+            shouldFetchSession,
+            fetchToken: shouldFetchSession ? intendedToken : '',
+            isFirstRun: !hasCachedConfig && !intendedToken
+        };
+    }
+
+    function resolveSaveTargetToken(options = {}) {
+        if (configPageState && typeof configPageState.resolveSaveTargetToken === 'function') {
+            return configPageState.resolveSaveTargetToken(options);
+        }
+        const activeSessionToken = options.activeSessionToken || '';
+        const activeProvenance = String(options.activeProvenance || '').toLowerCase();
+        const urlSessionToken = options.urlSessionToken || '';
+        const persistentSessionToken = options.persistentSessionToken || '';
+
+        if (isValidSessionToken(activeSessionToken)) {
+            return activeSessionToken;
+        }
+        if (activeProvenance === 'draft' || activeProvenance === 'recovered') {
+            return '';
+        }
+        if (isValidSessionToken(urlSessionToken)) {
+            return urlSessionToken;
+        }
+        return isValidSessionToken(persistentSessionToken) ? persistentSessionToken : '';
+    }
+
+    function resolveVisibleInstallToken(options = {}) {
+        if (configPageState && typeof configPageState.resolveVisibleInstallToken === 'function') {
+            return configPageState.resolveVisibleInstallToken(options);
+        }
+        const activeToken = String(options.activeToken || '').trim().toLowerCase();
+        const revealedToken = String(options.revealedToken || '').trim().toLowerCase();
+        const configDirty = options.configDirty === true;
+
+        if (configDirty) {
+            return '';
+        }
+        if (!isValidSessionToken(activeToken)) {
+            return '';
+        }
+        return activeToken === revealedToken ? activeToken : '';
+    }
+
+    function resolveSessionLoadFailurePlan(options = {}) {
+        if (configPageState && typeof configPageState.resolveSessionLoadFailurePlan === 'function') {
+            return configPageState.resolveSessionLoadFailurePlan(options);
+        }
+        const loadedFromUrl = options.loadedFromUrl === true;
+        const hasCachedFallback = options.hasCachedFallback === true;
+        const sessionToken = options.sessionToken || '';
+        const failureType = String(options.failureType || 'network').toLowerCase();
+
+        if (failureType === 'missing' || failureType === 'regenerated') {
+            return {
+                keepActiveToken: false,
+                clearStoredToken: true,
+                configSource: hasCachedFallback ? 'cache' : 'fresh-default',
+                context: {
+                    token: '',
+                    provenance: 'recovered',
+                    sourceLabel: 'Recovered draft',
+                    message: hasCachedFallback
+                        ? 'The missing token was replaced with the last local copy until you save again.'
+                        : (loadedFromUrl
+                            ? 'The shared token could not be recovered. You are editing a fresh draft until you save again.'
+                            : 'The saved token could not be recovered. You are editing a fresh draft until you save again.'),
+                    recoveredFromToken: sessionToken,
+                    regenerated: true
+                }
+            };
+        }
+
+        if (hasCachedFallback) {
+            return {
+                keepActiveToken: true,
+                clearStoredToken: false,
+                configSource: 'cache',
+                context: {
+                    token: sessionToken,
+                    provenance: loadedFromUrl ? 'url' : 'local',
+                    sourceLabel: loadedFromUrl ? 'Loaded from shared URL' : 'Loaded from this browser',
+                    message: loadedFromUrl
+                        ? 'This page is using the last local copy for the shared token until live metadata can be refreshed again.'
+                        : 'This page is using the last local copy for your saved token until live metadata can be refreshed again.',
+                    recoveredFromToken: '',
+                    regenerated: false
+                }
+            };
+        }
+
+        return {
+            keepActiveToken: false,
+            clearStoredToken: false,
+            configSource: 'fresh-default',
+            context: {
+                token: '',
+                provenance: 'recovered',
+                sourceLabel: 'Recovered draft',
+                message: loadedFromUrl
+                    ? 'The shared token could not be loaded. You are editing a fresh draft until you save again.'
+                    : 'The saved token could not be loaded. You are editing a fresh draft until you save again.',
+                recoveredFromToken: sessionToken,
+                regenerated: false
+            }
+        };
+    }
+
+    function buildCurrentTokenExportEntry(options = {}) {
+        if (configPageState && typeof configPageState.buildCurrentTokenExportEntry === 'function') {
+            return configPageState.buildCurrentTokenExportEntry(options);
+        }
+        const targetToken = String(options.targetToken || '').trim().toLowerCase();
+        if (!isValidSessionToken(targetToken)) {
+            return null;
+        }
+
+        const entries = Array.isArray(options.entries) ? options.entries : [];
+        const briefMap = options.briefMap && typeof options.briefMap === 'object' ? options.briefMap : {};
+        const activeSessionToken = String(options.activeSessionToken || '').trim().toLowerCase();
+        const activeSession = options.activeSession || null;
+        const now = Number(options.now) || Date.now();
+        const matchingEntry = entries.find(entry => String(entry?.token || '').trim().toLowerCase() === targetToken) || null;
+        const brief = briefMap[targetToken] || (activeSessionToken === targetToken ? activeSession : null);
+
+        return {
+            token: targetToken,
+            label: String(matchingEntry?.label || '').trim(),
+            addedAt: Number(matchingEntry?.addedAt) || Number(brief?.createdAt) || now,
+            lastOpenedAt: Number(matchingEntry?.lastOpenedAt) || (activeSessionToken === targetToken ? now : 0),
+            lastSavedAt: Number(matchingEntry?.lastSavedAt) || Number(matchingEntry?.lastKnownUpdatedAt) || Number(brief?.updatedAt) || Number(brief?.createdAt) || now,
+            lastKnownCreatedAt: Number(matchingEntry?.lastKnownCreatedAt) || Number(brief?.createdAt) || 0,
+            lastKnownUpdatedAt: Number(matchingEntry?.lastKnownUpdatedAt) || Number(brief?.updatedAt) || 0,
+            lastKnownLastAccessedAt: Number(matchingEntry?.lastKnownLastAccessedAt) || Number(brief?.lastAccessedAt) || 0,
+            lastKnownDisabled: matchingEntry?.lastKnownDisabled === true || brief?.disabled === true
+        };
+    }
+
+    function buildFreshDraftConfig(options = {}) {
+        if (configPageState && typeof configPageState.buildFreshDraftConfig === 'function') {
+            return configPageState.buildFreshDraftConfig(options);
+        }
+        const defaultConfig = options.defaultConfig && typeof options.defaultConfig === 'object'
+            ? options.defaultConfig
+            : {};
+        const disableSubtitleProviders = options.disableSubtitleProviders === true;
+        let freshConfig;
+
+        try {
+            freshConfig = typeof structuredClone === 'function'
+                ? structuredClone(defaultConfig)
+                : JSON.parse(JSON.stringify(defaultConfig));
+        } catch (_) {
+            freshConfig = { ...defaultConfig };
+        }
+
+        if (disableSubtitleProviders && freshConfig?.subtitleProviders && typeof freshConfig.subtitleProviders === 'object') {
+            Object.keys(freshConfig.subtitleProviders).forEach((providerKey) => {
+                const providerConfig = freshConfig.subtitleProviders[providerKey];
+                if (!providerConfig || typeof providerConfig !== 'object') return;
+                freshConfig.subtitleProviders[providerKey] = {
+                    ...providerConfig,
+                    enabled: false
+                };
+            });
+        }
+
+        return freshConfig;
+    }
+
+    function resolveTokenVaultSwitchPlan(options = {}) {
+        if (configPageState && typeof configPageState.resolveTokenVaultSwitchPlan === 'function') {
+            return configPageState.resolveTokenVaultSwitchPlan(options);
+        }
+        const targetToken = String(options.targetToken || '').trim().toLowerCase();
+        const activeToken = String(options.activeToken || '').trim().toLowerCase();
+        const isDirty = options.isDirty === true;
+
+        if (!isValidSessionToken(targetToken)) {
+            return { action: 'noop', targetToken: '' };
+        }
+        if (targetToken === activeToken) {
+            return { action: 'noop', targetToken };
+        }
+        return {
+            action: isDirty ? 'confirm-switch' : 'navigate',
+            targetToken
+        };
+    }
+
+    function resolveToolboxLauncherState(options = {}) {
+        if (configPageState && typeof configPageState.resolveToolboxLauncherState === 'function') {
+            return configPageState.resolveToolboxLauncherState(options);
+        }
+        const tokenToCheck = options.tokenToCheck || '';
+        if (!tokenToCheck) {
+            return { visible: false, configRef: '' };
+        }
+        const isActiveToken = tokenToCheck === (options.activeToken || '');
+        const cachedConfig = (options.cachedToken && options.cachedToken !== tokenToCheck)
+            ? null
+            : (options.cachedConfig || null);
+        const effectiveConfig = isActiveToken ? (options.currentConfig || null) : cachedConfig;
+        const visible = configHasSubToolboxEnabled(effectiveConfig) && options.tokenDisabled !== true;
+        return {
+            visible,
+            configRef: visible ? tokenToCheck : ''
+        };
+    }
+
+    function shouldRefreshTokenVaultBriefs(options = {}) {
+        if (configPageState && typeof configPageState.shouldRefreshTokenVaultBriefs === 'function') {
+            return configPageState.shouldRefreshTokenVaultBriefs(options);
+        }
+        if (options.force === true) {
+            return true;
+        }
+        const loaded = options.loaded === true;
+        const tokensKey = String(options.tokensKey || '');
+        const lastTokensKey = String(options.lastTokensKey || '');
+        const maxAgeMs = Number.isFinite(options.maxAgeMs) && options.maxAgeMs >= 0
+            ? options.maxAgeMs
+            : 30 * 1000;
+        const now = Number(options.now) || Date.now();
+        const lastRefreshAt = Number(options.lastRefreshAt) || 0;
+
+        if (!tokensKey) return false;
+        if (!loaded) return true;
+        if (tokensKey !== lastTokensKey) return true;
+        return (now - lastRefreshAt) > maxAgeMs;
+    }
+
+    function shouldUseCachedTokenVaultBrief(options = {}) {
+        if (configPageState && typeof configPageState.shouldUseCachedTokenVaultBrief === 'function') {
+            return configPageState.shouldUseCachedTokenVaultBrief(options);
+        }
+        const fetchedAt = Number(options.fetchedAt) || 0;
+        const maxAgeMs = Number.isFinite(options.maxAgeMs) && options.maxAgeMs >= 0
+            ? options.maxAgeMs
+            : 30 * 1000;
+        const now = Number(options.now) || Date.now();
+
+        if (fetchedAt <= 0) return false;
+        return (now - fetchedAt) <= maxAgeMs;
+    }
+
+    function resolveConfigInstructionsPreference(options = {}) {
+        if (configPageState && typeof configPageState.resolveConfigInstructionsPreference === 'function') {
+            return configPageState.resolveConfigInstructionsPreference(options);
+        }
+        const normalize = (value) => {
+            const normalized = String(value || '').trim().toLowerCase();
+            if (!normalized) return '';
+            if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') return 'true';
+            if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') return 'false';
+            return '';
+        };
+        const canonicalRaw = String(options.canonicalValue || '').trim();
+        const legacyRaw = String(options.legacyValue || '').trim();
+        const canonicalState = normalize(canonicalRaw);
+        const legacyState = normalize(legacyRaw);
+        const suppressed = canonicalState === 'true' || (canonicalState !== 'true' && legacyState === 'true');
+        return {
+            suppressed,
+            canonicalValue: suppressed ? 'true' : '',
+            shouldWriteCanonical: suppressed && canonicalRaw !== 'true',
+            shouldRemoveCanonical: !suppressed && canonicalRaw.length > 0,
+            shouldRemoveLegacy: legacyRaw.length > 0
+        };
+    }
+
+    function buildConfigInstructionsPreferenceWrite(options = {}) {
+        if (configPageState && typeof configPageState.buildConfigInstructionsPreferenceWrite === 'function') {
+            return configPageState.buildConfigInstructionsPreferenceWrite(options);
+        }
+        const suppressed = options.suppressed === true;
+        return {
+            suppressed,
+            canonicalValue: suppressed ? 'true' : '',
+            shouldWriteCanonical: suppressed,
+            shouldRemoveCanonical: !suppressed,
+            shouldRemoveLegacy: true
+        };
+    }
 
     function parseLimit(value, fallback, min = 1, max = 50) {
         const parsed = parseInt(value, 10);
@@ -610,6 +924,44 @@ Translate to {target_language}.`;
         };
     }
 
+    function getGeminiModelSelectOptionValues() {
+        const select = document.getElementById('geminiModel');
+        if (!select || !select.options) {
+            return [];
+        }
+        return Array.from(select.options)
+            .map(option => String(option.value || '').trim())
+            .filter(Boolean);
+    }
+
+    function getFirstGeminiModelOptionValue() {
+        const options = getGeminiModelSelectOptionValues();
+        return options[0] || 'gemini-3.1-flash-lite-preview';
+    }
+
+    function normalizeGeminiModelForBaseSelect(modelName) {
+        let normalized = typeof modelName === 'string' ? modelName.trim() : '';
+        if (normalized === 'gemini-2.5-pro-preview-05-06') {
+            normalized = 'gemini-2.5-pro';
+        }
+        if (normalized === 'gemini-2.5-flash-preview-09-2025') {
+            normalized = 'gemini-2.5-flash';
+        }
+        if (normalized === 'gemini-flash-lite-latest') {
+            normalized = 'gemini-2.5-flash-lite';
+        }
+
+        const optionValues = getGeminiModelSelectOptionValues();
+        const firstOption = optionValues[0] || getFirstGeminiModelOptionValue();
+        if (normalized === 'gemini-flash-latest') {
+            return firstOption;
+        }
+        if (normalized && optionValues.includes(normalized)) {
+            return normalized;
+        }
+        return firstOption;
+    }
+
     function getDefaultProviderParameters() {
         // Defensive clone to avoid accidental mutation
         return JSON.parse(JSON.stringify(PROVIDER_PARAMETER_DEFAULTS));
@@ -828,10 +1180,60 @@ Translate to {target_language}.`;
     const CACHE_VERSION_KEY = 'submaker_config_cache_version';  // Tracks version when cache was saved
     const CACHE_TOKEN_KEY = 'submaker_config_cache_token'; // Scopes cached config to the session token it was created for
     const TOKEN_KEY = 'submaker_session_token';
+    const TOKEN_VAULT_KEY = 'submaker_token_vault_v1';
+    const TOKEN_VAULT_MAX_ENTRIES = 5;
+    const TOKEN_VAULT_RAIL_LIMIT = 5;
+    const TOKEN_VAULT_EXPORT_VERSION = 1;
+    const TOKEN_VAULT_BRIEF_TTL_MS = 30 * 1000;
+    const CONFIG_INSTRUCTIONS_PREFERENCE_KEY = 'submaker_dont_show_instructions';
+    const LEGACY_CONFIG_INSTRUCTIONS_PREFERENCE_KEY = 'hideConfigInstructions';
 
-    // Visual state cache keys (these should be cleared on version changes)
+    let activeSessionContext = {
+        token: '',
+        provenance: 'draft',
+        sourceLabel: 'Fresh draft',
+        message: 'No token yet. Your first save will mint one.',
+        session: null,
+        recoveredFromToken: '',
+        regenerated: false
+    };
+    let tokenVaultStoreCache = null;
+    let tokenVaultBriefMap = new Map();
+    let tokenVaultLoaded = false;
+    let tokenVaultRefreshing = false;
+    let tokenVaultRefreshPromise = null;
+    let tokenVaultLastRefreshAt = 0;
+    let tokenVaultLastRefreshKey = '';
+    let tokenVaultBriefFetchCache = new Map();
+    let tokenVaultBriefFetchPromises = new Map();
+    let tokenVaultReveal = false;
+    let tokenVaultRailOpen = false;
+    let tokenVaultRailMenuKey = '';
+    let tokenVaultRailMenuFrame = 0;
+    let tokenVaultFocusedToken = '';
+    let tokenVaultTitleEditToken = '';
+    let tokenVaultTitleEditValue = '';
+    let tokenVaultPendingSwitch = '';
+    let tokenVaultOverrideState = null;
+    let tokenVaultCreatorInputValue = '';
+    let tokenVaultCreatorPreview = null;
+    let tokenVaultCreatorPreviewSeq = 0;
+    let tokenVaultCreatorPreviewTimer = null;
+    let tokenVaultRailRenderedMarkup = '';
+    let tokenVaultManagerRenderedMarkup = '';
+    let tokenVaultCreatorRenderedMarkup = '';
+    let tokenVaultCreatorPreviewRenderedMarkup = '';
+    let tokenVaultLauncherPointerDownAt = 0;
+    let tokenVaultGlobalEventsBound = false;
+    let floatingBottomSafeZoneFrame = 0;
+    let floatingBottomSafeZoneValue = '';
+    let bodyScrollLockState = { locked: null, viewportWidth: 0, scrollbarWidth: 0 };
+    let configDirty = false;
+    let revealedInstallToken = '';
+    let suppressDirtyTracking = true;
+
+    // Visual state cache keys that can be safely reset on version changes
     const VISUAL_STATE_KEYS = [
-        'submaker_dont_show_instructions',
         'submaker_collapsed_sections',
         'submaker_scroll_position'
     ];
@@ -869,8 +1271,2690 @@ Translate to {target_language}.`;
         return false;
     }
 
+    function getStoredSessionToken() {
+        try {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (isValidSessionToken(token)) {
+                return token;
+            }
+            if (token) {
+                localStorage.removeItem(TOKEN_KEY);
+            }
+        } catch (_) { }
+        return '';
+    }
+
+    function getUrlSessionToken() {
+        try {
+            const raw = new URLSearchParams(window.location.search).get('config');
+            return isValidSessionToken(raw) ? raw : '';
+        } catch (_) {
+            return '';
+        }
+    }
+
     // Clear any invalid tokens that might exist from previous errors
     clearInvalidToken('startup');
+
+    function escapeVaultHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function maskToken(token) {
+        if (!isValidSessionToken(token)) return 'No token loaded';
+        return `${token.slice(0, 8)}...${token.slice(-6)}`;
+    }
+
+    function formatVaultDate(timestamp) {
+        const value = Number(timestamp);
+        if (!Number.isFinite(value) || value <= 0) return '--';
+        try {
+            return new Date(value).toLocaleString();
+        } catch (_) {
+            return '--';
+        }
+    }
+
+    function formatVaultRelative(timestamp) {
+        const value = Number(timestamp);
+        if (!Number.isFinite(value) || value <= 0) return '--';
+        const delta = Date.now() - value;
+        const abs = Math.abs(delta);
+        const minute = 60 * 1000;
+        const hour = 60 * minute;
+        const day = 24 * hour;
+        if (abs < minute) return 'just now';
+        if (abs < hour) return `${Math.round(abs / minute)}m ago`;
+        if (abs < day) return `${Math.round(abs / hour)}h ago`;
+        return `${Math.round(abs / day)}d ago`;
+    }
+
+    function buildLegacyVaultLabel(token) {
+        if (!isValidSessionToken(token)) return '';
+        return `Token ${token.slice(0, 4).toUpperCase()}...${token.slice(-4).toUpperCase()}`;
+    }
+
+    function normalizeVaultLabel(token, explicitLabel) {
+        const trimmed = String(explicitLabel || '').trim();
+        if (!trimmed) return '';
+        if (isValidSessionToken(token) && trimmed === buildLegacyVaultLabel(token)) {
+            return '';
+        }
+        return trimmed;
+    }
+
+    function buildVaultProfileOrdering(store = getTokenVaultStore()) {
+        return (Array.isArray(store?.entries) ? store.entries : [])
+            .filter(entry => isValidSessionToken(entry?.token))
+            .map(entry => ({
+                token: String(entry.token).trim().toLowerCase(),
+                addedAt: Number(entry.addedAt) || Number(entry.lastSavedAt) || Number(entry.lastOpenedAt) || 0
+            }))
+            .sort((a, b) => {
+                const addedDelta = Number(a.addedAt || 0) - Number(b.addedAt || 0);
+                if (addedDelta !== 0) return addedDelta;
+                return String(a.token).localeCompare(String(b.token));
+            });
+    }
+
+    function getVaultProfileNumber(token, store = getTokenVaultStore()) {
+        const normalizedToken = String(token || '').trim().toLowerCase();
+        if (!isValidSessionToken(normalizedToken)) return 0;
+        const orderedEntries = buildVaultProfileOrdering(store);
+        const existingIndex = orderedEntries.findIndex(entry => entry.token === normalizedToken);
+        return existingIndex >= 0 ? existingIndex + 1 : orderedEntries.length + 1;
+    }
+
+    function getDraftProfileNumber(store = getTokenVaultStore()) {
+        return buildVaultProfileOrdering(store).length + 1;
+    }
+
+    function buildDefaultVaultLabel(profileNumber) {
+        const resolvedNumber = Math.max(1, Number(profileNumber) || 1);
+        return `Profile ${resolvedNumber}`;
+    }
+
+    function deriveVaultLabel(token, explicitLabel, options = {}) {
+        const normalizedExplicit = normalizeVaultLabel(token, explicitLabel);
+        if (normalizedExplicit) return normalizedExplicit;
+        const store = options.store || getTokenVaultStore();
+        if (!isValidSessionToken(token)) {
+            return buildDefaultVaultLabel(getDraftProfileNumber(store));
+        }
+        return buildDefaultVaultLabel(getVaultProfileNumber(token, store));
+    }
+
+    function getEmptyTokenVaultStore() {
+        return {
+            version: TOKEN_VAULT_EXPORT_VERSION,
+            activeToken: '',
+            entries: []
+        };
+    }
+
+    function cloneTokenVaultStore(store) {
+        const source = store || getEmptyTokenVaultStore();
+        return {
+            version: TOKEN_VAULT_EXPORT_VERSION,
+            activeToken: isValidSessionToken(source.activeToken) ? source.activeToken : '',
+            entries: Array.isArray(source.entries)
+                ? source.entries.map(entry => ({
+                    token: String(entry?.token || '').trim().toLowerCase(),
+                    label: normalizeVaultLabel(entry?.token || '', entry?.label || ''),
+                    addedAt: Number(entry?.addedAt) || 0,
+                    lastOpenedAt: Number(entry?.lastOpenedAt) || 0,
+                    lastSavedAt: Number(entry?.lastSavedAt) || 0,
+                    lastKnownCreatedAt: Number(entry?.lastKnownCreatedAt) || 0,
+                    lastKnownUpdatedAt: Number(entry?.lastKnownUpdatedAt) || 0,
+                    lastKnownLastAccessedAt: Number(entry?.lastKnownLastAccessedAt) || 0,
+                    lastKnownDisabled: entry?.lastKnownDisabled === true
+                }))
+                : []
+        };
+    }
+
+    function normalizeTokenVaultStore(storeLike) {
+        const entries = Array.isArray(storeLike?.entries) ? storeLike.entries : [];
+        return {
+            version: TOKEN_VAULT_EXPORT_VERSION,
+            activeToken: isValidSessionToken(storeLike?.activeToken) ? storeLike.activeToken : '',
+            entries: entries
+                .map(entry => {
+                    const token = String(entry?.token || '').trim().toLowerCase();
+                    return {
+                        token,
+                        label: normalizeVaultLabel(token, entry?.label || ''),
+                        addedAt: Number(entry?.addedAt) || Date.now(),
+                        lastOpenedAt: Number(entry?.lastOpenedAt) || 0,
+                        lastSavedAt: Number(entry?.lastSavedAt) || 0,
+                        lastKnownCreatedAt: Number(entry?.lastKnownCreatedAt) || 0,
+                        lastKnownUpdatedAt: Number(entry?.lastKnownUpdatedAt) || 0,
+                        lastKnownLastAccessedAt: Number(entry?.lastKnownLastAccessedAt) || 0,
+                        lastKnownDisabled: entry?.lastKnownDisabled === true
+                    };
+                })
+                .filter(entry => isValidSessionToken(entry.token))
+        };
+    }
+
+    function getTokenVaultStore() {
+        if (tokenVaultStoreCache) {
+            return cloneTokenVaultStore(tokenVaultStoreCache);
+        }
+        try {
+            const raw = localStorage.getItem(TOKEN_VAULT_KEY);
+            const parsed = raw ? JSON.parse(raw) : null;
+            tokenVaultStoreCache = normalizeTokenVaultStore(parsed);
+        } catch (_) {
+            tokenVaultStoreCache = getEmptyTokenVaultStore();
+        }
+        return cloneTokenVaultStore(tokenVaultStoreCache);
+    }
+
+    function saveTokenVaultStore(store) {
+        try {
+            const normalized = normalizeTokenVaultStore({
+                ...store,
+                entries: Array.isArray(store?.entries)
+                    ? store.entries
+                        .filter(entry => isValidSessionToken(entry?.token))
+                        .sort((a, b) => {
+                            const activityDelta = getVaultActivityTimestamp(b) - getVaultActivityTimestamp(a);
+                            if (activityDelta !== 0) return activityDelta;
+                            const openedDelta = Number(b.lastOpenedAt || 0) - Number(a.lastOpenedAt || 0);
+                            if (openedDelta !== 0) return openedDelta;
+                            return String(a.token).localeCompare(String(b.token));
+                        })
+                        .slice(0, TOKEN_VAULT_MAX_ENTRIES)
+                    : []
+            });
+            tokenVaultStoreCache = normalized;
+            localStorage.setItem(TOKEN_VAULT_KEY, JSON.stringify(normalized));
+        } catch (_) { }
+    }
+
+    function getVaultActivityTimestamp(entry) {
+        if (!entry) return 0;
+        return Number(entry.lastSavedAt || entry.lastKnownUpdatedAt || entry.addedAt || 0);
+    }
+
+    function sortVaultEntries(entries) {
+        return [...entries].sort((a, b) => {
+            const activityDelta = getVaultActivityTimestamp(b) - getVaultActivityTimestamp(a);
+            if (activityDelta !== 0) return activityDelta;
+            const openedDelta = Number(b.lastOpenedAt || 0) - Number(a.lastOpenedAt || 0);
+            if (openedDelta !== 0) return openedDelta;
+            return String(a.token || '').localeCompare(String(b.token || ''));
+        });
+    }
+
+    function buildTokenVaultEntry(token, patch = {}, existing = null) {
+        const normalizedToken = token.toLowerCase();
+        return {
+            token: normalizedToken,
+            label: normalizeVaultLabel(normalizedToken, patch.label ?? existing?.label ?? ''),
+            addedAt: Number(existing?.addedAt || patch.addedAt) || Date.now(),
+            lastOpenedAt: Number(patch.lastOpenedAt ?? existing?.lastOpenedAt) || 0,
+            lastSavedAt: Number(patch.lastSavedAt ?? existing?.lastSavedAt) || 0,
+            lastKnownCreatedAt: Number(patch.lastKnownCreatedAt ?? existing?.lastKnownCreatedAt) || 0,
+            lastKnownUpdatedAt: Number(patch.lastKnownUpdatedAt ?? existing?.lastKnownUpdatedAt) || 0,
+            lastKnownLastAccessedAt: Number(patch.lastKnownLastAccessedAt ?? existing?.lastKnownLastAccessedAt) || 0,
+            lastKnownDisabled: patch.lastKnownDisabled === true || (patch.lastKnownDisabled !== false && existing?.lastKnownDisabled === true)
+        };
+    }
+
+    function prepareTokenVaultEntryUpsert(token, patch = {}, options = {}) {
+        if (!isValidSessionToken(token)) return null;
+        const normalizedToken = token.toLowerCase();
+        const store = options.store || getTokenVaultStore();
+        const existing = store.entries.find(entry => entry.token === normalizedToken) || null;
+        if (!existing && options.ifExistsOnly === true) {
+            return null;
+        }
+        const next = buildTokenVaultEntry(normalizedToken, patch, existing);
+        const nextEntries = sortVaultEntries([
+            next,
+            ...store.entries.filter(entry => entry.token !== normalizedToken)
+        ]);
+        return {
+            store,
+            existing,
+            next,
+            nextEntries,
+            overflowVictims: nextEntries.slice(TOKEN_VAULT_MAX_ENTRIES)
+        };
+    }
+
+    function applyTokenVaultEntryPlan(plan, options = {}) {
+        if (!plan) return null;
+        const allowedVictims = new Set(
+            (Array.isArray(options.allowVictimTokens) ? options.allowVictimTokens : [])
+                .filter(isValidSessionToken)
+                .map(token => token.toLowerCase())
+        );
+        if (plan.overflowVictims.length > 0) {
+            const allApproved = plan.overflowVictims.every(entry => allowedVictims.has(entry.token));
+            if (!allApproved) {
+                return null;
+            }
+        }
+        saveTokenVaultStore({
+            ...plan.store,
+            activeToken: options.activeToken !== undefined
+                ? (isValidSessionToken(options.activeToken) ? options.activeToken.toLowerCase() : '')
+                : plan.store.activeToken,
+            entries: sortVaultEntries(plan.nextEntries).slice(0, TOKEN_VAULT_MAX_ENTRIES)
+        });
+        return plan.next;
+    }
+
+    function upsertTokenVaultEntry(token, patch = {}, options = {}) {
+        const plan = prepareTokenVaultEntryUpsert(token, patch, options);
+        return applyTokenVaultEntryPlan(plan, options);
+    }
+
+    function prepareTokenVaultMergePlan(incomingEntries, options = {}) {
+        const store = options.store || getTokenVaultStore();
+        const mergedMap = new Map(store.entries.map(entry => [entry.token, entry]));
+        const incomingTokens = [];
+
+        (Array.isArray(incomingEntries) ? incomingEntries : []).forEach(entry => {
+            const token = extractSessionTokenFromInput(entry?.token || entry);
+            if (!token) return;
+            const existing = mergedMap.get(token) || null;
+            mergedMap.set(token, buildTokenVaultEntry(token, entry || {}, existing));
+            if (!incomingTokens.includes(token)) {
+                incomingTokens.push(token);
+            }
+        });
+
+        const nextEntries = sortVaultEntries(Array.from(mergedMap.values()));
+        return {
+            store,
+            incomingTokens,
+            nextEntries,
+            overflowVictims: nextEntries.slice(TOKEN_VAULT_MAX_ENTRIES)
+        };
+    }
+
+    function applyTokenVaultMergePlan(plan, options = {}) {
+        if (!plan) return 0;
+        const allowedVictims = new Set(
+            (Array.isArray(options.allowVictimTokens) ? options.allowVictimTokens : [])
+                .filter(isValidSessionToken)
+                .map(token => token.toLowerCase())
+        );
+        if (plan.overflowVictims.length > 0) {
+            const allApproved = plan.overflowVictims.every(entry => allowedVictims.has(entry.token));
+            if (!allApproved) {
+                return 0;
+            }
+        }
+        const keptEntries = sortVaultEntries(plan.nextEntries).slice(0, TOKEN_VAULT_MAX_ENTRIES);
+        saveTokenVaultStore({
+            ...plan.store,
+            activeToken: options.activeToken !== undefined
+                ? (isValidSessionToken(options.activeToken) ? options.activeToken.toLowerCase() : '')
+                : plan.store.activeToken,
+            entries: keptEntries
+        });
+        return keptEntries.filter(entry => plan.incomingTokens.includes(entry.token)).length;
+    }
+
+    function describeVaultEntry(entry) {
+        if (!entry || !isValidSessionToken(entry.token)) return null;
+        return {
+            token: entry.token,
+            label: deriveVaultLabel(entry.token, entry.label || ''),
+            maskedToken: maskToken(entry.token),
+            relativeSavedAt: formatVaultRelative(getVaultActivityTimestamp(entry)),
+            savedAt: formatVaultDate(getVaultActivityTimestamp(entry)),
+            isActive: entry.token === getActiveConfigRef()
+        };
+    }
+
+    function getDraftOverflowVictims(store = getTokenVaultStore()) {
+        if (!Array.isArray(store?.entries) || store.entries.length < TOKEN_VAULT_MAX_ENTRIES) {
+            return [];
+        }
+        return sortVaultEntries(store.entries).slice(TOKEN_VAULT_MAX_ENTRIES - 1);
+    }
+
+    function renderTokenVaultOverridePrompt() {
+        const content = document.getElementById('tokenVaultOverrideContent');
+        if (!content) return;
+        if (!tokenVaultOverrideState) {
+            content.innerHTML = '';
+            return;
+        }
+
+        const tone = String(tokenVaultOverrideState.tone || 'warning');
+        const emblem = String(tokenVaultOverrideState.emblem || (tone === 'danger' ? '!' : '+'));
+        const confirmClass = tokenVaultOverrideState.confirmClass || 'token-vault-action-primary';
+        const victims = Array.isArray(tokenVaultOverrideState.victims)
+            ? tokenVaultOverrideState.victims.map(describeVaultEntry).filter(Boolean)
+            : [];
+        const victimHtml = victims.map(victim => `<article class="token-vault-override-victim ${victim.isActive ? 'is-active' : ''}">
+                <div class="token-vault-override-victim-copy">
+                    <strong>${escapeVaultHtml(victim.label)}</strong>
+                    <span>${escapeVaultHtml(victim.maskedToken)}</span>
+                </div>
+                <div class="token-vault-override-victim-meta">
+                    <span>${escapeVaultHtml(victim.relativeSavedAt)}</span>
+                    ${victim.isActive ? '<span class="token-vault-override-chip">Current page</span>' : ''}
+                </div>
+            </article>`).join('');
+
+        content.innerHTML = `<div class="token-vault-override-copy token-vault-override-copy-${escapeVaultHtml(tone)}">
+                <div class="token-vault-override-header">
+                    <div class="token-vault-override-emblem" aria-hidden="true">${escapeVaultHtml(emblem)}</div>
+                    <div class="token-vault-override-copy-main">
+                        <div class="token-vault-override-eyebrow">${escapeVaultHtml(tokenVaultOverrideState.eyebrow || 'Vault limit')}</div>
+                        <h3 id="tokenVaultOverrideTitle">${escapeVaultHtml(tokenVaultOverrideState.title || 'Token Vault is full')}</h3>
+                        <p>${escapeVaultHtml(tokenVaultOverrideState.message || '')}</p>
+                    </div>
+                </div>
+                ${tokenVaultOverrideState.detail ? `<p class="token-vault-override-detail">${escapeVaultHtml(tokenVaultOverrideState.detail)}</p>` : ''}
+            </div>
+            ${victimHtml ? `<div class="token-vault-override-list">${victimHtml}</div>` : ''}
+            <div class="token-vault-override-actions">
+                <button type="button" class="token-vault-action" data-vault-override-action="cancel">${escapeVaultHtml(tokenVaultOverrideState.cancelLabel || 'Cancel')}</button>
+                <button type="button" class="token-vault-action ${escapeVaultHtml(confirmClass)}" data-vault-override-action="confirm">${escapeVaultHtml(tokenVaultOverrideState.confirmLabel || 'Continue')}</button>
+            </div>`;
+    }
+
+    function openTokenVaultOverridePrompt(state) {
+        tokenVaultOverrideState = {
+            cancelLabel: 'Cancel',
+            tone: 'warning',
+            emblem: '+',
+            confirmClass: 'token-vault-action-primary',
+            ...state
+        };
+        const modal = document.getElementById('tokenVaultOverrideModal');
+        renderTokenVaultOverridePrompt();
+        if (modal) {
+            modal.dataset.tone = tokenVaultOverrideState.tone || 'warning';
+            modal.classList.add('show');
+            modal.style.display = 'flex';
+        }
+        updateBodyScrollLock();
+    }
+
+    async function closeTokenVaultOverridePrompt(cancelled = false) {
+        const state = tokenVaultOverrideState;
+        tokenVaultOverrideState = null;
+        const modal = document.getElementById('tokenVaultOverrideModal');
+        if (modal) {
+            delete modal.dataset.tone;
+            modal.classList.remove('show');
+            modal.style.display = 'none';
+        }
+        updateBodyScrollLock();
+        if (cancelled && state && typeof state.onCancel === 'function') {
+            await state.onCancel();
+        }
+    }
+
+    async function handleTokenVaultOverrideAction(actionEl) {
+        const action = actionEl?.dataset?.vaultOverrideAction;
+        if (!action) return;
+        if (action === 'cancel') {
+            await closeTokenVaultOverridePrompt(true);
+            return;
+        }
+        if (action === 'confirm') {
+            const state = tokenVaultOverrideState;
+            await closeTokenVaultOverridePrompt(false);
+            if (state && typeof state.onConfirm === 'function') {
+                await state.onConfirm();
+            }
+        }
+    }
+
+    function applyVaultEntryPlanWithOverflowPrompt(plan, promptState, applyOptions = {}, onApplied = null) {
+        if (!plan) return false;
+        if (plan.overflowVictims.length > 0) {
+            openTokenVaultOverridePrompt({
+                ...promptState,
+                victims: plan.overflowVictims,
+                onConfirm: async () => {
+                    const applied = applyTokenVaultEntryPlan(plan, {
+                        ...applyOptions,
+                        allowVictimTokens: plan.overflowVictims.map(entry => entry.token)
+                    });
+                    if (applied && typeof onApplied === 'function') {
+                        await onApplied(applied);
+                    }
+                }
+            });
+            return false;
+        }
+        const applied = applyTokenVaultEntryPlan(plan, applyOptions);
+        if (applied && typeof onApplied === 'function') {
+            void onApplied(applied);
+        }
+        return !!applied;
+    }
+
+    function applyVaultMergePlanWithOverflowPrompt(plan, promptState, applyOptions = {}, onApplied = null) {
+        if (!plan) return false;
+        if (plan.overflowVictims.length > 0) {
+            openTokenVaultOverridePrompt({
+                ...promptState,
+                victims: plan.overflowVictims,
+                onConfirm: async () => {
+                    const importedCount = applyTokenVaultMergePlan(plan, {
+                        ...applyOptions,
+                        allowVictimTokens: plan.overflowVictims.map(entry => entry.token)
+                    });
+                    if (importedCount > 0 && typeof onApplied === 'function') {
+                        await onApplied(importedCount);
+                    }
+                }
+            });
+            return false;
+        }
+        const importedCount = applyTokenVaultMergePlan(plan, applyOptions);
+        if (importedCount > 0 && typeof onApplied === 'function') {
+            void onApplied(importedCount);
+        }
+        return importedCount > 0;
+    }
+
+    function persistSavedTokenToVault(token, brief, options = {}) {
+        if (!isValidSessionToken(token)) return false;
+        const plan = prepareTokenVaultEntryUpsert(token, {
+            lastOpenedAt: Date.now(),
+            lastSavedAt: Date.now(),
+            lastKnownCreatedAt: Number(brief?.createdAt) || 0,
+            lastKnownUpdatedAt: Number(brief?.updatedAt) || Date.now(),
+            lastKnownLastAccessedAt: Number(brief?.lastAccessedAt) || 0,
+            lastKnownDisabled: brief?.disabled === true
+        });
+        if (!plan) return false;
+
+        if (plan.overflowVictims.length > 0 && Array.isArray(options.approvedVictimTokens) && options.approvedVictimTokens.length > 0) {
+            const applied = applyTokenVaultEntryPlan(plan, {
+                activeToken: token,
+                allowVictimTokens: options.approvedVictimTokens
+            });
+            if (applied) {
+                renderTokenVault();
+            }
+            return !!applied;
+        }
+        if (plan.overflowVictims.length === 0) {
+            const applied = applyTokenVaultEntryPlan(plan, { activeToken: token });
+            if (applied) {
+                renderTokenVault();
+            }
+            return !!applied;
+        }
+
+        openTokenVaultOverridePrompt({
+            eyebrow: `${TOKEN_VAULT_MAX_ENTRIES} saved tokens max`,
+            title: 'Saving this token needs one vault slot',
+            message: `SubMaker keeps up to ${TOKEN_VAULT_MAX_ENTRIES} saved tokens in this browser. Keeping this save will purge the oldest local vault entry below.`,
+            detail: 'Only the local browser vault changes. The purged token is not deleted from the server.',
+            confirmLabel: 'Keep new token',
+            victims: plan.overflowVictims,
+            onConfirm: async () => {
+                const applied = applyTokenVaultEntryPlan(plan, {
+                    activeToken: token,
+                    allowVictimTokens: plan.overflowVictims.map(entry => entry.token)
+                });
+                if (applied) {
+                    renderTokenVault();
+                }
+                if (typeof options.afterResolve === 'function') {
+                    await options.afterResolve();
+                }
+            },
+            onCancel: async () => {
+                renderTokenVault();
+                showAlert('Configuration saved. The new token is live, but your local vault stayed unchanged.', 'info');
+                if (typeof options.afterResolve === 'function') {
+                    await options.afterResolve();
+                }
+            }
+        });
+        return false;
+    }
+
+    function removeTokenVaultEntry(token) {
+        if (!isValidSessionToken(token)) return;
+        const normalizedToken = token.toLowerCase();
+        const store = getTokenVaultStore();
+        store.entries = store.entries.filter(entry => entry.token !== normalizedToken);
+        if (store.activeToken === normalizedToken) {
+            store.activeToken = '';
+        }
+        saveTokenVaultStore(store);
+    }
+
+    function syncTokenVaultEntryWithBrief(token, brief, patch = {}, options = {}) {
+        if (!isValidSessionToken(token)) return null;
+        return upsertTokenVaultEntry(token, {
+            ...patch,
+            lastKnownCreatedAt: Number(brief?.createdAt) || patch.lastKnownCreatedAt || 0,
+            lastKnownUpdatedAt: Number(brief?.updatedAt) || patch.lastKnownUpdatedAt || 0,
+            lastKnownLastAccessedAt: Number(brief?.lastAccessedAt) || patch.lastKnownLastAccessedAt || 0,
+            lastKnownDisabled: brief?.disabled === true
+        }, options);
+    }
+
+    function setActiveSessionContext(next) {
+        activeSessionContext = {
+            ...activeSessionContext,
+            ...next
+        };
+        if (isValidSessionToken(activeSessionContext.token) && activeSessionContext.session) {
+            tokenVaultBriefMap.set(activeSessionContext.token, activeSessionContext.session);
+            rememberTokenVaultSingleBrief(activeSessionContext.token, activeSessionContext.session);
+        }
+        updateTokenVaultButtonState();
+        renderTokenVaultRail();
+        reconcileActiveInstallState();
+    }
+
+    function rememberTokenVaultSingleBrief(token, session, fetchedAt = Date.now()) {
+        const normalizedToken = extractSessionTokenFromInput(token);
+        if (!normalizedToken) return;
+        tokenVaultBriefFetchCache.set(normalizedToken, {
+            session: session || null,
+            fetchedAt: Number(fetchedAt) || Date.now()
+        });
+    }
+
+    function getTokenVaultRefreshTokens() {
+        const activeToken = getActiveConfigRef();
+        const store = getTokenVaultStore();
+        return Array.from(new Set([
+            activeToken,
+            ...store.entries.map(entry => entry.token)
+        ].filter(isValidSessionToken))).sort();
+    }
+
+    function normalizeTokenVaultRefreshOptions(optionsOrForce = false) {
+        if (optionsOrForce && typeof optionsOrForce === 'object') {
+            return {
+                force: optionsOrForce.force === true,
+                background: optionsOrForce.background === true
+            };
+        }
+        return {
+            force: optionsOrForce === true,
+            background: false
+        };
+    }
+
+    function scheduleFloatingBottomSafeZoneSync() {
+        if (floatingBottomSafeZoneFrame) return;
+        floatingBottomSafeZoneFrame = requestAnimationFrame(() => {
+            floatingBottomSafeZoneFrame = 0;
+            syncFloatingBottomSafeZone();
+        });
+    }
+
+    function getActiveTokenState() {
+        if (activeSessionContext.session?.disabled === true) return 'disabled';
+        if (activeSessionContext.provenance === 'recovered') return 'recovered';
+        if (!isValidSessionToken(activeSessionContext.token)) return 'draft';
+        return 'live';
+    }
+
+    function updateTokenVaultButtonState() {
+        const button = document.getElementById('tokenVaultLauncher');
+        if (!button) return;
+        const state = getActiveTokenState();
+        button.dataset.state = state;
+        button.setAttribute('title', isValidSessionToken(activeSessionContext.token)
+            ? `Token Vault - ${maskToken(activeSessionContext.token)}`
+            : 'Token Vault - First save creates a token');
+        scheduleFloatingBottomSafeZoneSync();
+    }
+
+    function extractSessionTokenFromInput(rawValue) {
+        const raw = String(rawValue || '').trim();
+        if (!raw) return '';
+        const direct = raw.match(/\b[a-f0-9]{32}\b/i);
+        return direct ? direct[0].toLowerCase() : '';
+    }
+
+    async function fetchWithTimeout(resource, options = {}, timeoutMs = 10000) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(resource, {
+                ...options,
+                signal: controller.signal
+            });
+        } catch (error) {
+            if (error && error.name === 'AbortError') {
+                throw new Error(`Request timed out after ${Math.ceil(timeoutMs / 1000)} seconds`);
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    function buildInstallUrlForToken(configToken) {
+        if (!isValidSessionToken(configToken)) return '';
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const baseUrl = isLocalhost ? 'http://localhost:7001' : window.location.origin;
+        return `${baseUrl}/addon/${encodeURIComponent(configToken)}/manifest.json`;
+    }
+
+    function buildConfigUrlForToken(configToken) {
+        if (!isValidSessionToken(configToken)) return '';
+        return `${window.location.origin}/configure?config=${encodeURIComponent(configToken)}`;
+    }
+
+    function buildHistoryUrlForToken(configToken) {
+        if (!isValidSessionToken(configToken)) return '';
+        return `/sub-history?config=${encodeURIComponent(configToken)}`;
+    }
+
+    function syncActiveInstallState(configOverride, options = {}) {
+        const hasExplicitOverride = arguments.length > 0;
+        const token = isValidSessionToken(configOverride)
+            ? configOverride
+            : (hasExplicitOverride ? '' : getActiveConfigRef());
+        if (!isValidSessionToken(token)) {
+            clearActiveInstallState();
+            return;
+        }
+
+        const installUrl = buildInstallUrlForToken(token);
+        const installBtn = document.getElementById('installBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const installUrlBox = document.getElementById('installUrlBox');
+        const installUrlDisplay = document.getElementById('installUrlDisplay');
+
+        window.installUrl = installUrl;
+        if (installBtn) installBtn.disabled = false;
+        if (copyBtn) copyBtn.disabled = false;
+        if (installUrlDisplay) installUrlDisplay.value = installUrl;
+        if (installUrlBox) installUrlBox.classList.add('show');
+
+        if (options.selectDisplay === true && installUrlDisplay) {
+            setTimeout(() => {
+                try { installUrlDisplay.select(); } catch (_) { }
+            }, 100);
+        }
+    }
+
+    function hideActiveInstallState() {
+        revealedInstallToken = '';
+        clearActiveInstallState();
+    }
+
+    function revealActiveInstallState(token, options = {}) {
+        const normalizedToken = extractSessionTokenFromInput(token);
+        if (!isValidSessionToken(normalizedToken)) {
+            hideActiveInstallState();
+            return;
+        }
+        revealedInstallToken = normalizedToken;
+        syncActiveInstallState(normalizedToken, options);
+    }
+
+    function reconcileActiveInstallState(options = {}) {
+        const activeToken = getActiveConfigRef();
+        const visibleToken = resolveVisibleInstallToken({
+            activeToken,
+            revealedToken: revealedInstallToken,
+            configDirty
+        });
+
+        if (!visibleToken) {
+            if (!isValidSessionToken(activeToken) || activeToken !== revealedInstallToken) {
+                revealedInstallToken = '';
+            }
+            clearActiveInstallState();
+            return;
+        }
+
+        syncActiveInstallState(visibleToken, options);
+    }
+
+    async function copyTextToClipboard(text, successMessage) {
+        const value = String(text || '');
+        if (!value) return false;
+        try {
+            await navigator.clipboard.writeText(value);
+        } catch (_) {
+            const input = document.createElement('input');
+            input.value = value;
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+        }
+        if (successMessage) {
+            showAlert(successMessage, 'success');
+        }
+        return true;
+    }
+
+    async function fetchSessionBrief(token, options = {}) {
+        if (!isValidSessionToken(token)) return null;
+
+        const cached = tokenVaultBriefFetchCache.get(token) || null;
+        if (cached && shouldUseCachedTokenVaultBrief({
+            fetchedAt: cached.fetchedAt,
+            maxAgeMs: options.maxAgeMs ?? TOKEN_VAULT_BRIEF_TTL_MS
+        })) {
+            return cached.session;
+        }
+
+        const pendingRequest = tokenVaultBriefFetchPromises.get(token);
+        if (pendingRequest) {
+            return pendingRequest;
+        }
+
+        const request = fetch(`/api/session-brief/${encodeURIComponent(token)}`, { cache: 'no-store' })
+            .then(async (response) => {
+                if (!response.ok) {
+                    if (response.status === 404 || response.status === 410) {
+                        rememberTokenVaultSingleBrief(token, null);
+                        return null;
+                    }
+                    throw new Error(`Failed to fetch session brief (${response.status})`);
+                }
+                const data = await response.json();
+                const session = data?.session || null;
+                rememberTokenVaultSingleBrief(token, session);
+                if (session) {
+                    tokenVaultBriefMap.set(token, session);
+                }
+                return session;
+            })
+            .finally(() => {
+                tokenVaultBriefFetchPromises.delete(token);
+            });
+
+        tokenVaultBriefFetchPromises.set(token, request);
+        return request;
+    }
+
+    function getVaultEntryForToken(token, store = getTokenVaultStore()) {
+        if (!isValidSessionToken(token)) return null;
+        return store.entries.find(entry => entry.token === token) || null;
+    }
+
+    function getTokenVaultManagerToken() {
+        if (isValidSessionToken(tokenVaultFocusedToken)) return tokenVaultFocusedToken;
+        const activeToken = getActiveConfigRef();
+        return isValidSessionToken(activeToken) ? activeToken : '';
+    }
+
+    function getTokenVaultRailMenuKeyForEntry(token = '', isDraft = false) {
+        if (isDraft === true) return 'draft';
+        return extractSessionTokenFromInput(token);
+    }
+
+    function ensureTokenVaultRailFloatingMenu() {
+        let menu = document.getElementById('tokenVaultRailFloatingMenu');
+        if (!menu) {
+            menu = document.createElement('div');
+            menu.id = 'tokenVaultRailFloatingMenu';
+            menu.className = 'token-vault-rail-floating-menu';
+            menu.setAttribute('role', 'menu');
+            menu.setAttribute('aria-hidden', 'true');
+            document.body.appendChild(menu);
+        }
+        if (!menu.__vaultBound) {
+            menu.__vaultBound = true;
+            menu.addEventListener('click', async (e) => {
+                const actionEl = e.target && e.target.closest ? e.target.closest('[data-vault-action]') : null;
+                e.stopPropagation();
+                if (!actionEl) return;
+                e.preventDefault();
+                try {
+                    await handleTokenVaultAction(actionEl);
+                } catch (error) {
+                    showAlert(error.message || 'Token Vault action failed.', 'error');
+                }
+            });
+        }
+        return menu;
+    }
+
+    function getTokenVaultRailMenuToggle(menuKey) {
+        const normalizedKey = String(menuKey || '').trim();
+        if (!normalizedKey) return null;
+        const escapedKey = window.CSS && typeof window.CSS.escape === 'function'
+            ? window.CSS.escape(normalizedKey)
+            : normalizedKey.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        return document.querySelector(`#tokenVaultRail [data-vault-action="toggle-rail-menu"][data-menu-key="${escapedKey}"]`);
+    }
+
+    function getTokenVaultRailEntryForMenuKey(menuKey) {
+        const normalizedKey = String(menuKey || '').trim();
+        if (!normalizedKey) return null;
+        return getVaultRailEntries().find(entry => getTokenVaultRailMenuKeyForEntry(entry.token, entry.isDraft) === normalizedKey) || null;
+    }
+
+    function buildTokenVaultRailMenuItems(entry) {
+        if (!entry) return '';
+        const actionTokenAttr = entry.token
+            ? ` data-token="${escapeVaultHtml(entry.token)}"`
+            : (entry.isDraft ? ' data-draft="true"' : '');
+        const menuItems = [
+            `<button type="button" class="token-vault-rail-menu-item" data-vault-action="manage-token"${actionTokenAttr}>Open</button>`
+        ];
+
+        if (entry.token) {
+            menuItems.push(`<button type="button" class="token-vault-rail-menu-item" data-vault-action="duplicate-token"${actionTokenAttr}>Duplicate</button>`);
+            menuItems.push(`<button type="button" class="token-vault-rail-menu-item" data-vault-action="export-current"${actionTokenAttr}>Export</button>`);
+            menuItems.push(`<button type="button" class="token-vault-rail-menu-item danger" data-vault-action="forget-token"${actionTokenAttr}>Forget</button>`);
+        }
+
+        return menuItems.join('');
+    }
+
+    function hideTokenVaultRailFloatingMenu() {
+        const menu = document.getElementById('tokenVaultRailFloatingMenu');
+        if (!menu) return;
+        menu.classList.remove('show');
+        menu.setAttribute('aria-hidden', 'true');
+        menu.style.left = '-9999px';
+        menu.style.top = '-9999px';
+        if (tokenVaultRailMenuFrame) {
+            cancelAnimationFrame(tokenVaultRailMenuFrame);
+            tokenVaultRailMenuFrame = 0;
+        }
+    }
+
+    function positionTokenVaultRailFloatingMenu(menu, anchorEl) {
+        if (!menu || !anchorEl) return;
+
+        const anchorRect = anchorEl.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const menuRect = menu.getBoundingClientRect();
+        const edgePadding = 8;
+        const gap = 8;
+
+        let left = anchorRect.left - menuRect.width - gap;
+        if (left < edgePadding) {
+            left = anchorRect.right + gap;
+        }
+        left = Math.min(Math.max(edgePadding, left), Math.max(edgePadding, viewportWidth - menuRect.width - edgePadding));
+
+        let top = anchorRect.top + (anchorRect.height / 2) - (menuRect.height / 2);
+        top = Math.min(Math.max(edgePadding, top), Math.max(edgePadding, viewportHeight - menuRect.height - edgePadding));
+
+        menu.style.left = `${Math.round(left)}px`;
+        menu.style.top = `${Math.round(top)}px`;
+    }
+
+    function renderTokenVaultRailFloatingMenu() {
+        const menu = ensureTokenVaultRailFloatingMenu();
+        if (!tokenVaultRailOpen || !tokenVaultRailMenuKey) {
+            hideTokenVaultRailFloatingMenu();
+            return;
+        }
+
+        const entry = getTokenVaultRailEntryForMenuKey(tokenVaultRailMenuKey);
+        const anchorEl = getTokenVaultRailMenuToggle(tokenVaultRailMenuKey);
+        if (!entry || !anchorEl) {
+            hideTokenVaultRailFloatingMenu();
+            return;
+        }
+
+        const markup = buildTokenVaultRailMenuItems(entry);
+        if (menu.innerHTML !== markup) {
+            menu.innerHTML = markup;
+        }
+        menu.setAttribute('aria-label', `${entry.railLabel} actions`);
+        menu.setAttribute('aria-hidden', 'false');
+        menu.style.visibility = 'hidden';
+        menu.classList.add('show');
+        positionTokenVaultRailFloatingMenu(menu, anchorEl);
+        menu.style.visibility = '';
+    }
+
+    function scheduleTokenVaultRailFloatingMenuSync() {
+        if (!tokenVaultRailMenuKey) {
+            hideTokenVaultRailFloatingMenu();
+            return;
+        }
+        if (tokenVaultRailMenuFrame) return;
+        tokenVaultRailMenuFrame = requestAnimationFrame(() => {
+            tokenVaultRailMenuFrame = 0;
+            renderTokenVaultRailFloatingMenu();
+        });
+    }
+
+    function closeTokenVaultRailMenu() {
+        if (!tokenVaultRailMenuKey) return;
+        tokenVaultRailMenuKey = '';
+        hideTokenVaultRailFloatingMenu();
+        renderTokenVaultRail();
+    }
+
+    function toggleTokenVaultRailMenu(menuKey) {
+        const normalizedKey = String(menuKey || '').trim();
+        const nextKey = tokenVaultRailMenuKey === normalizedKey ? '' : normalizedKey;
+        if (tokenVaultRailMenuKey === nextKey) return;
+        tokenVaultRailMenuKey = nextKey;
+        renderTokenVaultRail();
+    }
+
+    function resetTokenVaultTitleEditor() {
+        tokenVaultTitleEditToken = '';
+        tokenVaultTitleEditValue = '';
+    }
+
+    function openTokenVaultTitleEditor(token, initialValue = '') {
+        if (!isValidSessionToken(token)) return;
+        tokenVaultTitleEditToken = token;
+        tokenVaultTitleEditValue = String(initialValue || '');
+        renderTokenVault();
+    }
+
+    function saveTokenVaultTitle(actionToken, activeToken) {
+        if (!isValidSessionToken(actionToken)) return;
+
+        const input = document.getElementById('tokenVaultTitleInlineInput');
+        const currentBrief = tokenVaultBriefMap.get(actionToken) || null;
+        const currentEntry = getVaultEntryForToken(actionToken);
+        const store = getTokenVaultStore();
+        const currentLabel = normalizeVaultLabel(actionToken, currentEntry?.label || '');
+        const derivedLabel = deriveVaultLabel(actionToken, currentEntry?.label || '', { store });
+        let label = String(input?.value || '').trim();
+
+        if (!currentLabel && label === derivedLabel) {
+            label = '';
+        }
+
+        if (label === currentLabel) {
+            resetTokenVaultTitleEditor();
+            renderTokenVault();
+            return;
+        }
+
+        const plan = prepareTokenVaultEntryUpsert(actionToken, {
+            label,
+            lastOpenedAt: Date.now(),
+            lastSavedAt: Number(currentEntry?.lastSavedAt) || Number(currentBrief?.updatedAt) || Number(currentEntry?.lastKnownUpdatedAt) || Date.now()
+        });
+
+        applyVaultEntryPlanWithOverflowPrompt(
+            plan,
+            {
+                eyebrow: `${TOKEN_VAULT_MAX_ENTRIES} saved tokens max`,
+                title: 'Saving this title needs one vault slot',
+                message: 'Keeping this token in your browser vault will purge the oldest saved entry below.',
+                detail: 'Only the local browser vault changes.',
+                confirmLabel: 'Save title and replace'
+            },
+            { activeToken: actionToken === activeToken ? actionToken : getActiveConfigRef() },
+            async () => {
+                resetTokenVaultTitleEditor();
+                renderTokenVault();
+                showAlert('Token title saved locally.', 'success');
+            }
+        );
+    }
+
+    function buildDuplicateVaultLabel(token, explicitLabel, options = {}) {
+        const store = options.store || getTokenVaultStore();
+        const sourceLabel = deriveVaultLabel(token, explicitLabel || '', { store });
+        if (!sourceLabel) return '';
+
+        const existingLabels = new Set(
+            (Array.isArray(store?.entries) ? store.entries : [])
+                .map(entry => deriveVaultLabel(entry?.token || '', entry?.label || '', { store }).trim().toLowerCase())
+                .filter(Boolean)
+        );
+        const baseLabel = `${sourceLabel} Copy`;
+        let nextLabel = baseLabel;
+        let suffix = 2;
+
+        while (existingLabels.has(nextLabel.toLowerCase())) {
+            nextLabel = `${baseLabel} ${suffix}`;
+            suffix += 1;
+        }
+
+        return nextLabel;
+    }
+
+    function buildTokenVaultViewModel(requestedToken = '') {
+        const store = getTokenVaultStore();
+        const activeToken = getActiveConfigRef();
+        const token = isValidSessionToken(requestedToken) ? requestedToken : '';
+        const entry = token ? getVaultEntryForToken(token, store) : null;
+        const isActiveToken = token && token === activeToken;
+        const brief = token
+            ? (tokenVaultBriefMap.get(token) || (isActiveToken ? activeSessionContext.session : null) || null)
+            : null;
+        const disabled = brief?.disabled === true || entry?.lastKnownDisabled === true;
+
+        let state = token ? 'live' : getActiveTokenState();
+        if (token) {
+            if (isActiveToken) {
+                state = getActiveTokenState();
+            } else if (brief?.exists === false) {
+                state = 'recovered';
+            } else if (disabled) {
+                state = 'disabled';
+            }
+        }
+
+        let provenanceLabel = activeSessionContext.sourceLabel || 'Fresh draft';
+        let provenanceMessage = activeSessionContext.message || 'No token yet. Your first save will mint one.';
+        if (token && !isActiveToken) {
+            if (brief?.exists === false) {
+                provenanceLabel = 'Saved locally';
+                provenanceMessage = 'This token still exists in your browser vault, but no live session was found on the server.';
+            } else if (disabled) {
+                provenanceLabel = 'Saved locally';
+                provenanceMessage = 'This token is disabled, so addon, toolbox, and history routes stay blocked until you re-enable it.';
+            } else {
+                provenanceLabel = 'Saved locally';
+                provenanceMessage = 'Ready to switch, copy, export, or open linked routes.';
+            }
+        }
+
+        const createdAt = Number(brief?.createdAt) || Number(entry?.lastKnownCreatedAt) || 0;
+        const updatedAt = Number(brief?.updatedAt) || Number(entry?.lastKnownUpdatedAt) || createdAt || 0;
+        const lastAccessedAt = Number(brief?.lastAccessedAt) || Number(entry?.lastKnownLastAccessedAt) || updatedAt || 0;
+
+        return {
+            token,
+            brief,
+            entry,
+            state,
+            disabled,
+            isDraft: !token,
+            isActiveToken: !!isActiveToken,
+            label: deriveVaultLabel(token, entry?.label || '', { store }),
+            provenanceLabel,
+            provenanceMessage,
+            createdAt,
+            updatedAt,
+            lastAccessedAt,
+            canUseRoutes: isValidSessionToken(token) && disabled !== true && brief?.exists !== false,
+            routeStateLabel: !token
+                ? 'Awaiting first save'
+                : (brief?.exists === false ? 'Missing on server' : (disabled ? 'Blocked' : 'Enabled'))
+        };
+    }
+
+    function getVaultStateLabel(state, isActiveToken = false) {
+        if (state === 'draft') return 'Draft';
+        if (state === 'disabled') return 'Off';
+        if (state === 'recovered') return 'Lost';
+        return isActiveToken ? 'Current' : 'Saved';
+    }
+
+    function getVaultRailEntries() {
+        const store = getTokenVaultStore();
+        const activeToken = getActiveConfigRef();
+        const entryLimit = isValidSessionToken(activeToken) ? TOKEN_VAULT_RAIL_LIMIT : (TOKEN_VAULT_RAIL_LIMIT + 1);
+        const entries = [];
+        const seen = new Set();
+        const pushToken = (token) => {
+            if (!isValidSessionToken(token) || seen.has(token) || entries.length >= entryLimit) return;
+            const view = buildTokenVaultViewModel(token);
+            entries.push({
+                key: token,
+                ...view,
+                railLabel: view.label,
+                railMeta: `${maskToken(token)} / ${view.updatedAt ? `saved ${formatVaultRelative(view.updatedAt)}` : 'saved locally'}`
+            });
+            seen.add(token);
+        };
+
+        if (!isValidSessionToken(activeToken)) {
+            const draftView = buildTokenVaultViewModel('');
+            entries.push({
+                key: 'draft',
+                ...draftView,
+                railLabel: draftView.label,
+                railMeta: activeSessionContext.message || 'First save creates a token'
+            });
+        } else {
+            pushToken(activeToken);
+        }
+
+        sortVaultEntries(store.entries).forEach(entry => {
+            pushToken(entry.token);
+        });
+
+        return entries.slice(0, entryLimit);
+    }
+
+    function renderTokenVaultRail(options = {}) {
+        const rail = document.getElementById('tokenVaultRail');
+        const list = document.getElementById('tokenVaultRailList');
+        const launcher = document.getElementById('tokenVaultLauncher');
+        if (!rail || !list || !launcher) return;
+
+        const entries = getVaultRailEntries();
+        const activeToken = getActiveConfigRef();
+        const store = getTokenVaultStore();
+        const draftAlreadyActive = !activeToken && activeSessionContext.provenance === 'draft';
+        const savedCount = Math.min(Array.isArray(store.entries) ? store.entries.length : 0, TOKEN_VAULT_MAX_ENTRIES);
+        const addTokenLabel = 'Add Profile';
+        const addTokenMeta = draftAlreadyActive
+            ? 'Draft already open. Create, import, or back up profiles from here.'
+            : (savedCount >= TOKEN_VAULT_MAX_ENTRIES
+                ? 'Vault full. New imports or saves will ask before replacing the oldest token.'
+                : 'Create, import, or restore profiles from here.');
+        const addTokenHtml = `<button type="button" class="token-vault-rail-add" data-vault-action="open-creator" style="--vault-index:0;">
+            <span class="token-vault-rail-add-icon" aria-hidden="true">+</span>
+            <span class="token-vault-rail-add-main">
+                <span class="token-vault-rail-add-title">${escapeVaultHtml(addTokenLabel)}</span>
+                <span class="token-vault-rail-add-meta">${escapeVaultHtml(addTokenMeta)}</span>
+            </span>
+            <span class="token-vault-rail-add-cap">${savedCount}/${TOKEN_VAULT_MAX_ENTRIES}</span>
+        </button>`;
+        const validMenuKeys = new Set(
+            entries
+                .map(entry => getTokenVaultRailMenuKeyForEntry(entry.token, entry.isDraft))
+                .filter(Boolean)
+        );
+        if (tokenVaultRailMenuKey && !validMenuKeys.has(tokenVaultRailMenuKey)) {
+            tokenVaultRailMenuKey = '';
+        }
+        rail.classList.toggle('show', tokenVaultRailOpen);
+        rail.setAttribute('aria-hidden', tokenVaultRailOpen ? 'false' : 'true');
+        launcher.setAttribute('aria-expanded', tokenVaultRailOpen ? 'true' : 'false');
+
+        if (!tokenVaultRailOpen && options.forceContent !== true) {
+            hideTokenVaultRailFloatingMenu();
+            scheduleFloatingBottomSafeZoneSync();
+            return;
+        }
+
+        let markup = '';
+        if (entries.length === 0) {
+            markup = `${addTokenHtml}<div class="token-vault-rail-empty" style="--vault-index:1;">
+                <strong>Token Vault</strong>
+                <span>Save or import a token to start building a switchable history.</span>
+            </div>`;
+        } else {
+            markup = addTokenHtml + entries.map((entry, index) => {
+                const stateLabel = getVaultStateLabel(entry.state, entry.isActiveToken);
+                const canToggle = !entry.isDraft;
+                const switchDisabled = !entry.token || entry.isActiveToken;
+                const actionTokenAttr = entry.token
+                    ? ` data-token="${escapeVaultHtml(entry.token)}"`
+                    : (entry.isDraft ? ' data-draft="true"' : '');
+                const menuKey = getTokenVaultRailMenuKeyForEntry(entry.token, entry.isDraft);
+                const menuOpen = menuKey && tokenVaultRailMenuKey === menuKey;
+
+                const openLabel = entry.isDraft
+                    ? 'Open current draft'
+                    : `Open ${entry.railLabel}`;
+
+                return `<article class="token-vault-rail-item ${escapeVaultHtml(entry.state)} ${entry.isActiveToken ? 'is-active' : ''} ${menuOpen ? 'menu-open' : ''}" style="--vault-index:${index + 1};">
+                    <button type="button" class="token-vault-rail-main" data-vault-action="manage-token"${actionTokenAttr} aria-label="${escapeVaultHtml(openLabel)}">
+                        <span class="token-vault-rail-title-row">
+                            <strong>${escapeVaultHtml(entry.railLabel)}</strong>
+                            <span class="token-vault-inline-chip ${escapeVaultHtml(entry.state)}">${escapeVaultHtml(stateLabel)}</span>
+                        </span>
+                        <span class="token-vault-rail-meta">${escapeVaultHtml(entry.railMeta)}</span>
+                    </button>
+                    <div class="token-vault-rail-actions">
+                        <button type="button" class="token-vault-rail-shortcut" data-vault-action="switch-token" data-token="${escapeVaultHtml(entry.token || '')}" ${switchDisabled ? 'disabled' : ''}>${entry.isActiveToken ? 'Live' : 'Use'}</button>
+                        ${canToggle ? `<button type="button" class="token-vault-rail-shortcut ${entry.disabled ? '' : 'danger'}" data-vault-action="toggle-state" data-token="${escapeVaultHtml(entry.token)}">${entry.disabled ? 'Enable' : 'Disable'}</button>` : ''}
+                        <div class="token-vault-rail-menu ${menuOpen ? 'is-open' : ''}">
+                            <button type="button" class="token-vault-rail-menu-toggle" data-vault-action="toggle-rail-menu" data-menu-key="${escapeVaultHtml(menuKey)}"${actionTokenAttr} aria-haspopup="menu" aria-expanded="${menuOpen ? 'true' : 'false'}" aria-controls="tokenVaultRailFloatingMenu" aria-label="${escapeVaultHtml(`${entry.railLabel} actions`)}"><span class="token-vault-rail-menu-dots" aria-hidden="true"><span></span><span></span><span></span></span></button>
+                        </div>
+                    </div>
+                </article>`;
+            }).join('');
+        }
+
+        if (!list.hasChildNodes() || tokenVaultRailRenderedMarkup !== markup) {
+            list.innerHTML = markup;
+            tokenVaultRailRenderedMarkup = markup;
+        }
+        renderTokenVaultRailFloatingMenu();
+        scheduleFloatingBottomSafeZoneSync();
+    }
+
+    async function refreshTokenVaultData(optionsOrForce = false) {
+        const options = normalizeTokenVaultRefreshOptions(optionsOrForce);
+        const modalOpen = document.getElementById('tokenVaultModal')?.classList.contains('show');
+        const creatorOpen = document.getElementById('tokenVaultCreateModal')?.classList.contains('show');
+        if (!options.force && !options.background && tokenVaultLoaded && !modalOpen && !creatorOpen && !tokenVaultRailOpen) {
+            return;
+        }
+
+        const tokens = getTokenVaultRefreshTokens();
+        const tokensKey = tokens.join(',');
+        if (tokens.length === 0) {
+            tokenVaultBriefMap = new Map();
+            tokenVaultLoaded = true;
+            tokenVaultLastRefreshAt = Date.now();
+            tokenVaultLastRefreshKey = '';
+            if (modalOpen) {
+                renderTokenVault();
+            } else if (tokenVaultRailOpen) {
+                renderTokenVaultRail();
+            }
+            return;
+        }
+        if (!shouldRefreshTokenVaultBriefs({
+            force: options.force,
+            loaded: tokenVaultLoaded,
+            tokensKey,
+            lastTokensKey: tokenVaultLastRefreshKey,
+            lastRefreshAt: tokenVaultLastRefreshAt,
+            maxAgeMs: TOKEN_VAULT_BRIEF_TTL_MS
+        })) {
+            return;
+        }
+        if (tokenVaultRefreshPromise) {
+            return tokenVaultRefreshPromise;
+        }
+
+        tokenVaultRefreshing = true;
+        tokenVaultRefreshPromise = (async () => {
+            const response = await fetch('/api/session-briefs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
+                body: JSON.stringify({ tokens })
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to refresh token vault (${response.status})`);
+            }
+
+            const data = await response.json();
+            const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+            const refreshedAt = Date.now();
+            const nextBriefMap = new Map();
+            sessions.forEach(session => {
+                if (isValidSessionToken(session?.token)) {
+                    nextBriefMap.set(session.token, session);
+                    rememberTokenVaultSingleBrief(session.token, session.exists === false ? null : session, refreshedAt);
+                    if (session.exists) {
+                        syncTokenVaultEntryWithBrief(session.token, session, {}, { ifExistsOnly: true });
+                    }
+                }
+            });
+            tokenVaultBriefMap = nextBriefMap;
+
+            const liveActiveToken = getActiveConfigRef();
+            if (isValidSessionToken(liveActiveToken)) {
+                const activeBrief = nextBriefMap.get(liveActiveToken)
+                    || (activeSessionContext.token === liveActiveToken ? activeSessionContext.session : null);
+                if (activeBrief && activeBrief.exists === false) {
+                    try { localStorage.removeItem(TOKEN_KEY); } catch (_) { }
+                    setActiveSessionContext({
+                        token: '',
+                        provenance: 'recovered',
+                        sourceLabel: 'Recovered draft',
+                        message: 'The saved token no longer exists on the server. Save to mint a replacement.',
+                        session: null,
+                        recoveredFromToken: liveActiveToken,
+                        regenerated: true
+                    });
+                } else {
+                    setActiveSessionContext({ token: liveActiveToken, session: activeBrief || null });
+                }
+            }
+
+            tokenVaultLoaded = true;
+            tokenVaultLastRefreshAt = refreshedAt;
+            tokenVaultLastRefreshKey = tokensKey;
+
+            if (modalOpen) {
+                renderTokenVault();
+            } else if (tokenVaultRailOpen) {
+                renderTokenVaultRail();
+            }
+        })().catch((error) => {
+            console.warn('[TokenVault] Failed to refresh vault metadata', error);
+            if (modalOpen || creatorOpen || tokenVaultRailOpen) {
+                showAlert(`Failed to refresh token vault: ${error.message}`, 'warning');
+            }
+        }).finally(() => {
+            tokenVaultRefreshing = false;
+            tokenVaultRefreshPromise = null;
+        });
+
+        return tokenVaultRefreshPromise;
+    }
+
+    function renderTokenVault(options = {}) {
+        renderTokenVaultRail();
+
+        const modalOpen = document.getElementById('tokenVaultModal')?.classList.contains('show');
+        if (!modalOpen && options.forceContent !== true) return;
+
+        const content = document.getElementById('tokenVaultContent');
+        if (!content) return;
+
+        const selectedToken = getTokenVaultManagerToken();
+        const selected = buildTokenVaultViewModel(selectedToken);
+        const store = getTokenVaultStore();
+        const selectedLabel = selected.label;
+        const isTitleEditing = !!selected.token && tokenVaultTitleEditToken === selected.token;
+        const titleEditorValue = isTitleEditing ? tokenVaultTitleEditValue : '';
+        const pendingSwitch = tokenVaultPendingSwitch && isValidSessionToken(tokenVaultPendingSwitch)
+            ? deriveVaultLabel(tokenVaultPendingSwitch, getVaultEntryForToken(tokenVaultPendingSwitch, store)?.label || '', { store })
+            : '';
+        const managerTokenAttr = selected.token ? ` data-token="${escapeVaultHtml(selected.token)}"` : '';
+        const titleMarkup = !selected.token
+            ? `<h3>${escapeVaultHtml(selectedLabel)}</h3>`
+            : (isTitleEditing
+                ? `<div class="token-vault-title-editor">
+                        <input type="text" id="tokenVaultTitleInlineInput" class="token-vault-title-input" value="${escapeVaultHtml(titleEditorValue)}" placeholder="${escapeVaultHtml(selectedLabel)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+                        <button type="button" class="token-vault-mini-btn token-vault-title-save" data-vault-action="save-label"${managerTokenAttr}>Save</button>
+                    </div>
+                    <div class="token-vault-title-hint is-editing">Editing title. Press Enter to save.</div>`
+                : `<button type="button" class="token-vault-title-trigger" data-vault-action="edit-title"${managerTokenAttr}>
+                        <span class="token-vault-title-trigger-text">${escapeVaultHtml(selectedLabel)}</span>
+                        <span class="token-vault-title-hint">Click to rename</span>
+                    </button>`);
+        const heroBadges = [
+            `<span class="token-vault-status-chip ${escapeVaultHtml(selected.state)}">${escapeVaultHtml(getVaultStateLabel(selected.state, selected.isActiveToken))}</span>`,
+            `<span class="token-vault-meta-chip">${escapeVaultHtml(selected.isDraft ? 'Unsaved page' : (selected.isActiveToken ? 'Active on this page' : 'Saved in vault'))}</span>`
+        ].join('');
+
+        const markup = `<div class="token-vault-manager">
+            ${tokenVaultPendingSwitch ? `<section class="token-vault-confirm">
+                <div>
+                    <strong>Unsaved changes detected</strong>
+                    <p>Switch to ${escapeVaultHtml(pendingSwitch)} without losing your current edits?</p>
+                </div>
+                <div class="token-vault-confirm-actions">
+                    <button type="button" class="token-vault-action token-vault-action-primary" data-vault-action="switch-save">Save then switch</button>
+                    <button type="button" class="token-vault-action" data-vault-action="switch-discard">Switch now</button>
+                    <button type="button" class="token-vault-action" data-vault-action="switch-cancel">Stay here</button>
+                </div>
+            </section>` : ''}
+
+            <section class="token-vault-hero ${escapeVaultHtml(selected.state)}">
+                <div class="token-vault-hero-top">
+                    <div class="token-vault-hero-copy">
+                        <div class="token-vault-eyebrow">Selected profile</div>
+                        ${titleMarkup}
+                        <p>${escapeVaultHtml(selected.provenanceLabel)} - ${escapeVaultHtml(selected.provenanceMessage)}</p>
+                    </div>
+                    <div class="token-vault-badges">${heroBadges}</div>
+                </div>
+                <div class="token-vault-token-row">
+                    <code class="token-vault-token">${escapeVaultHtml(selected.token ? (tokenVaultReveal ? selected.token : maskToken(selected.token)) : 'No token loaded')}</code>
+                    <button type="button" class="token-vault-mini-btn" data-vault-action="reveal-token" ${selected.token ? '' : 'disabled'}>${tokenVaultReveal ? 'Hide' : 'Reveal'}</button>
+                    <button type="button" class="token-vault-mini-btn" data-vault-action="copy-token"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>Copy token</button>
+                </div>
+                <div class="token-vault-hero-actions">
+                    <button type="button" class="token-vault-action token-vault-action-primary" data-vault-action="switch-token"${managerTokenAttr} ${selected.token && !selected.isActiveToken ? '' : 'disabled'}>${selected.isDraft ? 'Current page draft' : (selected.isActiveToken ? 'Already live' : 'Use on this page')}</button>
+                    <button type="button" class="token-vault-action ${selected.disabled ? 'token-vault-action-success' : 'token-vault-action-warning'}" data-vault-action="toggle-state"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>${selected.disabled ? 'Enable token' : 'Disable token'}</button>
+                    <button type="button" class="token-vault-action" data-vault-action="export-current"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>Export this token</button>
+                    <button type="button" class="token-vault-action token-vault-action-danger" data-vault-action="forget-token"${managerTokenAttr} ${selected.token && selected.entry ? '' : 'disabled'}>Forget this token</button>
+                </div>
+                <div class="token-vault-stats">
+                    <div><span>Created</span><strong>${escapeVaultHtml(formatVaultDate(selected.createdAt))}</strong></div>
+                    <div><span>Updated</span><strong>${escapeVaultHtml(formatVaultDate(selected.updatedAt))}</strong></div>
+                    <div><span>Last used</span><strong>${escapeVaultHtml(formatVaultDate(selected.lastAccessedAt))}</strong></div>
+                    <div><span>Route state</span><strong>${escapeVaultHtml(selected.routeStateLabel)}</strong></div>
+                </div>
+                <div class="token-vault-security-warning" role="note">
+                    <strong>Careful!</strong> Your token gives full access to your config (including API keys).
+                </div>
+            </section>
+
+            <section class="token-vault-actions-card">
+                <div class="token-vault-section-title">Launch and access</div>
+                <p class="token-vault-section-copy">Everything that makes this profile callable lives here. Add/import and full-vault tools now live under the rail's Add Profile button.</p>
+                <div class="token-vault-action-grid">
+                    <button type="button" class="token-vault-action token-vault-action-primary" data-vault-action="copy-manifest"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>Copy manifest URL</button>
+                    <button type="button" class="token-vault-action" data-vault-action="copy-config-url"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>Copy config URL</button>
+                    <button type="button" class="token-vault-action" data-vault-action="install-addon"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>Install in Stremio</button>
+                    <button type="button" class="token-vault-action" data-vault-action="open-toolbox"${managerTokenAttr} ${selected.canUseRoutes ? '' : 'disabled'}>Open Sub Toolbox</button>
+                    <button type="button" class="token-vault-action" data-vault-action="open-history"${managerTokenAttr} ${selected.canUseRoutes ? '' : 'disabled'}>Open history</button>
+                    <button type="button" class="token-vault-action" data-vault-action="validate-token"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>Validate token</button>
+                </div>
+            </section>
+        </div>`;
+
+        if (!content.hasChildNodes() || tokenVaultManagerRenderedMarkup !== markup) {
+            content.innerHTML = markup;
+            tokenVaultManagerRenderedMarkup = markup;
+        }
+
+        if (isTitleEditing) {
+            requestAnimationFrame(() => {
+                const input = document.getElementById('tokenVaultTitleInlineInput');
+                if (!input) return;
+                input.focus();
+                input.select();
+            });
+        }
+    }
+
+    function createTokenVaultCreatorPreviewState(overrides = {}) {
+        return {
+            token: '',
+            tone: 'idle',
+            statusLabel: 'Idle',
+            title: 'Token preview',
+            message: 'Paste a token or URL to preview it before importing.',
+            meta: '',
+            canImport: false,
+            ...overrides
+        };
+    }
+
+    function getTokenVaultCreatorPreviewMarkup() {
+        const preview = tokenVaultCreatorPreview || createTokenVaultCreatorPreviewState();
+        const hasToken = isValidSessionToken(preview.token);
+        return `<div class="token-vault-create-preview-head">
+                <span class="token-vault-inline-chip ${escapeVaultHtml(preview.tone)}">${escapeVaultHtml(preview.statusLabel)}</span>
+                ${hasToken ? `<code>${escapeVaultHtml(maskToken(preview.token))}</code>` : ''}
+            </div>
+            <strong>${escapeVaultHtml(preview.title)}</strong>
+            <p>${escapeVaultHtml(preview.message)}</p>
+            ${preview.meta ? `<div class="token-vault-create-preview-meta">${escapeVaultHtml(preview.meta)}</div>` : ''}`;
+    }
+
+    function syncTokenVaultCreatorPreviewUi() {
+        const input = document.getElementById('tokenVaultCreateInput');
+        const previewEl = document.getElementById('tokenVaultCreatePreview');
+        const importBtn = document.getElementById('tokenVaultCreateImportBtn');
+        if (input && input.value !== tokenVaultCreatorInputValue) {
+            const wasFocused = document.activeElement === input;
+            const selectionStart = input.selectionStart;
+            const selectionEnd = input.selectionEnd;
+            input.value = tokenVaultCreatorInputValue;
+            if (wasFocused) {
+                input.focus();
+                try {
+                    input.setSelectionRange(selectionStart, selectionEnd);
+                } catch (_) { }
+            }
+        }
+        if (previewEl) {
+            const tone = tokenVaultCreatorPreview?.tone || 'idle';
+            const markup = getTokenVaultCreatorPreviewMarkup();
+            if (previewEl.dataset.tone !== tone) {
+                previewEl.dataset.tone = tone;
+            }
+            if (!previewEl.hasChildNodes() || tokenVaultCreatorPreviewRenderedMarkup !== markup) {
+                previewEl.innerHTML = markup;
+                tokenVaultCreatorPreviewRenderedMarkup = markup;
+            }
+        }
+        if (importBtn) {
+            const shouldDisable = !(tokenVaultCreatorPreview?.canImport === true);
+            if (importBtn.disabled !== shouldDisable) {
+                importBtn.disabled = shouldDisable;
+            }
+        }
+    }
+
+    function buildTokenVaultCreatorPreviewFromBrief(token, brief) {
+        const store = getTokenVaultStore();
+        const entry = getVaultEntryForToken(token, store);
+        const activeToken = getActiveConfigRef();
+        const isActiveToken = token === activeToken;
+        const label = deriveVaultLabel(token, entry?.label || '', { store });
+        const liveBrief = brief?.exists === false ? null : brief;
+        const disabled = liveBrief?.disabled === true || entry?.lastKnownDisabled === true;
+        const updatedAt = Number(liveBrief?.updatedAt) || Number(entry?.lastKnownUpdatedAt) || 0;
+        const metaParts = [maskToken(token)];
+        if (updatedAt) metaParts.push(`Updated ${formatVaultRelative(updatedAt)}`);
+        if (isActiveToken) {
+            metaParts.push('Current page');
+        } else if (entry) {
+            metaParts.push('Saved locally');
+        }
+
+        if (isActiveToken) {
+            return createTokenVaultCreatorPreviewState({
+                token,
+                tone: disabled ? 'disabled' : 'live',
+                statusLabel: disabled ? 'Current / off' : 'Current page',
+                title: label,
+                message: disabled
+                    ? 'Already on this page, but live routes are off.'
+                    : 'Already on this page.',
+                meta: metaParts.join(' · '),
+                canImport: true
+            });
+        }
+
+        if (!liveBrief) {
+            return createTokenVaultCreatorPreviewState({
+                token,
+                tone: 'recovered',
+                statusLabel: entry ? 'Saved locally' : 'Missing live session',
+                title: label,
+                message: entry
+                    ? 'Saved locally. No live session found right now.'
+                    : 'No live session found. You can still import it locally.',
+                meta: metaParts.join(' · '),
+                canImport: true
+            });
+        }
+
+        if (disabled) {
+            return createTokenVaultCreatorPreviewState({
+                token,
+                tone: 'disabled',
+                statusLabel: entry ? 'Saved / off' : 'Disabled live',
+                title: label,
+                message: entry
+                    ? 'Saved locally and currently disabled.'
+                    : 'Live session found, but it is disabled.',
+                meta: metaParts.join(' · '),
+                canImport: true
+            });
+        }
+
+        return createTokenVaultCreatorPreviewState({
+            token,
+            tone: 'live',
+            statusLabel: entry ? 'Already saved' : 'Ready to import',
+            title: label,
+            message: entry
+                ? 'Already saved locally.'
+                : 'Ready to save in this browser.',
+            meta: metaParts.join(' · '),
+            canImport: true
+        });
+    }
+
+    async function refreshTokenVaultCreatorPreview(token, lookupSeq) {
+        const activeBrief = token === getActiveConfigRef() ? activeSessionContext.session : null;
+        const cachedBrief = tokenVaultBriefMap.get(token) || activeBrief || null;
+        try {
+            const brief = cachedBrief !== null ? cachedBrief : await fetchSessionBrief(token);
+            if (lookupSeq !== tokenVaultCreatorPreviewSeq) return;
+            if (brief) {
+                tokenVaultBriefMap.set(token, brief);
+                rememberTokenVaultSingleBrief(token, brief);
+            }
+            tokenVaultCreatorPreview = buildTokenVaultCreatorPreviewFromBrief(token, brief);
+        } catch (error) {
+            if (lookupSeq !== tokenVaultCreatorPreviewSeq) return;
+            const store = getTokenVaultStore();
+            const entry = getVaultEntryForToken(token, store);
+            tokenVaultCreatorPreview = createTokenVaultCreatorPreviewState({
+                token,
+                tone: 'error',
+                statusLabel: 'Preview unavailable',
+                title: deriveVaultLabel(token, entry?.label || '', { store }),
+                message: `${error.message}. You can still import the token locally if you want.`,
+                meta: maskToken(token),
+                canImport: true
+            });
+        }
+        syncTokenVaultCreatorPreviewUi();
+    }
+
+    function scheduleTokenVaultCreatorPreview(rawValue, options = {}) {
+        tokenVaultCreatorInputValue = String(rawValue || '');
+        if (tokenVaultCreatorPreviewTimer) {
+            clearTimeout(tokenVaultCreatorPreviewTimer);
+            tokenVaultCreatorPreviewTimer = null;
+        }
+
+        const trimmed = tokenVaultCreatorInputValue.trim();
+        const token = extractSessionTokenFromInput(trimmed);
+        if (!trimmed) {
+            tokenVaultCreatorPreview = createTokenVaultCreatorPreviewState();
+            syncTokenVaultCreatorPreviewUi();
+            return;
+        }
+
+        if (!token) {
+            tokenVaultCreatorPreview = createTokenVaultCreatorPreviewState({
+                tone: 'idle',
+                statusLabel: 'Need token',
+                message: 'Paste a full token, manifest URL, or config URL.',
+                canImport: false
+            });
+            syncTokenVaultCreatorPreviewUi();
+            return;
+        }
+
+        const store = getTokenVaultStore();
+        const entry = getVaultEntryForToken(token, store);
+        tokenVaultCreatorPreview = createTokenVaultCreatorPreviewState({
+            token,
+            tone: 'checking',
+            statusLabel: 'Checking',
+            title: deriveVaultLabel(token, entry?.label || '', { store }),
+            message: 'Checking token details.',
+            meta: maskToken(token),
+            canImport: true
+        });
+        syncTokenVaultCreatorPreviewUi();
+
+        const lookupSeq = ++tokenVaultCreatorPreviewSeq;
+        const runLookup = () => {
+            tokenVaultCreatorPreviewTimer = null;
+            void refreshTokenVaultCreatorPreview(token, lookupSeq);
+        };
+        if (options.immediate === true) {
+            runLookup();
+        } else {
+            tokenVaultCreatorPreviewTimer = setTimeout(runLookup, 220);
+        }
+    }
+
+    function resetTokenVaultCreatorState(options = {}) {
+        if (tokenVaultCreatorPreviewTimer) {
+            clearTimeout(tokenVaultCreatorPreviewTimer);
+            tokenVaultCreatorPreviewTimer = null;
+        }
+        tokenVaultCreatorPreviewSeq += 1;
+        if (options.preserveInput !== true) {
+            tokenVaultCreatorInputValue = '';
+        }
+        tokenVaultCreatorPreview = createTokenVaultCreatorPreviewState();
+    }
+
+    function renderTokenVaultCreator(options = {}) {
+        const modalOpen = document.getElementById('tokenVaultCreateModal')?.classList.contains('show');
+        if (!modalOpen && options.forceContent !== true) return;
+
+        const content = document.getElementById('tokenVaultCreateContent');
+        if (!content) return;
+
+        const store = getTokenVaultStore();
+        const savedCount = Math.min(Array.isArray(store.entries) ? store.entries.length : 0, TOKEN_VAULT_MAX_ENTRIES);
+        const vaultFill = Math.max(savedCount > 0 ? 18 : 0, Math.round((savedCount / TOKEN_VAULT_MAX_ENTRIES) * 100));
+        const nextOverflowVictim = getDraftOverflowVictims(store)[0] || null;
+        const activeToken = getActiveConfigRef();
+        const draftAlreadyActive = !activeToken && activeSessionContext.provenance === 'draft';
+        const toolsNote = savedCount >= TOKEN_VAULT_MAX_ENTRIES
+            ? `Next replacement: ${nextOverflowVictim ? deriveVaultLabel(nextOverflowVictim.token, nextOverflowVictim.label || '', { store }) : 'oldest profile'}.`
+            : `${TOKEN_VAULT_MAX_ENTRIES - savedCount} slot${TOKEN_VAULT_MAX_ENTRIES - savedCount === 1 ? '' : 's'} open.`;
+        const fileToolsMeta = 'Single-profile and full-vault JSON supported.';
+        const previewMarkup = getTokenVaultCreatorPreviewMarkup();
+
+        const markup = `<div class="token-vault-create-flow">
+            <section class="token-vault-create-card token-vault-create-card-primary">
+                <div class="token-vault-create-card-head">
+                    <div class="token-vault-create-card-copy">
+                        <div class="token-vault-section-title">Add a profile or import a token</div>
+                    </div>
+                    <span class="token-vault-status-chip ${escapeVaultHtml(savedCount >= TOKEN_VAULT_MAX_ENTRIES ? 'disabled' : 'live')}">${savedCount}/${TOKEN_VAULT_MAX_ENTRIES} saved</span>
+                </div>
+                <div class="token-vault-create-primary-stack">
+                    <button type="button" class="token-vault-action token-vault-action-primary token-vault-create-draft-btn" id="tokenVaultCreateDraftBtn" data-vault-action="create-draft-fork" ${draftAlreadyActive ? 'disabled' : ''}>${draftAlreadyActive ? 'Draft already open' : 'Add new profile'}</button>
+                    <span class="token-vault-create-hint">${escapeVaultHtml(draftAlreadyActive ? 'Save when you want the next token minted.' : 'Starts from a clean default config.')}</span>
+                </div>
+                <div class="token-vault-create-import-block">
+                    <div class="token-vault-create-divider"><span>Or import a token</span></div>
+                    <div class="token-vault-import-row">
+                        <input type="text" id="tokenVaultCreateInput" class="token-vault-import-input" value="${escapeVaultHtml(tokenVaultCreatorInputValue)}" placeholder="Paste token, manifest URL, or config URL" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+                        <div class="token-vault-import-actions">
+                            <button type="button" class="token-vault-action" data-vault-action="paste-clipboard">Paste</button>
+                            <button type="button" class="token-vault-action token-vault-action-primary" id="tokenVaultCreateImportBtn" data-vault-action="import-paste" ${tokenVaultCreatorPreview?.canImport === true ? '' : 'disabled'}>Import token</button>
+                        </div>
+                    </div>
+                    <div class="token-vault-create-preview" id="tokenVaultCreatePreview" data-tone="${escapeVaultHtml(tokenVaultCreatorPreview?.tone || 'idle')}">${previewMarkup}</div>
+                </div>
+            </section>
+
+            <section class="token-vault-create-card">
+                <div class="token-vault-create-tools-top">
+                    <div class="token-vault-create-card-copy">
+                        <div class="token-vault-section-title">File import and vault tools</div>
+                        <div class="token-vault-create-card-meta">${escapeVaultHtml(fileToolsMeta)}</div>
+                    </div>
+                </div>
+                <div class="token-vault-create-meter">
+                    <span class="token-vault-create-meter-fill" style="width:${vaultFill}%;"></span>
+                </div>
+                <div class="token-vault-create-tools-note">${escapeVaultHtml(toolsNote)}</div>
+                <div class="token-vault-create-actions">
+                    <button type="button" class="token-vault-action" data-vault-action="import-file">Import from file</button>
+                    <button type="button" class="token-vault-action" data-vault-action="export-all" ${savedCount > 0 ? '' : 'disabled'}>Export vault</button>
+                </div>
+            </section>
+        </div>`;
+
+        if (!content.hasChildNodes() || tokenVaultCreatorRenderedMarkup !== markup) {
+            content.innerHTML = markup;
+            tokenVaultCreatorRenderedMarkup = markup;
+            tokenVaultCreatorPreviewRenderedMarkup = previewMarkup;
+        }
+
+        syncTokenVaultCreatorPreviewUi();
+    }
+
+    function openTokenVaultCreator() {
+        closeTokenVaultRail();
+        resetTokenVaultCreatorState();
+        renderTokenVaultCreator({ forceContent: true });
+        openModalById('tokenVaultCreateModal');
+        void refreshTokenVaultData({ background: true });
+        requestAnimationFrame(() => {
+            const draftBtn = document.getElementById('tokenVaultCreateDraftBtn');
+            if (draftBtn && !draftBtn.disabled) {
+                draftBtn.focus();
+                return;
+            }
+            document.getElementById('tokenVaultCreateInput')?.focus();
+        });
+    }
+
+    function closeTokenVaultCreator() {
+        const modal = document.getElementById('tokenVaultCreateModal');
+        if (!modal) return;
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+        resetTokenVaultCreatorState();
+        updateBodyScrollLock();
+    }
+
+    async function pasteTokenVaultCreatorFromClipboard() {
+        try {
+            const clipboardText = await navigator.clipboard.readText();
+            if (!clipboardText || !clipboardText.trim()) {
+                showAlert('Clipboard is empty.', 'warning');
+                return;
+            }
+            scheduleTokenVaultCreatorPreview(clipboardText, { immediate: true });
+        } catch (_) {
+            showAlert('Clipboard access was blocked. Paste into the field instead.', 'warning');
+        }
+    }
+
+    function openTokenVault(token = '') {
+        tokenVaultReveal = false;
+        tokenVaultFocusedToken = isValidSessionToken(token) ? token : '';
+        resetTokenVaultTitleEditor();
+        closeTokenVaultRail();
+        renderTokenVault({ forceContent: true });
+        openModalById('tokenVaultModal');
+        void refreshTokenVaultData({ background: true });
+    }
+
+    function closeTokenVault() {
+        const modal = document.getElementById('tokenVaultModal');
+        if (!modal) return;
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+        tokenVaultReveal = false;
+        resetTokenVaultTitleEditor();
+        tokenVaultPendingSwitch = '';
+        tokenVaultFocusedToken = '';
+        updateBodyScrollLock();
+    }
+
+    function openTokenVaultRail() {
+        tokenVaultRailOpen = true;
+        renderTokenVaultRail();
+        void refreshTokenVaultData({ background: true });
+    }
+
+    function closeTokenVaultRail() {
+        if (!tokenVaultRailOpen) return;
+        tokenVaultRailOpen = false;
+        tokenVaultRailMenuKey = '';
+        hideTokenVaultRailFloatingMenu();
+        renderTokenVaultRail();
+    }
+
+    function toggleTokenVaultRail() {
+        if (tokenVaultRailOpen) {
+            closeTokenVaultRail();
+        } else {
+            openTokenVaultRail();
+        }
+    }
+
+    function consumePendingTokenVaultLauncherOpenRequest() {
+        try {
+            if (window.__tokenVaultLauncherOpenRequested !== true) return false;
+        } catch (_) {
+            return false;
+        }
+
+        const launcher = document.getElementById('tokenVaultLauncher');
+        const rail = document.getElementById('tokenVaultRail');
+        if (!launcher || !rail) return false;
+
+        try {
+            window.__tokenVaultLauncherOpenRequested = false;
+        } catch (_) { }
+
+        if (!tokenVaultRailOpen) {
+            openTokenVaultRail();
+        } else {
+            renderTokenVaultRail();
+        }
+        return true;
+    }
+
+    function clearActiveInstallState() {
+        window.installUrl = '';
+
+        const installBtn = document.getElementById('installBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const installUrlBox = document.getElementById('installUrlBox');
+        const installUrlDisplay = document.getElementById('installUrlDisplay');
+
+        if (installBtn) installBtn.disabled = true;
+        if (copyBtn) copyBtn.disabled = true;
+        if (installUrlDisplay) installUrlDisplay.value = '';
+        if (installUrlBox) installUrlBox.classList.remove('show');
+    }
+
+    function setConfigDirty(nextDirty) {
+        const isDirty = nextDirty === true;
+        if (isDirty) {
+            hideActiveInstallState();
+        }
+        configDirty = isDirty;
+    }
+
+    function persistCurrentDraftToCache() {
+        try {
+            const previousCachedAt = localStorage.getItem(CACHE_EXPIRY_KEY);
+            saveConfigToCache(currentConfig, '');
+            if (previousCachedAt) {
+                localStorage.setItem(CACHE_EXPIRY_KEY, previousCachedAt);
+            } else {
+                localStorage.removeItem(CACHE_EXPIRY_KEY);
+            }
+        } catch (_) {
+            // no-op
+        }
+    }
+
+    function syncConfigUrlForToken(token = '') {
+        try {
+            const nextUrl = new URL(window.location.href);
+            if (isValidSessionToken(token)) {
+                nextUrl.searchParams.set('config', token);
+            } else {
+                nextUrl.searchParams.delete('config');
+            }
+            const search = nextUrl.searchParams.toString();
+            const normalized = `${nextUrl.pathname}${search ? `?${search}` : ''}${nextUrl.hash || ''}`;
+            window.history.replaceState({}, '', normalized);
+        } catch (_) {
+            // no-op
+        }
+    }
+
+    function syncDraftConfigUrl() {
+        syncConfigUrlForToken('');
+    }
+
+    function normalizeCurrentConfigForPage() {
+        if (!currentConfig) {
+            currentConfig = getDefaultConfig();
+        }
+        currentConfig.betaModeEnabled = currentConfig.betaModeEnabled === true;
+        ensureProvidersInState();
+        ensureProviderParametersInState();
+        ensureAutoSubsDefaults();
+        const multiProviderToggleRequested = currentConfig.multiProviderEnabled === true;
+        currentConfig.multiProviderEnabled = multiProviderToggleRequested;
+        const requestedMainProvider = currentConfig.mainProvider || 'gemini';
+        const requestedSecondaryProvider = currentConfig.secondaryProvider || '';
+        currentConfig.mainProvider = String(requestedMainProvider || 'gemini').toLowerCase();
+        currentConfig.secondaryProvider = String(requestedSecondaryProvider || '').toLowerCase();
+        currentConfig.secondaryProviderEnabled = multiProviderToggleRequested && currentConfig.secondaryProviderEnabled === true;
+        if (currentConfig.secondaryProviderEnabled && (!currentConfig.secondaryProvider || currentConfig.secondaryProvider === currentConfig.mainProvider)) {
+            currentConfig.secondaryProviderEnabled = false;
+        }
+
+        currentConfig.sourceLanguages = normalizeLanguageCodes(currentConfig.sourceLanguages || []);
+        currentConfig.targetLanguages = normalizeLanguageCodes(currentConfig.targetLanguages || []);
+        currentConfig.noTranslationLanguages = normalizeLanguageCodes(currentConfig.noTranslationLanguages || []);
+        currentConfig.learnTargetLanguages = normalizeLanguageCodes(currentConfig.learnTargetLanguages || []);
+        currentConfig.learnPlacement = 'top';
+        currentConfig.mobileMode = currentConfig.mobileMode === true;
+        currentConfig.excludeHearingImpairedSubtitles = currentConfig.excludeHearingImpairedSubtitles === true;
+        enforceLanguageLimits();
+        updateLanguageLimitCopy();
+    }
+
+    function applyCurrentConfigToPage(options = {}) {
+        normalizeCurrentConfigForPage();
+        const previousSuppressDirtyTracking = suppressDirtyTracking;
+        suppressDirtyTracking = true;
+        try {
+            loadConfigToForm();
+        } finally {
+            suppressDirtyTracking = previousSuppressDirtyTracking;
+        }
+
+        if (options.syncLocale !== false) {
+            initLocale(currentConfig.uiLanguage || locale.lang || 'en');
+        }
+        updateToolboxLauncherVisibility();
+        updateQuickStats();
+        updateTokenVaultButtonState();
+        if (options.selectInstallUrl === true) {
+            revealActiveInstallState(getActiveConfigRef(), { selectDisplay: true });
+        } else {
+            reconcileActiveInstallState();
+        }
+        requestAnimationFrame(() => {
+            positionResetBar();
+            syncFloatingBottomSafeZone();
+        });
+    }
+
+    function createFreshTokenDraft() {
+        const activeToken = getActiveConfigRef();
+        const alreadyDraft = !activeToken && activeSessionContext.provenance === 'draft';
+        const vaultIsFull = getTokenVaultStore().entries.length >= TOKEN_VAULT_MAX_ENTRIES;
+
+        closeTokenVaultRail();
+        if (alreadyDraft) {
+            showAlert('This page is already a fresh draft. Save to mint a new token.', 'info');
+            return;
+        }
+
+        currentConfig = buildFreshDraftConfig({
+            defaultConfig: getDefaultConfig(),
+            disableSubtitleProviders: true
+        });
+
+        try { localStorage.removeItem(TOKEN_KEY); } catch (_) { }
+
+        tokenVaultPendingSwitch = '';
+        tokenVaultFocusedToken = '';
+        resetTokenVaultTitleEditor();
+        setActiveSessionContext({
+            token: '',
+            provenance: 'draft',
+            sourceLabel: 'Fresh draft',
+            message: vaultIsFull
+                ? 'This page is detached from the live token. Saving will ask before replacing the oldest saved vault token.'
+                : 'This page is detached from the live token. Save to mint a new one.',
+            session: null,
+            recoveredFromToken: activeToken || '',
+            regenerated: false
+        });
+        syncDraftConfigUrl();
+        persistCurrentDraftToCache();
+        applyCurrentConfigToPage({ syncLocale: false });
+        setConfigDirty(true);
+        renderTokenVault();
+        showAlert(
+            vaultIsFull
+                ? 'Fresh draft ready. Saving will ask before replacing the oldest local vault token.'
+                : 'Fresh draft ready. Save this page to create a new token.',
+            'success'
+        );
+    }
+
+    async function navigateToVaultToken(token) {
+        if (!isValidSessionToken(token)) return false;
+        closeTokenVaultRail();
+        tokenVaultPendingSwitch = '';
+        resetTokenVaultTitleEditor();
+
+        const applyTokenLoadFailure = (failureType, alertMessage, options = {}) => {
+            const plan = resolveSessionLoadFailurePlan({
+                loadedFromUrl: true,
+                hasCachedFallback: false,
+                sessionToken: token,
+                failureType
+            });
+
+            if (plan.clearStoredToken === true) {
+                try { localStorage.removeItem(TOKEN_KEY); } catch (_) { }
+            }
+
+            currentConfig = options.defaultConfig || getDefaultConfig();
+            isFirstRun = false;
+
+            const nextContext = {
+                ...plan.context,
+                ...(options.contextOverrides || {}),
+                session: null
+            };
+            if (!plan.keepActiveToken) {
+                nextContext.detachedAt = Date.now();
+            }
+
+            setActiveSessionContext(nextContext);
+            saveConfigToCache(currentConfig, nextContext.token || '');
+            syncConfigUrlForToken(nextContext.token || '');
+            closeTokenVaultCreator();
+            closeTokenVault();
+            applyCurrentConfigToPage();
+            setConfigDirty(false);
+            if (alertMessage) {
+                showAlert(alertMessage, 'warning');
+            }
+        };
+
+        showLoading(true);
+        try {
+            const cacheBuster = `_cb=${Date.now()}`;
+            const response = await fetchWithTimeout(`/api/get-session/${encodeURIComponent(token)}?${cacheBuster}&autoRegenerate=true`, {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache'
+                }
+            }, 10000);
+
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => '');
+                const reason = errorText && errorText.trim() ? ` (${errorText.trim()})` : '';
+                applyTokenLoadFailure(
+                    response.status === 404 || response.status === 410 ? 'missing' : 'http',
+                    response.status === 404 || response.status === 410
+                        ? `That token is no longer available${reason}. Save to mint a replacement token.`
+                        : `Failed to load the selected token${reason}. Using a fresh draft for now.`,
+                    {
+                        contextOverrides: {
+                            message: response.status === 404 || response.status === 410
+                                ? 'The selected token no longer exists on the server. You are editing a recovered draft until you save again.'
+                                : 'The selected token could not be loaded. You are editing a fresh draft until you save again.'
+                        }
+                    }
+                );
+                return false;
+            }
+
+            const data = await response.json();
+            if (!data || !data.config) {
+                applyTokenLoadFailure(
+                    'invalid-data',
+                    'The selected token returned invalid data. Using a fresh draft for now.',
+                    {
+                        contextOverrides: {
+                            message: 'The selected token returned invalid data. You are editing a fresh draft until you save again.'
+                        }
+                    }
+                );
+                return false;
+            }
+
+            currentConfig = data.config;
+            isFirstRun = false;
+            if (data.regenerated && data.token && data.token !== token) {
+                applyTokenLoadFailure(
+                    'regenerated',
+                    tConfig('config.alerts.sessionLost', {}, 'Config session was lost. Please reconfigure and save to create a new session.'),
+                    {
+                        defaultConfig: data.config,
+                        contextOverrides: {
+                            message: 'The selected token was missing or corrupted. You are editing a fresh draft until you save again.'
+                        }
+                    }
+                );
+                return false;
+            }
+
+            try { localStorage.setItem(TOKEN_KEY, token); } catch (_) { }
+            saveConfigToCache(currentConfig, token);
+            syncTokenVaultEntryWithBrief(token, data?.session || null, {
+                lastOpenedAt: Date.now(),
+                makeActive: true
+            }, { ifExistsOnly: true });
+            setActiveSessionContext({
+                token,
+                provenance: 'vault',
+                sourceLabel: 'Loaded from Token Vault',
+                message: 'This page is using the profile selected in Token Vault.',
+                session: data?.session || null,
+                recoveredFromToken: '',
+                regenerated: false
+            });
+            syncConfigUrlForToken(token);
+            closeTokenVaultCreator();
+            closeTokenVault();
+            applyCurrentConfigToPage({ selectInstallUrl: true });
+            setConfigDirty(false);
+            Promise.resolve().then(() => refreshTokenVaultData({ background: true })).catch(() => { });
+            return true;
+        } catch (error) {
+            console.warn('[Config] Failed to switch token:', error);
+            applyTokenLoadFailure(
+                'network',
+                'Failed to load the selected token. Using a fresh draft for now.',
+                {
+                    contextOverrides: {
+                        message: 'The selected token could not be loaded. You are editing a fresh draft until you save again.'
+                    }
+                }
+            );
+            return false;
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    async function requestVaultTokenSwitch(targetToken) {
+        const switchPlan = resolveTokenVaultSwitchPlan({
+            targetToken,
+            activeToken: getActiveConfigRef(),
+            isDirty: configDirty
+        });
+        if (switchPlan.action === 'noop') return false;
+        if (switchPlan.action === 'confirm-switch') {
+            tokenVaultPendingSwitch = switchPlan.targetToken;
+            tokenVaultFocusedToken = switchPlan.targetToken;
+            openTokenVault(switchPlan.targetToken);
+            return false;
+        }
+        return navigateToVaultToken(switchPlan.targetToken);
+    }
+
+    function buildTokenVaultExportEntry(token, store = getTokenVaultStore()) {
+        const exportEntry = buildCurrentTokenExportEntry({
+            targetToken: token,
+            entries: store.entries,
+            briefMap: Object.fromEntries(tokenVaultBriefMap.entries()),
+            activeSessionToken: activeSessionContext.token,
+            activeSession: activeSessionContext.session,
+            now: Date.now()
+        });
+        if (!exportEntry) return null;
+        return {
+            ...exportEntry,
+            label: normalizeVaultLabel(token, exportEntry.label || '')
+        };
+    }
+
+    async function exportTokenVault(mode = 'all', tokenOverride = '') {
+        const targetToken = extractSessionTokenFromInput(tokenOverride) || getTokenVaultManagerToken() || getActiveConfigRef();
+        const store = getTokenVaultStore();
+        const exportEntry = buildTokenVaultExportEntry(targetToken, store);
+        const entries = mode === 'current'
+            ? (exportEntry ? [exportEntry] : [])
+            : store.entries;
+
+        if (mode === 'current' && entries.length === 0) {
+            showAlert('No token is loaded on this page yet.', 'warning');
+            return false;
+        }
+
+        const payload = {
+            version: TOKEN_VAULT_EXPORT_VERSION,
+            exportedAt: Date.now(),
+            activeToken: isValidSessionToken(targetToken) ? targetToken : '',
+            entries
+        };
+
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = mode === 'current' && isValidSessionToken(targetToken)
+            ? `submaker-token-${targetToken.slice(-6)}.json`
+            : `submaker-token-vault-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        showAlert(mode === 'current' ? 'This token was exported.' : 'Token vault exported.', 'success');
+        return true;
+    }
+
+    async function duplicateVaultToken(sourceToken, options = {}) {
+        if (!isValidSessionToken(sourceToken)) return false;
+
+        const approvedVictimTokens = Array.isArray(options.approvedVictimTokens)
+            ? options.approvedVictimTokens.filter(isValidSessionToken)
+            : [];
+        const sourceView = buildTokenVaultViewModel(sourceToken);
+
+        if (approvedVictimTokens.length === 0) {
+            const overflowVictims = getDraftOverflowVictims();
+            if (overflowVictims.length > 0) {
+                const victimNoun = overflowVictims.length === 1 ? 'entry' : 'entries';
+                closeTokenVaultRail();
+                openTokenVaultOverridePrompt({
+                    eyebrow: `${TOKEN_VAULT_MAX_ENTRIES} saved tokens max`,
+                    title: 'Duplicating this profile needs one vault slot',
+                    message: `Creating a copy of ${sourceView.label} will purge the oldest local vault ${victimNoun} below.`,
+                    detail: 'Only the local browser vault changes. The duplicated token will be created on the server and loaded on this page.',
+                    confirmLabel: 'Duplicate and replace',
+                    victims: overflowVictims,
+                    onConfirm: async () => {
+                        await duplicateVaultToken(sourceToken, {
+                            approvedVictimTokens: overflowVictims.map(entry => entry.token)
+                        });
+                    }
+                });
+                return false;
+            }
+        }
+
+        closeTokenVaultRail();
+        showLoading(true);
+
+        try {
+            const cacheBuster = `_cb=${Date.now()}`;
+            const sourceResponse = await fetchWithTimeout(`/api/get-session/${encodeURIComponent(sourceToken)}?${cacheBuster}`, {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache'
+                }
+            }, 10000);
+
+            if (!sourceResponse.ok) {
+                const errorText = await sourceResponse.text().catch(() => '');
+                const reason = errorText && errorText.trim() ? ` (${errorText.trim()})` : '';
+                throw new Error(
+                    sourceResponse.status === 404 || sourceResponse.status === 410
+                        ? `That profile is no longer available${reason}.`
+                        : `Failed to load the selected profile${reason}.`
+                );
+            }
+
+            const sourceData = await sourceResponse.json();
+            if (!sourceData || !sourceData.config) {
+                throw new Error('The selected profile returned invalid data.');
+            }
+
+            const createResponse = await fetchWithTimeout('/api/create-session', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(sourceData.config)
+            }, 10000);
+            const createData = await createResponse.json().catch(() => ({}));
+
+            if (!createResponse.ok) {
+                throw new Error(createData?.error || `Failed to create the duplicated token (${createResponse.status})`);
+            }
+
+            const duplicatedToken = extractSessionTokenFromInput(createData?.token);
+            if (!duplicatedToken) {
+                throw new Error('The duplicated token response was invalid.');
+            }
+
+            const store = getTokenVaultStore();
+            const sourceEntry = getVaultEntryForToken(sourceToken, store);
+            const duplicateLabel = buildDuplicateVaultLabel(sourceToken, sourceEntry?.label || '', { store });
+            const duplicatedEntry = upsertTokenVaultEntry(duplicatedToken, {
+                label: duplicateLabel,
+                lastOpenedAt: Date.now(),
+                lastSavedAt: Date.now(),
+                lastKnownCreatedAt: Number(createData?.session?.createdAt) || 0,
+                lastKnownUpdatedAt: Number(createData?.session?.updatedAt) || Date.now(),
+                lastKnownLastAccessedAt: Number(createData?.session?.lastAccessedAt) || 0,
+                lastKnownDisabled: createData?.session?.disabled === true
+            }, {
+                activeToken: duplicatedToken,
+                allowVictimTokens: approvedVictimTokens
+            });
+
+            if (!duplicatedEntry) {
+                throw new Error('Failed to save the duplicated token into the local vault.');
+            }
+
+            renderTokenVault();
+
+            const switched = await navigateToVaultToken(duplicatedToken);
+            if (!switched) {
+                showAlert(`Duplicated ${sourceView.label}, but the new token could not be loaded automatically.`, 'warning');
+                return false;
+            }
+
+            showAlert(`${sourceView.label} duplicated and loaded on this page.`, 'success');
+            return true;
+        } catch (error) {
+            showAlert(error.message || 'Failed to duplicate the selected profile.', 'error');
+            return false;
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    function buildImportEntriesFromPayload(payload) {
+        if (configPageState && typeof configPageState.buildTokenVaultImportEntries === 'function') {
+            return configPageState.buildTokenVaultImportEntries(payload, {
+                extractToken: extractSessionTokenFromInput,
+                normalizeLabel: normalizeVaultLabel,
+                now: Date.now()
+            });
+        }
+
+        const importedEntries = Array.isArray(payload)
+            ? payload
+            : (Array.isArray(payload?.entries)
+                ? payload.entries
+                : [payload?.entry, payload?.profile, payload].filter(candidate => candidate && typeof candidate === 'object'));
+        const now = Date.now();
+        const prepared = [];
+        const pushPreparedEntry = (entry) => {
+            const token = extractSessionTokenFromInput(entry?.token || entry);
+            if (!token) return;
+            prepared.push({
+                token,
+                label: normalizeVaultLabel(token, entry?.label || ''),
+                addedAt: Number(entry?.addedAt) || now,
+                lastOpenedAt: Number(entry?.lastOpenedAt) || 0,
+                lastSavedAt: Number(entry?.lastSavedAt) || Number(entry?.lastKnownUpdatedAt) || now,
+                lastKnownCreatedAt: Number(entry?.lastKnownCreatedAt) || 0,
+                lastKnownUpdatedAt: Number(entry?.lastKnownUpdatedAt) || 0,
+                lastKnownLastAccessedAt: Number(entry?.lastKnownLastAccessedAt) || 0,
+                lastKnownDisabled: entry?.lastKnownDisabled === true
+            });
+        };
+        importedEntries.forEach(pushPreparedEntry);
+        if (prepared.length === 0 && !Array.isArray(payload)) {
+            const activeToken = extractSessionTokenFromInput(payload?.activeToken);
+            if (activeToken) {
+                pushPreparedEntry({ token: activeToken });
+            }
+        }
+        return prepared;
+    }
+
+    async function importTokenFromText(raw, options = {}) {
+        const token = extractSessionTokenFromInput(raw);
+        if (!token) {
+            showAlert('Paste a raw token, manifest URL, or configure URL first.', 'warning');
+            return false;
+        }
+        const onApplied = typeof options.onApplied === 'function' ? options.onApplied : null;
+        const plan = prepareTokenVaultEntryUpsert(token, {
+            addedAt: Date.now(),
+            lastOpenedAt: Date.now(),
+            lastSavedAt: Date.now()
+        });
+        return applyVaultEntryPlanWithOverflowPrompt(
+            plan,
+            {
+                eyebrow: `${TOKEN_VAULT_MAX_ENTRIES} saved tokens max`,
+                title: 'Importing this token needs one vault slot',
+                message: 'Your browser vault is full. Importing this token will purge the oldest saved entry below.',
+                detail: 'Only the local browser vault changes.',
+                confirmLabel: 'Import and replace'
+            },
+            { activeToken: getActiveConfigRef() },
+            async () => {
+                await refreshTokenVaultData(true);
+                scheduleTokenVaultCreatorPreview('', { immediate: true });
+                showAlert(`Imported ${maskToken(token)} into your local vault.`, 'success');
+                if (onApplied) {
+                    await onApplied(token);
+                }
+            }
+        );
+    }
+
+    async function handleTokenVaultBackupFile(file, options = {}) {
+        if (!file) return;
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const preparedEntries = buildImportEntriesFromPayload(parsed);
+        if (preparedEntries.length === 0) {
+            showAlert('No valid profiles were found in that JSON file.', 'warning');
+            return false;
+        }
+        const onApplied = typeof options.onApplied === 'function' ? options.onApplied : null;
+        const plan = prepareTokenVaultMergePlan(preparedEntries);
+        return applyVaultMergePlanWithOverflowPrompt(
+            plan,
+            {
+                eyebrow: `${TOKEN_VAULT_MAX_ENTRIES} saved tokens max`,
+                title: 'Import will replace older vault entries',
+                message: `This file adds ${preparedEntries.length} profile${preparedEntries.length === 1 ? '' : 's'}. Keeping them will purge the oldest local vault entr${preparedEntries.length === 1 ? 'y' : 'ies'} below.`,
+                detail: 'Only the local browser vault changes.',
+                confirmLabel: 'Import and replace'
+            },
+            { activeToken: getActiveConfigRef() },
+            async (importedCount) => {
+                await refreshTokenVaultData(true);
+                showAlert(`Imported ${importedCount} profile${importedCount === 1 ? '' : 's'} into your local vault.`, 'success');
+                if (onApplied) {
+                    await onApplied(importedCount);
+                }
+            }
+        );
+    }
+
+    function promptForgetTokenFromBrowser(token) {
+        if (!isValidSessionToken(token)) return;
+        const view = buildTokenVaultViewModel(token);
+        if (!view.entry) return;
+
+        const detailParts = [
+            'This only forgets the token in the local browser vault.'
+        ];
+        if (view.isActiveToken) {
+            detailParts.push('The page stays connected until you switch away or reload.');
+        }
+        if (view.brief?.exists === false) {
+            detailParts.push('The remote session is already gone, so this just clears the local reference.');
+        } else {
+            detailParts.push('The server session, manifest URL, and remote routes keep working.');
+        }
+
+        openTokenVaultOverridePrompt({
+            tone: 'danger',
+            emblem: '!',
+            eyebrow: 'Forget this token',
+            title: `Forget ${view.label}?`,
+            message: 'SubMaker will forget this token in the current browser immediately.',
+            detail: detailParts.join(' '),
+            victims: [view.entry],
+            cancelLabel: 'Keep token',
+            confirmLabel: 'Forget token',
+            confirmClass: 'token-vault-action-danger',
+            onConfirm: async () => {
+                removeTokenVaultEntry(token);
+                tokenVaultBriefMap.delete(token);
+                tokenVaultBriefFetchCache.delete(token);
+                tokenVaultBriefFetchPromises.delete(token);
+                renderTokenVaultRail();
+                closeTokenVault();
+                showAlert(`${view.label} forgotten from this browser.`, 'success');
+            }
+        });
+    }
+
+    async function validateVaultToken(token) {
+        if (!isValidSessionToken(token)) return;
+        const response = await fetch(`/api/validate-session/${encodeURIComponent(token)}`, { cache: 'no-store' });
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data?.error || `Validation failed (${response.status})`);
+        }
+        const data = await response.json();
+        const status = data?.session?.disabled === true ? 'disabled' : 'active';
+        showAlert(`Token validated. Status: ${status}.`, 'success');
+    }
+
+    async function setActiveTokenDisabledState(token, disabled) {
+        if (!isValidSessionToken(token)) return;
+        const response = await fetch(`/api/session-state/${encodeURIComponent(token)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ disabled })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data?.error || `Failed to update token state (${response.status})`);
+        }
+        const brief = data?.session || null;
+        tokenVaultBriefMap.set(token, brief);
+        rememberTokenVaultSingleBrief(token, brief);
+        syncTokenVaultEntryWithBrief(token, brief, { lastOpenedAt: Date.now(), makeActive: token === getActiveConfigRef() }, { ifExistsOnly: true });
+        if (token === getActiveConfigRef()) {
+            setActiveSessionContext({ token, session: brief });
+            updateToolboxLauncherVisibility(token);
+        } else {
+            renderTokenVault();
+        }
+        showAlert(disabled ? 'Token disabled. Toolbox and addon routes are now blocked.' : 'Token enabled again.', disabled ? 'warning' : 'success');
+    }
+
+    async function handleTokenVaultAction(actionEl) {
+        const action = actionEl?.dataset?.vaultAction;
+        if (!action || actionEl.disabled) return;
+
+        const activeToken = getActiveConfigRef();
+        const explicitToken = extractSessionTokenFromInput(actionEl.dataset?.token);
+        const draftAction = actionEl.dataset?.draft === 'true';
+        const focusedToken = getTokenVaultManagerToken();
+        const actionToken = explicitToken || (draftAction ? '' : focusedToken || activeToken);
+        const menuKey = String(actionEl.dataset?.menuKey || '').trim();
+
+        if (action !== 'toggle-rail-menu' && tokenVaultRailMenuKey) {
+            closeTokenVaultRailMenu();
+        }
+
+        switch (action) {
+            case 'open-creator':
+                openTokenVaultCreator();
+                return;
+            case 'toggle-rail-menu':
+                if (!menuKey) return;
+                toggleTokenVaultRailMenu(menuKey);
+                return;
+            case 'create-draft':
+            case 'create-draft-fork':
+                closeTokenVaultCreator();
+                createFreshTokenDraft();
+                return;
+            case 'manage-token':
+                openTokenVault(explicitToken);
+                return;
+            case 'close-creator':
+                closeTokenVaultCreator();
+                return;
+            case 'reveal-token':
+                tokenVaultReveal = !tokenVaultReveal;
+                renderTokenVault();
+                return;
+            case 'copy-token':
+                await copyTextToClipboard(actionToken, 'Token copied to clipboard.');
+                return;
+            case 'copy-manifest':
+                await copyTextToClipboard(buildInstallUrlForToken(actionToken), 'Manifest URL copied to clipboard.');
+                return;
+            case 'copy-config-url':
+                await copyTextToClipboard(buildConfigUrlForToken(actionToken), 'Config URL copied to clipboard.');
+                return;
+            case 'install-addon': {
+                const installUrl = buildInstallUrlForToken(actionToken);
+                if (!installUrl) return;
+                window.location.href = installUrl.replace(/^https?:\/\//i, 'stremio://');
+                showAlert('Opening Stremio...', 'info');
+                return;
+            }
+            case 'open-toolbox': {
+                const url = buildToolboxUrl(actionToken);
+                if (url) window.location.href = url;
+                return;
+            }
+            case 'open-history': {
+                const url = buildHistoryUrlForToken(actionToken);
+                if (url) window.location.href = url;
+                return;
+            }
+            case 'validate-active':
+            case 'validate-token':
+                await validateVaultToken(actionToken);
+                return;
+            case 'toggle-state': {
+                const currentBrief = tokenVaultBriefMap.get(actionToken);
+                const currentEntry = getVaultEntryForToken(actionToken);
+                const disabled = currentBrief?.disabled === true || currentEntry?.lastKnownDisabled === true;
+                await setActiveTokenDisabledState(actionToken, !disabled);
+                return;
+            }
+            case 'edit-title': {
+                if (!isValidSessionToken(actionToken)) return;
+                const currentEntry = getVaultEntryForToken(actionToken);
+                const store = getTokenVaultStore();
+                const currentLabel = normalizeVaultLabel(actionToken, currentEntry?.label || '');
+                const initialValue = currentLabel || deriveVaultLabel(actionToken, currentEntry?.label || '', { store });
+                openTokenVaultTitleEditor(actionToken, initialValue);
+                return;
+            }
+            case 'save-label': {
+                saveTokenVaultTitle(actionToken, activeToken);
+                return;
+            }
+            case 'switch-token': {
+                await requestVaultTokenSwitch(explicitToken);
+                return;
+            }
+            case 'switch-save': {
+                const targetToken = tokenVaultPendingSwitch;
+                if (!targetToken) return;
+                await saveCurrentConfig({
+                    afterSuccess: async () => {
+                        await navigateToVaultToken(targetToken);
+                    }
+                });
+                return;
+            }
+            case 'switch-discard':
+                if (tokenVaultPendingSwitch) {
+                    await navigateToVaultToken(tokenVaultPendingSwitch);
+                }
+                return;
+            case 'switch-cancel':
+                tokenVaultPendingSwitch = '';
+                renderTokenVault();
+                return;
+            case 'forget-token':
+                if (!isValidSessionToken(actionToken)) return;
+                promptForgetTokenFromBrowser(actionToken);
+                return;
+            case 'duplicate-token':
+                await duplicateVaultToken(actionToken);
+                return;
+            case 'export-current':
+                await exportTokenVault('current', actionToken);
+                return;
+            case 'export-all':
+                await exportTokenVault('all');
+                return;
+            case 'import-paste': {
+                const input = document.getElementById('tokenVaultCreateInput');
+                await importTokenFromText(input?.value || '', {
+                    onApplied: async (token) => {
+                        if (document.getElementById('tokenVaultCreateModal')?.classList.contains('show')) {
+                            closeTokenVaultCreator();
+                        }
+                        await requestVaultTokenSwitch(token);
+                    }
+                });
+                return;
+            }
+            case 'paste-clipboard':
+                await pasteTokenVaultCreatorFromClipboard();
+                return;
+            case 'import-file':
+                {
+                    const importInput = document.getElementById('tokenVaultImportFile');
+                    if (importInput) {
+                        importInput.value = '';
+                        importInput.click();
+                    }
+                }
+                return;
+            case 'close-vault':
+                closeTokenVault();
+                return;
+            default:
+                return;
+        }
+    }
 
     // Initialize
     if (document.readyState !== 'loading') {
@@ -1195,80 +4279,205 @@ Translate to {target_language}.`;
         if (configForm) {
             configForm.setAttribute('novalidate', 'novalidate');
         }
+        setActiveSessionContext({
+            token: '',
+            provenance: 'draft',
+            sourceLabel: 'Fresh draft',
+            message: 'No token yet. Your first save will mint one.',
+            session: null,
+            recoveredFromToken: '',
+            regenerated: false
+        });
 
-        const params = new URLSearchParams(window.location.search);
-        const rawConfigParam = params.get('config');
-        const urlSessionToken = isValidSessionToken(rawConfigParam) ? rawConfigParam : null;
-        const hasExplicitUrlConfig = !!urlSessionToken;
+        const urlSessionToken = getUrlSessionToken() || null;
         const urlConfig = parseConfigFromUrl();
 
         // Identify which session token should scope any cached config usage
-        const storedToken = localStorage.getItem(TOKEN_KEY);
-        const persistentSessionToken = isValidSessionToken(storedToken) ? storedToken : null;
+        const persistentSessionToken = getStoredSessionToken() || null;
         const intendedToken = urlSessionToken || persistentSessionToken || null;
 
-        // Priority: cached config (for this token) > URL config > default config
-        // This ensures browser cache is respected unless explicitly shared via URL while
-        // preventing cached configs from leaking across different session tokens.
-        // NOTE: loadConfigFromCache is now async due to version validation
+        // Priority: cached config (for this token) > live session fetch (URL token or stored token) > default config.
         const cachedConfig = await loadConfigFromCache(intendedToken);
-        // Determine if this is the user's first config run
-        isFirstRun = !cachedConfig && !hasExplicitUrlConfig;
+        const loadPlan = getInitialConfigLoadPlan({
+            urlSessionToken: urlSessionToken || '',
+            persistentSessionToken: persistentSessionToken || '',
+            hasCachedConfig: !!cachedConfig
+        });
+        isFirstRun = loadPlan.isFirstRun === true;
 
-        if (cachedConfig && !hasExplicitUrlConfig) {
+        if (loadPlan.shouldUseCachedConfig) {
             // Use cached config - this is the most common case
             currentConfig = cachedConfig;
-        } else if (hasExplicitUrlConfig) {
-            // URL has explicit config - session token provided
-            currentConfig = urlConfig;
+            if (isValidSessionToken(loadPlan.intendedToken)) {
+                setActiveSessionContext({
+                    token: loadPlan.intendedToken,
+                    provenance: 'local',
+                    sourceLabel: 'Loaded from this browser',
+                    message: 'Using the token stored locally on this device.',
+                    session: null,
+                    recoveredFromToken: '',
+                    regenerated: false
+                });
+            }
+        } else if (loadPlan.shouldFetchSession) {
+            const sessionToken = loadPlan.fetchToken;
+            const loadedFromUrl = loadPlan.hasExplicitUrlConfig === true;
+            const hasCachedFallback = !!cachedConfig;
+            const fallbackConfig = cachedConfig || urlConfig;
+            const fallbackCopy = hasCachedFallback ? 'Using the last local copy for now.' : 'Using a fresh draft for now.';
+            currentConfig = fallbackConfig;
+            syncTokenVaultEntryWithBrief(sessionToken, null, { lastOpenedAt: Date.now(), makeActive: true }, { ifExistsOnly: true });
 
-            // New: If URL param looks like a session token, fetch stored config from server
-            if (isValidSessionToken(rawConfigParam)) {
-                try {
-                    // CRITICAL: Add cache-busting timestamp to prevent cross-user config contamination
-                    // Without this, aggressive browsers/proxies might cache and serve wrong user's config
-                    const cacheBuster = `_cb=${Date.now()}`;
-                    // Request with autoRegenerate=true to get fresh config if session is missing/corrupted
-                    const resp = await fetch(`/api/get-session/${rawConfigParam}?${cacheBuster}&autoRegenerate=true`, {
-                        cache: 'no-store',
-                        headers: {
-                            'Cache-Control': 'no-cache, no-store, must-revalidate',
-                            'Pragma': 'no-cache'
-                        }
-                    });
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        if (data && data.config) {
-                            currentConfig = data.config;
+            const applySessionLoadFailurePlan = (failureType, alertMessage, options = {}) => {
+                const plan = resolveSessionLoadFailurePlan({
+                    loadedFromUrl,
+                    hasCachedFallback,
+                    sessionToken,
+                    failureType
+                });
 
-                            // Check if the server regenerated a fresh token due to corruption/missing session
-                            if (data.regenerated && data.token && data.token !== rawConfigParam) {
-                                console.warn('[Config] Server regenerated config:', data.reason);
-                                console.log('[Config] Regenerated token available:', data.token);
+                if (plan.clearStoredToken === true) {
+                    try { localStorage.removeItem(TOKEN_KEY); } catch (_) { }
+                }
 
-                                // DO NOT store the regenerated token in localStorage yet!
-                                // The user hasn't saved, so storing it now would cause a mismatch between
-                                // what's installed in Stremio (old token) and what gets saved (new token).
-                                // The save operation will store the appropriate token when user clicks Save.
+                if (plan.configSource === 'cache' && hasCachedFallback) {
+                    currentConfig = cachedConfig;
+                } else {
+                    currentConfig = options.defaultConfig || getDefaultConfig();
+                }
 
-                                // Clear the old invalid token from localStorage to force new session on save
-                                try { localStorage.removeItem(TOKEN_KEY); } catch (_) { }
+                const nextContext = {
+                    ...plan.context,
+                    ...(options.contextOverrides || {}),
+                    session: null
+                };
+                if (!plan.keepActiveToken) {
+                    nextContext.detachedAt = Date.now();
+                }
+                setActiveSessionContext(nextContext);
 
-                                // Show a warning to the user
-                                showAlert(tConfig('config.alerts.sessionLost', {}, 'Config session was lost. Please reconfigure and save to create a new session.'), 'warning', 'config.alerts.sessionLost', {});
-                            } else {
-                                // Normal path - store the original token
-                                try { localStorage.setItem(TOKEN_KEY, rawConfigParam); } catch (_) { }
+                if (alertMessage) {
+                    showAlert(alertMessage, 'warning');
+                }
+            };
+
+            try {
+                const cacheBuster = `_cb=${Date.now()}`;
+                const resp = await fetchWithTimeout(`/api/get-session/${sessionToken}?${cacheBuster}&autoRegenerate=true`, {
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                    }
+                }, 10000);
+                if (!resp.ok) {
+                    const errorText = await resp.text().catch(() => '');
+                    const reason = errorText && errorText.trim() ? ` (${errorText.trim()})` : '';
+                    if (resp.status === 404 || resp.status === 410) {
+                        applySessionLoadFailurePlan(
+                            'missing',
+                            loadedFromUrl
+                                ? `That shared token is no longer available${reason}. Save to mint a replacement token.`
+                                : `Your saved token is no longer available${reason}. Save to mint a replacement token.`,
+                            {
+                                contextOverrides: {
+                                    message: loadedFromUrl
+                                        ? 'The requested token no longer exists on the server. You are editing a recovered draft until you save again.'
+                                        : 'The saved token no longer exists on the server. You are editing a recovered draft until you save again.'
+                                }
                             }
+                        );
+                    } else {
+                        applySessionLoadFailurePlan(
+                            'http',
+                            loadedFromUrl
+                                ? `Failed to load the shared token${reason}. ${fallbackCopy}`
+                                : `Failed to refresh the saved token${reason}. ${fallbackCopy}`,
+                            {
+                                contextOverrides: {
+                                    message: loadedFromUrl
+                                        ? 'This page is using the last local copy for the shared token until the server becomes reachable again.'
+                                        : 'This page is using the last local copy for your saved token until the server becomes reachable again.'
+                                }
+                            }
+                        );
+                    }
+                    return;
+                }
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (!data || !data.config) {
+                        applySessionLoadFailurePlan(
+                            'invalid-data',
+                            loadedFromUrl
+                                ? `The shared token returned invalid data. ${fallbackCopy}`
+                                : `The saved token returned invalid data. ${fallbackCopy}`,
+                            {
+                                contextOverrides: {
+                                    message: loadedFromUrl
+                                        ? 'This page is using the last local copy for the shared token because the server returned invalid data.'
+                                        : 'This page is using the last local copy for your saved token because the server returned invalid data.'
+                                }
+                            }
+                        );
+                        return;
+                    }
+
+                    currentConfig = data.config;
+
+                    if (data.regenerated && data.token && data.token !== sessionToken) {
+                        console.warn('[Config] Server regenerated config:', data.reason);
+                        console.log('[Config] Regenerated token available:', data.token);
+
+                        applySessionLoadFailurePlan(
+                            'regenerated',
+                            tConfig('config.alerts.sessionLost', {}, 'Config session was lost. Please reconfigure and save to create a new session.'),
+                            {
+                                defaultConfig: data.config,
+                                contextOverrides: {
+                                    message: hasCachedFallback
+                                        ? 'The requested token was missing or corrupted. You are editing the last local copy until you save again.'
+                                        : 'The requested token was missing or corrupted. You are editing a fresh draft until you save again.'
+                                }
+                            }
+                        );
+                    } else {
+                        try { localStorage.setItem(TOKEN_KEY, sessionToken); } catch (_) { }
+                        setActiveSessionContext({
+                            token: sessionToken,
+                            provenance: loadedFromUrl ? 'url' : 'local',
+                            sourceLabel: loadedFromUrl ? 'Loaded from shared URL' : 'Loaded from this browser',
+                            message: loadedFromUrl
+                                ? 'This page is using the token that arrived in the URL.'
+                                : 'Using the token stored locally on this device.',
+                            session: data?.session || null,
+                            recoveredFromToken: '',
+                            regenerated: false
+                        });
+                        syncTokenVaultEntryWithBrief(sessionToken, data?.session, {
+                            lastOpenedAt: Date.now(),
+                            makeActive: true
+                        }, { ifExistsOnly: true });
+                    }
+                }
+            } catch (e) {
+                console.warn('[Config] Failed to fetch session:', e);
+                applySessionLoadFailurePlan(
+                    'network',
+                    loadedFromUrl
+                        ? `Failed to load the shared token. ${fallbackCopy}`
+                        : `Failed to refresh the saved token. ${fallbackCopy}`,
+                    {
+                        contextOverrides: {
+                            message: loadedFromUrl
+                                ? 'This page is using the last local copy for the shared token until live metadata can be refreshed again.'
+                                : 'This page is using the last local copy for your saved token until live metadata can be refreshed again.'
                         }
                     }
-                } catch (e) {
-                    // Ignore fetch errors; fallback to urlConfig/defaults
-                    console.warn('[Config] Failed to fetch session:', e);
-                }
+                );
             }
         }
-        // else: currentConfig already initialized from parseConfigFromUrl() at top
+        // else: currentConfig stays as a fresh template until the first save
 
         // On first run, start all subtitle providers disabled by default
         if (isFirstRun) {
@@ -1281,6 +4490,15 @@ Translate to {target_language}.`;
                 scs: { ...(defaults.subtitleProviders?.scs || {}), enabled: false },
                 wyzie: { ...(defaults.subtitleProviders?.wyzie || {}), enabled: false }
             };
+            setActiveSessionContext({
+                token: '',
+                provenance: 'draft',
+                sourceLabel: 'Fresh draft',
+                message: 'No token exists yet. The first save will create one.',
+                session: null,
+                recoveredFromToken: '',
+                regenerated: false
+            });
         }
 
         currentConfig.betaModeEnabled = currentConfig.betaModeEnabled === true;
@@ -1339,6 +4557,25 @@ Translate to {target_language}.`;
         initLocale(currentConfig.uiLanguage || locale.lang || 'en');
         updateToolboxLauncherVisibility();
         updateQuickStats();
+        updateTokenVaultButtonState();
+        const mainPartialReady = (typeof window !== 'undefined' && window.mainPartialReady);
+        if (mainPartialReady && typeof mainPartialReady.then === 'function') {
+            mainPartialReady.then(() => {
+                bindTokenVaultUiEventListeners();
+                updateTokenVaultButtonState();
+                renderTokenVaultRail({ forceContent: true });
+                consumePendingTokenVaultLauncherOpenRequest();
+            }).catch(() => { });
+        }
+        const partialsReady = (typeof window !== 'undefined' && window.partialsReady);
+        if (partialsReady && typeof partialsReady.then === 'function') {
+            partialsReady.then(() => {
+                bindTokenVaultUiEventListeners();
+            }).catch(() => { });
+        }
+        if (isValidSessionToken(activeSessionContext.token)) {
+            Promise.resolve().then(() => refreshTokenVaultData({ background: true })).catch(() => { });
+        }
         setupKeyboardShortcuts();
         showKeyboardHint();
 
@@ -1349,8 +4586,16 @@ Translate to {target_language}.`;
         }
 
         // Position reset bar after layout is ready
-        requestAnimationFrame(positionResetBar);
+        const syncFloatingBottomSafeZoneDebounced = debounce(syncFloatingBottomSafeZone, 80);
+        requestAnimationFrame(() => {
+            positionResetBar();
+            syncFloatingBottomSafeZone();
+        });
         window.addEventListener('resize', debounce(positionResetBar, 120));
+        window.addEventListener('resize', syncFloatingBottomSafeZoneDebounced);
+        window.addEventListener('resize', debounce(scheduleTokenVaultRailFloatingMenuSync, 40));
+        window.addEventListener('resize', debounce(() => updateBodyScrollLock(true), 80));
+        suppressDirtyTracking = false;
     }
 
     function normalizeLanguageCodes(codes) {
@@ -1490,26 +4735,40 @@ Translate to {target_language}.`;
     }
 
     // Modal management functions
-    function updateBodyScrollLock() {
+    function updateBodyScrollLock(force = false) {
         try {
             const instr = document.getElementById('instructionsModal');
             const reset = document.getElementById('resetConfirmModal');
-            const shouldLock = (instr && instr.classList.contains('show')) || (reset && reset.classList.contains('show'));
+            const vault = document.getElementById('tokenVaultModal');
+            const vaultCreator = document.getElementById('tokenVaultCreateModal');
+            const vaultOverride = document.getElementById('tokenVaultOverrideModal');
+            const shouldLock = (instr && instr.classList.contains('show'))
+                || (reset && reset.classList.contains('show'))
+                || (vault && vault.classList.contains('show'))
+                || (vaultCreator && vaultCreator.classList.contains('show'))
+                || (vaultOverride && vaultOverride.classList.contains('show'));
+            const viewportWidth = window.innerWidth || 0;
 
-            // Measure scrollbar width BEFORE toggling lock to get the correct value
-            const scrollbarWidth = Math.max(0, (window.innerWidth || 0) - (document.documentElement ? document.documentElement.clientWidth : 0));
+            if (!force && bodyScrollLockState.locked === shouldLock && (!shouldLock || bodyScrollLockState.viewportWidth === viewportWidth)) {
+                return;
+            }
+
+            let scrollbarWidth = bodyScrollLockState.scrollbarWidth || 0;
+            if (shouldLock && (force || bodyScrollLockState.locked !== true || bodyScrollLockState.viewportWidth !== viewportWidth)) {
+                scrollbarWidth = Math.max(0, viewportWidth - (document.documentElement ? document.documentElement.clientWidth : 0));
+            }
 
             // Toggle scroll lock class
             document.body.classList.toggle('modal-open', !!shouldLock);
 
             // Prevent layout shift by compensating for scrollbar width when locking
             if (shouldLock) {
-                if (scrollbarWidth > 0) {
-                    if (document.body.dataset.prOriginal === undefined) {
-                        document.body.dataset.prOriginal = document.body.style.paddingRight || '';
-                    }
-                    document.body.style.paddingRight = scrollbarWidth + 'px';
+                if (document.body.dataset.prOriginal === undefined) {
+                    document.body.dataset.prOriginal = document.body.style.paddingRight || '';
                 }
+                document.body.style.paddingRight = scrollbarWidth > 0
+                    ? (scrollbarWidth + 'px')
+                    : document.body.dataset.prOriginal;
             } else {
                 if (document.body.dataset.prOriginal !== undefined) {
                     document.body.style.paddingRight = document.body.dataset.prOriginal;
@@ -1518,6 +4777,11 @@ Translate to {target_language}.`;
                     document.body.style.paddingRight = '';
                 }
             }
+            bodyScrollLockState = {
+                locked: shouldLock,
+                viewportWidth,
+                scrollbarWidth: shouldLock ? scrollbarWidth : 0
+            };
         } catch (_) { }
     }
 
@@ -1557,23 +4821,66 @@ Translate to {target_language}.`;
         el.classList.add('show');
         el.style.display = 'flex';
         // Lock body scroll for full-screen instructions/reset modals
-        if (!peek && (id === 'instructionsModal' || id === 'resetConfirmModal')) {
+        if (!peek && (id === 'instructionsModal' || id === 'resetConfirmModal' || id === 'tokenVaultModal' || id === 'tokenVaultCreateModal')) {
             updateBodyScrollLock();
         }
         return true;
     }
-    function showInstructionsModalIfNeeded() {
+
+    function applyConfigInstructionsPreferenceState(preference) {
+        const resolved = preference && typeof preference === 'object'
+            ? preference
+            : resolveConfigInstructionsPreference();
         try {
-            const raw = localStorage.getItem('submaker_dont_show_instructions');
-            if (raw === 'true') {
-                showInstructionsFab();
-                return;
+            if (resolved.shouldWriteCanonical) {
+                localStorage.setItem(CONFIG_INSTRUCTIONS_PREFERENCE_KEY, resolved.canonicalValue || 'true');
+            } else if (resolved.shouldRemoveCanonical) {
+                localStorage.removeItem(CONFIG_INSTRUCTIONS_PREFERENCE_KEY);
             }
-        } catch (_) {
-            // Fall through to show a peek anyway
+            if (resolved.shouldRemoveLegacy) {
+                localStorage.removeItem(LEGACY_CONFIG_INSTRUCTIONS_PREFERENCE_KEY);
+            }
+        } catch (_) { }
+        return resolved;
+    }
+
+    function getConfigInstructionsPreferenceState() {
+        let canonicalValue = '';
+        let legacyValue = '';
+        try { canonicalValue = localStorage.getItem(CONFIG_INSTRUCTIONS_PREFERENCE_KEY) || ''; } catch (_) { }
+        try { legacyValue = localStorage.getItem(LEGACY_CONFIG_INSTRUCTIONS_PREFERENCE_KEY) || ''; } catch (_) { }
+        return applyConfigInstructionsPreferenceState(resolveConfigInstructionsPreference({
+            canonicalValue,
+            legacyValue
+        }));
+    }
+
+    function syncConfigInstructionsPreferenceUi(preference) {
+        const dontShowEl = document.getElementById('dontShowInstructions');
+        if (!dontShowEl) return;
+        const resolved = preference && typeof preference === 'object'
+            ? preference
+            : getConfigInstructionsPreferenceState();
+        dontShowEl.checked = resolved.suppressed === true;
+    }
+
+    function persistConfigInstructionsPreference(suppressed) {
+        const nextState = buildConfigInstructionsPreferenceWrite({ suppressed: suppressed === true });
+        applyConfigInstructionsPreferenceState(nextState);
+        syncConfigInstructionsPreferenceUi(nextState);
+        return nextState;
+    }
+
+    function showInstructionsModalIfNeeded() {
+        const preference = getConfigInstructionsPreferenceState();
+        syncConfigInstructionsPreferenceUi(preference);
+        if (preference.suppressed === true) {
+            showInstructionsFab();
+            return;
         }
 
         const openFull = () => {
+            syncConfigInstructionsPreferenceUi(preference);
             if (openModalById('instructionsModal')) {
                 instructionsInteracted = true;
                 if (instructionsAutoMinimizeTimer) {
@@ -1592,9 +4899,7 @@ Translate to {target_language}.`;
     window.closeInstructionsModal = function () {
         const dontShowEl = document.getElementById('dontShowInstructions');
         const dontShow = dontShowEl ? dontShowEl.checked : false;
-        if (dontShow) {
-            localStorage.setItem('submaker_dont_show_instructions', 'true');
-        }
+        persistConfigInstructionsPreference(dontShow);
         const modal = document.getElementById('instructionsModal');
         if (modal) {
             modal.classList.remove('show');
@@ -1649,7 +4954,7 @@ Translate to {target_language}.`;
             requestAnimationFrame(() => {
                 showInstructionsFab();
             });
-            return;
+            return false;
         }
 
         // Apply fly-out animation; then hide overlay and show FAB
@@ -1705,16 +5010,16 @@ Translate to {target_language}.`;
     }
 
     function getActiveConfigRef() {
-        try {
-            const stored = localStorage.getItem(TOKEN_KEY);
-            if (stored && isValidConfigToken(stored)) return stored;
-        } catch (_) { }
-
-        try {
-            const params = new URLSearchParams(window.location.search);
-            const raw = params.get('config');
-            if (raw && isValidConfigToken(raw)) return raw;
-        } catch (_) { }
+        if (isValidConfigToken(activeSessionContext.token)) {
+            return activeSessionContext.token;
+        }
+        if (!activeSessionContext.token && (activeSessionContext.provenance === 'recovered' || activeSessionContext.provenance === 'draft')) {
+            return '';
+        }
+        const stored = getStoredSessionToken();
+        if (stored && isValidConfigToken(stored)) return stored;
+        const urlToken = getUrlSessionToken();
+        if (urlToken && isValidConfigToken(urlToken)) return urlToken;
         return '';
     }
 
@@ -1732,10 +5037,11 @@ Translate to {target_language}.`;
         const readyLabel = tConfig('toolbox.status.ready', {}, 'Ready');
         const missingLabel = tConfig('server.errors.missingConfig', {}, 'Missing config');
         const toolboxMissing = tConfig('toolbox.autoSubs.extension.notDetected', {}, 'Extension not detected');
+        const disabledLabel = 'Disabled';
 
-        if (statStatus) statStatus.textContent = hasToken ? readyLabel : missingLabel;
+        if (statStatus) statStatus.textContent = hasToken ? (activeSessionContext.session?.disabled === true ? disabledLabel : readyLabel) : missingLabel;
         if (statConfigure) statConfigure.textContent = hasToken ? tConfig('config.actions.install', {}, 'Install') : missingLabel;
-        if (statToolbox) statToolbox.textContent = hasToken ? readyLabel : toolboxMissing;
+        if (statToolbox) statToolbox.textContent = hasToken ? (activeSessionContext.session?.disabled === true ? disabledLabel : readyLabel) : toolboxMissing;
         if (statLastSave) {
             if (cachedAt) {
                 const dt = new Date(cachedAt);
@@ -1764,19 +5070,15 @@ Translate to {target_language}.`;
         return `/sub-toolbox?config=${encodeURIComponent(cfg)}&videoId=${encodeURIComponent(fallbackVideoId)}&filename=${encodeURIComponent(fallbackFilename)}`;
     }
 
-    function isToolboxEnabledForConfig(tokenToCheck) {
-        if (!tokenToCheck) return false;
+    function getCachedConfigForToken(tokenToCheck) {
+        if (!tokenToCheck) return null;
         try {
             const cachedToken = localStorage.getItem(CACHE_TOKEN_KEY);
-            if (cachedToken && cachedToken !== tokenToCheck) return false;
+            if (cachedToken && cachedToken !== tokenToCheck) return null;
             const raw = localStorage.getItem(CACHE_KEY);
-            const cached = raw ? JSON.parse(raw) : null;
-            if (!cached) return false;
-            return cached.subToolboxEnabled === true
-                || cached.fileTranslationEnabled === true
-                || cached.syncSubtitlesEnabled === true;
+            return raw ? JSON.parse(raw) : null;
         } catch (_) {
-            return false;
+            return null;
         }
     }
 
@@ -1785,10 +5087,22 @@ Translate to {target_language}.`;
         if (!btn) return;
         // Visibility is based solely on whether toolbox is enabled, not viewport size
         const cfgRef = configOverride || getActiveConfigRef();
-        const shouldShow = !!cfgRef && isToolboxEnabledForConfig(cfgRef);
-        if (shouldShow) {
+        const tokenDisabled = !!(cfgRef && activeSessionContext.token === cfgRef && activeSessionContext.session?.disabled === true);
+        let cachedToken = '';
+        try {
+            cachedToken = localStorage.getItem(CACHE_TOKEN_KEY) || '';
+        } catch (_) { }
+        const launcherState = resolveToolboxLauncherState({
+            tokenToCheck: cfgRef,
+            activeToken: getActiveConfigRef(),
+            currentConfig,
+            cachedConfig: getCachedConfigForToken(cfgRef),
+            cachedToken,
+            tokenDisabled
+        });
+        if (launcherState.visible) {
             btn.style.display = 'flex';
-            btn.dataset.configRef = cfgRef;
+            btn.dataset.configRef = launcherState.configRef;
             btn.classList.add('show');
         } else {
             btn.style.display = 'none';
@@ -1797,6 +5111,7 @@ Translate to {target_language}.`;
         }
 
         updateQuickStats();
+        scheduleFloatingBottomSafeZoneSync();
     }
 
     window.closeSubToolboxModal = function () {
@@ -1855,8 +5170,15 @@ Translate to {target_language}.`;
     // Unified delegated click handler (capture) for modals/FAB
     document.addEventListener('click', function (e) {
         const target = e.target;
+        if ((Date.now() - tokenVaultLauncherPointerDownAt) < 500) {
+            const clickedLauncher = target && target.closest ? target.closest('#tokenVaultLauncher') : null;
+            if (!clickedLauncher) {
+                return;
+            }
+        }
         const overlay = target && target.closest ? target.closest('.modal-overlay') : null;
-        const clickedInsideModal = target && target.closest ? target.closest('.modal') : null;
+        const clickedInsideModal = target && target.closest ? target.closest('.modal, .token-vault-panel, .token-vault-override-panel') : null;
+        const clickedInsideVaultRail = target && target.closest ? target.closest('#tokenVaultRail, #tokenVaultLauncher, #tokenVaultRailFloatingMenu') : null;
 
         if (overlay && !clickedInsideModal) {
             if (overlay.id === 'instructionsModal') {
@@ -1865,11 +5187,24 @@ Translate to {target_language}.`;
             } else if (overlay.id === 'subToolboxModal') {
                 closeSubToolboxModal();
                 return;
+            } else if (overlay.id === 'tokenVaultModal') {
+                closeTokenVault();
+                return;
+            } else if (overlay.id === 'tokenVaultCreateModal') {
+                closeTokenVaultCreator();
+                return;
+            } else if (overlay.id === 'tokenVaultOverrideModal') {
+                void closeTokenVaultOverridePrompt(true);
+                return;
             } else if (overlay.id === 'resetConfirmModal') {
                 const modal = document.getElementById('resetConfirmModal');
                 if (modal) { modal.classList.remove('show'); modal.style.display = 'none'; updateBodyScrollLock(); }
                 return;
             }
+        }
+
+        if (tokenVaultRailOpen && !clickedInsideVaultRail && !clickedInsideModal) {
+            closeTokenVaultRail();
         }
 
         const actionEl = target && target.closest
@@ -1893,6 +5228,7 @@ Translate to {target_language}.`;
                 clearTimeout(instructionsAutoMinimizeTimer);
                 instructionsAutoMinimizeTimer = null;
             }
+            syncConfigInstructionsPreferenceUi();
             openModalById('instructionsModal');
             return;
         }
@@ -1903,9 +5239,20 @@ Translate to {target_language}.`;
         if (e.key === 'Escape') {
             const instructionsModal = document.getElementById('instructionsModal');
             const subToolboxModal = document.getElementById('subToolboxModal');
+            const tokenVaultModal = document.getElementById('tokenVaultModal');
+            const tokenVaultCreateModal = document.getElementById('tokenVaultCreateModal');
+            const tokenVaultOverrideModal = document.getElementById('tokenVaultOverrideModal');
             const resetConfirmModal = document.getElementById('resetConfirmModal');
 
-            if (instructionsModal && instructionsModal.classList.contains('show')) {
+            if (tokenVaultOverrideModal && tokenVaultOverrideModal.classList.contains('show')) {
+                e.preventDefault();
+                e.stopPropagation();
+                void closeTokenVaultOverridePrompt(true);
+            } else if (tokenVaultCreateModal && tokenVaultCreateModal.classList.contains('show')) {
+                e.preventDefault();
+                e.stopPropagation();
+                closeTokenVaultCreator();
+            } else if (instructionsModal && instructionsModal.classList.contains('show')) {
                 e.preventDefault();
                 e.stopPropagation();
                 closeInstructionsModal();
@@ -1913,6 +5260,18 @@ Translate to {target_language}.`;
                 e.preventDefault();
                 e.stopPropagation();
                 closeSubToolboxModal();
+            } else if (tokenVaultModal && tokenVaultModal.classList.contains('show')) {
+                e.preventDefault();
+                e.stopPropagation();
+                closeTokenVault();
+            } else if (tokenVaultRailOpen) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (tokenVaultRailMenuKey) {
+                    closeTokenVaultRailMenu();
+                } else {
+                    closeTokenVaultRail();
+                }
             } else if (resetConfirmModal && resetConfirmModal.classList.contains('show')) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -2342,9 +5701,203 @@ Translate to {target_language}.`;
         updateSelectedChips(type, currentConfig[configKey]);
     }
 
+    function bindTokenVaultUiEventListeners() {
+        if (!tokenVaultGlobalEventsBound) {
+            tokenVaultGlobalEventsBound = true;
+            try {
+                window.__tokenVaultUiReady = true;
+            } catch (_) { }
+
+            document.addEventListener('pointerdown', function (e) {
+                const launcher = e.target && e.target.closest ? e.target.closest('#tokenVaultLauncher') : null;
+                if (!launcher) return;
+                if (e.pointerType === 'touch') return;
+                if (typeof e.button === 'number' && e.button !== 0) return;
+
+                tokenVaultLauncherPointerDownAt = Date.now();
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    launcher.focus({ preventScroll: true });
+                } catch (_) {
+                    launcher.focus();
+                }
+                toggleTokenVaultRail();
+            }, true);
+
+            document.addEventListener('click', function (e) {
+                const launcher = e.target && e.target.closest ? e.target.closest('#tokenVaultLauncher') : null;
+                if (!launcher) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+                if ((Date.now() - tokenVaultLauncherPointerDownAt) < 500) {
+                    return;
+                }
+                toggleTokenVaultRail();
+            }, true);
+        }
+
+        const tokenVaultRail = document.getElementById('tokenVaultRail');
+        if (tokenVaultRail && !tokenVaultRail.__vaultBound) {
+            tokenVaultRail.__vaultBound = true;
+            tokenVaultRail.addEventListener('scroll', () => {
+                scheduleTokenVaultRailFloatingMenuSync();
+            }, { passive: true });
+            tokenVaultRail.addEventListener('click', async (e) => {
+                const actionEl = e.target && e.target.closest ? e.target.closest('[data-vault-action]') : null;
+                if (!actionEl) {
+                    const clickedRailMenu = e.target && e.target.closest ? e.target.closest('.token-vault-rail-menu') : null;
+                    if (tokenVaultRailMenuKey && !clickedRailMenu) {
+                        closeTokenVaultRailMenu();
+                    }
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    await handleTokenVaultAction(actionEl);
+                } catch (error) {
+                    showAlert(error.message || 'Token Vault action failed.', 'error');
+                }
+            });
+        }
+        const tokenVaultModal = document.getElementById('tokenVaultModal');
+        if (tokenVaultModal && !tokenVaultModal.__vaultBound) {
+            tokenVaultModal.__vaultBound = true;
+            tokenVaultModal.addEventListener('click', async (e) => {
+                const actionEl = e.target && e.target.closest ? e.target.closest('[data-vault-action]') : null;
+                if (!actionEl) return;
+                e.preventDefault();
+                try {
+                    await handleTokenVaultAction(actionEl);
+                } catch (error) {
+                    showAlert(error.message || 'Token Vault action failed.', 'error');
+                }
+            });
+            tokenVaultModal.addEventListener('input', (e) => {
+                if (e.target?.id === 'tokenVaultTitleInlineInput') {
+                    tokenVaultTitleEditValue = e.target.value;
+                }
+            });
+            tokenVaultModal.addEventListener('keydown', async (e) => {
+                if (e.target?.id !== 'tokenVaultTitleInlineInput') return;
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    resetTokenVaultTitleEditor();
+                    renderTokenVault();
+                    return;
+                }
+                if (e.key !== 'Enter' || e.shiftKey) return;
+                const actionEl = tokenVaultModal.querySelector('[data-vault-action="save-label"]');
+                if (!actionEl || actionEl.disabled) return;
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    await handleTokenVaultAction(actionEl);
+                } catch (error) {
+                    showAlert(error.message || 'Token Vault action failed.', 'error');
+                }
+            });
+        }
+        const tokenVaultCreateModal = document.getElementById('tokenVaultCreateModal');
+        if (tokenVaultCreateModal && !tokenVaultCreateModal.__vaultBound) {
+            tokenVaultCreateModal.__vaultBound = true;
+            tokenVaultCreateModal.addEventListener('click', async (e) => {
+                const actionEl = e.target && e.target.closest ? e.target.closest('[data-vault-action]') : null;
+                if (!actionEl) return;
+                e.preventDefault();
+                try {
+                    await handleTokenVaultAction(actionEl);
+                } catch (error) {
+                    showAlert(error.message || 'Token Vault action failed.', 'error');
+                }
+            });
+            tokenVaultCreateModal.addEventListener('input', (e) => {
+                if (e.target?.id === 'tokenVaultCreateInput') {
+                    scheduleTokenVaultCreatorPreview(e.target.value);
+                }
+            });
+            tokenVaultCreateModal.addEventListener('keydown', async (e) => {
+                if (e.target?.id !== 'tokenVaultCreateInput') return;
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeTokenVaultCreator();
+                    return;
+                }
+                if (e.key !== 'Enter' || e.shiftKey) return;
+                const actionEl = document.getElementById('tokenVaultCreateImportBtn');
+                if (!actionEl || actionEl.disabled) return;
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    await handleTokenVaultAction(actionEl);
+                } catch (error) {
+                    showAlert(error.message || 'Token Vault action failed.', 'error');
+                }
+            });
+        }
+        const tokenVaultOverrideModal = document.getElementById('tokenVaultOverrideModal');
+        if (tokenVaultOverrideModal && !tokenVaultOverrideModal.__vaultBound) {
+            tokenVaultOverrideModal.__vaultBound = true;
+            tokenVaultOverrideModal.addEventListener('click', async (e) => {
+                const actionEl = e.target && e.target.closest ? e.target.closest('[data-vault-override-action]') : null;
+                if (!actionEl) return;
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    await handleTokenVaultOverrideAction(actionEl);
+                } catch (error) {
+                    showAlert(error.message || 'Token Vault confirmation failed.', 'error');
+                }
+            });
+        }
+        const tokenVaultImportFile = document.getElementById('tokenVaultImportFile');
+        if (tokenVaultImportFile && !tokenVaultImportFile.__vaultBound) {
+            tokenVaultImportFile.__vaultBound = true;
+            tokenVaultImportFile.addEventListener('change', async (e) => {
+                const file = e.target?.files?.[0];
+                if (!file) return;
+                try {
+                    await handleTokenVaultBackupFile(file, {
+                        onApplied: async () => {
+                            if (document.getElementById('tokenVaultCreateModal')?.classList.contains('show')) {
+                                renderTokenVaultCreator();
+                            }
+                        }
+                    });
+                } catch (error) {
+                    showAlert(error.message || 'Failed to import JSON file.', 'error');
+                } finally {
+                    e.target.value = '';
+                }
+            });
+        }
+
+        consumePendingTokenVaultLauncherOpenRequest();
+    }
+
     function setupEventListeners() {
         // Form submission
         document.getElementById('configForm').addEventListener('submit', handleSubmit);
+        document.getElementById('configForm').addEventListener('input', () => {
+            if (!suppressDirtyTracking) setConfigDirty(true);
+        }, true);
+        document.getElementById('configForm').addEventListener('change', () => {
+            if (!suppressDirtyTracking) setConfigDirty(true);
+        }, true);
+
+        bindTokenVaultUiEventListeners();
+        syncConfigInstructionsPreferenceUi();
+        const dontShowInstructions = document.getElementById('dontShowInstructions');
+        if (dontShowInstructions && !dontShowInstructions.__submakerBound) {
+            dontShowInstructions.addEventListener('change', (event) => {
+                persistConfigInstructionsPreference(event.target?.checked === true);
+            });
+            dontShowInstructions.__submakerBound = true;
+        }
 
         // Quick Setup → Advanced Settings bridge
         // When the Quick Setup wizard's "Open Advanced" button is clicked, it dispatches
@@ -2357,6 +5910,7 @@ Translate to {target_language}.`;
                 ensureProvidersInState();
                 ensureProviderParametersInState();
                 loadConfigToForm();
+                setConfigDirty(true);
                 // Reload languages to reflect new selections
                 if (typeof loadLanguages === 'function') {
                     loadLanguages().catch(() => { /* ignore */ });
@@ -2467,14 +6021,8 @@ Translate to {target_language}.`;
         }
         // Reset confirm modal buttons
         document.getElementById('confirmResetBtn')?.addEventListener('click', performFullReset);
-        document.getElementById('cancelResetBtn')?.addEventListener('click', () => {
-            const modal = document.getElementById('resetConfirmModal');
-            if (modal) { modal.classList.remove('show'); modal.style.display = 'none'; }
-        });
-        document.getElementById('closeResetConfirmBtn')?.addEventListener('click', () => {
-            const modal = document.getElementById('resetConfirmModal');
-            if (modal) { modal.classList.remove('show'); modal.style.display = 'none'; }
-        });
+        document.getElementById('cancelResetBtn')?.addEventListener('click', closeResetConfirmModal);
+        document.getElementById('closeResetConfirmBtn')?.addEventListener('click', closeResetConfirmModal);
 
         // Search functionality
         document.getElementById('sourceSearch').addEventListener('input', (e) => {
@@ -4630,7 +8178,7 @@ Translate to {target_language}.`;
             </div>
         `;
 
-        const container = document.getElementById('alertContainer');
+        const container = getAlertContainer();
         container.innerHTML = '';
         container.appendChild(alert);
 
@@ -5369,7 +8917,8 @@ Translate to {target_language}.`;
      *   source/target languages, Other Settings checkboxes (Sub Toolbox, cacheEnabled, bypassCache), and subtitleProviderTimeout
      */
     function migrateConfigForNewVersion(oldConfig) {
-        const defaults = getDefaultConfig();
+        const firstGeminiModel = getFirstGeminiModelOptionValue();
+        const defaults = getDefaultConfig(firstGeminiModel);
 
         const newConfig = { ...defaults };
 
@@ -5504,8 +9053,8 @@ Translate to {target_language}.`;
             const oldTimeout = parseInt(oldConfig.subtitleProviderTimeout, 10);
             newConfig.subtitleProviderTimeout = Number.isFinite(oldTimeout) ? Math.max(8, Math.min(30, oldTimeout)) : 12;
 
-            // Reset selected model to default (do NOT preserve old) and reset advanced settings to defaults
-            newConfig.geminiModel = defaults.geminiModel;
+            // Reset selected model to the first visible dropdown option and reset advanced settings to defaults
+            newConfig.geminiModel = firstGeminiModel;
             newConfig.advancedSettings = { ...defaults.advancedSettings };
         } catch (e) { }
 
@@ -5636,20 +9185,10 @@ Translate to {target_language}.`;
 
         // Load Gemini model
         const modelSelect = document.getElementById('geminiModel');
-        let modelToUse = currentConfig.geminiModel || 'gemini-flash-latest';
-
-        // Migrate old Pro preview model ID to new stable ID
-        if (modelToUse === 'gemini-2.5-pro-preview-05-06') {
-            modelToUse = 'gemini-2.5-pro';
-        }
-        // Migrate old Flash preview model ID to new stable ID
-        if (modelToUse === 'gemini-2.5-flash-preview-09-2025') {
-            modelToUse = 'gemini-2.5-flash';
-        }
-        // Migrate old Flash-Lite alias to new stable ID
-        if (modelToUse === 'gemini-flash-lite-latest') {
-            modelToUse = 'gemini-2.5-flash-lite';
-        }
+        const rawGeminiModel = typeof currentConfig.geminiModel === 'string' ? currentConfig.geminiModel.trim() : '';
+        const modelToUse = normalizeGeminiModelForBaseSelect(rawGeminiModel);
+        const baseModelWasNormalized = rawGeminiModel !== modelToUse;
+        currentConfig.geminiModel = modelToUse;
 
         if (modelSelect) {
             modelSelect.value = modelToUse;
@@ -5764,9 +9303,9 @@ Translate to {target_language}.`;
         });
         // Add toggle listener to show/hide sources
         if (wyzieToggle) {
-            wyzieToggle.addEventListener('change', (e) => {
+            wyzieToggle.onchange = (e) => {
                 if (wyzieSources) wyzieSources.style.display = e.target.checked ? 'block' : 'none';
-            });
+            };
         }
 
         // Subs.ro - Romanian subtitle database, requires API key
@@ -5790,11 +9329,11 @@ Translate to {target_language}.`;
             if (timeoutValueEl) timeoutValueEl.textContent = clampedTimeout + 's';
 
             // Update display and config on change
-            timeoutSlider.addEventListener('input', (e) => {
+            timeoutSlider.oninput = (e) => {
                 const value = parseInt(e.target.value, 10);
                 if (timeoutValueEl) timeoutValueEl.textContent = value + 's';
                 currentConfig.subtitleProviderTimeout = value;
-            });
+            };
         }
 
         // Load Sub Toolbox setting (unifies file translation and sync actions)
@@ -5881,10 +9420,16 @@ Translate to {target_language}.`;
 
         // Load advanced settings
         if (!currentConfig.advancedSettings) {
-            currentConfig.advancedSettings = getDefaultConfig(currentConfig.geminiModel || 'gemini-2.5-flash').advancedSettings;
+            currentConfig.advancedSettings = getDefaultConfig(currentConfig.geminiModel || getFirstGeminiModelOptionValue()).advancedSettings;
         } else {
+            const shouldRebaseAdvancedDefaults = baseModelWasNormalized
+                && currentConfig.advancedSettings?.enabled !== true
+                && !(typeof currentConfig.advancedSettings?.geminiModel === 'string' && currentConfig.advancedSettings.geminiModel.trim());
+            if (shouldRebaseAdvancedDefaults) {
+                currentConfig.advancedSettings = getDefaultConfig(currentConfig.geminiModel || getFirstGeminiModelOptionValue()).advancedSettings;
+            }
             // Merge with defaults to backfill any new fields
-            const advDefaults = getDefaultConfig(currentConfig.geminiModel || 'gemini-2.5-flash').advancedSettings;
+            const advDefaults = getDefaultConfig(currentConfig.geminiModel || getFirstGeminiModelOptionValue()).advancedSettings;
             currentConfig.advancedSettings = {
                 ...advDefaults,
                 ...currentConfig.advancedSettings
@@ -5971,9 +9516,9 @@ Translate to {target_language}.`;
         const mobileToggle = document.getElementById('mobileMode');
         if (mobileToggle) {
             mobileToggle.checked = currentConfig.mobileMode === true;
-            mobileToggle.addEventListener('change', (e) => {
+            mobileToggle.onchange = (e) => {
                 currentConfig.mobileMode = e.target.checked;
-            });
+            };
         } else {
             // If the toggle isn't present, preserve existing value in state
             currentConfig.mobileMode = currentConfig.mobileMode === true;
@@ -5992,10 +9537,10 @@ Translate to {target_language}.`;
             }
         };
         if (hiExcludeToggle) {
-            hiExcludeToggle.addEventListener('change', (e) => syncHiExclude(e.target.checked === true));
+            hiExcludeToggle.onchange = (e) => syncHiExclude(e.target.checked === true);
         }
         if (hiExcludeToggleNoTranslation) {
-            hiExcludeToggleNoTranslation.addEventListener('change', (e) => syncHiExclude(e.target.checked === true));
+            hiExcludeToggleNoTranslation.onchange = (e) => syncHiExclude(e.target.checked === true);
         }
         if (!hiExcludeToggle && !hiExcludeToggleNoTranslation) {
             currentConfig.excludeHearingImpairedSubtitles = currentConfig.excludeHearingImpairedSubtitles === true;
@@ -6014,10 +9559,10 @@ Translate to {target_language}.`;
             }
         };
         if (seasonPackToggle) {
-            seasonPackToggle.addEventListener('change', (e) => syncSeasonPack(e.target.checked));
+            seasonPackToggle.onchange = (e) => syncSeasonPack(e.target.checked);
         }
         if (seasonPackToggleNoTranslation) {
-            seasonPackToggleNoTranslation.addEventListener('change', (e) => syncSeasonPack(e.target.checked));
+            seasonPackToggleNoTranslation.onchange = (e) => syncSeasonPack(e.target.checked);
         }
         if (!seasonPackToggle && !seasonPackToggleNoTranslation) {
             currentConfig.enableSeasonPacks = currentConfig.enableSeasonPacks !== false;
@@ -6048,17 +9593,17 @@ Translate to {target_language}.`;
             toggleUrlExtensionTestGroup();
         };
         if (forceSRTToggle) {
-            forceSRTToggle.addEventListener('change', (e) => syncForceSRT(e.target.checked));
+            forceSRTToggle.onchange = (e) => syncForceSRT(e.target.checked);
         }
         if (forceSRTToggleNoTranslation) {
-            forceSRTToggleNoTranslation.addEventListener('change', (e) => syncForceSRT(e.target.checked));
+            forceSRTToggleNoTranslation.onchange = (e) => syncForceSRT(e.target.checked);
         }
         const singleBatchToggle = document.getElementById('singleBatchMode');
         if (singleBatchToggle) {
-            singleBatchToggle.addEventListener('change', (e) => {
+            singleBatchToggle.onchange = (e) => {
                 currentConfig.singleBatchMode = e.target.checked === true;
                 updateBypassCacheForAdvancedSettings();
-            });
+            };
         }
 
         const parallelBatchesEl = document.getElementById('parallelBatchesEnabled');
@@ -6074,7 +9619,13 @@ Translate to {target_language}.`;
     }
 
     async function handleSubmit(e) {
-        e.preventDefault();
+        if (e && typeof e.preventDefault === 'function') {
+            e.preventDefault();
+        }
+        return await saveCurrentConfig();
+    }
+
+    async function saveCurrentConfig(options = {}) {
         ensureProvidersInState();
         ensureAutoSubsDefaults();
 
@@ -6130,7 +9681,10 @@ Translate to {target_language}.`;
             },
             // Save the selected model from the dropdown
             // Advanced settings can override this if enabled
-            geminiModel: document.getElementById('geminiModel')?.value || 'gemini-flash-latest',
+            geminiModel: (function () {
+                const el = document.getElementById('geminiModel');
+                return normalizeGeminiModelForBaseSelect(el ? el.value : '');
+            })(),
             promptStyle: promptStyle,
             translationPrompt: translationPrompt,
             betaModeEnabled: isBetaModeEnabled(),
@@ -6487,13 +10041,45 @@ Translate to {target_language}.`;
                     }
                 }
             }
-            return;
+            return false;
         }
 
-        // Check if we have an existing session token
-        let existingToken = localStorage.getItem(TOKEN_KEY);
+        const approvedVictimTokens = Array.isArray(options.approvedVictimTokens)
+            ? options.approvedVictimTokens.filter(isValidSessionToken)
+            : [];
+        const afterSuccess = typeof options.afterSuccess === 'function' ? options.afterSuccess : null;
+
+        // Save against the token the page is actually editing, not stale browser storage.
+        let existingToken = resolveSaveTargetToken({
+            activeSessionToken: activeSessionContext.token,
+            activeProvenance: activeSessionContext.provenance,
+            urlSessionToken: getUrlSessionToken(),
+            persistentSessionToken: getStoredSessionToken()
+        }) || null;
+        if (!existingToken && approvedVictimTokens.length === 0) {
+            const overflowVictims = getDraftOverflowVictims();
+            if (overflowVictims.length > 0) {
+                const victimNoun = overflowVictims.length === 1 ? 'entry' : 'entries';
+                openTokenVaultOverridePrompt({
+                    eyebrow: `${TOKEN_VAULT_MAX_ENTRIES} saved tokens max`,
+                    title: 'Saving this draft needs one vault slot',
+                    message: `SubMaker keeps up to ${TOKEN_VAULT_MAX_ENTRIES} saved tokens in this browser. Saving this draft will purge the oldest local vault ${victimNoun} below.`,
+                    detail: 'Only the local browser vault changes. The purged token is not deleted from the server.',
+                    confirmLabel: 'Save and replace',
+                    victims: overflowVictims,
+                    onConfirm: async () => {
+                        await saveCurrentConfig({
+                            ...options,
+                            approvedVictimTokens: overflowVictims.map(entry => entry.token)
+                        });
+                    }
+                });
+                return false;
+            }
+        }
         let configToken;
         let isUpdate = false;
+        let responseSession = null;
 
 
         try {
@@ -6508,14 +10094,13 @@ Translate to {target_language}.`;
                     // Try to update existing session first
                     try {
                         const encodedToken = encodeURIComponent(existingToken);
-                        const updateResponse = await fetch(`/api/update-session/${encodedToken}`, {
+                        const updateResponse = await fetchWithTimeout(`/api/update-session/${encodedToken}`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json'
                             },
-                            body: JSON.stringify(config),
-                            timeout: 10000 // 10 second timeout
-                        });
+                            body: JSON.stringify(config)
+                        }, 10000);
 
                         // FIXED: Better error handling for different response codes
                         if (updateResponse.status === 404 || updateResponse.status === 410) {
@@ -6525,17 +10110,18 @@ Translate to {target_language}.`;
                             existingToken = null;
                         } else if (updateResponse.status === 503) {
                             showAlert(tConfig('config.alerts.sessionStorageUnavailable', {}, 'Session storage is temporarily unavailable. Please retry in a moment.'), 'warning', 'config.alerts.sessionStorageUnavailable', {});
-                            return;
+                            return false;
                         } else if (!updateResponse.ok) {
                             const errorText = await updateResponse.text();
                             const reason = errorText && errorText.trim() ? errorText.trim() : `HTTP ${updateResponse.status}`;
                             showAlert(tConfig('config.alerts.sessionUpdateRetry', { reason }, 'Failed to update the current session. Please retry instead of creating a new one. Reason: ' + reason), 'error', 'config.alerts.sessionUpdateRetry', { reason });
-                            return;
+                            return false;
                         } else {
                             // Success
                             const sessionData = await updateResponse.json();
                             configToken = sessionData.token;
                             isUpdate = sessionData.updated;
+                            responseSession = sessionData.session || null;
 
                             if (sessionData.updated) {
                                 showAlert(tConfig('config.alerts.configurationUpdated', {}, 'Configuration updated! Changes will take effect immediately in Stremio.'), 'success', 'config.alerts.configurationUpdated', {});
@@ -6547,7 +10133,7 @@ Translate to {target_language}.`;
                         }
                     } catch (updateError) {
                         showAlert(tConfig('config.alerts.sessionNetworkRetry', {}, 'Network error updating session. Please retry; your current session token was kept.'), 'warning', 'config.alerts.sessionNetworkRetry', {});
-                        return;
+                        return false;
                     }
                 }
             }
@@ -6556,14 +10142,13 @@ Translate to {target_language}.`;
             if (!existingToken) {
 
                 try {
-                    const createResponse = await fetch('/api/create-session', {
+                    const createResponse = await fetchWithTimeout('/api/create-session', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify(config),
-                        timeout: 10000 // 10 second timeout
-                    });
+                        body: JSON.stringify(config)
+                    }, 10000);
 
 
                     if (!createResponse.ok) {
@@ -6580,9 +10165,10 @@ Translate to {target_language}.`;
 
                     configToken = sessionData.token;
                     isUpdate = false;
+                    responseSession = sessionData.session || null;
                 } catch (createError) {
                     showAlert(tConfig('config.alerts.saveFailed', { reason: createError.message }, 'Failed to save configuration: ' + createError.message), 'error', 'config.alerts.saveFailed', { reason: createError.message });
-                    return;
+                    return false;
                 }
             }
 
@@ -6595,46 +10181,50 @@ Translate to {target_language}.`;
             localStorage.setItem(TOKEN_KEY, configToken);
         } catch (error) {
             showAlert(tConfig('config.alerts.saveFailed', { reason: error.message }, 'Failed to save configuration: ' + error.message), 'error', 'config.alerts.saveFailed', { reason: error.message });
-            return;
+            return false;
         }
-
-        // Use current origin if in production, otherwise use localhost
-        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const baseUrl = isLocalhost ? 'http://localhost:7001' : window.location.origin;
-        const encodedToken = encodeURIComponent(configToken);
-        const installUrl = `${baseUrl}/addon/${encodedToken}/manifest.json`;
 
         // Save to current config
         currentConfig = config;
+        isFirstRun = false;
 
         // Cache the configuration to localStorage
         saveConfigToCache(config, configToken);
+        setActiveSessionContext({
+            token: configToken,
+            provenance: isUpdate ? 'saved' : 'created',
+            sourceLabel: isUpdate ? 'Updated live token' : 'Created on save',
+            message: isUpdate
+                ? 'This page is using your updated token.'
+                : 'A fresh token was created and is now active.',
+            session: responseSession,
+            recoveredFromToken: '',
+            regenerated: false
+        });
+        syncConfigUrlForToken(configToken);
+        if (document.getElementById('tokenVaultModal')?.classList.contains('show')) {
+            renderTokenVault();
+        }
         updateToolboxLauncherVisibility(configToken);
         updateQuickStats();
-
-        // Enable install and copy buttons
-        document.getElementById('installBtn').disabled = false;
-        document.getElementById('copyBtn').disabled = false;
-
-        // Store install URL
-        window.installUrl = installUrl;
-
-        // Show install URL in the text box
-        const installUrlBox = document.getElementById('installUrlBox');
-        const installUrlDisplay = document.getElementById('installUrlDisplay');
-        installUrlDisplay.value = installUrl;
-        installUrlBox.classList.add('show');
-
-        // Auto-select the URL for easy copying
-        setTimeout(() => {
-            installUrlDisplay.select();
-        }, 100);
+        setConfigDirty(false);
+        revealActiveInstallState(configToken, { selectDisplay: true });
 
         // Show appropriate message based on update vs new install
         if (!isUpdate) {
             showAlert(tConfig('config.alerts.configurationSaved', {}, 'Configuration saved! You can now install the addon in Stremio.'), 'success', 'config.alerts.configurationSaved', {});
         }
-        // Update message already shown above
+        const persistedToVault = persistSavedTokenToVault(configToken, responseSession, {
+            approvedVictimTokens,
+            afterResolve: afterSuccess
+        });
+        if (persistedToVault) {
+            renderTokenVault();
+            if (afterSuccess) {
+                await afterSuccess();
+            }
+        }
+        return true;
     }
 
     function installAddon() {
@@ -6665,8 +10255,21 @@ Translate to {target_language}.`;
         }
     }
 
+    function getAlertContainer() {
+        let container = document.getElementById('alertContainer');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'alertContainer';
+        }
+        // Keep alerts at the document root so modal stacking contexts cannot cover them.
+        if (document.body && container.parentElement !== document.body) {
+            document.body.appendChild(container);
+        }
+        return container;
+    }
+
     function showAlert(message, type = 'success', i18nKey = '', i18nVars = {}) {
-        const container = document.getElementById('alertContainer');
+        const container = getAlertContainer();
 
         // Remove existing alerts
         container.innerHTML = '';
@@ -6741,6 +10344,51 @@ Translate to {target_language}.`;
         }
     }
 
+    function syncFloatingBottomSafeZone() {
+        try {
+            const root = document.documentElement;
+            if (!root) return;
+
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            if (!viewportHeight) {
+                if (floatingBottomSafeZoneValue !== '0px') {
+                    root.style.setProperty('--floating-bottom-safe-zone', '0px');
+                    floatingBottomSafeZoneValue = '0px';
+                }
+                return;
+            }
+
+            let clearance = 0;
+            [
+                document.getElementById('configHelp'),
+                document.getElementById('subToolboxLauncher'),
+                document.getElementById('tokenVaultLauncher'),
+                tokenVaultRailOpen ? document.getElementById('tokenVaultRail') : null
+            ].forEach(el => {
+                if (!el) return;
+
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') === 0) return;
+                if (style.position !== 'fixed') return;
+
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return;
+                if (rect.bottom < (viewportHeight - 220)) return;
+
+                clearance = Math.max(clearance, viewportHeight - rect.top);
+            });
+
+            const safeZone = clearance > 0 ? Math.ceil(clearance + 16) : 0;
+            const nextValue = `${safeZone}px`;
+            if (floatingBottomSafeZoneValue !== nextValue) {
+                root.style.setProperty('--floating-bottom-safe-zone', nextValue);
+                floatingBottomSafeZoneValue = nextValue;
+            }
+        } catch (_) {
+            // no-op
+        }
+    }
+
     function debounce(fn, wait) {
         let t = null;
         return function (...args) {
@@ -6749,37 +10397,95 @@ Translate to {target_language}.`;
         };
     }
 
+    function closeResetConfirmModal() {
+        const modal = document.getElementById('resetConfirmModal');
+        if (modal) {
+            modal.classList.remove('show');
+            modal.style.display = 'none';
+        }
+    }
+
+    function getCookiePathVariants(pathname) {
+        const normalizedPath = String(pathname || '/').split(/[?#]/)[0].trim() || '/';
+        const segments = normalizedPath.split('/').filter(Boolean);
+        const variants = new Set(['/']);
+        let current = '';
+        segments.forEach(segment => {
+            current += `/${segment}`;
+            variants.add(current);
+            variants.add(`${current}/`);
+        });
+        return Array.from(variants);
+    }
+
+    function getCookieDomainVariants(hostname) {
+        const normalizedHost = String(hostname || '').trim().replace(/^\.+/, '');
+        const variants = new Set(['']);
+        if (!normalizedHost || normalizedHost === 'localhost' || normalizedHost.includes(':') || /^[\d.]+$/.test(normalizedHost)) {
+            return Array.from(variants);
+        }
+        const parts = normalizedHost.split('.').filter(Boolean);
+        for (let index = 0; index < parts.length - 1; index += 1) {
+            const domain = parts.slice(index).join('.');
+            variants.add(domain);
+            variants.add(`.${domain}`);
+        }
+        return Array.from(variants);
+    }
+
+    function clearOriginCookies() {
+        try {
+            const cookieNames = Array.from(new Set(
+                String(document.cookie || '')
+                    .split(';')
+                    .map(part => part.split('=')[0]?.trim())
+                    .filter(Boolean)
+            ));
+            const pathVariants = getCookiePathVariants(window.location.pathname);
+            const domainVariants = getCookieDomainVariants(window.location.hostname);
+            cookieNames.forEach((name) => {
+                pathVariants.forEach((path) => {
+                    domainVariants.forEach((domain) => {
+                        const domainAttr = domain ? `;domain=${domain}` : '';
+                        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;max-age=0;path=${path}${domainAttr}`;
+                    });
+                });
+            });
+        } catch (_) { }
+    }
+
+    async function clearOriginIndexedDbDatabases() {
+        try {
+            const dbApi = window.indexedDB;
+            if (!dbApi || typeof dbApi.databases !== 'function') return;
+            const databases = await dbApi.databases();
+            await Promise.all((databases || []).map(db => {
+                if (!db || !db.name) return Promise.resolve();
+                return new Promise((resolve) => {
+                    const request = dbApi.deleteDatabase(db.name);
+                    request.onsuccess = request.onerror = request.onblocked = () => resolve();
+                });
+            }));
+        } catch (_) { }
+    }
+
     // Reset settings flow
     function openResetConfirm() {
         openModalById('resetConfirmModal');
     }
 
     async function performFullReset() {
+        closeResetConfirmModal();
         showLoading(true);
-        let freshToken = null;
         try {
-            // 0) Request a fresh default config token from the server before clearing everything
-            try {
-                const response = await fetch('/api/get-session/00000000000000000000000000000000?autoRegenerate=true');
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.regenerated && data.token) {
-                        freshToken = data.token;
-                        console.log('[Reset] Generated fresh default config token:', freshToken);
-                    }
-                }
-            } catch (err) {
-                console.warn('[Reset] Failed to request fresh token, will reload without one:', err);
-            }
-
-            // 1) Best-effort: ask SW to clear caches
+            // Reset is intentionally browser-local: it forgets local token references and
+            // site data here, but does not delete the backing server-side sessions.
             try {
                 if (navigator.serviceWorker && navigator.serviceWorker.controller) {
                     navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
                 }
             } catch (_) { }
 
-            // 2) Clear Cache Storage directly (in case SW isn't active)
             try {
                 if (window.caches && window.caches.keys) {
                     const names = await window.caches.keys();
@@ -6787,7 +10493,6 @@ Translate to {target_language}.`;
                 }
             } catch (_) { }
 
-            // 3) Unregister service workers
             try {
                 if ('serviceWorker' in navigator) {
                     const regs = await navigator.serviceWorker.getRegistrations();
@@ -6795,34 +10500,14 @@ Translate to {target_language}.`;
                 }
             } catch (_) { }
 
-            // 4) Clear IndexedDB (best-effort; may not be supported everywhere)
-            try {
-                const hasDBList = !!(indexedDB && indexedDB.databases);
-                if (hasDBList) {
-                    const dbs = await indexedDB.databases();
-                    await Promise.all((dbs || []).map(db => db && db.name ? new Promise(res => { const req = indexedDB.deleteDatabase(db.name); req.onsuccess = req.onerror = req.onblocked = () => res(); }) : Promise.resolve()));
-                }
-            } catch (_) { }
+            await clearOriginIndexedDbDatabases();
 
-            // 5) Clear storage
             try { localStorage.clear(); } catch (_) { }
             try { sessionStorage.clear(); } catch (_) { }
 
-            // 6) Clear cookies for this origin (best-effort)
-            try {
-                const parts = document.cookie.split(';');
-                for (const part of parts) {
-                    const name = part.split('=')[0]?.trim();
-                    if (!name) continue;
-                    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-                }
-            } catch (_) { }
+            clearOriginCookies();
         } finally {
-            // 7) Reload with fresh token in path (if available) and cache-busting param
-            const basePath = '/configure';
-            const tokenSegment = freshToken ? `/${freshToken}` : '';
-            const qs = `?reset=${Date.now()}`;
-            window.location.replace(basePath + tokenSegment + qs);
+            window.location.replace(`/configure?reset=${Date.now()}`);
         }
     }
 

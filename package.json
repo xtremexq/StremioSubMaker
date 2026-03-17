@@ -1,12 +1,13 @@
 {
   "name": "submaker-subtitle-translator",
   "version": "1.4.75",
-  "xsyncMinVersion": "1.0.7",
+  "xsyncMinVersion": "1.0.8",
   "description": "Take control of your subtitles! Fetch and translate subtitles from OpenSubtitles, SubScene and SubDL with a free Gemini AI key or multiple AI providers, without ever leaving Stremio.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "test": "node --test tests/configPageState.test.js tests/sessionManager.test.js tests/localSubtitleHashResolver.test.js tests/streamActivity.test.js tests/assConversion.test.js tests/subdl.test.js",
     "update:anime-list": "node update-anime-list.js",
     "check:locale-headers": "node scripts/check-locale-headers.js",
     "sync:locales": "node scripts/sync-locales.js"

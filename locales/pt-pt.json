@@ -943,14 +943,16 @@
           "step5": "Siga os passos no ecrã, depois arraste o resultado de volta para o Stremio se necessário."
         },
         "reset": {
-          "title": "Repor Todas as Definições",
-          "intro": "<strong>Isto irá repor literalmente tudo neste site:</strong>",
-          "item1": "- Armazenamento local, armazenamento de sessão, definição e tokens em cache",
-          "item2": "- Service worker e todas as caches",
-          "item3": "- Quaisquer dados do site guardados por esta app",
-          "footer": "A página será recarregada depois.",
+          "title": "Repor os Dados do SubMaker neste Navegador",
+          "intro": "<strong>Isto é um reinício local completo para este navegador neste site. Irá:</strong>",
+          "item1": "Esquecer o token atual, a configuração em cache, as entradas do Token Vault / Gestor de Perfis e qualquer progresso do Quick Setup guardado neste navegador",
+          "item2": "Repor preferências do site e das ferramentas, como idioma da interface, tema, estado de painéis/secções, estado de Novidades, instruções dispensadas e opções guardadas das ferramentas",
+          "item3": "Limpar os dados do navegador usados pelo SubMaker neste site: localStorage, sessionStorage, cookies, service worker, Cache Storage e qualquer IndexedDB criado aqui",
+          "item4": "Recarregar Configurar como um rascunho em branco com as definições padrão e sem perfil local guardado selecionado",
+          "item5": "Não apagar tokens ou perfis do servidor; qualquer URL de token guardada noutro local continuará a poder reabri-los",
+          "footer": "Depois de recarregar, este navegador começa do zero.",
           "cancel": "Cancelar",
-          "confirm": "Repor Tudo"
+          "confirm": "Limpar Dados do Navegador"
         }
       },
       "noTranslation": {
@@ -1443,8 +1445,8 @@
         "title": "Dev"
       },
       "reset": {
-        "hint": "Algum problema? Repor definições para padrão ->",
-        "cta": "Repor"
+        "hint": "Precisa de um reinício limpo? Limpe os dados do SubMaker neste navegador ->",
+        "cta": "Limpar Dados"
       }
     },
     "nav": {

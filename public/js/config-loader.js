@@ -56,6 +56,14 @@
         }
     }
 
+    document.addEventListener('click', function(event) {
+        if (window.__tokenVaultUiReady === true) return;
+        var target = event.target;
+        var launcher = target && target.closest ? target.closest('#tokenVaultLauncher') : null;
+        if (!launcher) return;
+        window.__tokenVaultLauncherOpenRequested = true;
+    }, true);
+
     var partialsReady = window.mainPartialReady || window.partialsReady || Promise.resolve();
     var partialsOrTimeout = Promise.race([
         partialsReady,

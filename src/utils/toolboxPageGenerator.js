@@ -7,6 +7,7 @@ const { version: appVersion, xsyncMinVersion: REQUIRED_XSYNC_VERSION } = require
 const { quickNavStyles, quickNavScript, renderQuickNav, renderRefreshBadge } = require('./quickNav');
 const { buildClientBootstrap, loadLocale, getTranslator } = require('./i18n');
 const { resolveHistoryTitle } = require('../handlers/subtitles');
+const { getEffectiveGeminiModel } = require('./config');
 
 function escapeHtml(value) {
   if (value === undefined || value === null) return '';
@@ -429,7 +430,7 @@ function getProviderSummary(config, translator) {
       if (front) names.unshift(norm);
       else names.push(norm);
     };
-    const geminiConfigured = Boolean(config.geminiModel || config.geminiKey || config.geminiApiKey || providers.gemini);
+    const geminiConfigured = Boolean(getEffectiveGeminiModel(config) || config.geminiKey || config.geminiApiKey || providers.gemini);
     const geminiEnabled = providers.gemini ? providers.gemini.enabled !== false : geminiConfigured;
     // Always show Gemini first when present
     if (geminiConfigured) add(formatProviderName('Gemini'), geminiEnabled, true);
@@ -1831,7 +1832,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       const modelLabel = model ? ` (${model})` : '';
       return `${base}${modelLabel}`;
     };
-    const geminiConfigured = Boolean(config.geminiModel || config.geminiKey || config.geminiApiKey || providers.gemini);
+    const effectiveGeminiModel = getEffectiveGeminiModel(config);
+    const geminiConfigured = Boolean(effectiveGeminiModel || config.geminiKey || config.geminiApiKey || providers.gemini);
     const geminiEnabled = providers.gemini ? providers.gemini.enabled !== false : geminiConfigured;
     const addIfEnabled = (key, label, model) => {
       const norm = String(key || '').trim().toLowerCase();
@@ -1848,17 +1850,17 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       options.push({ key: norm, label: label || formatLabel(key, model), model: model || '' });
     };
     if (geminiEnabled) {
-      const geminiLabel = formatLabel('Gemini', config.geminiModel || providers.gemini?.model || '');
-      addIfEnabled('gemini', geminiLabel, config.geminiModel || providers.gemini?.model || '');
+      const geminiLabel = formatLabel('Gemini', effectiveGeminiModel || providers.gemini?.model || '');
+      addIfEnabled('gemini', geminiLabel, effectiveGeminiModel || providers.gemini?.model || '');
     }
     if (config.multiProviderEnabled && config.mainProvider) {
       const entry = resolveProviderEntry(config.mainProvider);
-      const model = entry?.config?.model || (config.mainProvider.toLowerCase() === 'gemini' ? config.geminiModel : '');
+      const model = entry?.config?.model || (config.mainProvider.toLowerCase() === 'gemini' ? effectiveGeminiModel : '');
       addIfEnabled(config.mainProvider, `Main: ${formatLabel(config.mainProvider, model)}`, model);
     }
     if (config.secondaryProviderEnabled && config.secondaryProvider) {
       const entry = resolveProviderEntry(config.secondaryProvider);
-      const model = entry?.config?.model || (config.secondaryProvider.toLowerCase() === 'gemini' ? config.geminiModel : '');
+      const model = entry?.config?.model || (config.secondaryProvider.toLowerCase() === 'gemini' ? effectiveGeminiModel : '');
       addIfEnabled(config.secondaryProvider, `Secondary: ${formatLabel(config.secondaryProvider, model)}`, model);
     }
     Object.keys(providers || {}).forEach(key => {
@@ -4412,23 +4414,63 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       }
     }
 
+    function normalizeSubtitleFormatHintClient(...values) {
+      for (const value of values) {
+        const lower = String(value || '').trim().toLowerCase();
+        if (!lower) continue;
+        if (lower.includes('webvtt') || /\bvtt\b/.test(lower)) return 'vtt';
+        if (lower.includes('s_text/ssa') || lower.includes('substation alpha') || /\bssa\b/.test(lower)) return 'ssa';
+        if (lower.includes('s_text/ass') || lower.includes('advanced substation alpha') || /\bass\b/.test(lower)) return 'ass';
+        if (lower.includes('subrip') || lower.includes('utf8') || lower.includes('mov_text') || lower.includes('tx3g') || /\bsrt\b/.test(lower)) return 'srt';
+      }
+      return 'srt';
+    }
+
+    function inferTrackDownloadFormat(track = {}) {
+      if (track.binary || track.codec === 'copy') {
+        const binaryMime = String(track.mime || '').toLowerCase();
+        return {
+          ext: binaryMime.includes('matroska') ? 'mkv' : 'bin',
+          mime: track.mime || 'application/octet-stream'
+        };
+      }
+      const preferredMime = (() => {
+        const raw = String(track.mime || '').trim();
+        if (!raw) return '';
+        if (/^text\/plain\b/i.test(raw) || /^application\/octet-stream\b/i.test(raw)) return '';
+        return raw;
+      })();
+      const format = normalizeSubtitleFormatHintClient(track.codec, track.mime, track.label, track.originalLabel);
+      switch (format) {
+        case 'ass':
+          return { ext: 'ass', mime: preferredMime || 'text/x-ssa; charset=utf-8' };
+        case 'ssa':
+          return { ext: 'ssa', mime: preferredMime || 'text/x-ssa; charset=utf-8' };
+        case 'vtt':
+          return { ext: 'vtt', mime: preferredMime || 'text/vtt; charset=utf-8' };
+        default:
+          return { ext: 'srt', mime: preferredMime || 'application/x-subrip; charset=utf-8' };
+      }
+    }
+
     function resolveTrackData(track) {
+      const format = inferTrackDownloadFormat(track);
       const isBinary = track.binary || track.codec === 'copy';
       if (isBinary) {
         if (track.contentBytes) {
-          return { data: new Uint8Array(track.contentBytes), mime: track.mime || 'application/octet-stream' };
+          return { data: new Uint8Array(track.contentBytes), mime: format.mime };
         }
         if (track.contentBase64) {
-          return { data: base64ToUint8(track.contentBase64), mime: track.mime || 'application/octet-stream' };
+          return { data: base64ToUint8(track.contentBase64), mime: format.mime };
         }
       }
       if (track.contentBase64) {
-        return { data: base64ToUint8(track.contentBase64), mime: track.mime || 'text/plain' };
+        return { data: base64ToUint8(track.contentBase64), mime: format.mime };
       }
       if (track.content instanceof Uint8Array || track.content instanceof ArrayBuffer) {
-        return { data: track.content, mime: track.mime || 'text/plain' };
+        return { data: track.content, mime: format.mime };
       }
-      return { data: track.content || '', mime: track.mime || 'text/plain' };
+      return { data: track.content || '', mime: format.mime };
     }
 
     function logExtract(msg) {
@@ -4973,7 +5015,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
 
       state.tracks.forEach(track => {
         const { mime } = resolveTrackData(track);
-        const ext = track.binary ? (track.mime && track.mime.includes('matroska') ? 'mkv' : 'bin') : 'srt';
+        const { ext } = inferTrackDownloadFormat(track);
         const card = document.createElement('div');
         card.className = 'track extract-card' + (state.selectedTrackId === track.id ? ' active' : '');
         const title = document.createElement('div');
@@ -5114,11 +5156,17 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       'en-au': 'en',
       'en-ca': 'en',
       'en-nz': 'en',
-      'en-uk': 'en'
+      'en-uk': 'en',
+      'pt-br': 'pob',
+      'pt-pt': 'por',
+      'es-419': 'es',
+      'zh-hans': 'zh',
+      'zh-hant': 'zh'
     };
     function normalizeTrackLanguageCode(raw) {
       if (!raw) return null;
       const rawStr = String(raw).trim().toLowerCase();
+      if (rawStr === 'und' || rawStr === 'unk' || rawStr === 'unknown' || rawStr === 'auto') return null;
       if (/^extracte/.test(rawStr)) return null;
       if (/^extracted[_\\s-]?sub/.test(rawStr)) return null;
       if (/^remux[_\\s-]?sub/.test(rawStr)) return null;
@@ -5127,6 +5175,11 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
       const cleaned = rawStr.replace(/_/g, '-').replace(/[^a-z-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
       if (!cleaned) return null;
       if (BCP47_LANG_NORMALIZE_MAP[cleaned]) return BCP47_LANG_NORMALIZE_MAP[cleaned];
+      if (TRACK_LANG_NORMALIZE_MAP[cleaned]) return TRACK_LANG_NORMALIZE_MAP[cleaned];
+      if (LANGUAGE_NAME_ALIASES[cleaned]) return LANGUAGE_NAME_ALIASES[cleaned];
+      const compact = cleaned.replace(/-/g, '');
+      if (TRACK_LANG_NORMALIZE_MAP[compact]) return TRACK_LANG_NORMALIZE_MAP[compact];
+      if (LANGUAGE_NAME_ALIASES[compact]) return LANGUAGE_NAME_ALIASES[compact];
       const parts = cleaned.split('-').filter(Boolean);
       const base = parts[0];
       if (!base) return null;
@@ -5179,18 +5232,66 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
         .filter(v => v.trim().length > 0);
     }
     function resolveTrackLanguage(track = {}) {
-      const hints = collectTrackLanguageHints(track);
-      let firstKnown = null;
-      for (const hint of hints) {
-        const normalized = normalizeTrackLanguageCode(hint) || detectLanguageFromLabel(hint);
-        if (normalized) {
-          const code = normalized.toLowerCase();
-          if (code === 'en') return 'en';
-          if (!firstKnown) firstKnown = code;
+      const tags = track.tags || {};
+      const resolveFirst = (values = []) => {
+        let firstKnown = null;
+        for (const hint of values) {
+          if (hint === undefined || hint === null) continue;
+          const normalized = normalizeTrackLanguageCode(hint) || detectLanguageFromLabel(hint);
+          if (normalized) {
+            const code = normalized.toLowerCase();
+            if (code === 'en') return 'en';
+            if (!firstKnown) firstKnown = code;
+          }
         }
+        return firstKnown;
+      };
+      const metadataHints = [
+        track.languageRaw,
+        track.languageCode,
+        track.languageIetf,
+        track.langCode,
+        track.languageTag,
+        track.langTag,
+        tags.language,
+        tags.LANGUAGE,
+        tags.lang,
+        tags.LANG,
+        tags.languageIetf,
+        tags.language_ietf
+      ];
+      const explicitHints = [
+        track.language,
+        track.lang,
+        track.originalLanguage,
+        track.sourceLanguage
+      ];
+      const labelHints = [
+        track.title,
+        tags.title,
+        track.name,
+        tags.name,
+        track.label,
+        track.originalLabel,
+        track.handlerName,
+        tags.handler_name,
+        tags.handlerName
+      ];
+      const metadataResolved = resolveFirst(metadataHints);
+      const explicitResolved = resolveFirst(explicitHints);
+      const labelResolved = resolveFirst(labelHints);
+      const languageSource = String(track.languageSource || '').toLowerCase();
+      const ordered = (languageSource === 'content-guess' || languageSource === 'label')
+        ? [metadataResolved, labelResolved, explicitResolved]
+        : ((languageSource === 'metadata' || languageSource === 'container-header')
+          ? [explicitResolved, metadataResolved, labelResolved]
+          : [metadataResolved, explicitResolved, labelResolved]);
+      for (const code of ordered) {
+        if (code) return code;
       }
+      const hints = collectTrackLanguageHints(track);
       if (hints.some(hasEnglishKeyword)) return 'en';
-      return firstKnown || 'und';
+      return 'und';
     }
     function detectLanguageFromLabel(label) {
       if (!label) return null;
@@ -5255,7 +5356,7 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
             contentPayload = btoa(str);
             encoding = 'base64';
           }
-          const langCode = canonicalTrackLanguageCode(track.language || track.label || track.name || 'und');
+          const langCode = canonicalTrackLanguageCode(resolveTrackLanguage(track));
           await fetch('/api/save-embedded-subtitle', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -5489,6 +5590,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
               languageCode: isGeneratedLangHint(t.languageCode) ? '' : t.languageCode,
               languageIetf: isGeneratedLangHint(t.languageIetf) ? '' : t.languageIetf,
               langCode: isGeneratedLangHint(t.langCode) ? '' : t.langCode,
+              languageTag: isGeneratedLangHint(t.languageTag) ? '' : t.languageTag,
+              langTag: isGeneratedLangHint(t.langTag) ? '' : t.langTag,
               label: isGeneratedLabel(t.label) ? '' : t.label,
               originalLabel: isGeneratedLabel(t.originalLabel) ? '' : t.originalLabel,
               name: isGeneratedLabel(t.name) ? '' : t.name
@@ -5498,6 +5601,13 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
               id: t.id || idx,
               label: t.label || tr('toolbox.downloads.trackLabel', { id: idx + 1 }, 'Track ' + (idx + 1)),
               language: rawLang ? rawLang.toLowerCase() : 'und',
+              languageRaw: normalizedTrack.languageRaw || '',
+              languageSource: t.languageSource || '',
+              languageCode: normalizedTrack.languageCode || '',
+              languageIetf: normalizedTrack.languageIetf || '',
+              langCode: normalizedTrack.langCode || '',
+              languageTag: normalizedTrack.languageTag || '',
+              langTag: normalizedTrack.langTag || '',
               codec: t.codec || t.format || 'subtitle',
               binary: false,
               content: contentValue,
@@ -5505,6 +5615,8 @@ async function generateEmbeddedSubtitlePage(configStr, videoId, filename) {
               contentBytes,
               byteLength,
               mime: t.mime || 'text/plain',
+              name: normalizedTrack.name || '',
+              originalLabel: normalizedTrack.originalLabel || '',
               extractedAt: Date.now(),
               batchId
             };
@@ -5788,7 +5900,8 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       const modelLabel = model ? ` (${model})` : '';
       return `${base}${modelLabel}`;
     };
-    const geminiConfigured = Boolean(config.geminiModel || config.geminiKey || config.geminiApiKey || providers.gemini);
+    const effectiveGeminiModel = getEffectiveGeminiModel(config);
+    const geminiConfigured = Boolean(effectiveGeminiModel || config.geminiKey || config.geminiApiKey || providers.gemini);
     const geminiEnabled = providers.gemini ? providers.gemini.enabled !== false : geminiConfigured;
     const addIfEnabled = (key, label, model) => {
       const norm = String(key || '').trim().toLowerCase();
@@ -5805,17 +5918,17 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
       options.push({ key: norm, label: label || formatLabel(key, model) });
     };
     if (geminiEnabled) {
-      const geminiLabel = formatLabel('Gemini', config.geminiModel || providers.gemini?.model || '');
-      addIfEnabled('gemini', geminiLabel, config.geminiModel || providers.gemini?.model || '');
+      const geminiLabel = formatLabel('Gemini', effectiveGeminiModel || providers.gemini?.model || '');
+      addIfEnabled('gemini', geminiLabel, effectiveGeminiModel || providers.gemini?.model || '');
     }
     if (config.multiProviderEnabled && config.mainProvider) {
       const entry = resolveProviderEntry(config.mainProvider);
-      const model = entry?.config?.model || (config.mainProvider.toLowerCase() === 'gemini' ? config.geminiModel : '');
+      const model = entry?.config?.model || (config.mainProvider.toLowerCase() === 'gemini' ? effectiveGeminiModel : '');
       addIfEnabled(config.mainProvider, `Main: ${formatLabel(config.mainProvider, model)}`, model);
     }
     if (config.secondaryProviderEnabled && config.secondaryProvider) {
       const entry = resolveProviderEntry(config.secondaryProvider);
-      const model = entry?.config?.model || (config.secondaryProvider.toLowerCase() === 'gemini' ? config.geminiModel : '');
+      const model = entry?.config?.model || (config.secondaryProvider.toLowerCase() === 'gemini' ? effectiveGeminiModel : '');
       addIfEnabled(config.secondaryProvider, `Secondary: ${formatLabel(config.secondaryProvider, model)}`, model);
     }
     Object.keys(providers || {}).forEach(key => {
@@ -8087,7 +8200,15 @@ async function generateAutoSubtitlePage(configStr, videoId, filename, config = {
     translateToTarget: true,
     streamFilename: filename || '',
     provider: (config?.mainProvider && String(config.mainProvider).toLowerCase()) || providerOptions[0]?.key || 'gemini',
-    translationModel: config?.geminiModel || '',
+    translationModel: (() => {
+      const activeProvider = (config?.mainProvider && String(config.mainProvider).toLowerCase()) || providerOptions[0]?.key || 'gemini';
+      if (activeProvider === 'gemini') {
+        return getEffectiveGeminiModel(config);
+      }
+      const providers = config?.providers || {};
+      const matchKey = Object.keys(providers).find(key => String(key).toLowerCase() === activeProvider);
+      return matchKey ? (providers[matchKey]?.model || '') : '';
+    })(),
     sendTimestampsToAI: config?.advancedSettings?.sendTimestampsToAI === true,
     singleBatchMode: config?.singleBatchMode === true,
     assemblySendFullVideo: config?.autoSubs?.sendFullVideoToAssembly === true,

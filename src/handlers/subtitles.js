@@ -22,6 +22,7 @@ const autoSubCache = require('../utils/autoSubCache');
 const streamActivity = require('../utils/streamActivity');
 const embeddedCache = require('../utils/embeddedCache');
 const smdbCache = require('../utils/smdbCache');
+const { resolveLocalSubtitleHashes, persistLocalHashAssociations } = require('../utils/localSubtitleHashResolver');
 const { StorageFactory, StorageAdapter } = require('../storage');
 const { getCached: getDownloadCached, saveCached: saveDownloadCached } = require('../utils/downloadCache');
 const log = require('../utils/logger');
@@ -32,6 +33,7 @@ const { deduplicateSubtitles, logDeduplicationStats } = require('../utils/subtit
 const { version } = require('../../package.json');
 const { isProviderHealthy, circuitBreaker } = require('../utils/httpAgents');
 const { getShared, setShared, incrementCounter, decrementCounter, getCounter, CACHE_PREFIXES, CACHE_TTLS } = require('../utils/sharedCache');
+const { getEffectiveGeminiModel } = require('../utils/config');
 
 const fs = require('fs');
 const path = require('path');
@@ -66,6 +68,18 @@ function shortKey(v) {
   } catch (_) {
     const s = String(v || '');
     return s.length > 12 ? s.slice(0, 12) + '...' : s;
+  }
+}
+
+async function bumpSubtitleSearchRevisionForConfigHash(configHash) {
+  try {
+    const userHash = (configHash && typeof configHash === 'string' && configHash.length > 0)
+      ? configHash
+      : 'default';
+    const key = `${CACHE_PREFIXES.SUBTITLE_SEARCH_REV}${userHash}`;
+    await incrementCounter(key, CACHE_TTLS.SUBTITLE_SEARCH_REV || (7 * 24 * 60 * 60));
+  } catch (error) {
+    log.warn(() => `[Subtitle Cache] Failed to bump search revision: ${error?.message || error}`);
   }
 }
 
@@ -143,7 +157,7 @@ function resolveModelNameFromConfig(config) {
   const multiEnabled = config.multiProviderEnabled === true;
   const mainProvider = String(multiEnabled ? (config.mainProvider || 'gemini') : 'gemini').toLowerCase();
   if (mainProvider === 'gemini') {
-    return config.geminiModel || '';
+    return getEffectiveGeminiModel(config);
   }
   const providerConfig = resolveProviderConfig(config, mainProvider);
   return providerConfig?.model || '';
@@ -2365,6 +2379,13 @@ function createSubtitleHandler(config) {
             videoHash: videoHashForActivity,
             stremioHash: realStremioHash
           });
+          await persistLocalHashAssociations({
+            configHash,
+            videoId: id,
+            streamFilename,
+            derivedVideoHash: videoHashForActivity,
+            stremioHash: realStremioHash
+          });
 
           // Persist stremioHash ↔ derivedHash mapping so SMDB can find subtitles
           // stored under either hash even after server restarts (stream activity is in-memory only)
@@ -2924,9 +2945,17 @@ function createSubtitleHandler(config) {
         || config.fileTranslationEnabled === true
         || config.syncSubtitlesEnabled === true;
 
-      // Derive a single stable video hash for cache lookups
-      const primaryVideoHash = deriveVideoHash(streamFilename || '', id);
-      const videoHashes = primaryVideoHash ? [primaryVideoHash] : [];
+      const localHashLookup = await resolveLocalSubtitleHashes({
+        configHash: config.__configHash || '',
+        videoId: id,
+        streamFilename,
+        stremioHash: hasRealStremioHash ? extra.videoHash : ''
+      });
+      const primaryVideoHash = localHashLookup.primaryVideoHash;
+      const videoHashes = localHashLookup.lookupHashes;
+      if (videoHashes.length > localHashLookup.directHashes.length) {
+        log.debug(() => `[Subtitles] Local hash expansion: ${localHashLookup.directHashes.length} direct -> ${videoHashes.length} total hashes`);
+      }
 
       // Preload embedded originals AND translations in parallel (used for display + translation sources)
       // Performance: Single parallel fetch avoids multiple sequential calls later
@@ -3315,15 +3344,17 @@ function createSubtitleHandler(config) {
       if (primaryVideoHash) {
         try {
           // Start with directly-available hashes
-          const directHashes = new Set();
-          if (hasRealStremioHash && extra.videoHash) directHashes.add(extra.videoHash);
-          directHashes.add(primaryVideoHash);
+          const directHashes = new Set(localHashLookup.directHashes || []);
+          const associationSeedHashes = new Set(localHashLookup.associationSeedHashes || []);
 
           // Expand via persistent hash mappings (stremioHash ↔ derivedHash stored in Redis)
           // This ensures subtitles uploaded under one hash are found even when only the other is available
-          const expansionPromises = [...directHashes].map(h => smdbCache.getAssociatedHashes(h));
+          const expansionPromises = [...associationSeedHashes].map(h => smdbCache.getAssociatedHashes(h));
           const expansionResults = await Promise.all(expansionPromises);
-          const smdbHashes = [...new Set(expansionResults.flat().filter(Boolean))];
+          const smdbHashes = [...new Set([
+            ...directHashes,
+            ...expansionResults.flat().filter(Boolean)
+          ])];
 
           if (smdbHashes.length > directHashes.size) {
             log.debug(() => `[Subtitles] SMDB hash expansion: ${directHashes.size} direct → ${smdbHashes.length} total hashes`);
@@ -4768,7 +4799,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
     if (translatedContent === undefined) {
     const { provider, providerName: _providerName, model, fallbackProviderName } = await createTranslationProvider(config);
     providerName = _providerName;
-    effectiveModel = model || config.geminiModel;
+    effectiveModel = model || getEffectiveGeminiModel(config);
     log.debug(() => `[Translation] Using provider=${providerName} model=${effectiveModel}`);
 
     // Initialize new Translation Engine (structure-first approach)
@@ -5092,6 +5123,7 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
           translatedContent,
           translationMeta
         );
+        await bumpSubtitleSearchRevisionForConfigHash(config?.__configHash);
         log.debug(() => `[Translation] Saved xEmbed translation for ${embeddedSource.videoHash}_${embeddedSource.trackId} -> ${canonicalTargetLang}`);
       } catch (e) {
         log.warn(() => [`[Translation] Failed to save xEmbed translation for ${embeddedSource?.videoHash}_${embeddedSource?.trackId}:`, e.message]);

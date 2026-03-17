@@ -47,7 +47,6 @@ const NON_CACHEABLE_ASSETS = new Set([
     '/js/config-loader.js',
     '/js/ui-widgets.js',
     '/js/theme-toggle.js',
-    '/js/help-modal.js',
     '/js/sw-register.js',
     '/config.js',
     '/sw.js'

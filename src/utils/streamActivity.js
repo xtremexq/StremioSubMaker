@@ -13,6 +13,13 @@ const latestByConfig = new LRUCache({
   // was open, causing phantom "New stream detected" toasts for titles streamed days ago.
 });
 
+// Keeps recent activity per config + videoId so a stream can be rediscovered
+// after the user switches away and later returns with weaker metadata.
+const recentByConfigVideoId = new LRUCache({
+  max: parseInt(process.env.STREAM_ACTIVITY_RECENT_MAX || '20000', 10),
+  ttl: parseInt(process.env.STREAM_ACTIVITY_TTL_MS || `${6 * 60 * 60 * 1000}`, 10)
+});
+
 // Maximum age (ms) of a cached entry to serve on a fresh SSE subscribe.
 // Entries older than this are considered stale and omitted from the initial snapshot,
 // so newly opened toolbox/SMDB pages don't instantly fire a toast for an old stream.
@@ -33,6 +40,13 @@ let heartbeatLogWindowStart = Date.now();
 let heartbeatPingEvents = 0;
 let heartbeatListenerSamples = 0;
 let heartbeatSampleCount = 0;
+
+function buildRecentKey(configHash, videoId) {
+  const cfg = (configHash || '').toString().trim();
+  const id = (videoId || '').toString().trim();
+  if (!cfg || !id) return '';
+  return `${cfg}::${id}`;
+}
 
 // ── Redis Pub/Sub (multi-instance support) ──────────────────────────────────
 const INSTANCE_ID = crypto.randomBytes(8).toString('hex');
@@ -100,6 +114,11 @@ function recordStreamActivity(payload) {
 
   const keepPrevious = !!previous;
   const placeholder = isPlaceholderId(incomingId);
+  const recentKey = buildRecentKey(payload.configHash, incomingId);
+  const previousForVideo = recentKey ? recentByConfigVideoId.get(recentKey) : null;
+  const sameVideoPrevious = previous && previous.videoId === incomingId
+    ? previous
+    : ((previousForVideo && previousForVideo.videoId === incomingId) ? previousForVideo : null);
 
   // If the first ping is a placeholder (with or without details), ignore it; wait for a real stream event
   if (!keepPrevious && placeholder) {
@@ -118,30 +137,30 @@ function recordStreamActivity(payload) {
     effectiveHash = previous.videoHash || effectiveHash;
     effectiveStremioHash = previous.stremioHash || effectiveStremioHash;
   } else {
-    // Fill gaps from previous when the videoId matches but fields are missing
-    if (keepPrevious && previous.videoId === incomingId) {
+    // Fill gaps from the most authoritative entry we have for this videoId.
+    if (sameVideoPrevious) {
       // Guard against hash drift for same-episode updates.
       // When the previous entry already has an authoritative filename+hash pair,
       // keep them stable unless the incoming payload is *strictly more complete*
       // (i.e. it also carries a non-empty filename). This prevents both:
       //  - "id-only" hash drift (no filename + different derived hash)
       //  - "re-encoded filename" drift (different filename string → different MD5 hash)
-      if (previous.filename && previous.videoHash) {
+      if (sameVideoPrevious.filename && sameVideoPrevious.videoHash) {
         if (!incomingFilename) {
           // Incoming has no filename — always keep previous authoritative pair
-          effectiveFilename = previous.filename;
-          effectiveHash = previous.videoHash;
-        } else if (incomingHash && incomingHash !== previous.videoHash) {
+          effectiveFilename = sameVideoPrevious.filename;
+          effectiveHash = sameVideoPrevious.videoHash;
+        } else if (incomingHash && incomingHash !== sameVideoPrevious.videoHash) {
           // Incoming has a filename AND a different hash — this is likely the same
           // stream reported with a slightly different filename string (URL-encoded,
           // different addon, etc.).  Keep the original authoritative pair.
-          effectiveFilename = previous.filename;
-          effectiveHash = previous.videoHash;
+          effectiveFilename = sameVideoPrevious.filename;
+          effectiveHash = sameVideoPrevious.videoHash;
         }
       }
-      if (!effectiveFilename) effectiveFilename = previous.filename || '';
-      if (!effectiveHash) effectiveHash = previous.videoHash || '';
-      if (!effectiveStremioHash) effectiveStremioHash = previous.stremioHash || '';
+      if (!effectiveFilename) effectiveFilename = sameVideoPrevious.filename || '';
+      if (!effectiveHash) effectiveHash = sameVideoPrevious.videoHash || '';
+      if (!effectiveStremioHash) effectiveStremioHash = sameVideoPrevious.stremioHash || '';
     }
   }
 
@@ -176,6 +195,10 @@ function recordStreamActivity(payload) {
   );
 
   latestByConfig.set(payload.configHash, entry);
+  const nextRecentKey = buildRecentKey(payload.configHash, entry.videoId);
+  if (nextRecentKey) {
+    recentByConfigVideoId.set(nextRecentKey, entry);
+  }
 
   if (isNewEntry || videoIdChanged) {
     const shortHash = payload.configHash.slice(0, 8);
@@ -247,6 +270,10 @@ function _handleRemoteStreamEvent(message) {
 
     // Always update local LRU so polling fallback stays current
     latestByConfig.set(data.configHash, data.entry);
+    const recentKey = buildRecentKey(data.configHash, data.entry.videoId);
+    if (recentKey) {
+      recentByConfigVideoId.set(recentKey, data.entry);
+    }
 
     // Only notify local listeners on a genuinely new stream
     if (isNewEntry || videoIdChanged) {
@@ -325,6 +352,18 @@ async function initPubSub() {
 function getLatestStreamActivity(configHash) {
   if (!configHash) return null;
   return latestByConfig.get(configHash) || null;
+}
+
+/**
+ * Get the most recent activity for a specific config + videoId pair.
+ * This survives switching to a different stream while the TTL window is active.
+ * @param {string} configHash
+ * @param {string} videoId
+ */
+function getRecentStreamActivity(configHash, videoId) {
+  const key = buildRecentKey(configHash, videoId);
+  if (!key) return null;
+  return recentByConfigVideoId.get(key) || null;
 }
 
 /**
@@ -440,6 +479,7 @@ setInterval(() => {
 module.exports = {
   recordStreamActivity,
   getLatestStreamActivity,
+  getRecentStreamActivity,
   subscribe,
   initPubSub
 };
