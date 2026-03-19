@@ -49,9 +49,7 @@ Check their [FREE Stremio Addons Guide](https://stremio-addons-guide.elfhosted.c
 | **Subtitle Sources** | OpenSubtitles, SubDL, SubSource, Wyzie, Stremio Community, Subs.ro |
 | **AI Translation** | 10+ providers: Gemini, OpenAI, Claude, DeepL, DeepSeek, Grok, Mistral, OpenRouter, Cloudflare, Custom/Local |
 | **Smart Caching** | Shared translation database — translate once, benefit everyone |
-| **Workflows** | XML Tags, Original Timestamps, Send Timestamps to AI |
-| **JSON Structured Output** | API-level JSON enforcement for reliable parsing (Gemini, OpenAI, etc.) |
-| **Mobile Ready** | Android/iOS optimized with dedicated Mobile Mode |
+| **Timestamp Workflows** | XML Tags, JSON, Numbered Timestamps, Send Timestamps to AI |
 | **No-Translation Mode** | Just fetch subtitles without translation |
 
 ---
