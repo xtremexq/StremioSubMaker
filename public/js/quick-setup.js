@@ -24,6 +24,17 @@
     // No popular languages â€” all shown alphabetically
     const POPULAR_LANG_CODES = [];
 
+    const QUICK_SETUP_MODEL_LABEL_FALLBACKS = {
+        'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite',
+        'gemini-2.5-flash-lite': 'Gemini 2.5 Flash-Lite',
+        'gemini-2.5-flash': 'Gemini 2.5 Flash',
+        'gemini-3-flash-preview': 'Gemini 3.0 Flash (beta)',
+        'gemini-2.5-pro': 'Gemini 2.5 Pro (beta)',
+        'gemini-3-pro-preview': 'Gemini 3.0 Pro (beta)',
+        'gemini-flash-lite-latest': 'Gemini Flash Lite Latest',
+        'gemini-flash-latest': 'Gemini Flash Latest'
+    };
+
     // â”€â”€â”€ Wizard State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const state = {
         currentStep: 1,
@@ -53,27 +64,113 @@
         learnTargetLanguages: []
     };
 
-    function getFirstGeminiModelOptionValue() {
-        const select = document.getElementById('geminiModel');
-        if (select && select.options && select.options.length > 0) {
-            const firstValue = String(select.options[0].value || '').trim();
-            if (firstValue) return firstValue;
+    function getConfigPageGeminiUiHelper() {
+        if (typeof window === 'undefined' || !window.SubMakerGeminiModelUi || typeof window.SubMakerGeminiModelUi !== 'object') {
+            return null;
         }
-        return 'gemini-3.1-flash-lite-preview';
+        return window.SubMakerGeminiModelUi;
+    }
+
+    function getDefaultGeminiModelOption() {
+        const select = document.getElementById('geminiModel');
+        if (!select || !select.options) {
+            return null;
+        }
+        const options = Array.from(select.options).filter(option => {
+            const value = String(option.value || '').trim();
+            return !!value && option.disabled !== true && option.hidden !== true;
+        });
+        const defaultOption = options.find(option => option.defaultSelected === true);
+        return defaultOption || options[0] || null;
+    }
+
+    function getGeminiModelOptionLabel(option) {
+        if (!option) {
+            return '';
+        }
+        const fallback = String(option.textContent || '').trim();
+        const translationKey = option.getAttribute('data-i18n');
+        if (translationKey && typeof window.t === 'function') {
+            const translated = window.t(translationKey, null, fallback);
+            if (translated && translated !== translationKey) {
+                return String(translated).trim();
+            }
+        }
+        return fallback;
+    }
+
+    function getQuickSetupGeminiModelValue() {
+        const helper = getConfigPageGeminiUiHelper();
+        if (helper && typeof helper.getDefaultModelValue === 'function') {
+            const helperValue = String(helper.getDefaultModelValue() || '').trim();
+            if (helperValue) {
+                return helperValue;
+            }
+        }
+        const option = getDefaultGeminiModelOption();
+        const optionValue = option ? String(option.value || '').trim() : '';
+        return optionValue || 'gemini-flash-latest';
+    }
+
+    function getQuickSetupGeminiModelLabel() {
+        const helper = getConfigPageGeminiUiHelper();
+        if (helper && typeof helper.getDefaultModelLabel === 'function') {
+            const helperLabel = String(helper.getDefaultModelLabel() || '').trim();
+            if (helperLabel) {
+                return helperLabel;
+            }
+        }
+        const optionLabel = getGeminiModelOptionLabel(getDefaultGeminiModelOption());
+        if (optionLabel) {
+            return optionLabel;
+        }
+        const modelValue = getQuickSetupGeminiModelValue();
+        return QUICK_SETUP_MODEL_LABEL_FALLBACKS[modelValue] || modelValue;
     }
 
     function getQuickSetupGeminiAdvancedDefaults(modelName) {
-        switch (String(modelName || '').trim()) {
+        const normalizedModel = String(modelName || '').trim();
+        const helper = getConfigPageGeminiUiHelper();
+        if (helper && typeof helper.getModelSpecificDefaults === 'function') {
+            const helperDefaults = helper.getModelSpecificDefaults(normalizedModel);
+            if (helperDefaults && Number.isFinite(Number(helperDefaults.thinkingBudget)) && Number.isFinite(Number(helperDefaults.temperature))) {
+                return {
+                    thinkingBudget: Number(helperDefaults.thinkingBudget),
+                    temperature: Number(helperDefaults.temperature)
+                };
+            }
+        }
+
+        switch (normalizedModel) {
             case 'gemini-2.5-flash':
             case 'gemini-3-flash-preview':
+            case 'gemini-flash-latest':
                 return { thinkingBudget: -1, temperature: 0.5 };
             case 'gemini-2.5-pro':
             case 'gemini-3-pro-preview':
                 return { thinkingBudget: 1000, temperature: 0.5 };
             case 'gemini-2.5-flash-lite':
             case 'gemini-3.1-flash-lite-preview':
+            case 'gemini-flash-lite-latest':
             default:
                 return { thinkingBudget: 0, temperature: 0.8 };
+        }
+    }
+
+    function updateQuickSetupGeminiUi() {
+        const modelLabel = getQuickSetupGeminiModelLabel();
+        const poweredByDesc = $('qsQuickSetupPoweredByDesc');
+        const defaultModelValue = $('qsQuickSetupDefaultModelValue');
+
+        if (poweredByDesc) {
+            poweredByDesc.textContent = tQs(
+                'step3.poweredByDesc',
+                { model: modelLabel },
+                `SubMaker uses ${modelLabel} for fast, accurate subtitle translations. You'll need a free API key from Google AI Studio.`
+            );
+        }
+        if (defaultModelValue) {
+            defaultModelValue.textContent = tQs('step3.defaultModelValue', { model: modelLabel }, modelLabel);
         }
     }
 
@@ -171,6 +268,7 @@
 
         // Apply i18n to the Quick Setup overlay after partials are injected
         applyQsTranslations();
+        updateQuickSetupGeminiUi();
 
         // Always show the full Quick Setup banner
         const banner = $('quickSetupBanner');
@@ -194,6 +292,10 @@
 
         // Expose globally so other code (help menu, etc.) can trigger it
         window.openQuickSetup = openWizard;
+        window.addEventListener('submaker:locale-updated', () => {
+            applyQsTranslations();
+            updateQuickSetupGeminiUi();
+        });
 
         // Wire close button
         const closeBtn = $('qsCloseBtn');
@@ -242,6 +344,8 @@
     async function openWizard() {
         const overlay = $('quickSetupOverlay');
         if (!overlay) return;
+
+        updateQuickSetupGeminiUi();
 
         // Check for existing saved session token
         const token = localStorage.getItem(TOKEN_KEY);
@@ -1130,10 +1234,13 @@
 
         // AI
         if (state.mode === 'translate') {
+            const defaultGeminiModelLabel = getQuickSetupGeminiModelLabel();
             items.push({
                 icon: 'âœ¨',
                 label: tQs('summary.aiTranslation', null, 'AI Translation'),
-                value: state.geminiApiKey ? tQs('summary.aiConfigured', null, 'Gemini 3.0 Flash') : tQs('summary.aiNotConfigured', null, 'Not configured'),
+                value: state.geminiApiKey
+                    ? tQs('summary.aiConfigured', { model: defaultGeminiModelLabel }, defaultGeminiModelLabel)
+                    : tQs('summary.aiNotConfigured', null, 'Not configured'),
                 cls: state.geminiApiKey ? 'qs-on' : 'qs-off'
             });
         }
@@ -1244,7 +1351,7 @@
 
     function buildConfigObject() {
         const isTranslate = state.mode === 'translate';
-        const geminiModel = getFirstGeminiModelOptionValue();
+        const geminiModel = getQuickSetupGeminiModelValue();
         const geminiAdvancedDefaults = getQuickSetupGeminiAdvancedDefaults(geminiModel);
 
         // Start from default config shape
@@ -1433,7 +1540,7 @@
 
                             // 4. Preserve Advanced Settings
                             // Only overwrite geminiModel if the old config didn't have one set,
-                            // because QS seeds it from the first visible Gemini dropdown entry.
+                            // because QS seeds it from the base Gemini dropdown's configured default option.
                             if (qsConfig.geminiModel && !finalConfig.geminiModel) {
                                 finalConfig.geminiModel = qsConfig.geminiModel;
                             }

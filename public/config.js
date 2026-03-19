@@ -60,14 +60,22 @@
             bootstrapTranslator(data || DEFAULT_LOCALE);
             applyUiLanguageCopy();
             applyStaticCopy();
+            notifyLocaleUpdated();
         } catch (err) {
             console.warn('[i18n] Failed to load locale, falling back to English', err);
             bootstrapTranslator(DEFAULT_LOCALE);
             applyUiLanguageCopy();
             applyStaticCopy();
+            notifyLocaleUpdated();
         }
     }
     localeReadyPromise = initLocale();
+
+    function notifyLocaleUpdated() {
+        try {
+            window.dispatchEvent(new CustomEvent('submaker:locale-updated'));
+        } catch (_) { }
+    }
 
     function tConfig(key, vars = {}, fallback = '') {
         try {
@@ -924,19 +932,56 @@ Translate to {target_language}.`;
         };
     }
 
-    function getGeminiModelSelectOptionValues() {
+    function getVisibleGeminiModelOptions() {
         const select = document.getElementById('geminiModel');
         if (!select || !select.options) {
             return [];
         }
         return Array.from(select.options)
+            .filter(option => {
+                const value = String(option.value || '').trim();
+                return !!value && option.disabled !== true && option.hidden !== true;
+            });
+    }
+
+    function getGeminiModelSelectOptionValues() {
+        return getVisibleGeminiModelOptions()
             .map(option => String(option.value || '').trim())
             .filter(Boolean);
     }
 
+    function getDefaultGeminiModelOption() {
+        const options = getVisibleGeminiModelOptions();
+        const explicitlySelectedDefault = options.find(option => option.defaultSelected === true);
+        return explicitlySelectedDefault || options[0] || null;
+    }
+
+    function getGeminiModelOptionLabel(option) {
+        if (!option) {
+            return '';
+        }
+        const fallback = String(option.textContent || '').trim();
+        const translationKey = option.getAttribute('data-i18n');
+        if (!translationKey) {
+            return fallback;
+        }
+        const translated = tConfig(translationKey, {}, fallback);
+        return translated && translated !== translationKey ? translated.trim() : fallback;
+    }
+
+    function getDefaultGeminiModelOptionValue() {
+        const option = getDefaultGeminiModelOption();
+        const value = option ? String(option.value || '').trim() : '';
+        return value || 'gemini-flash-latest';
+    }
+
+    function getDefaultGeminiModelOptionLabel() {
+        const label = getGeminiModelOptionLabel(getDefaultGeminiModelOption());
+        return label || 'Gemini Flash Latest';
+    }
+
     function getFirstGeminiModelOptionValue() {
-        const options = getGeminiModelSelectOptionValues();
-        return options[0] || 'gemini-3.1-flash-lite-preview';
+        return getDefaultGeminiModelOptionValue();
     }
 
     function normalizeGeminiModelForBaseSelect(modelName) {
@@ -952,14 +997,23 @@ Translate to {target_language}.`;
         }
 
         const optionValues = getGeminiModelSelectOptionValues();
-        const firstOption = optionValues[0] || getFirstGeminiModelOptionValue();
+        const defaultOption = getDefaultGeminiModelOptionValue();
         if (normalized === 'gemini-flash-latest') {
-            return firstOption;
+            return defaultOption;
         }
         if (normalized && optionValues.includes(normalized)) {
             return normalized;
         }
-        return firstOption;
+        return defaultOption;
+    }
+
+    if (typeof window !== 'undefined') {
+        window.SubMakerGeminiModelUi = {
+            getDefaultModelValue: getDefaultGeminiModelOptionValue,
+            getDefaultModelLabel: getDefaultGeminiModelOptionLabel,
+            getModelSpecificDefaults,
+            normalizeBaseModel: normalizeGeminiModelForBaseSelect
+        };
     }
 
     function getDefaultProviderParameters() {
@@ -6090,7 +6144,10 @@ Translate to {target_language}.`;
         // and reload the form so the user can fine-tune before saving.
         window.addEventListener('quickSetupApply', (e) => {
             if (e.detail && typeof e.detail === 'object') {
-                const defaults = getDefaultConfig();
+                const seedModel = (typeof e.detail.geminiModel === 'string' && e.detail.geminiModel.trim())
+                    ? e.detail.geminiModel.trim()
+                    : getDefaultGeminiModelOptionValue();
+                const defaults = getDefaultConfig(seedModel);
                 currentConfig = { ...defaults, ...e.detail };
                 ensureProvidersInState();
                 ensureProviderParametersInState();
@@ -9028,6 +9085,15 @@ Translate to {target_language}.`;
      */
     async function getCurrentAppVersion() {
         try {
+            const bootVersion = (typeof window !== 'undefined' && typeof window.__APP_VERSION__ === 'string')
+                ? window.__APP_VERSION__.trim()
+                : '';
+            if (bootVersion) {
+                return bootVersion;
+            }
+        } catch (_) { }
+
+        try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 6000);
             try {
@@ -9102,8 +9168,8 @@ Translate to {target_language}.`;
      *   source/target languages, Other Settings checkboxes (Sub Toolbox, cacheEnabled, bypassCache), and subtitleProviderTimeout
      */
     function migrateConfigForNewVersion(oldConfig) {
-        const firstGeminiModel = getFirstGeminiModelOptionValue();
-        const defaults = getDefaultConfig(firstGeminiModel);
+        const defaultGeminiModel = getDefaultGeminiModelOptionValue();
+        const defaults = getDefaultConfig(defaultGeminiModel);
 
         const newConfig = { ...defaults };
 
@@ -9238,8 +9304,8 @@ Translate to {target_language}.`;
             const oldTimeout = parseInt(oldConfig.subtitleProviderTimeout, 10);
             newConfig.subtitleProviderTimeout = Number.isFinite(oldTimeout) ? Math.max(8, Math.min(30, oldTimeout)) : 12;
 
-            // Reset selected model to the first visible dropdown option and reset advanced settings to defaults
-            newConfig.geminiModel = firstGeminiModel;
+            // Reset selected model to the dropdown's configured default option and reset advanced settings to defaults
+            newConfig.geminiModel = defaultGeminiModel;
             newConfig.advancedSettings = { ...defaults.advancedSettings };
         } catch (e) { }
 
@@ -10707,6 +10773,15 @@ Translate to {target_language}.`;
         const badge = document.getElementById('portalVersionBadge');
         const newDot = document.getElementById('portalNewDot');
         if (!portal || !header || !entriesEl) return;
+
+        try {
+            const bootVersion = (typeof window !== 'undefined' && typeof window.__APP_VERSION__ === 'string')
+                ? window.__APP_VERSION__.trim()
+                : '';
+            if (badge && bootVersion) {
+                badge.textContent = 'v' + bootVersion;
+            }
+        } catch (_) { }
 
         fetch('/api/changelog')
             .then(r => r.json())

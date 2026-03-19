@@ -58,6 +58,7 @@ nSync/
 .claude/
 .agent/
 agent/
+agent-docs/
 dist/
 build/
 .sidedocs/
@@ -89,3 +90,4 @@ scripts/
 .tests/
 tests/
 tests
+agent-docs/

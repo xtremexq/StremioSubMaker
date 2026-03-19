@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.78
+
+**Bug Fixes:**
+
+- **Fixed delayed Config Page UI load:** `/configure` now bootstraps the current app version and language-selection limits directly into its generated HTML shell, inlines the main/footer/overlays/quick-setup partials into the first response, and loads `config.js` from that bootstrapped version instead of waiting on `/api/session-stats` before the page can initialize. That removes the late pop-in on some assets. The generated configure shell is also cached in memory.
+
+- **Fixed misleading Gemini `429` guidance in logs and translation error subtitles:** Gemini rate-limit/usage-limit failures were still reusing the generic "wait a few minutes and try again" copy in the shared API error formatter and in the single-cue `0->4h` translation error subtitle, even though waiting often does not help when the key has simply exhausted its usage/quota. Gemini-specific `429` messaging now tells users to check API key usage/quota or use another key, the localized subtitle strings were updated to match.
+
+- **Fixed OpenSubtitles Auth still hitting `429` on shared-IP multi-instance deployments:** the earlier distributed lock only serialized `/login`, but `/subtitles` and `/download` calls were still gated by a pod-local token bucket, so 2+ SubMaker instances behind one egress IP could still overshoot OpenSubtitles' shared `5 req/sec` cap and surface search-side `429` warnings. OpenSubtitles Auth now uses a Redis-backed cross-pod limiter for its API budget, keeps a small safety buffer at `4 req/sec` cluster-wide, falls back to the local bucket if Redis is unavailable.
+
+- **Fixed Quick Setup using stale Gemini defaults and copy on the config page:** Quick Setup now reads the main Gemini dropdown's declared default option in `main.html` for its saved model, model-specific advanced defaults, and Step 3/summary labels instead of using separate hardcoded assumptions. Locale strings now use `{model}` placeholders, the wizard refreshes that dynamic copy after locale changes.
+
 ## SubMaker v1.4.77
 
 **Improvements:**

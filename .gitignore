@@ -22,6 +22,7 @@ data/*
 .claude/
 .agent/
 agent/
+agent-docs/
 
 # Extensions
 
@@ -62,6 +63,7 @@ temp/
 .temp/
 temp
 .temp
+agent-docs/
 native/
 scripts/
 .tests

@@ -10,6 +10,7 @@
     <link rel="apple-touch-icon" href="/favicon.svg?_cb=__APP_VERSION_QUERY__">
     <script>
         window.__APP_VERSION__ = __APP_VERSION_JSON__;
+        window.__CONFIG_LIMITS__ = __CONFIG_LIMITS_JSON__;
     </script>
     <script>
         (function () {
@@ -94,10 +95,10 @@
         </span>
     </button>
 
-    <div data-include="/partials/main.html"></div>
-    <div data-include="/partials/footer.html"></div>
-    <div data-include="/partials/overlays.html"></div>
-    <div data-include="/partials/quick-setup.html"></div>
+    __CONFIGURE_MAIN_PARTIAL__
+    __CONFIGURE_FOOTER_PARTIAL__
+    __CONFIGURE_OVERLAYS_PARTIAL__
+    __CONFIGURE_QUICK_SETUP_PARTIAL__
 
     <script src="/js/init.js?_cb=__APP_VERSION_QUERY__" defer></script>
     <script src="/js/combobox.js?_cb=__APP_VERSION_QUERY__" defer></script>

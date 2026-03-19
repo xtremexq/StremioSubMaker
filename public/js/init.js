@@ -20,12 +20,18 @@
             const base = new URL(src, window.location.origin);
             const pageParams = new URLSearchParams(window.location.search || '');
             const existing = base.searchParams.get('_cb') || base.searchParams.get('v');
-            const cb = existing || pageParams.get('_cb') || pageParams.get('v') || String(Date.now());
+            const bootVersion = (typeof window !== 'undefined' && typeof window.__APP_VERSION__ === 'string')
+                ? window.__APP_VERSION__.trim()
+                : '';
+            const cb = existing || pageParams.get('_cb') || pageParams.get('v') || bootVersion || String(Date.now());
             base.searchParams.set('_cb', cb);
             return base.pathname + base.search;
         } catch (_) {
             const sep = src.includes('?') ? '&' : '?';
-            return src + sep + '_cb=' + Date.now();
+            const bootVersion = (typeof window !== 'undefined' && typeof window.__APP_VERSION__ === 'string')
+                ? window.__APP_VERSION__.trim()
+                : '';
+            return src + sep + '_cb=' + (bootVersion || Date.now());
         }
     }
 

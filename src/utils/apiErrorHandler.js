@@ -29,6 +29,23 @@ function resolveTranslator(options, error) {
   }
 }
 
+function buildRateLimitUserMessage(serviceLabel, translate) {
+  const normalizedService = String(serviceLabel || '').trim().toLowerCase();
+  if (normalizedService === 'gemini') {
+    return translate(
+      'apiErrors.geminiRateLimit',
+      { service: serviceLabel || 'Gemini' },
+      'Gemini usage limit reached. Check your API key usage/quota or use another key.'
+    );
+  }
+
+  return translate(
+    'apiErrors.rateLimit',
+    { service: serviceLabel },
+    `${serviceLabel} rate limit exceeded. Please wait a few minutes and try again.`
+  );
+}
+
 /**
  * Parse and classify an API error
  * @param {Error} error - The error object from axios or other API call
@@ -62,7 +79,7 @@ function parseApiError(error, serviceName = 'API', options = {}) {
 
   // If already classified (e.g., rate_limit from upstream), generate appropriate user message
   if (parsed.type === 'rate_limit') {
-    parsed.userMessage = translate('apiErrors.rateLimit', { service: serviceLabel }, `${serviceLabel} rate limit exceeded. Please wait a few minutes and try again.`);
+    parsed.userMessage = buildRateLimitUserMessage(serviceLabel, translate);
     return parsed;
   }
   if (parsed.type === 'service_unavailable') {
@@ -78,7 +95,7 @@ function parseApiError(error, serviceName = 'API', options = {}) {
     if (parsed.statusCode === 429) {
       parsed.type = 'rate_limit';
       parsed.isRetryable = true;
-      parsed.userMessage = translate('apiErrors.rateLimit', { service: serviceLabel }, 'API rate limit exceeded. Please wait a few minutes and try again.');
+      parsed.userMessage = buildRateLimitUserMessage(serviceLabel, translate);
     }
     // Service unavailable (503)
     else if (parsed.statusCode === 503) {
@@ -90,7 +107,7 @@ function parseApiError(error, serviceName = 'API', options = {}) {
     else if (String(serviceName || '').toLowerCase() === 'deepl' && (parsed.statusCode === 456 || parsed.statusCode === 459)) {
       parsed.type = 'rate_limit';
       parsed.isRetryable = true;
-      parsed.userMessage = translate('apiErrors.rateLimit', { service: serviceLabel }, `${serviceLabel} rate limit exceeded. Please wait a few minutes and try again.`);
+      parsed.userMessage = buildRateLimitUserMessage(serviceLabel, translate);
     }
     // OpenSubtitles 469 (Database connection error - custom status code)
     // This is a backend error that should be retried

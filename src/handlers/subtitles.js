@@ -992,7 +992,7 @@ ${t('subtitle.translationOverloadBody', { provider: displayProvider }, `${displa
       return ensureInformationalSubtitleSize(`1
 00:00:00,000 --> 04:00:00,000
 ${t('subtitle.translationRateLimitGeminiTitle', {}, 'Translation Failed: Usage Limit Reached (429)')}
-${t('subtitle.translationRateLimitGeminiBody', {}, 'Check API Key limits or retry in a few minutes.')}`, null, uiLanguage);
+${t('subtitle.translationRateLimitGeminiBody', {}, 'Check your Gemini API key usage/quota or use another key.')}`, null, uiLanguage);
     }
     if (provider === 'deepl') {
       return ensureInformationalSubtitleSize(`1

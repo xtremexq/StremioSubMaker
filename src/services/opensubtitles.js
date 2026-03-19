@@ -46,56 +46,136 @@ const DISTRIBUTED_LOGIN_COOLDOWN_MS = 1100; // 1.1s cooldown in Redis (refreshed
 const MAX_LOCK_WAIT_CYCLES = 20; // Maximum number of wait cycles before giving up
 const TOTAL_LOCK_TIMEOUT_MS = 45000; // 45 second absolute timeout for entire lock acquisition process
 
-// ─── Token-bucket rate limiter ────────────────────────────────────────────────
-// OpenSubtitles enforces 5 req/sec/IP.  On shared-IP deployments every pod
-// shares that budget, so we cap at 4/sec locally to leave margin.
-// All outbound OpenSubtitles API calls (login, search, download-link) must
-// call `await acquireToken()` before making the HTTP request.
-const RATE_LIMIT_TOKENS_MAX = 4;          // max burst
-const RATE_LIMIT_REFILL_INTERVAL_MS = 1000; // refill every 1 s
+// ─── OpenSubtitles API rate limiter ───────────────────────────────────────────
+// OpenSubtitles enforces 5 req/sec/IP across login, search, and download-link
+// requests. In shared-IP deployments every pod contributes to that same budget,
+// so we coordinate through Redis and keep a small safety buffer at 4 req/sec
+// cluster-wide. The local bucket remains to smooth same-process bursts and to
+// provide fallback behavior if Redis is unavailable.
+const RATE_LIMIT_TOKENS_MAX = 4;
+const RATE_LIMIT_REFILL_INTERVAL_MS = 1000;
+const DISTRIBUTED_RATE_LIMIT_KEY = 'os_api_budget';
+const DISTRIBUTED_RATE_LIMIT_WAIT_JITTER_MS = 35;
 let _rateLimitTokens = RATE_LIMIT_TOKENS_MAX;
-const _rateLimitQueue = [];              // waiters: array of resolve callbacks
+const _rateLimitQueue = [];
 let _rateLimitTimer = null;
 
-function _startRefillTimer() {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function _startLocalRefillTimer() {
   if (_rateLimitTimer) return;
   _rateLimitTimer = setInterval(() => {
-    // Refill up to max
     _rateLimitTokens = Math.min(_rateLimitTokens + RATE_LIMIT_TOKENS_MAX, RATE_LIMIT_TOKENS_MAX);
-    // Wake queued waiters
     while (_rateLimitTokens > 0 && _rateLimitQueue.length > 0) {
       _rateLimitTokens--;
       const resolve = _rateLimitQueue.shift();
       resolve();
     }
-    // Stop timer when idle (no waiters, bucket full) to avoid keeping process alive
     if (_rateLimitQueue.length === 0 && _rateLimitTokens >= RATE_LIMIT_TOKENS_MAX) {
       clearInterval(_rateLimitTimer);
       _rateLimitTimer = null;
     }
   }, RATE_LIMIT_REFILL_INTERVAL_MS);
-  // Allow Node to exit even if the timer is running
   if (_rateLimitTimer && typeof _rateLimitTimer.unref === 'function') {
     _rateLimitTimer.unref();
   }
 }
 
-/**
- * Acquire a rate-limit token before making an OpenSubtitles API call.
- * Resolves immediately if tokens are available, otherwise queues.
- * @returns {Promise<void>}
- */
-function acquireToken() {
+function acquireLocalToken() {
   if (_rateLimitTokens > 0) {
     _rateLimitTokens--;
-    _startRefillTimer();
+    _startLocalRefillTimer();
     return Promise.resolve();
   }
-  // No tokens – queue and start the refill timer
-  _startRefillTimer();
+
+  _startLocalRefillTimer();
   return new Promise(resolve => {
     _rateLimitQueue.push(resolve);
   });
+}
+
+async function tryAcquireDistributedRateLimitSlot(options = {}) {
+  try {
+    const adapter = options.adapter || await require('../utils/sharedCache').getStorageAdapter();
+    const { StorageAdapter } = require('../storage');
+
+    if (!adapter?.client || typeof adapter._getKey !== 'function') {
+      return null;
+    }
+
+    const fullKey = adapter._getKey(`ratelimit:${DISTRIBUTED_RATE_LIMIT_KEY}`, StorageAdapter.CACHE_TYPES.SESSION);
+    const result = await adapter.client.eval(`
+      local current = tonumber(redis.call('get', KEYS[1]) or '0')
+      local limit = tonumber(ARGV[1])
+      local windowMs = tonumber(ARGV[2])
+
+      if current >= limit then
+        local ttl = redis.call('pttl', KEYS[1])
+        if ttl < 0 then
+          redis.call('pexpire', KEYS[1], windowMs)
+          ttl = windowMs
+        end
+        return {0, current, ttl}
+      end
+
+      current = redis.call('incr', KEYS[1])
+      if current == 1 then
+        redis.call('pexpire', KEYS[1], windowMs)
+      end
+
+      local ttl = redis.call('pttl', KEYS[1])
+      if ttl < 0 then
+        ttl = windowMs
+      end
+
+      return {1, current, ttl}
+    `, 1, fullKey, RATE_LIMIT_TOKENS_MAX, RATE_LIMIT_REFILL_INTERVAL_MS);
+
+    const acquired = Number(result?.[0]) === 1;
+    const count = Number(result?.[1]) || 0;
+    const retryAfterMs = Math.max(0, Number(result?.[2]) || RATE_LIMIT_REFILL_INTERVAL_MS);
+    return { acquired, count, retryAfterMs };
+  } catch (error) {
+    log.debug(() => `[OpenSubtitles] Distributed rate limiter unavailable, falling back to local bucket: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Acquire a rate-limit token before making an OpenSubtitles API call.
+ * A local bucket smooths same-process bursts, and Redis enforces the real
+ * cross-pod shared-IP budget when available.
+ * @returns {Promise<void>}
+ */
+async function acquireToken() {
+  await acquireLocalToken();
+
+  let distributedSlot = await tryAcquireDistributedRateLimitSlot();
+  if (!distributedSlot) {
+    return;
+  }
+
+  while (!distributedSlot.acquired) {
+    const jitter = Math.floor(Math.random() * DISTRIBUTED_RATE_LIMIT_WAIT_JITTER_MS);
+    const waitMs = Math.max(25, distributedSlot.retryAfterMs + jitter);
+    log.debug(() => `[OpenSubtitles] Distributed API rate limit: waiting ${waitMs}ms (${distributedSlot.count}/${RATE_LIMIT_TOKENS_MAX} in window)`);
+    await sleep(waitMs);
+    distributedSlot = await tryAcquireDistributedRateLimitSlot();
+    if (!distributedSlot) {
+      return;
+    }
+  }
+}
+
+function resetRateLimiterState() {
+  _rateLimitTokens = RATE_LIMIT_TOKENS_MAX;
+  _rateLimitQueue.length = 0;
+  if (_rateLimitTimer) {
+    clearInterval(_rateLimitTimer);
+    _rateLimitTimer = null;
+  }
 }
 // ─── End rate limiter ─────────────────────────────────────────────────────────
 
@@ -1625,3 +1705,8 @@ module.exports = OpenSubtitlesService;
 module.exports.OpenSubtitlesService = OpenSubtitlesService;
 module.exports.getCachedToken = getCachedToken;
 module.exports.getCredentialsCacheKey = getCredentialsCacheKey;
+module.exports.__testing = {
+  acquireToken,
+  tryAcquireDistributedRateLimitSlot,
+  resetRateLimiterState
+};
