@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.80
+
+**Improvements:**
+
+- **Relaxed background keep-alive probing for subtitle providers:** periodic provider keep-alive probes now wait up to `10s` instead of `5s` before timing out, which gives slower hosts more room to respond during idle warm-connection checks. Wyzie and SCS keep using background probes, but failed keep-alive pings for those two providers no longer feed the shared provider circuit breaker, so a slow or flaky idle probe cannot temporarily suppress real user searches for SCS or Wyzie anymore.
+
 ## SubMaker v1.4.79
 
 **Improvements:**

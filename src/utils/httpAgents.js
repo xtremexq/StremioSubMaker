@@ -116,6 +116,7 @@ const PROVIDER_ENDPOINTS = {
     name: 'Wyzie Subs',
     warmUpPath: 'status', // Free status endpoint
     pingPath: 'status',
+    keepAliveFailureOpensCircuit: false, // Status probe failures should not suppress real searches
     warmUpEnabled: true,
     keepAliveEnabled: true
   },
@@ -125,6 +126,7 @@ const PROVIDER_ENDPOINTS = {
     warmUpPath: null, // Just warm TLS
     pingPath: null, // HEAD to base URL
     httpsAgent: scsHttpsAgent,
+    keepAliveFailureOpensCircuit: false, // Slow/flaky probes should not block real SCS attempts
     warmUpEnabled: true,
     keepAliveEnabled: true
   },
@@ -154,6 +156,10 @@ function getConnectionTargetEntries(mode) {
 
 function getConnectionTargetKeys(mode) {
   return getConnectionTargetEntries(mode).map(([key]) => key);
+}
+
+function shouldKeepAliveFailureOpenCircuit(providerKey) {
+  return PROVIDER_ENDPOINTS[providerKey]?.keepAliveFailureOpensCircuit !== false;
 }
 
 function buildProbeRequest(provider, mode) {
@@ -401,6 +407,7 @@ async function warmUpConnections() {
 
 let keepAliveInterval = null;
 const KEEP_ALIVE_INTERVAL_MS = 45000; // Every 45 seconds
+const KEEP_ALIVE_TIMEOUT_MS = 10000; // Give slow providers more time before probe failure
 
 /**
  * Start periodic keep-alive pings to maintain warm connections
@@ -430,7 +437,7 @@ function startKeepAlivePings() {
         const probeRequest = buildProbeRequest(provider, 'keepAlive');
         await axios({
           ...probeRequest,
-          timeout: 5000,
+          timeout: KEEP_ALIVE_TIMEOUT_MS,
           validateStatus: () => true
         });
 
@@ -438,6 +445,11 @@ function startKeepAlivePings() {
         circuitBreaker.recordSuccess(key);
 
       } catch (error) {
+        if (!shouldKeepAliveFailureOpenCircuit(key)) {
+          log.debug(() => `[HTTP Agents] Keep-alive ping to ${provider.name} failed (non-blocking): ${error.message}`);
+          return;
+        }
+
         log.debug(() => `[HTTP Agents] Keep-alive ping to ${provider.name} failed: ${error.message}`);
         circuitBreaker.recordFailure(key, error);
       }
@@ -497,6 +509,8 @@ module.exports = {
   startKeepAlivePings,
   stopKeepAlivePings,
   getConnectionTargetKeys,
+  shouldKeepAliveFailureOpenCircuit,
+  KEEP_ALIVE_TIMEOUT_MS,
   // Circuit breaker access
   circuitBreaker,
   isProviderHealthy, // Check if provider is healthy before making requests

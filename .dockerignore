@@ -76,6 +76,7 @@ tests
 nul
 .sidedocs/
 .codex-tmp/
+.autocodex/
 tmp/
 .tmp/
 tmp
