@@ -362,6 +362,12 @@ function normalizeSensitiveInputsForStorage(config) {
   );
 
   normalizeField(
+    () => normalized.subtitleProviders?.wyzie?.apiKey,
+    (value) => { normalized.subtitleProviders.wyzie.apiKey = value; },
+    'wyzie.apiKey'
+  );
+
+  normalizeField(
     () => normalized.subtitleProviders?.subsro?.apiKey,
     (value) => { normalized.subtitleProviders.subsro.apiKey = value; },
     'subsro.apiKey'
@@ -443,6 +449,12 @@ function encryptUserConfig(config) {
       if (encrypted.subtitleProviders.subsource?.apiKey) {
         encrypted.subtitleProviders.subsource.apiKey =
           encrypt(encrypted.subtitleProviders.subsource.apiKey);
+      }
+
+      // Wyzie API key
+      if (encrypted.subtitleProviders.wyzie?.apiKey) {
+        encrypted.subtitleProviders.wyzie.apiKey =
+          encrypt(encrypted.subtitleProviders.wyzie.apiKey);
       }
 
       // Subs.ro API key
@@ -585,6 +597,18 @@ function decryptUserConfig(config) {
             safeDecrypt(decrypted.subtitleProviders.subsource.apiKey, 'subsource.apiKey');
           const isString = typeof decrypted.subtitleProviders.subsource.apiKey === 'string';
           log.debug(() => `[Encryption] SubSource key decrypted successfully, type: ${isString ? 'string' : 'NOT_STRING'}`);
+        }
+      }
+
+      // Wyzie API key
+      if (decrypted.subtitleProviders.wyzie?.apiKey) {
+        const wyzieKeyEncrypted = isEncrypted(decrypted.subtitleProviders.wyzie.apiKey);
+        log.debug(() => `[Encryption] Wyzie API key exists, encrypted: ${wyzieKeyEncrypted}, will decrypt: ${isConfigEncrypted || wyzieKeyEncrypted}`);
+        if (isConfigEncrypted || wyzieKeyEncrypted) {
+          decrypted.subtitleProviders.wyzie.apiKey =
+            safeDecrypt(decrypted.subtitleProviders.wyzie.apiKey, 'wyzie.apiKey');
+          const isString = typeof decrypted.subtitleProviders.wyzie.apiKey === 'string';
+          log.debug(() => `[Encryption] Wyzie key decrypted successfully, type: ${isString ? 'string' : 'NOT_STRING'}`);
         }
       }
 

@@ -10,9 +10,9 @@
  *   - gestdown (for TV shows)
  *   - animetosho (for anime)
  * 
- * API Docs: https://docs.wyzie.ru/subs/intro
- * Source: https://github.com/itzcozi/wyzie-subs
- * Status: https://sub.wyzie.ru/status
+ * API Docs: https://docs.wyzie.io/subs/usage/api-keys
+ * Source: https://github.com/wyziedevs/wyzie-subs
+ * Status: https://sub.wyzie.io/status
  * 
  * Features:
  * - Supports both IMDB and TMDB IDs (Wyzie converts TMDB→IMDB internally)
@@ -25,7 +25,7 @@
  * ============================================================================
  * 
  * The `wyzie-lib` NPM package (https://www.npmjs.com/package/wyzie-lib) is just
- * a thin client wrapper that makes HTTP requests to the same sub.wyzie.ru API.
+ * a thin client wrapper that makes HTTP requests to the same sub.wyzie.io API.
  * It does NOT bundle any scraping logic locally. See the source:
  * https://unpkg.com/wyzie-lib@2.2.6/lib/main.js
  * 
@@ -51,11 +51,13 @@ const { httpAgent, httpsAgent, dnsLookup } = require('../utils/httpAgents');
 const { detectAndConvertEncoding } = require('../utils/encodingDetector');
 const { getSeasonHintCandidates } = require('../utils/animeSearchResolver');
 const { convertSubtitleToVtt } = require('../utils/archiveExtractor');
+const { redactApiKey } = require('../utils/security');
 const log = require('../utils/logger');
 const { version } = require('../utils/version');
 
-const WYZIE_API_URL = 'https://sub.wyzie.ru';
+const WYZIE_API_URL = 'https://sub.wyzie.io';
 const USER_AGENT = `SubMaker v${version}`;
+const ALL_WYZIE_SOURCES = ['opensubtitles', 'subf2m', 'subdl', 'podnapisi', 'gestdown', 'animetosho', 'kitsunekko', 'jimaku', 'yify'];
 
 // Maximum results per language to prevent overwhelming the user with choices
 const MAX_RESULTS_PER_LANGUAGE = 14;
@@ -125,10 +127,67 @@ function normalizeLanguageCode(lang) {
     return lang;
 }
 
+function normalizeWyzieApiKey(apiKey) {
+    if (typeof apiKey !== 'string') {
+        return '';
+    }
+    return apiKey.trim();
+}
+
+function normalizeWyzieSources(sources) {
+    const raw = (sources && typeof sources === 'object') ? sources : {};
+    return {
+        opensubtitles: raw.opensubtitles === true || raw.opensubs === true,
+        subf2m: raw.subf2m === true,
+        subdl: raw.subdl === true,
+        podnapisi: raw.podnapisi === true,
+        gestdown: raw.gestdown === true,
+        animetosho: raw.animetosho === true,
+        kitsunekko: raw.kitsunekko === true,
+        jimaku: raw.jimaku === true,
+        yify: raw.yify === true
+    };
+}
+
+function redactWyzieUrl(url) {
+    try {
+        const parsed = new URL(url, WYZIE_API_URL);
+        if (parsed.searchParams.has('key')) {
+            parsed.searchParams.set('key', '[REDACTED]');
+        }
+        return `${parsed.pathname}${parsed.search}`;
+    } catch (_) {
+        return String(url || '').replace(/([?&]key=)[^&]+/i, '$1[REDACTED]');
+    }
+}
+
+function getWyzieUpstreamMessage(payload, fallback = '') {
+    if (typeof payload === 'string' && payload.trim()) {
+        return payload.trim();
+    }
+
+    if (payload && typeof payload === 'object') {
+        const details = typeof payload.details === 'string' ? payload.details.trim() : '';
+        const message = typeof payload.message === 'string' ? payload.message.trim() : '';
+        return details || message || fallback;
+    }
+
+    return fallback;
+}
+
+function isWyzieMissingIdMessage(message) {
+    return /no id parameter/i.test(String(message || ''));
+}
+
+function isWyzieNoSubtitlesMessage(message) {
+    return /no subtitles/i.test(String(message || ''));
+}
+
 class WyzieSubsService {
     static initLogged = false;
 
-    constructor() {
+    constructor(apiKey = null) {
+        this.apiKey = normalizeWyzieApiKey(apiKey);
         this.client = axios.create({
             baseURL: WYZIE_API_URL,
             headers: {
@@ -142,7 +201,7 @@ class WyzieSubsService {
         });
 
         if (!WyzieSubsService.initLogged) {
-            log.debug(() => '[WyzieSubs] Initialized Wyzie Subs service (free aggregator, no API key required)');
+            log.debug(() => `[WyzieSubs] Initialized Wyzie Subs service (API key: ${this.apiKey ? redactApiKey(this.apiKey) : 'missing'})`);
             WyzieSubsService.initLogged = true;
         }
     }
@@ -165,6 +224,11 @@ class WyzieSubsService {
         try {
             const { imdb_id, tmdb_id, type, season, episode, languages, excludeHearingImpairedSubtitles, filename, sources } = params;
 
+            if (!this.apiKey) {
+                log.warn(() => '[WyzieSubs] API key is required for Wyzie search requests');
+                return [];
+            }
+
             // Wyzie supports both IMDB and TMDB IDs
             // IMDB: id=tt1234567, TMDB: id=286217 (numeric)
             let searchId = null;
@@ -185,6 +249,7 @@ class WyzieSubsService {
             // Build query parameters
             const queryParams = new URLSearchParams();
             queryParams.set('id', searchId);
+            queryParams.set('key', this.apiKey);
 
             const isEpisodeSearch = (type === 'episode' || type === 'anime-episode') && episode;
             const seasonCandidates = isEpisodeSearch
@@ -224,14 +289,13 @@ class WyzieSubsService {
             // Request SRT format by default (most compatible)
             queryParams.set('format', 'srt');
 
-            // IMPORTANT: By default, Wyzie only queries OpenSubtitles!
-            // We must explicitly request sources to search multiple providers.
-            // Build source list from user config (UI now defaults to all disabled for new users)
-            const allSources = ['opensubtitles', 'subf2m', 'subdl', 'podnapisi', 'gestdown', 'animetosho', 'kitsunekko', 'jimaku', 'yify'];
-            const enabledSources = allSources.filter(src => {
+            // IMPORTANT: By default, Wyzie only queries OpenSubtitles.
+            // We explicitly request sources so the UI source toggles map 1:1 to the API.
+            const normalizedSources = normalizeWyzieSources(sources);
+            const enabledSources = ALL_WYZIE_SOURCES.filter(src => {
                 // Source is enabled if: no sources config provided (edge case), OR source is explicitly true
                 // Note: UI sends false for unchecked sources, so sources[src] !== false correctly handles this
-                return !sources || sources[src] !== false;
+                return !sources || normalizedSources[src] === true;
             });
             if (enabledSources.length > 0) {
                 queryParams.set('source', enabledSources.join(','));
@@ -263,7 +327,7 @@ class WyzieSubsService {
                 }
 
                 const url = `/search?${seasonQuery.toString()}`;
-                log.debug(() => `[WyzieSubs] Searching: ${url}`);
+                log.debug(() => `[WyzieSubs] Searching: ${redactWyzieUrl(url)}`);
 
                 const fetchStartTime = Date.now();
                 const response = await this.client.get(url, requestConfig);
@@ -340,7 +404,7 @@ class WyzieSubsService {
                     languageCode: normalizedLang, // ISO 639-2/B for SubMaker filtering
                     name: displayName,
                     url: sub.url, // Direct download URL (Wyzie proxy handles ZIPs)
-                    downloads: 0, // Wyzie doesn't provide download counts - ranking uses other factors
+                    downloads: Number.parseInt(sub.downloadCount, 10) || 0,
                     rating: 0,
                     format: sub.format || 'srt',
                     hearing_impaired: sub.isHearingImpaired === true,
@@ -389,7 +453,13 @@ class WyzieSubsService {
 
         } catch (error) {
             // Use warn instead of error for operational failures
-            if (error.response?.status === 404) {
+            if (error.response?.status === 401) {
+                const details = error.response?.data?.details || error.response?.data?.message || 'API key required';
+                log.warn(() => `[WyzieSubs] Search rejected: ${details}`);
+            } else if (error.response?.status === 403) {
+                const details = error.response?.data?.details || error.response?.data?.message || 'Invalid API key';
+                log.warn(() => `[WyzieSubs] Search rejected: ${details}`);
+            } else if (error.response?.status === 404) {
                 log.debug(() => `[WyzieSubs] No results (404) for requested content`);
             } else if (error.response?.status === 400) {
                 // Wyzie returns 400 when no subtitles found (quirky API design)
@@ -403,6 +473,146 @@ class WyzieSubsService {
                 log.warn(() => `[WyzieSubs] Search failed: ${error.message}`);
             }
             return [];
+        }
+    }
+
+    async validateApiKey(options = {}) {
+        const timeout = Number(options.timeout) > 0 ? Number(options.timeout) : 10000;
+        const authProbeTimeout = Math.min(timeout, 4000);
+
+        if (!this.apiKey) {
+            return { valid: false, error: 'API key is required' };
+        }
+
+        try {
+            const runValidationProbe = async (params, { label, probeTimeout = timeout } = {}) => {
+                const probeStartedAt = Date.now();
+                const response = await this.client.get('/search', {
+                    params: {
+                        ...params,
+                        key: this.apiKey
+                    },
+                    timeout: probeTimeout,
+                    validateStatus: () => true
+                });
+
+                const duration = Date.now() - probeStartedAt;
+                const upstream = getWyzieUpstreamMessage(response?.data, response?.statusText || '');
+                log.debug(() => `[WyzieSubs] Validation ${label} returned ${response.status} in ${duration}ms${upstream ? ` (${upstream})` : ''}`);
+
+                return { response, upstream };
+            };
+
+            const interpretProbeResult = ({ response, upstream }, validationMode) => {
+                const status = Number(response?.status) || 0;
+
+                if (status === 401 || status === 403) {
+                    return { valid: false, error: upstream || 'Invalid API key', status };
+                }
+
+                if (status === 429) {
+                    return {
+                        valid: true,
+                        message: 'API key is valid, but Wyzie is rate limiting requests right now.',
+                        validationMode,
+                        status
+                    };
+                }
+
+                if (status >= 200 && status < 300) {
+                    const results = Array.isArray(response?.data) ? response.data : [];
+                    return {
+                        valid: true,
+                        resultsCount: results.length,
+                        validationMode,
+                        status
+                    };
+                }
+
+                if (validationMode === 'auth-probe' && status === 400 && isWyzieMissingIdMessage(upstream)) {
+                    return {
+                        valid: true,
+                        validationMode,
+                        status
+                    };
+                }
+
+                if (validationMode === 'search-probe') {
+                    if (status === 400 && isWyzieNoSubtitlesMessage(upstream)) {
+                        return {
+                            valid: true,
+                            resultsCount: 0,
+                            validationMode,
+                            status
+                        };
+                    }
+
+                    if (status === 404) {
+                        return {
+                            valid: true,
+                            resultsCount: 0,
+                            validationMode,
+                            status
+                        };
+                    }
+                }
+
+                return null;
+            };
+
+            // Wyzie auth failures return quickly on /search before content lookup.
+            // Probe that path first so config-page validation does not wait on a real scrape.
+            const authProbe = await runValidationProbe({}, {
+                label: 'auth probe',
+                probeTimeout: authProbeTimeout
+            });
+            const authResult = interpretProbeResult(authProbe, 'auth-probe');
+            if (authResult) {
+                return authResult;
+            }
+
+            // Fallback to a deliberately low-cost search probe when Wyzie changes
+            // the auth/error ordering and the auth probe becomes ambiguous.
+            const searchProbe = await runValidationProbe({
+                id: 'tt0',
+                language: 'en',
+                format: 'srt',
+                source: 'opensubtitles'
+            }, {
+                label: 'fallback search probe'
+            });
+            const searchResult = interpretProbeResult(searchProbe, 'search-probe');
+            if (searchResult) {
+                return searchResult;
+            }
+
+            return {
+                valid: false,
+                error: searchProbe.upstream || 'Request failed',
+                status: searchProbe.response?.status || 0
+            };
+        } catch (error) {
+            const status = error.response?.status;
+            const upstream = getWyzieUpstreamMessage(error.response?.data, error.message || 'Request failed');
+
+            if (status === 401 || status === 403) {
+                return { valid: false, error: upstream, status };
+            }
+
+            if (status === 429) {
+                return {
+                    valid: true,
+                    message: 'API key is valid, but Wyzie is rate limiting requests right now.',
+                    validationMode: 'request-error',
+                    status
+                };
+            }
+
+            if (error.code === 'ECONNABORTED' || /timeout/i.test(upstream)) {
+                return { valid: false, error: 'Request timed out', status: status || 0 };
+            }
+
+            return { valid: false, error: upstream, status };
         }
     }
 
@@ -434,7 +644,7 @@ class WyzieSubsService {
         }
 
         // Validate URL format - should be a Wyzie URL
-        if (!downloadUrl.includes('sub.wyzie.ru') && !downloadUrl.includes('wyzie.ru')) {
+        if (!downloadUrl.includes('sub.wyzie.io') && !downloadUrl.includes('sub.wyzie.ru') && !downloadUrl.includes('wyzie.io') && !downloadUrl.includes('wyzie.ru')) {
             log.warn(() => `[WyzieSubs] Unexpected download URL format (not Wyzie): ${downloadUrl.substring(0, 50)}...`);
         }
 

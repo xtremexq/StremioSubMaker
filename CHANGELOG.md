@@ -8,6 +8,16 @@ All notable changes to this project will be documented in this file.
 
 - **Relaxed background keep-alive probing for subtitle providers:** periodic provider keep-alive probes now wait up to `10s` instead of `5s` before timing out, which gives slower hosts more room to respond during idle warm-connection checks. Wyzie and SCS keep using background probes, but failed keep-alive pings for those two providers no longer feed the shared provider circuit breaker, so a slow or flaky idle probe cannot temporarily suppress real user searches for SCS or Wyzie anymore.
 
+- **Fixed Wyzie Subs after the upstream API-key rollout:** Wyzie search requests now target `sub.wyzie.io` and include the required `key` query parameter, while the returned `sub.wyzie.io/c/...` download URLs continue to work through the existing subtitle download flow. SubMaker stores `subtitleProviders.wyzie.apiKey` alongside the other sensitive provider credentials with the normal session encryption/recovery path, adds `/api/validate-wyzie`, and updates both the main Configure page and Quick Setup wizard with a Wyzie API-key input, live validation button, redeem link to `https://sub.wyzie.io/redeem`, and corrected saved-source normalization for legacy `opensubs` configs.
+
+**Bug Fixes:**
+
+- **Fixed `ASS/SSA Passthrough` missing from Just Fetch settings and aligned the settings order across both config modes:** the no-translation (`Just Fetch`) config surface did not expose the passthrough toggle even though the main `Other Settings` card had it, and the visible option order had drifted between the two modes. Just Fetch now shows `Enable Sub Toolbox`, `Include Season Pack Subtitles`, `Hide SDH/HI subtitles`, `ASS/SSA Passthrough`, and `Force SRT output` in that order, and the main `Other Settings` card now places `ASS/SSA Passthrough` directly below `Hide SDH/HI subtitles` to keep both layouts aligned.
+
+- **Fixed the Configure instructions modal shipping incomplete rewritten copy in v1.4.79:** the new theme-aware Configure instructions modal already had the styling hook and locale key for its intro copy, but the intro paragraph was never rendered and the shipped `en`, `es`, `pt-br`, `pt-pt`, and `ar` locale bundles all left `config.overlays.instructions.intro` blank. The modal now renders that intro, shows the missing `Translation timing` heading, and all supported UI locales ship the missing copy.
+
+- **Fixed the Configure instructions modal overflowing off-screen on mobile:** the rewritten popup could size itself against unstable small-screen viewport height and keep too much internal spacing, which let the dialog extend past the visible viewport and hide the close button on phones. The mobile modal overlay now respects safe-area padding, uses a dynamic viewport height cap where available, aligns the dialog from the top on narrow screens, and trims the mobile header/content spacing so the instructions stay fully reachable and scroll correctly.
+
 ## SubMaker v1.4.79
 
 **Improvements:**
@@ -1429,7 +1439,7 @@ PS: Partial delivery during translation remains SRT (from the translation engine
 
 - **Stremio Community Subtitles (SCS) integration:** Added support for the community-driven subtitle database at [stremio-community-subtitles.top](https://stremio-community-subtitles.top/). When enabled, SubMaker searches SCS alongside other providers (OpenSubtitles, SubDL, SubSource) and can translate community-uploaded subtitles. Includes full language code normalization (ISO 639-2/T to B conversion), Kitsu anime ID support, and automatic fallback token for zero-config usage.
 
-- **Wyzie Subs integration:** Added support for [Wyzie Subs](https://sub.wyzie.ru), a free, open-source subtitle aggregator that searches OpenSubtitles and SubDL simultaneously. No API key required. Supports both IMDB and TMDB IDs, hearing impaired filtering, and automatic ZIP extraction (handled server-side by Wyzie). Includes comprehensive language code normalization and per-language result limiting to prevent overwhelming results.
+- **Wyzie Subs integration:** Added support for [Wyzie Subs](https://sub.wyzie.io), a free, open-source subtitle aggregator that searches OpenSubtitles and SubDL simultaneously. Wyzie now requires an API key for search requests. Supports both IMDB and TMDB IDs, hearing impaired filtering, and automatic ZIP extraction (handled server-side by Wyzie). Includes comprehensive language code normalization and per-language result limiting to prevent overwhelming results.
 
 - **Subs.ro integration:** Added support for [Subs.ro](https://subs.ro), a Romanian subtitle database. Requires an API key from subs.ro. Provides access to Romanian-language subtitles with full download support and API key validation.
 

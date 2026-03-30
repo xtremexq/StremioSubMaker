@@ -435,10 +435,14 @@
                                             <div>
                                                 <strong id="wyzieTitle" data-i18n="config.providers.wyzie.title"
                                                     style="display: block;">Wyzie Subs</strong>
-                                                <span class="label-description" id="wyzieDescription" style="margin: 0;"
-                                                    data-i18n="config.providers.wyzie.description">Free subtitle
-                                                    aggregator that searches OpenSubtitles, SubDL, and other sources. No
-                                                    API key needed.</span>
+                                                <span class="label-description" id="wyzieDescription" style="margin: 0;">
+                                                    <span data-i18n="config.providers.wyzie.description">Get your free API key
+                                                        from</span>
+                                                    <a id="wyzieLink" data-i18n="config.providers.wyzie.linkLabel"
+                                                        href="https://sub.wyzie.io/redeem" target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        style="color: var(--primary-light);">sub.wyzie.io/redeem</a>
+                                                </span>
                                             </div>
                                         </label>
                                         <label class="toggle-switch">
@@ -448,74 +452,90 @@
                                             <span class="toggle-slider"></span>
                                         </label>
                                     </div>
-                                    <!-- Wyzie Sources (compact grid) -->
-                                    <div id="wyzieSources" style="display: none; margin-top: 0.5rem;">
-                                        <div
-                                            style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">
-                                            Sources:
+                                    <div id="wyzieConfig" style="display: none; margin-top: 0.5rem;">
+                                        <div style="display: flex; gap: 0.5rem; align-items: start;">
+                                            <input type="text" id="wyzieApiKey"
+                                                data-i18n="config.providers.wyzie.placeholder"
+                                                data-i18n-attr="placeholder" placeholder="Enter Wyzie API key"
+                                                style="flex: 1;">
+                                            <button type="button" class="validate-api-btn" id="validateWyzie"
+                                                data-i18n="config.providers.wyzie.validateTitle"
+                                                data-i18n-attr="title" title="Validate API key">
+                                                <span class="validate-icon">✓</span>
+                                                <span class="validate-text"
+                                                    data-i18n="config.providers.wyzie.validateCta">Test</span>
+                                            </button>
                                         </div>
-                                        <div
-                                            style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.25rem 0.5rem; font-size: 0.8rem;">
-                                            <label
-                                                style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                                <input type="checkbox" id="wyzieSourceOpensubtitles"
-                                                    style="width: 14px; height: 14px;">
-                                                <span>OpenSubtitles</span>
-                                            </label>
-                                            <label
-                                                style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                                <input type="checkbox" id="wyzieSourceSubf2m"
-                                                    style="width: 14px; height: 14px;">
-                                                <span>Subf2m</span>
-                                            </label>
-                                            <label
-                                                style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                                <input type="checkbox" id="wyzieSourceSubdl"
-                                                    style="width: 14px; height: 14px;">
-                                                <span>SubDL</span>
-                                            </label>
-                                            <label
-                                                style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                                <input type="checkbox" id="wyzieSourcePodnapisi"
-                                                    style="width: 14px; height: 14px;">
-                                                <span>Podnapisi</span>
-                                            </label>
-                                            <label
-                                                style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                                <input type="checkbox" id="wyzieSourceGestdown"
-                                                    style="width: 14px; height: 14px;">
-                                                <span>Gestdown</span>
-                                            </label>
-                                            <label
-                                                style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                                <input type="checkbox" id="wyzieSourceAnimetosho"
-                                                    style="width: 14px; height: 14px;">
-                                                <span>Animetosho</span>
-                                            </label>
-                                            <label
-                                                style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                                <input type="checkbox" id="wyzieSourceKitsunekko"
-                                                    style="width: 14px; height: 14px;">
-                                                <span>Kitsunekko</span>
-                                            </label>
-                                            <label
-                                                style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                                <input type="checkbox" id="wyzieSourceJimaku"
-                                                    style="width: 14px; height: 14px;">
-                                                <span>Jimaku</span>
-                                            </label>
-                                            <label
-                                                style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                                <input type="checkbox" id="wyzieSourceYify"
-                                                    style="width: 14px; height: 14px;">
-                                                <span>YIFY</span>
-                                            </label>
+                                        <div class="validation-feedback" id="wyzieValidationFeedback"></div>
+                                        <!-- Wyzie Sources (compact grid) -->
+                                        <div id="wyzieSources" style="margin-top: 0.75rem;">
+                                            <div
+                                                style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">
+                                                Sources:
+                                            </div>
+                                            <div
+                                                style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.25rem 0.5rem; font-size: 0.8rem;">
+                                                <label
+                                                    style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                                    <input type="checkbox" id="wyzieSourceOpensubtitles"
+                                                        style="width: 14px; height: 14px;">
+                                                    <span>OpenSubtitles</span>
+                                                </label>
+                                                <label
+                                                    style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                                    <input type="checkbox" id="wyzieSourceSubf2m"
+                                                        style="width: 14px; height: 14px;">
+                                                    <span>Subf2m</span>
+                                                </label>
+                                                <label
+                                                    style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                                    <input type="checkbox" id="wyzieSourceSubdl"
+                                                        style="width: 14px; height: 14px;">
+                                                    <span>SubDL</span>
+                                                </label>
+                                                <label
+                                                    style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                                    <input type="checkbox" id="wyzieSourcePodnapisi"
+                                                        style="width: 14px; height: 14px;">
+                                                    <span>Podnapisi</span>
+                                                </label>
+                                                <label
+                                                    style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                                    <input type="checkbox" id="wyzieSourceGestdown"
+                                                        style="width: 14px; height: 14px;">
+                                                    <span>Gestdown</span>
+                                                </label>
+                                                <label
+                                                    style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                                    <input type="checkbox" id="wyzieSourceAnimetosho"
+                                                        style="width: 14px; height: 14px;">
+                                                    <span>Animetosho</span>
+                                                </label>
+                                                <label
+                                                    style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                                    <input type="checkbox" id="wyzieSourceKitsunekko"
+                                                        style="width: 14px; height: 14px;">
+                                                    <span>Kitsunekko</span>
+                                                </label>
+                                                <label
+                                                    style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                                    <input type="checkbox" id="wyzieSourceJimaku"
+                                                        style="width: 14px; height: 14px;">
+                                                    <span>Jimaku</span>
+                                                </label>
+                                                <label
+                                                    style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                                    <input type="checkbox" id="wyzieSourceYify"
+                                                        style="width: 14px; height: 14px;">
+                                                    <span>YIFY</span>
+                                                </label>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div id="wyzieNote"
-                                        style="font-size: 0.75rem; color: var(--text-secondary); padding: 0.4rem; background: var(--surface-light); border-radius: 6px; margin-top: 0.5rem;">
-                                        <span data-i18n="config.providers.wyzie.note">More sources = more subtitles but
-                                            slower. Uncheck sources you don't need.</span>
+                                        <div id="wyzieNote"
+                                            style="font-size: 0.75rem; color: var(--text-secondary); padding: 0.4rem; background: var(--surface-light); border-radius: 6px; margin-top: 0.5rem;">
+                                            <span data-i18n="config.providers.wyzie.note">More sources = more subtitles but
+                                                slower. Uncheck sources you don't need.</span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1676,16 +1696,6 @@
                     </div>
                 </div>
 
-                <div class="form-group" id="excludeHearingImpairedNoTranslationGroup" style="display: none;">
-                    <label>
-                        <input type="checkbox" id="excludeHearingImpairedSubtitlesNoTranslation">
-                        <span data-i18n="config.otherSettings.excludeHearingImpaired.label">Hide SDH/HI subtitles</span>
-                        <span class="label-description"
-                            data-i18n="config.otherSettings.excludeHearingImpaired.description">Exclude subtitles
-                            labeled "Subtitles for hearing impaired" (SDH/HI) from results.</span>
-                    </label>
-                </div>
-
                 <div class="form-group" id="subToolboxNoTranslationGroup" style="display: none;">
                     <label>
                         <input type="checkbox" id="subToolboxEnabledNoTranslation">
@@ -1713,6 +1723,28 @@
                             data-i18n="config.otherSettings.enableSeasonPacks.description">Include season pack subtitles
                             (containing multiple episodes) in results. Disable to only show episode-specific
                             subtitles.</span>
+                    </label>
+                </div>
+
+                <div class="form-group" id="excludeHearingImpairedNoTranslationGroup" style="display: none;">
+                    <label>
+                        <input type="checkbox" id="excludeHearingImpairedSubtitlesNoTranslation">
+                        <span data-i18n="config.otherSettings.excludeHearingImpaired.label">Hide SDH/HI subtitles</span>
+                        <span class="label-description"
+                            data-i18n="config.otherSettings.excludeHearingImpaired.description">Exclude subtitles
+                            labeled "Subtitles for hearing impaired" (SDH/HI) from results.</span>
+                    </label>
+                </div>
+
+                <div class="form-group" id="convertAssToVttNoTranslationGroup" style="display: none;">
+                    <label>
+                        <input type="checkbox" id="convertAssToVttNoTranslation">
+                        <span data-i18n="config.otherSettings.convertAssToVtt.label">ASS/SSA
+                            Passthrough</span>
+                        <span class="label-description"
+                            data-i18n="config.otherSettings.convertAssToVtt.description">Enable to send
+                            ASS/SSA subtitles as-is to Stremio. Disable to convert ASS/SSA for
+                            compatibility.</span>
                     </label>
                 </div>
 
@@ -1858,6 +1890,17 @@
                             </label>
                         </div>
 
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="excludeHearingImpairedSubtitles">
+                                <span data-i18n="config.otherSettings.excludeHearingImpaired.label">Hide SDH/HI
+                                    subtitles</span>
+                                <span class="label-description"
+                                    data-i18n="config.otherSettings.excludeHearingImpaired.description">Exclude
+                                    subtitles labeled "Subtitles for hearing impaired" (SDH/HI) from results.</span>
+                            </label>
+                        </div>
+
                         <!-- ASS/SSA passthrough option -->
                         <div class="form-group" id="convertAssToVttGroup">
                             <label>
@@ -1868,17 +1911,6 @@
                                     data-i18n="config.otherSettings.convertAssToVtt.description">Enable to send
                                     ASS/SSA subtitles as-is to Stremio. Disable to convert ASS/SSA for
                                     compatibility.</span>
-                            </label>
-                        </div>
-
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="excludeHearingImpairedSubtitles">
-                                <span data-i18n="config.otherSettings.excludeHearingImpaired.label">Hide SDH/HI
-                                    subtitles</span>
-                                <span class="label-description"
-                                    data-i18n="config.otherSettings.excludeHearingImpaired.description">Exclude
-                                    subtitles labeled "Subtitles for hearing impaired" (SDH/HI) from results.</span>
                             </label>
                         </div>
 

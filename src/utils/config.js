@@ -867,6 +867,52 @@ function normalizeConfig(config) {
     }
   }
 
+  const wyzieConfig = mergedConfig.subtitleProviders?.wyzie;
+  if (wyzieConfig) {
+    const normalizeWyzieValue = (value, fallback = '') => {
+      if (value === undefined || value === null) return fallback;
+      const normalized = String(value).trim();
+      if (normalized === '[object Object]' || normalized === '[object Array]') {
+        return fallback;
+      }
+      return normalized || fallback;
+    };
+
+    const rawSources = (wyzieConfig.sources && typeof wyzieConfig.sources === 'object')
+      ? wyzieConfig.sources
+      : {};
+    const normalizedSources = {
+      opensubtitles: rawSources.opensubtitles === true || rawSources.opensubs === true,
+      subf2m: rawSources.subf2m === true,
+      subdl: rawSources.subdl === true,
+      podnapisi: rawSources.podnapisi === true,
+      gestdown: rawSources.gestdown === true,
+      animetosho: rawSources.animetosho === true,
+      kitsunekko: rawSources.kitsunekko === true,
+      jimaku: rawSources.jimaku === true,
+      yify: rawSources.yify === true
+    };
+
+    const previousApiKey = typeof wyzieConfig.apiKey === 'string' ? wyzieConfig.apiKey.trim() : '';
+    const normalizedApiKey = normalizeWyzieValue(wyzieConfig.apiKey, '');
+    const needsPersist =
+      previousApiKey !== normalizedApiKey
+      || rawSources.opensubs === true
+      || (rawSources.opensubs !== undefined && rawSources.opensubtitles !== true);
+
+    mergedConfig.subtitleProviders.wyzie = {
+      ...wyzieConfig,
+      enabled: wyzieConfig.enabled === true,
+      apiKey: normalizedApiKey,
+      sources: normalizedSources
+    };
+
+    if (needsPersist) {
+      mergedConfig.__needsSessionPersist = true;
+      mergedConfig.__persistReason = mergedConfig.__persistReason || 'wyzie-config-normalization';
+    }
+  }
+
   return mergedConfig;
 }
 
@@ -1103,7 +1149,8 @@ function getDefaultConfig(modelName = null) {
         enabled: false
       },
       wyzie: {
-        enabled: false
+        enabled: false,
+        apiKey: ''
       },
       subsro: {
         enabled: false,

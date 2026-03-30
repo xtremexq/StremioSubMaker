@@ -801,11 +801,14 @@
           "subsourceKeyPlaceholder": "Introduce la clave API de SubSource",
           "subsourceGetKey": "Obtén tu clave API gratuita en SubSource.net",
           "noKeyNeeded": "Sin clave necesaria",
+          "keyRequired": "Clave requerida",
           "scsName": "Stremio Community Subs",
           "scsDesc": "Subtítulos seleccionados por la comunidad de Stremio",
           "scsTimeoutNote": "⏱ Requiere 28-30s de espera (se configura automáticamente al activar)",
           "wyzieName": "Wyzie Subs",
-          "wyzieDesc": "Agregador gratuito de subtítulos que busca en múltiples fuentes",
+          "wyzieDesc": "Agregador de subtítulos con clave API gratuita",
+          "wyzieKeyPlaceholder": "Introduce la clave API de Wyzie",
+          "wyzieGetKey": "Obtén tu clave API gratuita en sub.wyzie.io/redeem",
           "wyzieSources": "Fuentes:",
           "wyzieMoreSources": "Más fuentes = más subtítulos pero más lento"
         },
@@ -934,7 +937,7 @@
           "eyebrow": "Guía de SubMaker",
           "title": "Cómo funciona SubMaker en Stremio",
           "closeAria": "Cerrar instrucciones",
-          "intro": "",
+          "intro": "Primero define el orden de tus idiomas de origen y luego usa las entradas <strong>\"Make\"</strong> equivalentes en Stremio para traducir desde el subtítulo de origen que ya comprobaste.",
           "usageTitle": "Configuración básica",
           "step1": "Activa las fuentes de subtítulos que quieras en <strong>Fuentes de subtítulos</strong>.",
           "step2": "Agrega tu <strong>clave API de Gemini</strong> en la sección de IA.",
@@ -1061,6 +1064,7 @@
         "secondaryProvidersCount": "El Proveedor secundario requiere dos proveedores de IA configurados (principal y respaldo)",
         "subdlKeyRequired": "SubDL está activado pero falta la clave API",
         "subsourceKeyRequired": "SubSource está activado pero falta la clave API",
+        "wyzieKeyRequired": "Wyzie Subs está activado pero falta la clave API",
         "subsroKeyRequired": "Subs.ro está activado pero falta la clave API",
         "subtitleProviderRequired": "Activa al menos un proveedor de subtítulos",
         "geminiKeysRequired": "Se requiere al menos una clave API para la rotación",
@@ -1127,9 +1131,13 @@
         },
         "wyzie": {
           "title": "Wyzie Subs",
-          "description": "Agregador de subtítulos gratuito. No se necesita clave API.",
+          "description": "Obtén tu clave API gratuita en",
+          "linkLabel": "sub.wyzie.io/redeem",
+          "placeholder": "Introduce la clave API de Wyzie",
+          "validateTitle": "Validar clave API",
+          "validateCta": "Probar",
           "toggleLabel": "Activar Wyzie Subs",
-          "note": "Wyzie agrega subtítulos de múltiples fuentes. Los resultados pueden superponerse con otros proveedores habilitados."
+          "note": "Wyzie agrega subtítulos de múltiples fuentes. Los resultados pueden superponerse con otros proveedores que tengas habilitados."
         },
         "scs": {
           "title": "Stremio Community Subtitles",

@@ -191,21 +191,34 @@
                             </div>
                         </div>
 
-                        <!-- Wyzie Subs - no key needed -->
+                        <!-- Wyzie Subs -->
                         <div class="qs-source-item" id="qsWyzieSource">
                             <div class="qs-source-header">
                                 <div class="qs-source-name">
                                     <span class="qs-source-emoji">🔍</span>
                                     <span data-i18n="config.quickSetup.step2.wyzieName">Wyzie Subs</span>
-                                    <span class="qs-badge-free" data-i18n="config.quickSetup.step2.noKeyNeeded">No key needed</span>
+                                    <span class="qs-optional-tag" data-i18n="config.quickSetup.step2.keyRequired">Key required</span>
                                 </div>
                                 <label class="qs-toggle">
                                     <input type="checkbox" id="qsEnableWyzie">
                                     <span class="qs-toggle-slider"></span>
                                 </label>
                             </div>
-                            <p class="qs-source-desc" data-i18n="config.quickSetup.step2.wyzieDesc">Free subtitle aggregator that searches multiple sources</p>
+                            <p class="qs-source-desc" data-i18n="config.quickSetup.step2.wyzieDesc">Subtitle aggregator with a free API key</p>
                             <div class="qs-wyzie-sources" id="qsWyzieSources" style="display: none;">
+                                <div class="qs-source-key-wrap" id="qsWyzieKeyWrap" style="display: block; margin-bottom: 0.75rem;">
+                                    <div class="qs-key-input-row">
+                                        <input type="text" id="qsWyzieApiKey" class="qs-input qs-input-key"
+                                            placeholder="Enter Wyzie API key" data-i18n-placeholder="config.quickSetup.step2.wyzieKeyPlaceholder" autocomplete="off" spellcheck="false">
+                                        <button type="button" class="qs-btn-validate" id="qsValidateWyzie"
+                                            title="Test API key">
+                                            <span class="qs-validate-icon">✓</span>
+                                        </button>
+                                    </div>
+                                    <div class="qs-key-status" id="qsWyzieStatus"></div>
+                                    <p class="qs-rate-note"><a href="https://sub.wyzie.io/redeem" target="_blank"
+                                            rel="noopener noreferrer" data-i18n="config.quickSetup.step2.wyzieGetKey">Get your free API key at sub.wyzie.io/redeem</a></p>
+                                </div>
                                 <div class="qs-wyzie-sources-label" data-i18n="config.quickSetup.step2.wyzieSources">Sources:</div>
                                 <div class="qs-wyzie-sources-grid">
                                     <label class="qs-wyzie-cb"><input type="checkbox" id="qsWyzieSubf2m"

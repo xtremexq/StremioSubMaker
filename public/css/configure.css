@@ -3197,6 +3197,14 @@ label:has(#subToolboxEnabled:disabled) {
     display: none;
     align-items: center;
     justify-content: center;
+    padding:
+        max(0.75rem, env(safe-area-inset-top))
+        max(0.75rem, env(safe-area-inset-right))
+        max(0.75rem, env(safe-area-inset-bottom))
+        max(0.75rem, env(safe-area-inset-left));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     z-index: 10000;
     animation: fadeIn 0.3s ease;
 }
@@ -3215,6 +3223,8 @@ label:has(#subToolboxEnabled:disabled) {
     max-height: 72vh;
     align-items: flex-end;
     justify-content: flex-start;
+    padding: 0;
+    overflow: visible;
     background: none;
     animation: none;
 }
@@ -3253,6 +3263,8 @@ label:has(#subToolboxEnabled:disabled) {
     position: relative;
     display: flex;
     flex-direction: column;
+    margin: auto;
+    min-height: 0;
 }
 
 .modal-header {
@@ -3527,6 +3539,7 @@ label:has(#subToolboxEnabled:disabled) {
     width: min(92vw, 680px);
     max-width: 680px;
     max-height: min(82vh, 720px);
+    max-height: min(82dvh, 720px);
     border-radius: 22px;
     overflow: hidden;
 }
@@ -3683,6 +3696,12 @@ label:has(#subToolboxEnabled:disabled) {
     font-size: 0.95rem;
 }
 
+.instructions-footnote-title {
+    margin: 0.8rem 0 0.35rem !important;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
 .instructions-footnote-muted {
     border-top-color: rgba(15, 23, 42, 0.14);
     color: var(--text-secondary);
@@ -3730,21 +3749,49 @@ label:has(#subToolboxEnabled:disabled) {
 }
 
 @media (max-width: 700px) {
+    #instructionsModal {
+        align-items: flex-start;
+        padding:
+            max(0.5rem, env(safe-area-inset-top))
+            max(0.5rem, env(safe-area-inset-right))
+            max(0.5rem, env(safe-area-inset-bottom))
+            max(0.5rem, env(safe-area-inset-left));
+    }
+
     .instructions-modal {
-        width: calc(100% - 1rem);
-        max-height: calc(100vh - 1rem);
+        width: min(100%, 680px);
+        max-width: 100%;
+        max-height: calc(100vh - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        max-height: calc(100dvh - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        margin: 0 auto;
+        border-radius: 18px;
     }
 
     .instructions-modal-header {
-        padding: 1.05rem 1rem 0.9rem;
+        padding: 1.05rem 3.25rem 0.9rem 1rem;
+    }
+
+    #instructionsModal .modal-close {
+        top: 1rem;
+        right: 1rem;
     }
 
     .instructions-hero-copy {
-        padding: 0 2.25rem;
+        padding: 0;
     }
 
     .instructions-modal-content {
-        padding: 0.9rem 1rem 1rem;
+        padding: 0.9rem 0.95rem 1rem;
+    }
+
+    .instructions-panel,
+    .instructions-card,
+    .instructions-callout {
+        padding: 0.85rem 0.9rem;
+    }
+
+    .instructions-modal .modal-footer {
+        flex-direction: column;
     }
 
 }

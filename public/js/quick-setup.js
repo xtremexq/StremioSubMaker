@@ -48,6 +48,42 @@
         'gemini-flash-lite-latest': 'Gemini Flash Lite Latest',
         'gemini-flash-latest': 'Gemini Flash Latest'
     };
+    const DEFAULT_WYZIE_API_KEY = '';
+
+    function getQuickSetupDefaultWyzieApiKey() {
+        try {
+            const candidate = window.SubMakerDefaultApiKeys && window.SubMakerDefaultApiKeys.WYZIE;
+            if (typeof candidate === 'string' && candidate.trim()) {
+                return candidate.trim();
+            }
+        } catch (_) { }
+        return DEFAULT_WYZIE_API_KEY;
+    }
+
+    function getDefaultQuickSetupWyzieSources() {
+        return normalizeQuickSetupWyzieSources({
+            subf2m: true,
+            podnapisi: true,
+            gestdown: true,
+            animetosho: true
+        });
+    }
+
+    function normalizeQuickSetupWyzieSources(sourceConfig) {
+        const raw = (sourceConfig && typeof sourceConfig === 'object') ? sourceConfig : {};
+        return {
+            subf2m: raw.subf2m === true,
+            podnapisi: raw.podnapisi === true,
+            gestdown: raw.gestdown === true,
+            animetosho: raw.animetosho === true,
+            opensubtitles: raw.opensubtitles === true || raw.opensubs === true,
+            subdl: raw.subdl === true,
+            kitsunekko: raw.kitsunekko === true,
+            jimaku: raw.jimaku === true,
+            yify: raw.yify === true
+        };
+    }
+
     // Wizard State
     const state = {
         currentStep: 1,
@@ -62,7 +98,8 @@
         subsourceApiKey: '',
         scsEnabled: false,
         wyzieEnabled: false,
-        wyzieSources: { subf2m: true, podnapisi: true, gestdown: true, animetosho: true, opensubs: false, subdl: false, kitsunekko: false, jimaku: false, yify: false },
+        wyzieApiKey: getQuickSetupDefaultWyzieApiKey(),
+        wyzieSources: getDefaultQuickSetupWyzieSources(),
         // AI (translate mode only)
         geminiApiKey: '',
         geminiKeyValid: false,
@@ -956,18 +993,19 @@
                 state.scsEnabled = !!($('qsEnableSCS') || {}).checked;
                 // Wyzie
                 state.wyzieEnabled = !!($('qsEnableWyzie') || {}).checked;
+                state.wyzieApiKey = (($('qsWyzieApiKey') || {}).value || '').trim() || getQuickSetupDefaultWyzieApiKey();
                 if (state.wyzieEnabled) {
-                    state.wyzieSources = {
+                    state.wyzieSources = normalizeQuickSetupWyzieSources({
                         subf2m: !!($('qsWyzieSubf2m') || {}).checked,
                         podnapisi: !!($('qsWyziePodnapisi') || {}).checked,
                         gestdown: !!($('qsWyzieGestdown') || {}).checked,
                         animetosho: !!($('qsWyzieAnimetosho') || {}).checked,
-                        opensubs: !!($('qsWyzieOpensubs') || {}).checked,
+                        opensubtitles: !!($('qsWyzieOpensubs') || {}).checked,
                         subdl: !!($('qsWyzieSubdl') || {}).checked,
                         kitsunekko: !!($('qsWyzieKitsunekko') || {}).checked,
                         jimaku: !!($('qsWyzieJimaku') || {}).checked,
                         yify: !!($('qsWyzieYify') || {}).checked
-                    };
+                    });
                 }
                 break;
             case 3:
@@ -1087,6 +1125,20 @@
                     return;
                 }
                 await runQsValidation(ssBtn, statusEl, '/api/validate-subsource', { apiKey });
+            });
+        }
+
+        // Wyzie test
+        const wyzieBtn = $('qsValidateWyzie');
+        if (wyzieBtn) {
+            wyzieBtn.addEventListener('click', async () => {
+                const apiKey = ($('qsWyzieApiKey') || {}).value?.trim();
+                const statusEl = $('qsWyzieStatus');
+                if (!apiKey) {
+                    showQsStatus(statusEl, tQs('status.enterKey', null, 'Please enter an API key'), 'error');
+                    return;
+                }
+                await runQsValidation(wyzieBtn, statusEl, '/api/validate-wyzie', { apiKey });
             });
         }
     }
@@ -1833,7 +1885,8 @@
                 scs: { enabled: state.scsEnabled },
                 wyzie: {
                     enabled: state.wyzieEnabled,
-                    sources: state.wyzieEnabled ? { ...state.wyzieSources } : undefined
+                    apiKey: (state.wyzieApiKey || getQuickSetupDefaultWyzieApiKey()).trim(),
+                    sources: state.wyzieEnabled ? normalizeQuickSetupWyzieSources(state.wyzieSources) : undefined
                 }
             },
             subtitleProviderTimeout: state.scsEnabled ? 30 : 12,
@@ -2172,6 +2225,13 @@
         if (keyInput) keyInput.value = '';
         const keyStatus = $('qsGeminiKeyStatus');
         if (keyStatus) { keyStatus.textContent = ''; keyStatus.className = 'qs-key-status'; }
+        ['qsOpenSubsStatus', 'qsSubDLStatus', 'qsSubSourceStatus', 'qsWyzieStatus'].forEach((id) => {
+            const statusEl = $(id);
+            if (statusEl) {
+                statusEl.textContent = '';
+                statusEl.className = 'qs-key-status';
+            }
+        });
         // Step 4 - clear language selection
         const searchInput = $('qsLangSearch');
         if (searchInput) searchInput.value = '';
@@ -2263,9 +2323,8 @@
         // Wyzie
         const wyzie = subs.wyzie || {};
         state.wyzieEnabled = !!wyzie.enabled;
-        if (wyzie.sources) {
-            state.wyzieSources = { ...wyzie.sources };
-        }
+        state.wyzieApiKey = (wyzie.apiKey || '').trim() || getQuickSetupDefaultWyzieApiKey();
+        state.wyzieSources = normalizeQuickSetupWyzieSources(wyzie.sources || getDefaultQuickSetupWyzieSources());
 
         // AI
         state.geminiApiKey = config.geminiApiKey || '';
@@ -2302,6 +2361,8 @@
         state.subsourceApiKey = '';
         state.scsEnabled = false;
         state.wyzieEnabled = false;
+        state.wyzieApiKey = getQuickSetupDefaultWyzieApiKey();
+        state.wyzieSources = getDefaultQuickSetupWyzieSources();
         state.geminiApiKey = '';
         state.geminiKeyValid = false;
         state.sourceLanguages = ['eng'];
@@ -2339,8 +2400,10 @@
 
         const subdlKey = $('qsSubdlApiKey');
         const ssKey = $('qsSubsourceApiKey');
+        const wyzieKey = $('qsWyzieApiKey');
         if (subdlKey) subdlKey.value = state.subdlApiKey || '';
         if (ssKey) ssKey.value = state.subsourceApiKey || '';
+        if (wyzieKey) wyzieKey.value = state.wyzieApiKey || getQuickSetupDefaultWyzieApiKey();
 
         const un = $('qsOpenSubsUsername');
         const pw = $('qsOpenSubsPassword');
@@ -2352,12 +2415,12 @@
         }
 
         // Wyzie sub-sources
-        if (state.wyzieEnabled && state.wyzieSources) {
-            const ids = { subf2m: 'qsWyzieSubf2m', podnapisi: 'qsWyziePodnapisi', gestdown: 'qsWyzieGestdown', animetosho: 'qsWyzieAnimetosho', opensubs: 'qsWyzieOpensubs', subdl: 'qsWyzieSubdl', kitsunekko: 'qsWyzieKitsunekko', jimaku: 'qsWyzieJimaku', yify: 'qsWyzieYify' };
-            for (const [key, id] of Object.entries(ids)) {
-                const el = $(id);
-                if (el) el.checked = !!state.wyzieSources[key];
-            }
+        const wyzieSourceState = normalizeQuickSetupWyzieSources(state.wyzieSources || getDefaultQuickSetupWyzieSources());
+        state.wyzieSources = wyzieSourceState;
+        const ids = { subf2m: 'qsWyzieSubf2m', podnapisi: 'qsWyziePodnapisi', gestdown: 'qsWyzieGestdown', animetosho: 'qsWyzieAnimetosho', opensubtitles: 'qsWyzieOpensubs', subdl: 'qsWyzieSubdl', kitsunekko: 'qsWyzieKitsunekko', jimaku: 'qsWyzieJimaku', yify: 'qsWyzieYify' };
+        for (const [key, id] of Object.entries(ids)) {
+            const el = $(id);
+            if (el) el.checked = !!wyzieSourceState[key];
         }
         // Step 3 - Gemini key
         const geminiKey = $('qsGeminiApiKey');

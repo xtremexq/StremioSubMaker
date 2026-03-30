@@ -112,9 +112,9 @@ const PROVIDER_ENDPOINTS = {
     keepAliveEnabled: true
   },
   wyzie: {
-    url: 'https://sub.wyzie.ru/',
+    url: 'https://sub.wyzie.io/',
     name: 'Wyzie Subs',
-    warmUpPath: 'status', // Free status endpoint
+    warmUpPath: 'status', // Public status endpoint; search requests require a key
     pingPath: 'status',
     keepAliveFailureOpensCircuit: false, // Status probe failures should not suppress real searches
     warmUpEnabled: true,

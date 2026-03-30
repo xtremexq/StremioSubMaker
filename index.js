@@ -2196,6 +2196,7 @@ app.use((req, res, next) => {
         '/api/validate-gemini',
         '/api/validate-subsource',
         '/api/validate-subdl',
+        '/api/validate-wyzie',
         '/api/validate-opensubtitles',
         '/api/validate-subsro',
         // Stream metadata endpoints for tool pages
@@ -2524,6 +2525,7 @@ app.use((req, res, next) => {
         '/api/validate-gemini',
         '/api/validate-subsource',
         '/api/validate-subdl',
+        '/api/validate-wyzie',
         '/api/validate-opensubtitles',
         '/api/translate-file',
         '/api/save-synced-subtitle',
@@ -3583,6 +3585,62 @@ app.post('/api/validate-subsro', validationLimiter, async (req, res) => {
                 error: upstream || msg || t('server.errors.requestFailed', {}, 'Request failed')
             });
         }
+    } catch (error) {
+        res.json({
+            valid: false,
+            error: (res.locals?.t || getTranslatorFromRequest(req, res))('server.validation.apiError', { reason: error.message }, `API error: ${error.message}`)
+        });
+    }
+});
+
+// API endpoint to validate Wyzie API key
+app.post('/api/validate-wyzie', validationLimiter, async (req, res) => {
+    setNoStore(res);
+
+    try {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const apiKey = String(req.body?.apiKey || '').trim();
+
+        if (!apiKey) {
+            return res.status(400).json({
+                valid: false,
+                error: t('server.errors.apiKeyRequired', {}, 'API key is required')
+            });
+        }
+
+        const WyzieSubsService = require('./src/services/wyzieSubs');
+        const wyzie = new WyzieSubsService(apiKey);
+        const result = await wyzie.validateApiKey({ timeout: 10000 });
+
+        if (result.valid) {
+            const payload = {
+                valid: true,
+                message: result.message || t('server.validation.apiKeyValid', {}, 'API key is valid')
+            };
+
+            if (Number.isFinite(result.resultsCount)) {
+                payload.resultsCount = result.resultsCount;
+            }
+
+            return res.json(payload);
+        }
+
+        const normalizedError = String(result.error || '').trim();
+        const lowerError = normalizedError.toLowerCase();
+        let translatedError = normalizedError || t('server.errors.requestFailed', {}, 'Request failed');
+
+        if (lowerError.includes('api key required')) {
+            translatedError = t('server.errors.apiKeyRequired', {}, 'API key is required');
+        } else if (lowerError.includes('invalid api key')) {
+            translatedError = t('server.errors.invalidApiKeyAuth', {}, 'Invalid API key - authentication failed');
+        } else if (lowerError.includes('timeout')) {
+            translatedError = t('server.errors.requestTimedOut', {}, 'Request timed out');
+        }
+
+        return res.json({
+            valid: false,
+            error: translatedError
+        });
     } catch (error) {
         res.json({
             valid: false,

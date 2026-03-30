@@ -244,6 +244,9 @@
         setDescriptionWithLink('subsourceDescription', 'config.providers.subsource.description', 'config.providers.subsource.linkLabel', 'Get your free API key from');
         setText('subdlTitle', 'config.providers.subdl.title', 'SubDL');
         setDescriptionWithLink('subdlDescription', 'config.providers.subdl.description', 'config.providers.subdl.linkLabel', 'Get your free API key from');
+        setText('wyzieTitle', 'config.providers.wyzie.title', 'Wyzie Subs');
+        setDescriptionWithLink('wyzieDescription', 'config.providers.wyzie.description', 'config.providers.wyzie.linkLabel', 'Get your free API key from');
+        setAttr('validateWyzie', 'title', 'config.providers.wyzie.validateTitle', 'Validate API key');
         setDescriptionWithLink('geminiApiHelper', 'config.gemini.apiKey.helper', 'config.gemini.apiKey.linkLabel', 'Get your free API key from');
         setText('sourceLanguagesError', 'config.validation.sourceRequired', 'Please select at least one source language');
         setText('targetLanguagesError', 'config.validation.targetRequired', 'Please select at least one target language');
@@ -295,13 +298,32 @@
      * NOTE: OpenSubtitles uses username/password authentication only (no API keys)
      */
     const DEFAULT_API_KEYS = {
-        // Do not ship real keys in the client bundle
+        // Client-visible default values for provider fields
         SUBDL: '',
         SUBSOURCE: '',
+        WYZIE: '',
         GEMINI: '',
         ASSEMBLYAI: '',
         CF_WORKERS_AUTOSUBS: ''
     };
+    if (typeof window !== 'undefined') {
+        window.SubMakerDefaultApiKeys = Object.freeze({ ...DEFAULT_API_KEYS });
+    }
+
+    function normalizeWyzieSourceConfig(sourceConfig) {
+        const raw = (sourceConfig && typeof sourceConfig === 'object') ? sourceConfig : {};
+        return {
+            opensubtitles: raw.opensubtitles === true || raw.opensubs === true,
+            subf2m: raw.subf2m === true,
+            subdl: raw.subdl === true,
+            podnapisi: raw.podnapisi === true,
+            gestdown: raw.gestdown === true,
+            animetosho: raw.animetosho === true,
+            kitsunekko: raw.kitsunekko === true,
+            jimaku: raw.jimaku === true,
+            yify: raw.yify === true
+        };
+    }
 
     // Popular languages for quick selection
     const POPULAR_LANGUAGES = ['eng', 'spa', 'fre', 'ger', 'por', 'pob', 'ita', 'rus', 'jpn', 'kor', 'chi', 'ara'];
@@ -1149,7 +1171,8 @@ Translate to {target_language}.`;
                     enabled: false // Stremio Community Subtitles - no API key needed
                 },
                 wyzie: {
-                    enabled: false // Wyzie Subs - free aggregator, no API key needed
+                    enabled: false,
+                    apiKey: ''
                 }
             },
             // Subtitle provider timeout in seconds (min: 8, max: 30, default: 12)
@@ -4382,8 +4405,32 @@ Translate to {target_language}.`;
         return VALID_URL_EXTENSION_TEST_VALUES.includes(normalized) ? normalized : fallback;
     }
 
+    function getConvertAssToVttToggle() {
+        if (currentConfig?.noTranslationMode === true) {
+            return document.getElementById('convertAssToVttNoTranslation') || document.getElementById('convertAssToVtt');
+        }
+        return document.getElementById('convertAssToVtt') || document.getElementById('convertAssToVttNoTranslation');
+    }
+
+    function getConvertAssToVttToggles() {
+        return ['convertAssToVtt', 'convertAssToVttNoTranslation']
+            .map(id => document.getElementById(id))
+            .filter(Boolean);
+    }
+
+    function syncConvertAssToVttInputs({ checked, disabled } = {}) {
+        getConvertAssToVttToggles().forEach(toggle => {
+            if (typeof checked === 'boolean') {
+                toggle.checked = checked;
+            }
+            if (typeof disabled === 'boolean') {
+                toggle.disabled = disabled;
+            }
+        });
+    }
+
     function isAssPassthroughEnabledInForm() {
-        const convertAssEl = document.getElementById('convertAssToVtt');
+        const convertAssEl = getConvertAssToVttToggle();
         return convertAssEl ? convertAssEl.checked === true : false;
     }
 
@@ -6400,6 +6447,13 @@ Translate to {target_language}.`;
             toggleProviderConfig('subsourceConfig', e.target.checked);
         });
 
+        const wyzieToggle = document.getElementById('enableWyzie');
+        if (wyzieToggle) {
+            wyzieToggle.addEventListener('change', (e) => {
+                toggleProviderConfig('wyzieConfig', e.target.checked);
+            });
+        }
+
         // Subs.ro toggle and config visibility
         const subsroToggle = document.getElementById('enableSubsRo');
         if (subsroToggle) {
@@ -6649,7 +6703,7 @@ Translate to {target_language}.`;
             const urlExtTestGroup = document.getElementById('urlExtensionTestGroup');
             if (!urlExtTestGroup) return;
             const devModeEl = document.getElementById('devMode');
-            const convertAssEl = document.getElementById('convertAssToVtt');
+            const convertAssEl = getConvertAssToVttToggle();
             const devEnabled = devModeEl && devModeEl.checked;
             // checked = passthrough (ASS conversion OFF)
             const assConversionDisabled = convertAssEl && convertAssEl.checked;
@@ -6675,14 +6729,16 @@ Translate to {target_language}.`;
             group.style.display = devEnabled ? 'block' : 'none';
         }
 
-        // Wire convertAssToVtt to also toggle the test group
-        const convertAssEl = document.getElementById('convertAssToVtt');
-        if (convertAssEl) {
-            convertAssEl.addEventListener('change', () => {
+        // Wire ASS/SSA passthrough toggles to stay in sync and update dependent UI.
+        getConvertAssToVttToggles().forEach(convertAssEl => {
+            convertAssEl.addEventListener('change', (event) => {
+                const passthroughEnabled = event.target.checked === true;
+                currentConfig.convertAssToVtt = !passthroughEnabled;
+                syncConvertAssToVttInputs({ checked: passthroughEnabled });
                 syncUrlExtensionTestModeUi({ rememberCheckedSelection: true });
                 toggleUrlExtensionTestGroup();
             });
-        }
+        });
 
         document.querySelectorAll('input[name="urlExtensionTest"]').forEach((radio) => {
             if (radio.__urlExtensionTestListenerBound) return;
@@ -6825,6 +6881,10 @@ Translate to {target_language}.`;
         document.getElementById('validateSubSource').addEventListener('click', () => validateApiKey('subsource'));
         document.getElementById('validateSubDL').addEventListener('click', () => validateApiKey('subdl'));
         document.getElementById('validateGemini').addEventListener('click', () => validateApiKey('gemini'));
+        const validateWyzieBtn = document.getElementById('validateWyzie');
+        if (validateWyzieBtn) {
+            validateWyzieBtn.addEventListener('click', () => validateApiKey('wyzie'));
+        }
 
         // Subs.ro validation button
         const validateSubsRoBtn = document.getElementById('validateSubsRo');
@@ -8141,6 +8201,11 @@ Translate to {target_language}.`;
             feedback = document.getElementById('subdlValidationFeedback');
             apiKey = document.getElementById('subdlApiKey').value.trim();
             endpoint = '/api/validate-subdl';
+        } else if (provider === 'wyzie') {
+            btn = document.getElementById('validateWyzie');
+            feedback = document.getElementById('wyzieValidationFeedback');
+            apiKey = document.getElementById('wyzieApiKey').value.trim();
+            endpoint = '/api/validate-wyzie';
         } else if (provider === 'opensubtitles') {
             btn = document.getElementById('validateOpenSubtitles');
             feedback = document.getElementById('opensubtitlesValidationFeedback');
@@ -8467,8 +8532,9 @@ Translate to {target_language}.`;
         ];
         const otherSettingsCard = document.getElementById('otherSettingsCard');
         const subToolboxNoTranslationGroup = document.getElementById('subToolboxNoTranslationGroup');
-        const excludeHearingImpairedNoTranslationGroup = document.getElementById('excludeHearingImpairedNoTranslationGroup');
         const enableSeasonPacksNoTranslationGroup = document.getElementById('enableSeasonPacksNoTranslationGroup');
+        const excludeHearingImpairedNoTranslationGroup = document.getElementById('excludeHearingImpairedNoTranslationGroup');
+        const convertAssToVttNoTranslationGroup = document.getElementById('convertAssToVttNoTranslationGroup');
         const forceSRTOutputNoTranslationGroup = document.getElementById('forceSRTOutputNoTranslationGroup');
         const workflowGroup = getTranslationWorkflowContainer();
         if (workflowGroup) groupsToHide.push(workflowGroup);
@@ -8497,6 +8563,9 @@ Translate to {target_language}.`;
             if (enableSeasonPacksNoTranslationGroup) {
                 enableSeasonPacksNoTranslationGroup.style.display = '';
             }
+            if (convertAssToVttNoTranslationGroup) {
+                convertAssToVttNoTranslationGroup.style.display = '';
+            }
             if (forceSRTOutputNoTranslationGroup) {
                 forceSRTOutputNoTranslationGroup.style.display = '';
             }
@@ -8513,6 +8582,9 @@ Translate to {target_language}.`;
             }
             if (enableSeasonPacksNoTranslationGroup) {
                 enableSeasonPacksNoTranslationGroup.style.display = 'none';
+            }
+            if (convertAssToVttNoTranslationGroup) {
+                convertAssToVttNoTranslationGroup.style.display = 'none';
             }
             if (forceSRTOutputNoTranslationGroup) {
                 forceSRTOutputNoTranslationGroup.style.display = 'none';
@@ -8537,6 +8609,9 @@ Translate to {target_language}.`;
         }
         if (enableSeasonPacksNoTranslationGroup) {
             enableSeasonPacksNoTranslationGroup.style.display = 'none';
+        }
+        if (convertAssToVttNoTranslationGroup) {
+            convertAssToVttNoTranslationGroup.style.display = 'none';
         }
         if (forceSRTOutputNoTranslationGroup) {
             forceSRTOutputNoTranslationGroup.style.display = 'none';
@@ -9229,9 +9304,10 @@ Translate to {target_language}.`;
                 if (defaults.subtitleProviders.wyzie) {
                     const oldWyzie = oldConfig.subtitleProviders.wyzie || {};
                     newConfig.subtitleProviders.wyzie.enabled = oldWyzie.enabled === true;
+                    newConfig.subtitleProviders.wyzie.apiKey = (oldWyzie.apiKey || '').trim();
                     // Preserve sources config if it exists
                     if (oldWyzie.sources && typeof oldWyzie.sources === 'object') {
-                        newConfig.subtitleProviders.wyzie.sources = { ...oldWyzie.sources };
+                        newConfig.subtitleProviders.wyzie.sources = normalizeWyzieSourceConfig(oldWyzie.sources);
                     } else if (oldWyzie.enabled === true) {
                         // BACKWARDS COMPAT: If user had Wyzie enabled but no sources saved,
                         // default to ALL sources enabled (preserves their previous behavior)
@@ -9533,18 +9609,18 @@ Translate to {target_language}.`;
         const scsToggle = document.getElementById('enableSCS');
         if (scsToggle) scsToggle.checked = scsEnabled;
 
-        // Wyzie Subs - free aggregator, no API key needed
+        // Wyzie Subs
         const wyzieEnabled = currentConfig.subtitleProviders?.wyzie?.enabled === true;
         const wyzieToggle = document.getElementById('enableWyzie');
         if (wyzieToggle) wyzieToggle.checked = wyzieEnabled;
-
-        // Wyzie Sources - show/hide and load saved preferences
-        const wyzieSources = document.getElementById('wyzieSources');
-        if (wyzieSources) {
-            wyzieSources.style.display = wyzieEnabled ? 'block' : 'none';
+        const wyzieApiKeyEl = document.getElementById('wyzieApiKey');
+        if (wyzieApiKeyEl) {
+            wyzieApiKeyEl.value = currentConfig.subtitleProviders?.wyzie?.apiKey || '';
         }
+        toggleProviderConfig('wyzieConfig', wyzieEnabled);
+
         // Default all sources to DISABLED if not specified (user must opt-in)
-        const wyzieSourceConfig = currentConfig.subtitleProviders?.wyzie?.sources || {
+        const wyzieSourceConfig = normalizeWyzieSourceConfig(currentConfig.subtitleProviders?.wyzie?.sources) || {
             opensubtitles: false, subf2m: false, subdl: false, podnapisi: false, gestdown: false, animetosho: false, kitsunekko: false, jimaku: false, yify: false
         };
         const sourceIds = ['opensubtitles', 'subf2m', 'subdl', 'podnapisi', 'gestdown', 'animetosho', 'kitsunekko', 'jimaku', 'yify'];
@@ -9552,12 +9628,6 @@ Translate to {target_language}.`;
             const el = document.getElementById('wyzieSource' + src.charAt(0).toUpperCase() + src.slice(1));
             if (el) el.checked = wyzieSourceConfig[src] === true; // Default to false for new users
         });
-        // Add toggle listener to show/hide sources
-        if (wyzieToggle) {
-            wyzieToggle.onchange = (e) => {
-                if (wyzieSources) wyzieSources.style.display = e.target.checked ? 'block' : 'none';
-            };
-        }
 
         // Subs.ro - Romanian subtitle database, requires API key
         const subsroEnabled = currentConfig.subtitleProviders?.subsro?.enabled === true;
@@ -9610,15 +9680,11 @@ Translate to {target_language}.`;
         if (forceSRTElNoTranslation) forceSRTElNoTranslation.checked = currentConfig.forceSRTOutput === true;
         // Checkbox represents passthrough, but stored config uses convertAssToVtt.
         // checked = passthrough ON => convertAssToVtt false
-        const convertAssToVttEl = document.getElementById('convertAssToVtt');
-        if (convertAssToVttEl) {
-            convertAssToVttEl.checked = currentConfig.convertAssToVtt === false;
-            // Disable ASS/SSA toggle when Force SRT is enabled (they conflict)
-            if (forceSRTEl && forceSRTEl.checked) {
-                convertAssToVttEl.disabled = true;
-                convertAssToVttEl.checked = false; // Force SRT implies conversion → passthrough OFF
-            }
-        }
+        syncConvertAssToVttInputs({
+            checked: currentConfig.forceSRTOutput === true ? false : currentConfig.convertAssToVtt === false,
+            disabled: currentConfig.forceSRTOutput === true
+        });
+        const convertAssToVttEl = getConvertAssToVttToggle();
         // Force SRT <-> ASS/SSA toggle sync is handled by syncForceSRT listener below
         // Re-apply dev-only option visibility after config values are loaded.
         // Without this, these groups can stay hidden after reload until the user toggles Dev Mode again.
@@ -9831,15 +9897,10 @@ Translate to {target_language}.`;
                 forceSRTToggleNoTranslation.checked = currentConfig.forceSRTOutput;
             }
             // Force SRT implies ASS/SSA conversion → passthrough OFF
-            const convertAssEl = document.getElementById('convertAssToVtt');
-            if (convertAssEl) {
-                if (currentConfig.forceSRTOutput) {
-                    convertAssEl.disabled = true;
-                    convertAssEl.checked = false; // Force SRT → passthrough OFF
-                } else {
-                    convertAssEl.disabled = false;
-                }
-            }
+            syncConvertAssToVttInputs({
+                checked: currentConfig.forceSRTOutput ? false : currentConfig.convertAssToVtt === false,
+                disabled: currentConfig.forceSRTOutput
+            });
             syncUrlExtensionTestModeUi({ rememberCheckedSelection: true });
             toggleUrlExtensionTestGroup();
         };
@@ -9942,7 +10003,7 @@ Translate to {target_language}.`;
             devMode: (function () { const el = document.getElementById('devMode'); return el ? el.checked : false; })(),
             urlExtensionTest: (function () {
                 // When ASS passthrough is enabled, force 'none' to avoid extension/payload mismatch
-                const convertAssEl = document.getElementById('convertAssToVtt');
+                const convertAssEl = getConvertAssToVttToggle();
                 const assPassthroughEnabled = convertAssEl && convertAssEl.checked;
                 if (assPassthroughEnabled) {
                     return 'none'; // ASS content can't use .srt extension
@@ -10000,6 +10061,7 @@ Translate to {target_language}.`;
                 },
                 wyzie: {
                     enabled: document.getElementById('enableWyzie')?.checked || false,
+                    apiKey: document.getElementById('wyzieApiKey')?.value?.trim() || '',
                     sources: {
                         opensubtitles: document.getElementById('wyzieSourceOpensubtitles')?.checked === true,
                         subf2m: document.getElementById('wyzieSourceSubf2m')?.checked === true,
@@ -10047,7 +10109,7 @@ Translate to {target_language}.`;
                 return el ? el.checked === true : (currentConfig?.forceSRTOutput === true);
             })(),
             convertAssToVtt: (function () {
-                const el = document.getElementById('convertAssToVtt');
+                const el = getConvertAssToVttToggle();
                 // Checkbox represents passthrough; stored config keeps convertAssToVtt.
                 // Default to true if element not found (backwards compatible)
                 return el ? !el.checked : (currentConfig?.convertAssToVtt !== false);
@@ -10115,6 +10177,9 @@ Translate to {target_language}.`;
         }
         if (config.subtitleProviders.subsource?.enabled && !config.subtitleProviders.subsource.apiKey?.trim()) {
             errors.push(tConfig('config.validation.subsourceKeyRequired', {}, '⚠️ SubSource is enabled but API key is missing'));
+        }
+        if (config.subtitleProviders.wyzie?.enabled && !config.subtitleProviders.wyzie.apiKey?.trim()) {
+            errors.push(tConfig('config.validation.wyzieKeyRequired', {}, '⚠️ Wyzie Subs is enabled but API key is missing'));
         }
         if (config.subtitleProviders.subsro?.enabled && !config.subtitleProviders.subsro.apiKey?.trim()) {
             errors.push(tConfig('config.validation.subsroKeyRequired', {}, '⚠️ Subs.ro is enabled but API key is missing'));

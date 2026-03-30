@@ -2853,7 +2853,7 @@ function createSubtitleHandler(config) {
           log.debug(() => '[Subtitles] SCS provider is disabled');
         }
 
-        // Check if Wyzie Subs is enabled (user toggle) - free aggregator, no API key needed
+        // Check if Wyzie Subs is enabled (user toggle)
         if (config.subtitleProviders?.wyzie?.enabled) {
           const wyzieHealth = isProviderHealthy('wyzie');
           if (!wyzieHealth.healthy) {
@@ -2861,7 +2861,7 @@ function createSubtitleHandler(config) {
             skippedProviders.push({ provider: 'WyzieSubs', reason: wyzieHealth.reason });
           } else {
             log.debug(() => '[Subtitles] Wyzie Subs provider is enabled');
-            const wyzie = new WyzieSubsService();
+            const wyzie = new WyzieSubsService(config.subtitleProviders.wyzie.apiKey);
             // Pass sources config so Wyzie only queries user-selected sources
             const wyzieParams = { ...searchParams, sources: config.subtitleProviders.wyzie.sources };
             addSearchTask('WyzieSubs',
@@ -3617,12 +3617,12 @@ async function handleSubtitleDownload(fileId, language, config) {
         // Remove scs_ prefix to get the SCS download identifier
         return await scs.downloadSubtitle(fileId.replace('scs_', ''), { timeout: downloadTimeoutMs, languageHint: language, skipAssConversion: config.convertAssToVtt === false && config.forceSRTOutput !== true });
       } else if (fileId.startsWith('wyzie_')) {
-        // Wyzie Subs (free aggregator)
+        // Wyzie Subs
         if (!config.subtitleProviders?.wyzie?.enabled) {
           throw new Error('Wyzie Subs provider is disabled');
         }
 
-        const wyzie = new WyzieSubsService();
+        const wyzie = new WyzieSubsService(config.subtitleProviders.wyzie.apiKey);
         log.debug(() => '[Download] Downloading subtitle via Wyzie Subs API');
         return await wyzie.downloadSubtitle(fileId, { timeout: downloadTimeoutMs, languageHint: language, skipAssConversion: config.convertAssToVtt === false && config.forceSRTOutput !== true });
       } else if (fileId.startsWith('subsro_')) {
@@ -4567,11 +4567,11 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
             const scs = new StremioCommunitySubtitlesService();
             sourceContent = await scs.downloadSubtitle(sourceFileId.replace('scs_', ''), { timeout: downloadTimeoutMs, languageHint: sourceLanguageHint, skipAssConversion });
           } else if (sourceFileId.startsWith('wyzie_')) {
-            // Wyzie Subs (free aggregator)
+            // Wyzie Subs
             if (!config.subtitleProviders?.wyzie?.enabled) {
               throw new Error('Wyzie Subs provider is disabled');
             }
-            const wyzie = new WyzieSubsService();
+            const wyzie = new WyzieSubsService(config.subtitleProviders.wyzie.apiKey);
             sourceContent = await wyzie.downloadSubtitle(sourceFileId, { timeout: downloadTimeoutMs, languageHint: sourceLanguageHint, skipAssConversion });
           } else if (sourceFileId.startsWith('subsro_')) {
             // Subs.ro subtitle (Romanian subtitle database)
@@ -4794,11 +4794,11 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
           // Remove scs_ prefix to get the SCS download identifier
           sourceContent = await scs.downloadSubtitle(sourceFileId.replace('scs_', ''), { timeout: downloadTimeoutMs, skipAssConversion });
         } else if (sourceFileId.startsWith('wyzie_')) {
-          // Wyzie Subs (free aggregator)
+          // Wyzie Subs
           if (!config.subtitleProviders?.wyzie?.enabled) {
             throw new Error('Wyzie Subs provider is disabled');
           }
-          const wyzie = new WyzieSubsService();
+          const wyzie = new WyzieSubsService(config.subtitleProviders.wyzie.apiKey);
           sourceContent = await wyzie.downloadSubtitle(sourceFileId, { timeout: downloadTimeoutMs, skipAssConversion });
         } else if (sourceFileId.startsWith('subsro_')) {
           // Subs.ro subtitle (Romanian subtitle database)
