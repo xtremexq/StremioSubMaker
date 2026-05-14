@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.84
+
+**Improvements:**
+
+- **Retirement of Gemini 3.1 Flash Lite Preview for stable model:** Relevant features like the base model dropdown, advanced Gemini model list, Quick Setup defaults, backend model-specific defaults, and saved-config normalization now use the GA `gemini-3.1-flash-lite` model instead of `gemini-3.1-flash-lite-preview`. Existing saved configs and advanced overrides with the preview slug are migrated before requests are sent to Gemini.
+
+- **Switched Gemini fallback defaults to Flash Lite latest:** Hardcoded fallback paths now resolve to `gemini-flash-lite-latest` instead of the Flash alias when no explicit model is configured, including the `GeminiService` constructor, backend config defaults, frontend config helpers, Quick Setup handoffs, AutoSubs defaults, advanced-settings comparison defaults, and localized helper copy. Old `gemini-flash-latest` saved values are treated as legacy inputs and normalized to the Lite fallback.
+
+- **Implemented OpenAI GPT-5-family request shaping for translation:** OpenAI Chat Completions requests now send `reasoning_effort` instead of the Responses-style `reasoning` object, so configured reasoning no longer breaks `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, and compatible GPT-5 chat models. GPT-5 pro-family requests routed to the Responses API now use `text.format` for structured output instead of Chat's `response_format`, and strict JSON schemas now use the OpenAI-required object root with an `entries` array envelope instead of a root array. Non-reasoning OpenAI models such as `gpt-4.1` no longer receive reasoning parameters even if an old config saved one.
+
+- **Expanded OpenAI reasoning-effort configuration for current models:** The Configure page and file-upload toolbox now preserve and expose `none`, `minimal`, `low`, `medium`, `high`, and `xhigh` reasoning-effort choices where applicable. Backend and frontend config normalization now accept the same values, while the OpenAI provider maps or omits unsupported values per model family to keep requests valid.
+
+- **Token Vault exports now create full configuration backups:** The vault's JSON export format now writes backup schema version `2` files that include each profile's full normalized configuration snapshot, including tuned AI/provider parameters, subtitle-provider settings, key rotation settings, toolbox flags, and other saved options, instead of only exporting local token metadata. Importing one of these full backups creates fresh server sessions with new tokens from the saved snapshots, restores the disabled state when possible, and then saves the restored profiles back into the local browser vault. Older token-only single-profile and full-vault exports remain supported and still import as local token references, so existing backups keep working.
+
+- **Reworked OpenSubtitles Auth rate limiting to prevent avoidable upstream `429`s:** `/login`, `/subtitles`, and `/download` now reserve their OpenSubtitles REST send timestamp before the request is made. `/login` reserves both the shared `5 req/sec/IP` API gate and the stricter `1 req/sec` login gate atomically in Redis, so a login request can no longer take one slot, wait on the other, then send outside the real upstream budget. The Redis limiter keys now use a shared hash tag so multi-key reservations stay valid on Redis Cluster/Sentinel-style deployments, and requests that cannot fit inside the caller timeout fail before reserving a slot.
+
+**Bug Fixes:**
+
+- **Fixed file-upload model overrides to use the selected translation provider:** The `/file-upload` Advanced Settings model override now reloads its model list from the provider selected in Translation Options using the saved session credentials, including Gemini, OpenAI-compatible providers, Anthropic, DeepL, Cloudflare Workers AI, OpenRouter, and custom OpenAI-compatible endpoints. The dropdown no longer reuses stale models after provider switches, custom provider base URLs are preserved server-side without leaking to the page, and `/api/translate-file` now applies the chosen provider/model override to every queued upload even when the saved provider model is only a runtime override for that translation.
+
+- **Removed the hard OpenSubtitles post-`429` cooldown:** an unexpected upstream `429` now only advances the next reservation according to OpenSubtitles response headers such as `ratelimit-reset`/`retry-after`; it does not write a internal cooldown and does not skip later searches because of that cooldown.
+
+- **Stopped `/subtitles` searches from creating extra OpenSubtitles traffic through canonical redirects:** OpenSubtitles Auth search now sends alphabetically sorted, lower-cased GET parameters in the request URL instead of letting axios serialize an arbitrary params object. This follows OpenSubtitles' documented redirect-avoidance guidance, so one SubMaker search maps to one upstream `/subtitles` request instead of sometimes becoming request + redirect.
+
+- **Removed the OpenSubtitles Auth provider-level search-result cache from the rate-limit fix:** search calls are paced correctly rather than hidden behind result caching.
+
+- **OpenSubtitles Auth keep-alive now doesn't bypass the API gate:** the Auth REST keep-alive now probes `/infos/formats` through the same shared OpenSubtitles API limiter with no bearer token and no `/login` call. It is opportunistic (`0ms` queue budget), so it skips when real OpenSubtitles traffic is already using the shared budget, and it runs on a slower configurable cadence (`OPENSUBTITLES_AUTH_KEEPALIVE_INTERVAL_MS`, default 120s) instead of spending a slot at every generic keep-alive tick.
+
 ## SubMaker v1.4.83
 
 **Bug Fixes:**
@@ -268,7 +296,7 @@ PS: Partial delivery during translation remains SRT (from the translation engine
 
 **Improvements:**
 
-- **Added Gemini 3.1 Flash Lite as the new default translation model:** Added `gemini-3.1-flash-lite-preview` ("Gemini 3.1 Flash Lite") to the model dropdown in the config page and set as default.
+- **Added Gemini 3.1 Flash Lite as the new default translation model:** Added `gemini-3.1-flash-lite` ("Gemini 3.1 Flash Lite") to the model dropdown in the config page and set as default.
 
 - **Switched all hardcoded model fallbacks to `gemini-flash-latest` alias:** All `|| 'fallback'` patterns across the codebase — `GeminiService` constructor, `normalizeConfig()`, `getDefaultConfig()`, `ensureAutoSubsDefaults()`, `areAdvancedSettingsModified()`, `loadSettings()`, `collectConfig()`, and Quick Setup `buildConfigObject()` — now use `gemini-flash-latest` instead of a pinned model version. This `-latest` alias always resolves server-side to Google's current Flash model, making fallbacks future-proof without code changes when new model versions are released.
 

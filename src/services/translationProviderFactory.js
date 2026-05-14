@@ -7,7 +7,7 @@ const log = require('../utils/logger');
 const { validateCustomBaseUrl, areInternalEndpointsAllowed, createSsrfSafeLookup } = require('../utils/ssrfProtection');
 const { getDefaultProviderParameters, mergeProviderParameters, selectGeminiApiKey, getEffectiveGeminiModel } = require('../utils/config');
 
-const KEY_OPTIONAL_PROVIDERS = new Set(['googletranslate']);
+const KEY_OPTIONAL_PROVIDERS = new Set(['googletranslate', 'custom']);
 
 class FallbackTranslationProvider {
   constructor(primaryProvider, fallbackProvider, meta = {}) {
@@ -408,6 +408,9 @@ async function createTranslationProvider(config) {
     if (!cfg || cfg.enabled !== true) return false;
     const keyOptional = KEY_OPTIONAL_PROVIDERS.has(String(key || '').toLowerCase());
     if (keyOptional) {
+      if (String(key || '').toLowerCase() === 'custom') {
+        return !!(cfg.baseUrl && cfg.model);
+      }
       return !!cfg.model; // no API key required
     }
     return !!(cfg.apiKey && cfg.model);

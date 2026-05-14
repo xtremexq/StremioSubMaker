@@ -1393,7 +1393,7 @@
         "cacheNoteSuffix": "para que tus pruebas no contaminen la base compartida.",
         "model": {
           "label": "Sobrescribir modelo de traducción",
-          "description": "Sobrescribe el modelo por defecto. Déjalo vacío para usar el sistema (gemini-flash-latest).",
+          "description": "Sobrescribe el modelo por defecto. Déjalo vacío para usar el sistema (gemini-flash-lite-latest).",
           "default": "Usar modelo por defecto"
         },
         "thinking": {
@@ -1438,10 +1438,13 @@
           "preserveFormattingHint": "Mantener saltos de línea, mayúsculas y etiquetas intactas"
         },
         "reasoningDefaults": {
-          "none": "Ninguno (predeterminado - para modelos sin razonamiento)",
+          "default": "Usar predeterminado del proveedor",
+          "none": "Ninguno (sin razonamiento)",
+          "minimal": "Mínimo",
           "low": "Bajo (rápido)",
           "medium": "Medio (equilibrado)",
-          "high": "Alto (razonamiento profundo)"
+          "high": "Alto (razonamiento profundo)",
+          "xhigh": "Extra alto"
         },
         "formality": {
           "default": "Predeterminado",
@@ -1577,9 +1580,12 @@
           "label": "Esfuerzo de razonamiento",
           "helper": "Aplica a modelos de tipo OpenAI con razonamiento. Deja en blanco para usar el predeterminado.",
           "default": "Ninguno (usar predeterminado del proveedor)",
+          "none": "Ninguno",
+          "minimal": "Mínimo",
           "low": "Bajo",
           "medium": "Medio",
-          "high": "Alto"
+          "high": "Alto",
+          "xhigh": "Extra alto"
         },
         "topP": {
           "label": "Top-P (Nucleus Sampling)",

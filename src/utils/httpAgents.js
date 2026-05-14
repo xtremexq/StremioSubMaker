@@ -74,6 +74,9 @@ const dnsLookup = dnsCache.lookup.bind(dnsCache);
 
 log.debug(() => '[HTTP Agents] Connection pooling initialized: maxSockets=100, maxFreeSockets=20, keepAlive=true');
 
+const KEEP_ALIVE_INTERVAL_MS = 45000; // Every 45 seconds
+const KEEP_ALIVE_TIMEOUT_MS = 10000; // Give slow providers more time before probe failure
+
 // ============================================================================
 // PROVIDER ENDPOINTS - URLs to warm up and keep alive
 // ============================================================================
@@ -82,9 +85,19 @@ const PROVIDER_ENDPOINTS = {
     url: 'https://api.opensubtitles.com/',
     name: 'OpenSubtitles Auth',
     warmUpPath: 'api/v1', // Warm the authenticated REST API host without hitting /login
-    pingPath: 'api/v1',
-    warmUpEnabled: true,
-    keepAliveEnabled: true
+    pingPath: 'api/v1/infos/formats',
+    pingMethod: 'get',
+    // This host has a strict 5 req/sec per-IP API budget. Runtime traffic is
+    // coordinated by the OpenSubtitles service limiter, so keep-alive for this
+    // host is routed through that gate and skipped whenever it would need to
+    // queue behind real traffic.
+    warmUpEnabled: false,
+    keepAliveEnabled: true,
+    gatedKeepAlive: true,
+    keepAliveEveryMs: Math.max(
+      KEEP_ALIVE_INTERVAL_MS,
+      parseInt(process.env.OPENSUBTITLES_AUTH_KEEPALIVE_INTERVAL_MS || '120000', 10) || 120000
+    )
   },
   // Subtitle providers - warm these up at startup for instant first requests
   opensubtitlesV3: {
@@ -160,6 +173,10 @@ function getConnectionTargetKeys(mode) {
 
 function shouldKeepAliveFailureOpenCircuit(providerKey) {
   return PROVIDER_ENDPOINTS[providerKey]?.keepAliveFailureOpensCircuit !== false;
+}
+
+function isGatedKeepAliveProvider(providerKey) {
+  return PROVIDER_ENDPOINTS[providerKey]?.gatedKeepAlive === true;
 }
 
 function buildProbeRequest(provider, mode) {
@@ -406,8 +423,43 @@ async function warmUpConnections() {
 // ============================================================================
 
 let keepAliveInterval = null;
-const KEEP_ALIVE_INTERVAL_MS = 45000; // Every 45 seconds
-const KEEP_ALIVE_TIMEOUT_MS = 10000; // Give slow providers more time before probe failure
+const lastKeepAlivePingAt = new Map();
+
+function shouldRunKeepAliveNow(providerKey, provider) {
+  const intervalMs = Number(provider.keepAliveEveryMs);
+  if (!Number.isFinite(intervalMs) || intervalMs <= KEEP_ALIVE_INTERVAL_MS) {
+    return true;
+  }
+
+  const lastRunAt = lastKeepAlivePingAt.get(providerKey) || 0;
+  return Date.now() - lastRunAt >= intervalMs;
+}
+
+async function runGatedKeepAlive(providerKey, provider) {
+  if (providerKey !== 'opensubtitlesAuth') {
+    throw new Error(`No gated keep-alive handler configured for ${provider.name || providerKey}`);
+  }
+
+  try {
+    const { keepAliveOpenSubtitlesAuthApi } = require('../services/opensubtitles');
+    await keepAliveOpenSubtitlesAuthApi({ timeoutMs: KEEP_ALIVE_TIMEOUT_MS });
+    log.debug(() => `[HTTP Agents] Gated keep-alive ping to ${provider.name} OK`);
+    circuitBreaker.recordSuccess(providerKey);
+  } catch (error) {
+    if (error?.openSubtitlesRateLimit || error?.statusCode === 429 || error?.response?.status === 429) {
+      log.debug(() => `[HTTP Agents] Gated keep-alive ping to ${provider.name} skipped by API gate: ${error.message}`);
+      return;
+    }
+
+    if (!shouldKeepAliveFailureOpenCircuit(providerKey)) {
+      log.debug(() => `[HTTP Agents] Gated keep-alive ping to ${provider.name} failed (non-blocking): ${error.message}`);
+      return;
+    }
+
+    log.debug(() => `[HTTP Agents] Gated keep-alive ping to ${provider.name} failed: ${error.message}`);
+    circuitBreaker.recordFailure(providerKey, error);
+  }
+}
 
 /**
  * Start periodic keep-alive pings to maintain warm connections
@@ -433,6 +485,17 @@ function startKeepAlivePings() {
     }
 
     const pingPromises = providersToPing.map(async ([key, provider]) => {
+      if (!shouldRunKeepAliveNow(key, provider)) {
+        return;
+      }
+
+      lastKeepAlivePingAt.set(key, Date.now());
+
+      if (isGatedKeepAliveProvider(key)) {
+        await runGatedKeepAlive(key, provider);
+        return;
+      }
+
       try {
         const probeRequest = buildProbeRequest(provider, 'keepAlive');
         await axios({
@@ -510,6 +573,7 @@ module.exports = {
   stopKeepAlivePings,
   getConnectionTargetKeys,
   shouldKeepAliveFailureOpenCircuit,
+  isGatedKeepAliveProvider,
   KEEP_ALIVE_TIMEOUT_MS,
   // Circuit breaker access
   circuitBreaker,

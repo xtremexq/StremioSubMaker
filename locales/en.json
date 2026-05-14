@@ -1393,7 +1393,7 @@
         "cacheNoteSuffix": "to ensure your experimental translations don't pollute the shared database.",
         "model": {
           "label": "Translation Model Override",
-          "description": "Override the default model. Leave empty to use system default (gemini-flash-latest).",
+          "description": "Override the default model. Leave empty to use system default (gemini-flash-lite-latest).",
           "default": "Use Default Model"
         },
         "thinking": {
@@ -1438,10 +1438,13 @@
           "preserveFormattingHint": "Keep line breaks, casing, and tags intact"
         },
         "reasoningDefaults": {
-          "none": "None (default)",
+          "default": "Use provider default",
+          "none": "None (no reasoning)",
+          "minimal": "Minimal",
           "low": "Low (faster)",
           "medium": "Medium (balanced)",
-          "high": "High (deeper reasoning)"
+          "high": "High (deeper reasoning)",
+          "xhigh": "Extra high"
         },
         "formality": {
           "default": "Default",
@@ -1577,9 +1580,12 @@
           "label": "Reasoning Effort",
           "helper": "Applies to reasoning-capable OpenAI-style models. Leave blank for default.",
           "default": "None (use provider default)",
+          "none": "None",
+          "minimal": "Minimal",
           "low": "Low",
           "medium": "Medium",
-          "high": "High"
+          "high": "High",
+          "xhigh": "Extra high"
         },
         "topP": {
           "label": "Top-P (Nucleus Sampling)",
@@ -1618,6 +1624,7 @@
           "unavailable": "Model override not available for Google Translate",
           "fetching": "Fetching models...",
           "loaded": "Models loaded!",
+          "empty": "No provider models returned",
           "failed": "Failed to fetch models"
         }
       },

@@ -53,13 +53,25 @@ function buildFileTranslationClientConfig(config) {
     const defaults = getDefaultProviderParameters();
     const mergedParams = mergeProviderParameters(defaults, config?.providerParameters || {});
     const effectiveGeminiModel = getEffectiveGeminiModel(config);
+    const hasGeminiApiKey = (() => {
+        if (config?.geminiKeyRotationEnabled === true) {
+            return Array.isArray(config?.geminiApiKeys)
+                && config.geminiApiKeys.some(key => typeof key === 'string' && key.trim());
+        }
+        return typeof config?.geminiApiKey === 'string' && config.geminiApiKey.trim();
+    })();
 
     const safeProviders = {};
     if (config?.providers && typeof config.providers === 'object') {
         Object.keys(config.providers).forEach(key => {
             const cfg = config.providers[key] || {};
-            const clone = { ...cfg };
+            const clone = {
+                ...cfg,
+                hasApiKey: typeof cfg.apiKey === 'string' && cfg.apiKey.trim() !== '',
+                hasBaseUrl: typeof cfg.baseUrl === 'string' && cfg.baseUrl.trim() !== ''
+            };
             delete clone.apiKey;
+            delete clone.baseUrl;
             safeProviders[key] = clone;
         });
     }
@@ -75,6 +87,7 @@ function buildFileTranslationClientConfig(config) {
         secondaryProviderEnabled: config?.secondaryProviderEnabled === true,
         secondaryProvider: config?.secondaryProvider || '',
         geminiModel: effectiveGeminiModel,
+        geminiConfigured: !!(hasGeminiApiKey && effectiveGeminiModel),
         providers: safeProviders,
         providerParameters: mergedParams,
         fileTranslationEnabled: config?.fileTranslationEnabled !== false,
@@ -269,6 +282,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
     const modelStatusUnavailable = t('fileUpload.advanced.modelStatus.unavailable', {}, 'Model override not available for Google Translate');
     const modelStatusFetching = t('fileUpload.advanced.modelStatus.fetching', {}, 'Fetching models...');
     const modelStatusLoaded = t('fileUpload.advanced.modelStatus.loaded', {}, 'Models loaded!');
+    const modelStatusEmpty = t('fileUpload.advanced.modelStatus.empty', {}, 'No provider models returned');
     const modelStatusFailed = t('fileUpload.advanced.modelStatus.failed', {}, 'Failed to fetch models');
 
     return `
@@ -2290,9 +2304,12 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                                 </label>
                                 <select id="advancedReasoningEffort">
                                     <option value="">${escapeHtml(t('fileUpload.advanced.reasoning.default', {}, 'None (use provider default)'))}</option>
+                                    <option value="none">${escapeHtml(t('fileUpload.advanced.reasoning.none', {}, 'None'))}</option>
+                                    <option value="minimal">${escapeHtml(t('fileUpload.advanced.reasoning.minimal', {}, 'Minimal'))}</option>
                                     <option value="low">${escapeHtml(t('fileUpload.advanced.reasoning.low', {}, 'Low'))}</option>
                                     <option value="medium">${escapeHtml(t('fileUpload.advanced.reasoning.medium', {}, 'Medium'))}</option>
                                     <option value="high">${escapeHtml(t('fileUpload.advanced.reasoning.high', {}, 'High'))}</option>
+                                    <option value="xhigh">${escapeHtml(t('fileUpload.advanced.reasoning.xhigh', {}, 'Extra high'))}</option>
                                 </select>
                             </div>
 
@@ -2458,7 +2475,12 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             translateAgain: ${JSON.stringify(translateAgainCta)},
             startCta: ${JSON.stringify(startTranslationCta)},
             resetText: ${JSON.stringify(resetBarText)},
-            resetAction: ${JSON.stringify(resetBarCta)}
+            resetAction: ${JSON.stringify(resetBarCta)},
+            modelStatusUnavailable: ${JSON.stringify(modelStatusUnavailable)},
+            modelStatusFetching: ${JSON.stringify(modelStatusFetching)},
+            modelStatusLoaded: ${JSON.stringify(modelStatusLoaded)},
+            modelStatusEmpty: ${JSON.stringify(modelStatusEmpty)},
+            modelStatusFailed: ${JSON.stringify(modelStatusFailed)}
         };
 
         const tt = (key, vars, fallback) => {
@@ -2735,6 +2757,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         const baseAdvancedSettings = clientConfig.advancedSettings || {};
         const modelCache = new Map();
         const fetchedModels = new Set();
+        let modelFetchRequestId = 0;
 
         function formatProviderName(key) {
             const normalized = String(key || '').toLowerCase();
@@ -2748,7 +2771,8 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 openrouter: 'OpenRouter',
                 anthropic: 'Anthropic',
                 deepl: 'DeepL',
-                googletranslate: 'Google Translate'
+                googletranslate: 'Google Translate',
+                custom: 'Custom'
             };
             return map[normalized] || (normalized ? normalized.toUpperCase() : 'Unknown');
         }
@@ -2759,13 +2783,25 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             const normalized = normalizeProviderKey(key);
             if (!normalized) return null;
             if (normalized === 'gemini') {
-                return { key: 'gemini', enabled: true, model: clientConfig.geminiModel || providerInfo.mainModel || '' };
+                return {
+                    key: 'gemini',
+                    enabled: clientConfig.geminiConfigured === true,
+                    model: clientConfig.geminiModel || providerInfo.mainModel || '',
+                    hasApiKey: clientConfig.geminiConfigured === true,
+                    hasBaseUrl: false
+                };
             }
             const providers = clientConfig.providers || {};
             const matchKey = Object.keys(providers).find(k => normalizeProviderKey(k) === normalized);
             if (!matchKey) return null;
             const cfg = providers[matchKey] || {};
-            return { key: normalized, enabled: cfg.enabled === true, model: cfg.model || '' };
+            return {
+                key: normalized,
+                enabled: cfg.enabled === true,
+                model: cfg.model || '',
+                hasApiKey: cfg.hasApiKey === true,
+                hasBaseUrl: cfg.hasBaseUrl === true
+            };
         }
 
         function getConfiguredModelForProvider(providerKey) {
@@ -2784,9 +2820,16 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         function buildProviderOptions() {
             const options = [];
             const seen = new Set();
+            const isSelectable = (entry) => {
+                if (!entry || entry.enabled !== true) return false;
+                if (entry.key === 'gemini') return entry.hasApiKey === true;
+                if (entry.key === 'googletranslate') return true;
+                if (entry.key === 'custom') return entry.hasBaseUrl === true;
+                return entry.hasApiKey === true;
+            };
             const add = (key) => {
                 const entry = findProviderEntry(key);
-                if (!entry || seen.has(entry.key) || entry.enabled !== true) return;
+                if (!entry || seen.has(entry.key) || !isSelectable(entry)) return;
                 seen.add(entry.key);
                 options.push({
                     key: entry.key,
@@ -2799,6 +2842,15 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             if (providerInfo.secondaryProvider) add(providerInfo.secondaryProvider);
             Object.keys(clientConfig.providers || {}).forEach(add);
             add('gemini'); // ensure Gemini is available as a fallback option
+
+            if (!options.length) {
+                const fallback = findProviderEntry(defaultProviderKey) || findProviderEntry('gemini') || { key: defaultProviderKey || 'gemini', model: '' };
+                options.push({
+                    key: fallback.key || defaultProviderKey || 'gemini',
+                    label: formatProviderName(fallback.key || defaultProviderKey || 'gemini'),
+                    model: fallback.model || getConfiguredModelForProvider(fallback.key || defaultProviderKey || 'gemini')
+                });
+            }
 
             return options;
         }
@@ -2889,22 +2941,76 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         const timeoutGroup = advancedTimeout ? advancedTimeout.closest('.form-group') : null;
         const retriesGroup = advancedMaxRetries ? advancedMaxRetries.closest('.form-group') : null;
 
-        function populateModelDropdown(providerKey, models = []) {
+        function normalizeProviderModels(models = []) {
+            const source = Array.isArray(models)
+                ? models
+                : (Array.isArray(models?.models) ? models.models : []);
+            const seen = new Set();
+            const normalizedModels = [];
+            source.forEach(model => {
+                const rawName = typeof model === 'string'
+                    ? model
+                    : (model?.name || model?.id || model?.model || model?.slug || '');
+                const name = String(rawName || '').trim();
+                if (!name || seen.has(name)) return;
+                seen.add(name);
+                const displayName = typeof model === 'string'
+                    ? name
+                    : (model.displayName || model.display_name || model.name || model.id || model.model || model.slug || name);
+                normalizedModels.push({
+                    name,
+                    displayName: String(displayName || name),
+                    description: model && typeof model === 'object' ? (model.description || '') : '',
+                    maxTokens: model && typeof model === 'object' ? model.maxTokens : undefined
+                });
+            });
+            return normalizedModels;
+        }
+
+        function populateModelDropdown(providerKey, models = [], options = {}) {
             const normalized = normalizeProviderKey(providerKey);
             const configuredModel = getConfiguredModelForProvider(normalized);
+            const normalizedModels = normalizeProviderModels(models);
             const placeholder = configuredModel
                 ? tt('fileUpload.advanced.model.useConfiguredWith', { model: configuredModel }, 'Use Configured Model (' + configuredModel + ')')
                 : tt('fileUpload.advanced.model.useConfigured', {}, 'Use Configured Model (from your config)');
             if (advancedModel) {
-                advancedModel.innerHTML = '<option value="">' + placeholder + '</option>';
-                models.forEach(model => {
+                advancedModel.innerHTML = '';
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = placeholder;
+                advancedModel.appendChild(defaultOption);
+
+                if (options.loading === true) {
+                    const loadingOption = document.createElement('option');
+                    loadingOption.value = '__loading__';
+                    loadingOption.textContent = localeStrings.modelStatusFetching || 'Fetching models...';
+                    loadingOption.disabled = true;
+                    advancedModel.appendChild(loadingOption);
+                }
+
+                normalizedModels.forEach(model => {
                     const option = document.createElement('option');
-                    option.value = model.name || model.id;
-                    option.textContent = model.displayName || model.name || model.id;
+                    option.value = model.name;
+                    option.textContent = model.displayName || model.name;
                     advancedModel.appendChild(option);
                 });
                 advancedModel.value = '';
+                advancedModel.disabled = false;
+                advancedModel.setAttribute('aria-busy', options.loading === true ? 'true' : 'false');
             }
+        }
+
+        function setModelStatus(message, state = '') {
+            if (!modelStatus) return;
+            modelStatus.innerHTML = message || '';
+            modelStatus.className = state ? 'model-status ' + state : 'model-status';
+        }
+
+        function setModelDropdownLoading(isLoading) {
+            if (!advancedModel) return;
+            advancedModel.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+            advancedModel.disabled = false;
         }
 
         function updateProviderDetails(providerKey) {
@@ -3025,10 +3131,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 populateModelDropdown(normalized, cachedModels);
             }
 
-            if (modelStatus) {
-                modelStatus.innerHTML = '';
-                modelStatus.className = 'model-status';
-            }
+            setModelStatus('');
 
             updateProviderDetails(normalized);
         }
@@ -3227,17 +3330,23 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             if (normalized === 'googletranslate') {
                 populateModelDropdown(normalized, []);
                 fetchedModels.add(normalized);
-                modelStatus.innerHTML = modelStatusUnavailable;
-                modelStatus.className = 'model-status';
+                setModelStatus(localeStrings.modelStatusUnavailable || 'Model override not available for Google Translate');
                 return;
             }
 
-            modelStatus.innerHTML = '<div class="spinner-small"></div> ' + modelStatusFetching;
-            modelStatus.className = 'model-status fetching';
+            if (modelCache.has(normalized)) {
+                populateModelDropdown(normalized, modelCache.get(normalized) || []);
+                fetchedModels.add(normalized);
+                setModelStatus('');
+                return;
+            }
 
-            const endpoint = normalized === 'gemini'
-                ? '/api/gemini-models'
-                : '/api/models/' + normalized;
+            const requestId = ++modelFetchRequestId;
+            populateModelDropdown(normalized, modelCache.get(normalized) || [], { loading: true });
+            setModelDropdownLoading(true);
+            setModelStatus('<div class="spinner-small"></div> ' + (localeStrings.modelStatusFetching || 'Fetching models...'), 'fetching');
+
+            const endpoint = '/api/models/' + encodeURIComponent(normalized);
 
             try {
                 const response = await fetch(endpoint, {
@@ -3250,29 +3359,47 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                     throw new Error((await response.text()) || 'Failed to fetch models');
                 }
 
-                const models = await response.json();
+                const models = normalizeProviderModels(await response.json());
                 modelCache.set(normalized, models);
                 fetchedModels.add(normalized);
 
-                modelStatus.innerHTML = modelStatusLoaded;
-                modelStatus.className = 'model-status success';
-
-                setTimeout(() => {
-                    modelStatus.innerHTML = '';
-                    modelStatus.className = 'model-status';
-                }, 3000);
+                if (requestId !== modelFetchRequestId || activeProviderKey !== normalized) {
+                    return;
+                }
 
                 populateModelDropdown(normalized, models);
+                setModelDropdownLoading(false);
+                setModelStatus(
+                    models.length
+                        ? (localeStrings.modelStatusLoaded || 'Models loaded!')
+                        : (localeStrings.modelStatusEmpty || 'No provider models returned'),
+                    models.length ? 'success' : ''
+                );
+
+                setTimeout(() => {
+                    if (requestId === modelFetchRequestId && activeProviderKey === normalized) {
+                        setModelStatus('');
+                    }
+                }, 3000);
 
             } catch (err) {
                 console.error('Failed to fetch models:', err);
-                modelStatus.innerHTML = modelStatusFailed;
-                modelStatus.className = 'model-status error';
+                if (requestId !== modelFetchRequestId || activeProviderKey !== normalized) {
+                    return;
+                }
+                populateModelDropdown(normalized, modelCache.get(normalized) || []);
+                setModelDropdownLoading(false);
+                setModelStatus(localeStrings.modelStatusFailed || 'Failed to fetch models', 'error');
 
                 setTimeout(() => {
-                    modelStatus.innerHTML = '';
-                    modelStatus.className = 'model-status';
+                    if (requestId === modelFetchRequestId && activeProviderKey === normalized) {
+                        setModelStatus('');
+                    }
                 }, 5000);
+            } finally {
+                if (requestId === modelFetchRequestId && activeProviderKey === normalized) {
+                    setModelDropdownLoading(false);
+                }
             }
         }
 
@@ -3552,7 +3679,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 ? readBoundedNumber(advancedMaxTokens, 1, MAX_OUTPUT_TOKEN_LIMIT, (v) => parseInt(v, 10))
                 : null;
             const timeout = caps.supportsTimeout
-                ? readBoundedNumber(advancedTimeout, 5, 600, (v) => parseInt(v, 10))
+                ? readBoundedNumber(advancedTimeout, 5, 720, (v) => parseInt(v, 10))
                 : null;
             const maxRetries = caps.supportsMaxRetries
                 ? readBoundedNumber(advancedMaxRetries, 0, 5, (v) => parseInt(v, 10))

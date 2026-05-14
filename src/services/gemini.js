@@ -37,7 +37,7 @@ class GeminiService {
   constructor(apiKey, model = '', advancedSettings = {}) {
     this.apiKey = apiKey;
     // Fallback to default if model not provided (config.js handles env var override)
-    this.model = model || 'gemini-flash-latest';
+    this.model = model || 'gemini-flash-lite-latest';
     this.isGemmaModel = String(this.model).toLowerCase().includes('gemma');
     this.baseUrl = GEMINI_API_URL;
 

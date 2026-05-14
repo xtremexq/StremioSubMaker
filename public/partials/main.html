@@ -812,7 +812,7 @@
                                     data-i18n="config.gemini.model.helper">AI model for translations</span>
                             </label>
                             <select id="geminiModel" required>
-                                <option value="gemini-3.1-flash-lite-preview"
+                                <option value="gemini-3.1-flash-lite"
                                     data-i18n="config.gemini.model.options.flashLite31" selected>Gemini 3.1 Flash Lite
                                 </option>
                                 <option value="gemini-3-flash-preview" data-i18n="config.gemini.model.options.flash3">
@@ -2288,15 +2288,21 @@
                                 <label for="provider-openai-reasoning"
                                     data-i18n="config.providerAdvanced.labels.reasoning">Reasoning effort</label>
                                 <select id="provider-openai-reasoning" class="styled-select">
-                                    <option value="" data-i18n="config.providerAdvanced.reasoningDefaults.none">None
-                                        (default)</option>
+                                    <option value="" data-i18n="config.providerAdvanced.reasoningDefaults.default">Use
+                                        provider default</option>
+                                    <option value="none" data-i18n="config.providerAdvanced.reasoningDefaults.none">None
+                                        (no reasoning)</option>
+                                    <option value="minimal"
+                                        data-i18n="config.providerAdvanced.reasoningDefaults.minimal">Minimal</option>
                                     <option value="low" data-i18n="config.providerAdvanced.reasoningDefaults.low">Low
                                         (faster)</option>
-                                    <option value="medium" selected
+                                    <option value="medium"
                                         data-i18n="config.providerAdvanced.reasoningDefaults.medium">Medium (balanced)
                                     </option>
                                     <option value="high" data-i18n="config.providerAdvanced.reasoningDefaults.high">High
                                         (deeper reasoning)</option>
+                                    <option value="xhigh" data-i18n="config.providerAdvanced.reasoningDefaults.xhigh">
+                                        Extra high</option>
                                 </select>
                             </div>
                             <div style="display:flex; flex-direction:column; gap:0.25rem;">

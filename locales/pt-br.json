@@ -1393,7 +1393,7 @@
         "cacheNoteSuffix": "para garantir que suas traduções experimentais não poluam o banco de dados compartilhado.",
         "model": {
           "label": "Sobrescrever Modelo de Tradução",
-          "description": "Sobrescrever o modelo padrão. Deixe vazio para usar o padrão do sistema (gemini-flash-latest).",
+          "description": "Sobrescrever o modelo padrão. Deixe vazio para usar o padrão do sistema (gemini-flash-lite-latest).",
           "default": "Usar Modelo Padrão"
         },
         "thinking": {
@@ -1438,10 +1438,13 @@
           "preserveFormattingHint": "Manter quebras de linha, maiúsculas/minúsculas e tags intactas"
         },
         "reasoningDefaults": {
-          "none": "Nenhum (padrão - para modelos sem raciocínio)",
+          "default": "Usar padrão do provedor",
+          "none": "Nenhum (sem raciocínio)",
+          "minimal": "Mínimo",
           "low": "Baixo (mais rápido)",
           "medium": "Médio (equilibrado)",
-          "high": "Alto (raciocínio mais profundo)"
+          "high": "Alto (raciocínio mais profundo)",
+          "xhigh": "Extra alto"
         },
         "formality": {
           "default": "Padrão",
@@ -1577,9 +1580,12 @@
           "label": "Esforço de Raciocínio",
           "helper": "Aplica-se a modelos estilo OpenAI com capacidade de raciocínio. Deixe em branco para o padrão.",
           "default": "Nenhum (usar padrão do provedor)",
+          "none": "Nenhum",
+          "minimal": "Mínimo",
           "low": "Baixo",
           "medium": "Médio",
-          "high": "Alto"
+          "high": "Alto",
+          "xhigh": "Extra alto"
         },
         "topP": {
           "label": "Top-P (Amostragem de Núcleo)",

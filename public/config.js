@@ -959,6 +959,21 @@ Translate to {target_language}.`;
      * Model-specific default configurations
      * Each model has its own optimal settings for thinking and temperature
      */
+    const GEMINI_31_FLASH_LITE_MODEL = 'gemini-3.1-flash-lite';
+    const GEMINI_FLASH_LATEST_MODEL = 'gemini-flash-latest';
+    const DEFAULT_GEMINI_MODEL = 'gemini-flash-lite-latest';
+
+    function normalizeGeminiModelName(modelName) {
+        const normalized = typeof modelName === 'string' ? modelName.trim() : '';
+        if (normalized === `${GEMINI_31_FLASH_LITE_MODEL}-preview`) {
+            return GEMINI_31_FLASH_LITE_MODEL;
+        }
+        if (normalized === GEMINI_FLASH_LATEST_MODEL) {
+            return DEFAULT_GEMINI_MODEL;
+        }
+        return normalized;
+    }
+
     const MODEL_SPECIFIC_DEFAULTS = {
 
         'gemini-2.5-flash-lite': {
@@ -981,17 +996,13 @@ Translate to {target_language}.`;
             thinkingBudget: -1,
             temperature: 0.5
         },
-        'gemini-3.1-flash-lite-preview': {
+        'gemini-3.1-flash-lite': {
             thinkingBudget: 0,
             temperature: 0.8
         },
         'gemini-flash-lite-latest': {
             thinkingBudget: 0,
             temperature: 0.8
-        },
-        'gemini-flash-latest': {
-            thinkingBudget: -1,
-            temperature: 0.5
         },
         'gemini-2.5-pro': {
             thinkingBudget: 1000,
@@ -1009,7 +1020,7 @@ Translate to {target_language}.`;
      * @returns {Object} - Model-specific settings { thinkingBudget, temperature }
      */
     function getModelSpecificDefaults(modelName) {
-        return MODEL_SPECIFIC_DEFAULTS[modelName] || {
+        return MODEL_SPECIFIC_DEFAULTS[normalizeGeminiModelName(modelName)] || {
             thinkingBudget: 0,
             temperature: 0.8
         };
@@ -1055,12 +1066,12 @@ Translate to {target_language}.`;
     function getDefaultGeminiModelOptionValue() {
         const option = getDefaultGeminiModelOption();
         const value = option ? String(option.value || '').trim() : '';
-        return value || 'gemini-flash-latest';
+        return value || DEFAULT_GEMINI_MODEL;
     }
 
     function getDefaultGeminiModelOptionLabel() {
         const label = getGeminiModelOptionLabel(getDefaultGeminiModelOption());
-        return label || 'Gemini Flash Latest';
+        return label || 'Gemini Flash Lite Latest';
     }
 
     function getFirstGeminiModelOptionValue() {
@@ -1075,13 +1086,11 @@ Translate to {target_language}.`;
         if (normalized === 'gemini-2.5-flash-preview-09-2025') {
             normalized = 'gemini-2.5-flash';
         }
-        if (normalized === 'gemini-flash-lite-latest') {
-            normalized = 'gemini-2.5-flash-lite';
-        }
+        normalized = normalizeGeminiModelName(normalized);
 
         const optionValues = getGeminiModelSelectOptionValues();
         const defaultOption = getDefaultGeminiModelOptionValue();
-        if (normalized === 'gemini-flash-latest') {
+        if (normalized === DEFAULT_GEMINI_MODEL) {
             return defaultOption;
         }
         if (normalized && optionValues.includes(normalized)) {
@@ -1120,7 +1129,7 @@ Translate to {target_language}.`;
             if (value === '' || value === null || value === undefined) {
                 return undefined;
             }
-            const allowed = ['low', 'medium', 'high'];
+            const allowed = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
             const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
             return allowed.includes(normalized) ? normalized : fallback;
         };
@@ -1159,7 +1168,8 @@ Translate to {target_language}.`;
         return merged;
     }
 
-    function getDefaultConfig(modelName = 'gemini-flash-latest') {
+    function getDefaultConfig(modelName = DEFAULT_GEMINI_MODEL) {
+        modelName = normalizeGeminiModelName(modelName);
         const modelDefaults = getModelSpecificDefaults(modelName);
 
         return {
@@ -1323,7 +1333,8 @@ Translate to {target_language}.`;
     const TOKEN_VAULT_KEY = 'submaker_token_vault_v1';
     const TOKEN_VAULT_MAX_ENTRIES = 5;
     const TOKEN_VAULT_RAIL_LIMIT = 5;
-    const TOKEN_VAULT_EXPORT_VERSION = 1;
+    const TOKEN_VAULT_EXPORT_VERSION = 2;
+    const TOKEN_VAULT_BACKUP_KIND = 'submaker-token-vault-backup';
     const TOKEN_VAULT_BRIEF_TTL_MS = 30 * 1000;
     const CONFIG_INSTRUCTIONS_PREFERENCE_KEY = 'submaker_dont_show_instructions';
     const LEGACY_CONFIG_INSTRUCTIONS_PREFERENCE_KEY = 'hideConfigInstructions';
@@ -2258,6 +2269,67 @@ Translate to {target_language}.`;
         return direct ? direct[0].toLowerCase() : '';
     }
 
+    const TOKEN_VAULT_CONFIG_INTERNAL_KEYS = [
+        '_encrypted',
+        '__decryptionWarning',
+        '__decryptionWarningFields',
+        '__nestedEncryptionRecovered',
+        '__nestedEncryptionRecoveredFields',
+        '__credentialDecryptionFailed',
+        '__credentialDecryptionFailedFields',
+        '__credentialWarningEntry',
+        '__sessionTokenError',
+        '__originalToken',
+        '__configHash',
+        '__configHashScope',
+        '__configBaseHash',
+        '__historyUserHash',
+        '__needsSessionPersist',
+        '__persistReason',
+        '__regenerated',
+        '__regeneratedAt',
+        '__fetchedAt',
+        '__invalidSession'
+    ];
+
+    function isPlainVaultObject(value) {
+        return !!value && typeof value === 'object' && !Array.isArray(value);
+    }
+
+    function cloneVaultJsonValue(value) {
+        if (value === undefined) return undefined;
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (_) {
+            if (Array.isArray(value)) return value.map(item => cloneVaultJsonValue(item));
+            if (isPlainVaultObject(value)) return { ...value };
+            return value;
+        }
+    }
+
+    function sanitizeVaultConfigSnapshot(config) {
+        if (!isPlainVaultObject(config)) return null;
+        const cloned = cloneVaultJsonValue(config);
+        if (!isPlainVaultObject(cloned)) return null;
+        TOKEN_VAULT_CONFIG_INTERNAL_KEYS.forEach(key => {
+            try { delete cloned[key]; } catch (_) { }
+        });
+        return cloned;
+    }
+
+    function getRestorableVaultConfig(entry) {
+        if (!entry || typeof entry !== 'object') return null;
+        return sanitizeVaultConfigSnapshot(entry.config || entry.configuration || entry.snapshot?.config);
+    }
+
+    function hasRestorableVaultConfig(entry) {
+        return !!getRestorableVaultConfig(entry);
+    }
+
+    function getVaultBackupDisabledState(entry) {
+        return entry?.lastKnownDisabled === true || entry?.session?.disabled === true;
+    }
+
     async function fetchWithTimeout(resource, options = {}, timeoutMs = 10000) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -3041,7 +3113,7 @@ Translate to {target_language}.`;
                 <div class="token-vault-hero-actions">
                     <button type="button" class="token-vault-action token-vault-action-primary" data-vault-action="switch-token"${managerTokenAttr} ${selected.token && !selected.isActiveToken ? '' : 'disabled'}>${selected.isDraft ? 'Current page draft' : (selected.isActiveToken ? 'Already live' : 'Use on this page')}</button>
                     <button type="button" class="token-vault-action ${selected.disabled ? 'token-vault-action-success' : 'token-vault-action-warning'}" data-vault-action="toggle-state"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>${selected.disabled ? 'Enable token' : 'Disable token'}</button>
-                    <button type="button" class="token-vault-action" data-vault-action="export-current"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>Export this token</button>
+                    <button type="button" class="token-vault-action" data-vault-action="export-current"${managerTokenAttr} ${selected.token ? '' : 'disabled'}>Export full backup</button>
                     <button type="button" class="token-vault-action token-vault-action-danger" data-vault-action="forget-token"${managerTokenAttr} ${selected.token && selected.entry ? '' : 'disabled'}>Forget this token</button>
                 </div>
                 <div class="token-vault-stats">
@@ -3260,11 +3332,43 @@ Translate to {target_language}.`;
             return;
         }
 
+        const parsedJson = parseTokenVaultJsonText(trimmed);
+        if (parsedJson.parsed) {
+            if (parsedJson.error) {
+                tokenVaultCreatorPreview = createTokenVaultCreatorPreviewState({
+                    tone: 'error',
+                    statusLabel: 'Invalid JSON',
+                    title: 'Backup preview',
+                    message: parsedJson.error.message || 'The pasted backup JSON could not be parsed.',
+                    canImport: false
+                });
+                syncTokenVaultCreatorPreviewUi();
+                return;
+            }
+            const entries = buildImportEntriesFromPayload(parsedJson.payload);
+            const fullCount = entries.filter(hasRestorableVaultConfig).length;
+            const tokenOnlyCount = entries.length - fullCount;
+            const firstToken = entries.find(entry => isValidSessionToken(entry?.token))?.token || '';
+            tokenVaultCreatorPreview = createTokenVaultCreatorPreviewState({
+                token: firstToken,
+                tone: entries.length > 0 ? 'live' : 'error',
+                statusLabel: entries.length > 0 ? 'Backup ready' : 'No profiles',
+                title: entries.length > 0 ? 'Backup JSON ready' : 'Backup preview',
+                message: entries.length > 0
+                    ? `Ready to restore ${fullCount} full profile${fullCount === 1 ? '' : 's'}${tokenOnlyCount ? ` and import ${tokenOnlyCount} token reference${tokenOnlyCount === 1 ? '' : 's'}` : ''}.`
+                    : 'No valid profiles were found in the pasted JSON.',
+                meta: entries.length > 0 ? `${entries.length} profile${entries.length === 1 ? '' : 's'} detected` : '',
+                canImport: entries.length > 0
+            });
+            syncTokenVaultCreatorPreviewUi();
+            return;
+        }
+
         if (!token) {
             tokenVaultCreatorPreview = createTokenVaultCreatorPreviewState({
                 tone: 'idle',
                 statusLabel: 'Need token',
-                message: 'Paste a full token, manifest URL, or config URL.',
+                message: 'Paste a full token, manifest URL, config URL, or backup JSON.',
                 canImport: false
             });
             syncTokenVaultCreatorPreviewUi();
@@ -3324,7 +3428,7 @@ Translate to {target_language}.`;
         const toolsNote = savedCount >= TOKEN_VAULT_MAX_ENTRIES
             ? `Next replacement: ${nextOverflowVictim ? deriveVaultLabel(nextOverflowVictim.token, nextOverflowVictim.label || '', { store }) : 'oldest profile'}.`
             : `${TOKEN_VAULT_MAX_ENTRIES - savedCount} slot${TOKEN_VAULT_MAX_ENTRIES - savedCount === 1 ? '' : 's'} open.`;
-        const fileToolsMeta = 'Single-profile and full-vault JSON supported.';
+        const fileToolsMeta = 'Full settings backups and older token-only JSON supported.';
         const previewMarkup = getTokenVaultCreatorPreviewMarkup();
 
         const markup = `<div class="token-vault-create-flow">
@@ -3342,7 +3446,7 @@ Translate to {target_language}.`;
                 <div class="token-vault-create-import-block">
                     <div class="token-vault-create-divider"><span>Or import a token</span></div>
                     <div class="token-vault-import-row">
-                        <input type="text" id="tokenVaultCreateInput" class="token-vault-import-input" value="${escapeVaultHtml(tokenVaultCreatorInputValue)}" placeholder="Paste token, manifest URL, or config URL" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+                        <input type="text" id="tokenVaultCreateInput" class="token-vault-import-input" value="${escapeVaultHtml(tokenVaultCreatorInputValue)}" placeholder="Paste token, URL, or backup JSON" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
                         <div class="token-vault-import-actions">
                             <button type="button" class="token-vault-action" data-vault-action="paste-clipboard">Paste</button>
                             <button type="button" class="token-vault-action token-vault-action-primary" id="tokenVaultCreateImportBtn" data-vault-action="import-paste" ${tokenVaultCreatorPreview?.canImport === true ? '' : 'disabled'}>Import token</button>
@@ -3365,7 +3469,7 @@ Translate to {target_language}.`;
                 <div class="token-vault-create-tools-note">${escapeVaultHtml(toolsNote)}</div>
                 <div class="token-vault-create-actions">
                     <button type="button" class="token-vault-action" data-vault-action="import-file">Import from file</button>
-                    <button type="button" class="token-vault-action" data-vault-action="export-all" ${savedCount > 0 ? '' : 'disabled'}>Export vault</button>
+                    <button type="button" class="token-vault-action" data-vault-action="export-all" ${savedCount > 0 ? '' : 'disabled'}>Export full vault backup</button>
                 </div>
             </section>
         </div>`;
@@ -3878,46 +3982,158 @@ Translate to {target_language}.`;
         };
     }
 
+    async function fetchTokenVaultConfigSnapshotForExport(token) {
+        if (!isValidSessionToken(token)) {
+            throw new Error('Invalid session token.');
+        }
+
+        const cacheBuster = `_cb=${Date.now()}`;
+        const response = await fetchWithTimeout(`/api/get-session/${encodeURIComponent(token)}?${cacheBuster}`, {
+            cache: 'no-store',
+            headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            }
+        }, 15000);
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data?.error || response.statusText || `HTTP ${response.status}`);
+        }
+
+        const config = sanitizeVaultConfigSnapshot(data?.config);
+        if (!config) {
+            throw new Error('The token returned an invalid configuration snapshot.');
+        }
+
+        return {
+            token: extractSessionTokenFromInput(data?.token) || token,
+            config,
+            session: isPlainVaultObject(data?.session) ? cloneVaultJsonValue(data.session) : null
+        };
+    }
+
+    async function buildTokenVaultFullExportEntry(token, store = getTokenVaultStore(), options = {}) {
+        const baseEntry = buildTokenVaultExportEntry(token, store);
+        if (!baseEntry) return null;
+
+        const exportedAt = Number(options.exportedAt) || Date.now();
+
+        try {
+            const snapshot = await fetchTokenVaultConfigSnapshotForExport(token);
+            const session = snapshot.session || {};
+            return {
+                ...baseEntry,
+                lastSavedAt: Number(baseEntry.lastSavedAt) || Number(session.updatedAt) || exportedAt,
+                lastKnownCreatedAt: Number(baseEntry.lastKnownCreatedAt) || Number(session.createdAt) || 0,
+                lastKnownUpdatedAt: Number(baseEntry.lastKnownUpdatedAt) || Number(session.updatedAt) || 0,
+                lastKnownLastAccessedAt: Number(baseEntry.lastKnownLastAccessedAt) || Number(session.lastAccessedAt) || 0,
+                lastKnownDisabled: baseEntry.lastKnownDisabled === true || session.disabled === true,
+                session,
+                config: snapshot.config,
+                configExportedAt: exportedAt,
+                configExportSource: 'server',
+                restoreMode: 'create-session'
+            };
+        } catch (error) {
+            const activeToken = getActiveConfigRef();
+            const canUsePageFallback = options.allowActivePageFallback !== false
+                && token === activeToken
+                && activeSessionContext.token === token;
+            const fallbackConfig = canUsePageFallback ? sanitizeVaultConfigSnapshot(currentConfig) : null;
+            if (fallbackConfig) {
+                return {
+                    ...baseEntry,
+                    session: activeSessionContext.session ? cloneVaultJsonValue(activeSessionContext.session) : null,
+                    config: fallbackConfig,
+                    configExportedAt: exportedAt,
+                    configExportSource: 'active-page-cache',
+                    configExportWarning: error?.message || 'Live session snapshot was unavailable; exported the currently loaded page copy.',
+                    restoreMode: 'create-session'
+                };
+            }
+
+            return {
+                ...baseEntry,
+                configUnavailable: true,
+                configExportError: error?.message || 'Configuration snapshot unavailable.'
+            };
+        }
+    }
+
     async function exportTokenVault(mode = 'all', tokenOverride = '') {
         const targetToken = extractSessionTokenFromInput(tokenOverride) || getTokenVaultManagerToken() || getActiveConfigRef();
         const store = getTokenVaultStore();
-        const exportEntry = buildTokenVaultExportEntry(targetToken, store);
         const detachedActiveToken = getDetachedActiveVaultToken(store);
-        const detachedActiveExportEntry = detachedActiveToken
-            ? buildTokenVaultExportEntry(detachedActiveToken, store)
-            : null;
-        const entries = mode === 'current'
-            ? (exportEntry ? [exportEntry] : [])
+        const exportTokens = mode === 'current'
+            ? [targetToken]
             : [
-                ...store.entries,
-                ...(detachedActiveExportEntry ? [detachedActiveExportEntry] : [])
+                ...store.entries.map(entry => entry.token),
+                detachedActiveToken
             ];
+        const tokens = Array.from(new Set(exportTokens
+            .map(token => extractSessionTokenFromInput(token))
+            .filter(isValidSessionToken)));
 
-        if (mode === 'current' && entries.length === 0) {
+        if (mode === 'current' && tokens.length === 0) {
             showAlert('No token is loaded on this page yet.', 'warning');
             return false;
         }
+        if (tokens.length === 0) {
+            showAlert('No tokens are saved in this vault yet.', 'warning');
+            return false;
+        }
 
-        const payload = {
-            version: TOKEN_VAULT_EXPORT_VERSION,
-            exportedAt: Date.now(),
-            activeToken: isValidSessionToken(targetToken) ? targetToken : '',
-            entries
-        };
+        showLoading(true);
+        try {
+            const exportedAt = Date.now();
+            const entries = (await Promise.all(tokens.map(token => buildTokenVaultFullExportEntry(token, store, { exportedAt }))))
+                .filter(Boolean);
 
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = mode === 'current' && isValidSessionToken(targetToken)
-            ? `submaker-token-${targetToken.slice(-6)}.json`
-            : `submaker-token-vault-${new Date().toISOString().slice(0, 10)}.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        showAlert(mode === 'current' ? 'This token was exported.' : 'Token vault exported.', 'success');
-        return true;
+            const fullConfigCount = entries.filter(entry => isPlainVaultObject(entry.config)).length;
+            const tokenOnlyCount = entries.length - fullConfigCount;
+            const fallbackWarningCount = entries.filter(entry => entry.configExportWarning).length;
+
+            if (mode === 'current' && tokenOnlyCount > 0) {
+                const reason = entries[0]?.configExportError || 'The full configuration snapshot could not be read.';
+                showAlert(`Full export failed: ${reason}`, 'error');
+                return false;
+            }
+
+            const payload = {
+                kind: TOKEN_VAULT_BACKUP_KIND,
+                version: TOKEN_VAULT_EXPORT_VERSION,
+                exportedAt,
+                fullConfigExport: true,
+                activeToken: isValidSessionToken(targetToken) ? targetToken : '',
+                configSnapshotCount: fullConfigCount,
+                tokenReferenceCount: tokenOnlyCount,
+                entries
+            };
+
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = mode === 'current' && isValidSessionToken(targetToken)
+                ? `submaker-profile-backup-${targetToken.slice(-6)}.json`
+                : `submaker-token-vault-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            if (tokenOnlyCount > 0) {
+                showAlert(`Vault exported with ${fullConfigCount} full profile backup${fullConfigCount === 1 ? '' : 's'} and ${tokenOnlyCount} token-only reference${tokenOnlyCount === 1 ? '' : 's'} that could not be read from the server.`, 'warning');
+            } else if (fallbackWarningCount > 0) {
+                showAlert(`Full backup exported. ${fallbackWarningCount} profile${fallbackWarningCount === 1 ? '' : 's'} used the currently loaded page copy because the live session snapshot was unavailable.`, 'warning');
+            } else {
+                showAlert(mode === 'current' ? 'Full profile backup exported.' : 'Full token vault backup exported.', 'success');
+            }
+            return true;
+        } finally {
+            showLoading(false);
+        }
     }
 
     async function duplicateVaultToken(sourceToken, options = {}) {
@@ -4047,23 +4263,33 @@ Translate to {target_language}.`;
             ? payload
             : (Array.isArray(payload?.entries)
                 ? payload.entries
-                : [payload?.entry, payload?.profile, payload].filter(candidate => candidate && typeof candidate === 'object'));
+                : (Array.isArray(payload?.profiles)
+                    ? payload.profiles
+                    : [payload?.entry, payload?.profile, payload].filter(candidate => candidate && typeof candidate === 'object')));
         const now = Date.now();
         const prepared = [];
         const pushPreparedEntry = (entry) => {
             const token = extractSessionTokenFromInput(entry?.token || entry);
             if (!token) return;
-            prepared.push({
+            const session = isPlainVaultObject(entry?.session) ? entry.session : {};
+            const config = getRestorableVaultConfig(entry);
+            const preparedEntry = {
                 token,
                 label: normalizeVaultLabel(token, entry?.label || ''),
                 addedAt: Number(entry?.addedAt) || now,
                 lastOpenedAt: Number(entry?.lastOpenedAt) || 0,
-                lastSavedAt: Number(entry?.lastSavedAt) || Number(entry?.lastKnownUpdatedAt) || now,
-                lastKnownCreatedAt: Number(entry?.lastKnownCreatedAt) || 0,
-                lastKnownUpdatedAt: Number(entry?.lastKnownUpdatedAt) || 0,
-                lastKnownLastAccessedAt: Number(entry?.lastKnownLastAccessedAt) || 0,
-                lastKnownDisabled: entry?.lastKnownDisabled === true
-            });
+                lastSavedAt: Number(entry?.lastSavedAt) || Number(entry?.lastKnownUpdatedAt) || Number(session.updatedAt) || now,
+                lastKnownCreatedAt: Number(entry?.lastKnownCreatedAt) || Number(session.createdAt) || 0,
+                lastKnownUpdatedAt: Number(entry?.lastKnownUpdatedAt) || Number(session.updatedAt) || 0,
+                lastKnownLastAccessedAt: Number(entry?.lastKnownLastAccessedAt) || Number(session.lastAccessedAt) || 0,
+                lastKnownDisabled: entry?.lastKnownDisabled === true || session.disabled === true
+            };
+            if (config) {
+                preparedEntry.config = config;
+                preparedEntry.configExportedAt = Number(entry?.configExportedAt) || Number(payload?.exportedAt) || now;
+                preparedEntry.configExportSource = String(entry?.configExportSource || 'backup');
+            }
+            prepared.push(preparedEntry);
         };
         importedEntries.forEach(pushPreparedEntry);
         if (prepared.length === 0 && !Array.isArray(payload)) {
@@ -4075,10 +4301,327 @@ Translate to {target_language}.`;
         return prepared;
     }
 
+    function parseTokenVaultJsonText(raw) {
+        const trimmed = String(raw || '').trim();
+        if (!trimmed || !/^[\[{]/.test(trimmed)) {
+            return { parsed: false, payload: null, error: null };
+        }
+        try {
+            return { parsed: true, payload: JSON.parse(trimmed), error: null };
+        } catch (error) {
+            return { parsed: true, payload: null, error };
+        }
+    }
+
+    function estimateVaultImportNewEntryCount(preparedEntries, store = getTokenVaultStore()) {
+        const knownTokens = new Set((Array.isArray(store.entries) ? store.entries : [])
+            .map(entry => entry.token)
+            .filter(isValidSessionToken));
+        let count = knownTokens.size;
+
+        (Array.isArray(preparedEntries) ? preparedEntries : []).forEach(entry => {
+            if (hasRestorableVaultConfig(entry)) {
+                count += 1;
+                return;
+            }
+            const token = extractSessionTokenFromInput(entry?.token || entry);
+            if (token && !knownTokens.has(token)) {
+                knownTokens.add(token);
+                count += 1;
+            }
+        });
+
+        return count;
+    }
+
+    function getVaultImportOverflowVictims(preparedEntries, store = getTokenVaultStore()) {
+        const projectedCount = estimateVaultImportNewEntryCount(preparedEntries, store);
+        const overflowCount = Math.max(0, projectedCount - TOKEN_VAULT_MAX_ENTRIES);
+        if (overflowCount <= 0) return [];
+        return sortVaultEntries(store.entries).slice(-overflowCount);
+    }
+
+    async function setRestoredVaultTokenDisabled(token, disabled) {
+        if (!isValidSessionToken(token) || disabled !== true) return null;
+
+        const response = await fetchWithTimeout(`/api/session-state/${encodeURIComponent(token)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            },
+            cache: 'no-store',
+            body: JSON.stringify({ disabled: true })
+        }, 10000);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data?.error || response.statusText || `HTTP ${response.status}`);
+        }
+        return data?.session || null;
+    }
+
+    async function createSessionFromVaultConfigBackup(entry) {
+        const config = getRestorableVaultConfig(entry);
+        if (!config) {
+            throw new Error('Backup entry does not include a restorable configuration.');
+        }
+
+        const response = await fetchWithTimeout('/api/create-session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            },
+            cache: 'no-store',
+            body: JSON.stringify(config)
+        }, 15000);
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data?.error || response.statusText || `HTTP ${response.status}`);
+        }
+
+        const token = extractSessionTokenFromInput(data?.token);
+        if (!token) {
+            throw new Error('The restore response did not include a valid token.');
+        }
+
+        let session = isPlainVaultObject(data?.session) ? data.session : null;
+        let restoreWarning = '';
+        const shouldDisable = getVaultBackupDisabledState(entry);
+        if (shouldDisable) {
+            try {
+                session = await setRestoredVaultTokenDisabled(token, true) || session;
+            } catch (error) {
+                restoreWarning = error?.message || 'Failed to restore disabled state.';
+            }
+        }
+
+        const now = Date.now();
+        const restoredEntry = {
+            token,
+            label: normalizeVaultLabel(token, entry?.label || ''),
+            addedAt: now,
+            lastOpenedAt: 0,
+            lastSavedAt: Number(session?.updatedAt) || now,
+            lastKnownCreatedAt: Number(session?.createdAt) || now,
+            lastKnownUpdatedAt: Number(session?.updatedAt) || now,
+            lastKnownLastAccessedAt: Number(session?.lastAccessedAt) || now,
+            lastKnownDisabled: session?.disabled === true || (shouldDisable && !restoreWarning),
+            restoredFromToken: extractSessionTokenFromInput(entry?.token) || '',
+            restoredAt: now
+        };
+
+        if (session) {
+            restoredEntry.session = session;
+        }
+        if (restoreWarning) {
+            restoredEntry.restoreWarning = restoreWarning;
+        }
+        return restoredEntry;
+    }
+
+    async function restoreVaultConfigBackupEntries(preparedEntries) {
+        const restoredEntries = [];
+        const failures = [];
+        const warnings = [];
+        let restoredConfigCount = 0;
+        let tokenReferenceCount = 0;
+
+        for (const entry of (Array.isArray(preparedEntries) ? preparedEntries : [])) {
+            if (!hasRestorableVaultConfig(entry)) {
+                restoredEntries.push(entry);
+                tokenReferenceCount += 1;
+                continue;
+            }
+
+            try {
+                const restoredEntry = await createSessionFromVaultConfigBackup(entry);
+                restoredEntries.push(restoredEntry);
+                restoredConfigCount += 1;
+                if (restoredEntry.session) {
+                    tokenVaultBriefMap.set(restoredEntry.token, restoredEntry.session);
+                    rememberTokenVaultSingleBrief(restoredEntry.token, restoredEntry.session);
+                }
+                if (restoredEntry.restoreWarning) {
+                    warnings.push({
+                        token: restoredEntry.token,
+                        message: restoredEntry.restoreWarning
+                    });
+                }
+            } catch (error) {
+                failures.push({
+                    token: extractSessionTokenFromInput(entry?.token) || '',
+                    label: normalizeVaultLabel(entry?.token || '', entry?.label || ''),
+                    message: error?.message || 'Restore failed.'
+                });
+            }
+        }
+
+        return {
+            entries: restoredEntries,
+            restoredConfigCount,
+            tokenReferenceCount,
+            failures,
+            warnings
+        };
+    }
+
+    function buildVaultImportSummaryMessage(result, importedCount) {
+        const restored = Number(result?.restoredConfigCount) || 0;
+        const tokenOnly = Number(result?.tokenReferenceCount) || 0;
+        const failed = Array.isArray(result?.failures) ? result.failures.length : 0;
+        const disabledWarnings = Array.isArray(result?.warnings) ? result.warnings.length : 0;
+        const parts = [];
+
+        if (restored > 0) {
+            parts.push(`restored ${restored} full profile${restored === 1 ? '' : 's'} as new token${restored === 1 ? '' : 's'}`);
+        }
+        if (tokenOnly > 0) {
+            parts.push(`imported ${tokenOnly} token-only reference${tokenOnly === 1 ? '' : 's'}`);
+        }
+        if (parts.length === 0) {
+            parts.push(`imported ${importedCount} profile${importedCount === 1 ? '' : 's'}`);
+        }
+
+        let message = `Backup import complete: ${parts.join(' and ')}.`;
+        if (failed > 0) {
+            message += ` ${failed} profile${failed === 1 ? '' : 's'} could not be restored.`;
+        }
+        if (disabledWarnings > 0) {
+            message += ` ${disabledWarnings} restore warning${disabledWarnings === 1 ? '' : 's'} occurred.`;
+        }
+        return message;
+    }
+
+    async function importPreparedTokenVaultEntries(preparedEntries, options = {}) {
+        if (!Array.isArray(preparedEntries) || preparedEntries.length === 0) {
+            showAlert('No valid profiles were found in that JSON file.', 'warning');
+            return false;
+        }
+
+        const hasFullConfigBackups = preparedEntries.some(hasRestorableVaultConfig);
+        if (!hasFullConfigBackups) {
+            const onApplied = typeof options.onApplied === 'function' ? options.onApplied : null;
+            const plan = prepareTokenVaultMergePlan(preparedEntries);
+            return applyVaultMergePlanWithOverflowPrompt(
+                plan,
+                {
+                    eyebrow: `${TOKEN_VAULT_MAX_ENTRIES} saved tokens max`,
+                    title: 'Import will replace older vault entries',
+                    message: `This file adds ${preparedEntries.length} profile${preparedEntries.length === 1 ? '' : 's'}. Keeping them will purge the oldest local vault entr${preparedEntries.length === 1 ? 'y' : 'ies'} below.`,
+                    detail: 'Only the local browser vault changes.',
+                    confirmLabel: 'Import and replace'
+                },
+                { activeToken: getActiveConfigRef() },
+                async (importedCount) => {
+                    await refreshTokenVaultData(true);
+                    showAlert(`Imported ${importedCount} profile${importedCount === 1 ? '' : 's'} into your local vault.`, 'success');
+                    if (onApplied) {
+                        await onApplied(importedCount);
+                    }
+                }
+            );
+        }
+
+        const approvedVictimTokens = Array.isArray(options.approvedVictimTokens)
+            ? options.approvedVictimTokens.filter(isValidSessionToken)
+            : [];
+        const overflowVictims = getVaultImportOverflowVictims(preparedEntries);
+        const approvedVictimSet = new Set(approvedVictimTokens.map(token => token.toLowerCase()));
+        const needsApproval = overflowVictims.some(entry => !approvedVictimSet.has(entry.token));
+        if (needsApproval) {
+            openTokenVaultOverridePrompt({
+                eyebrow: `${TOKEN_VAULT_MAX_ENTRIES} saved tokens max`,
+                title: 'Restoring this backup needs vault space',
+                message: `This backup restores ${preparedEntries.length} profile${preparedEntries.length === 1 ? '' : 's'}. New tokens will be created for full config snapshots, so the oldest local vault entr${overflowVictims.length === 1 ? 'y' : 'ies'} below will be purged.`,
+                detail: 'New server tokens are created for full config snapshots. Existing server tokens are not overwritten; only local vault membership may be replaced.',
+                confirmLabel: 'Restore and replace',
+                victims: overflowVictims,
+                onConfirm: async () => {
+                    await importPreparedTokenVaultEntries(preparedEntries, {
+                        ...options,
+                        approvedVictimTokens: overflowVictims.map(entry => entry.token)
+                    });
+                }
+            });
+            return false;
+        }
+
+        const onApplied = typeof options.onApplied === 'function' ? options.onApplied : null;
+        showLoading(true);
+        try {
+            const restoreResult = await restoreVaultConfigBackupEntries(preparedEntries);
+            if (restoreResult.entries.length === 0) {
+                const firstFailure = restoreResult.failures[0]?.message || 'No restorable profiles were found.';
+                showAlert(`Backup import failed: ${firstFailure}`, 'error');
+                return false;
+            }
+
+            const plan = prepareTokenVaultMergePlan(restoreResult.entries);
+            const restoredTokenSet = new Set(restoreResult.entries
+                .map(entry => entry?.token)
+                .filter(isValidSessionToken));
+            const incomingOverflowVictims = plan.overflowVictims
+                .filter(entry => restoredTokenSet.has(entry.token));
+            if (incomingOverflowVictims.length > 0) {
+                restoreResult.warnings.push({
+                    token: incomingOverflowVictims[0].token,
+                    message: `${incomingOverflowVictims.length} restored profile${incomingOverflowVictims.length === 1 ? '' : 's'} could not fit in the local vault.`
+                });
+            }
+            const importedCount = applyTokenVaultMergePlan(plan, {
+                activeToken: getActiveConfigRef(),
+                allowVictimTokens: [
+                    ...approvedVictimTokens,
+                    ...incomingOverflowVictims.map(entry => entry.token)
+                ]
+            });
+            if (importedCount <= 0) {
+                showAlert('The vault changed while importing. Reopen the import and try again.', 'warning');
+                return false;
+            }
+
+            await refreshTokenVaultData(true);
+            const primaryToken = restoreResult.entries.find(entry => isValidSessionToken(entry?.token))?.token || '';
+            const tone = restoreResult.failures.length > 0 || restoreResult.warnings.length > 0 ? 'warning' : 'success';
+            showAlert(buildVaultImportSummaryMessage(restoreResult, importedCount), tone);
+            if (onApplied) {
+                await onApplied({
+                    importedCount,
+                    primaryToken,
+                    restoredConfigCount: restoreResult.restoredConfigCount,
+                    tokenReferenceCount: restoreResult.tokenReferenceCount,
+                    failures: restoreResult.failures,
+                    warnings: restoreResult.warnings
+                });
+            }
+            return true;
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    async function importTokenVaultBackupPayload(payload, options = {}) {
+        const preparedEntries = buildImportEntriesFromPayload(payload);
+        return importPreparedTokenVaultEntries(preparedEntries, options);
+    }
+
     async function importTokenFromText(raw, options = {}) {
+        const parsedJson = parseTokenVaultJsonText(raw);
+        if (parsedJson.parsed) {
+            if (parsedJson.error) {
+                showAlert(`That JSON could not be parsed: ${parsedJson.error.message}`, 'warning');
+                return false;
+            }
+            return importTokenVaultBackupPayload(parsedJson.payload, options);
+        }
+
         const token = extractSessionTokenFromInput(raw);
         if (!token) {
-            showAlert('Paste a raw token, manifest URL, or configure URL first.', 'warning');
+            showAlert('Paste a raw token, manifest URL, configure URL, or backup JSON first.', 'warning');
             return false;
         }
         const onApplied = typeof options.onApplied === 'function' ? options.onApplied : null;
@@ -4112,31 +4655,7 @@ Translate to {target_language}.`;
         if (!file) return;
         const text = await file.text();
         const parsed = JSON.parse(text);
-        const preparedEntries = buildImportEntriesFromPayload(parsed);
-        if (preparedEntries.length === 0) {
-            showAlert('No valid profiles were found in that JSON file.', 'warning');
-            return false;
-        }
-        const onApplied = typeof options.onApplied === 'function' ? options.onApplied : null;
-        const plan = prepareTokenVaultMergePlan(preparedEntries);
-        return applyVaultMergePlanWithOverflowPrompt(
-            plan,
-            {
-                eyebrow: `${TOKEN_VAULT_MAX_ENTRIES} saved tokens max`,
-                title: 'Import will replace older vault entries',
-                message: `This file adds ${preparedEntries.length} profile${preparedEntries.length === 1 ? '' : 's'}. Keeping them will purge the oldest local vault entr${preparedEntries.length === 1 ? 'y' : 'ies'} below.`,
-                detail: 'Only the local browser vault changes.',
-                confirmLabel: 'Import and replace'
-            },
-            { activeToken: getActiveConfigRef() },
-            async (importedCount) => {
-                await refreshTokenVaultData(true);
-                showAlert(`Imported ${importedCount} profile${importedCount === 1 ? '' : 's'} into your local vault.`, 'success');
-                if (onApplied) {
-                    await onApplied(importedCount);
-                }
-            }
-        );
+        return importTokenVaultBackupPayload(parsed, options);
     }
 
     function buildTokenVaultSubjectEntry(view) {
@@ -4472,11 +4991,16 @@ Translate to {target_language}.`;
             case 'import-paste': {
                 const input = document.getElementById('tokenVaultCreateInput');
                 await importTokenFromText(input?.value || '', {
-                    onApplied: async (token) => {
+                    onApplied: async (result) => {
                         if (document.getElementById('tokenVaultCreateModal')?.classList.contains('show')) {
                             closeTokenVaultCreator();
                         }
-                        await requestVaultTokenSwitch(token);
+                        const token = extractSessionTokenFromInput(
+                            typeof result === 'string' ? result : result?.primaryToken
+                        );
+                        if (token) {
+                            await requestVaultTokenSwitch(token);
+                        }
                     }
                 });
                 return;
@@ -4529,7 +5053,7 @@ Translate to {target_language}.`;
         if (!currentConfig) {
             currentConfig = getDefaultConfig();
         }
-        const defaults = getDefaultConfig(currentConfig.geminiModel || 'gemini-flash-latest').autoSubs;
+        const defaults = getDefaultConfig(currentConfig.geminiModel || DEFAULT_GEMINI_MODEL).autoSubs;
         currentConfig.autoSubs = {
             ...defaults,
             ...(currentConfig.autoSubs || {})
@@ -5874,7 +6398,7 @@ Translate to {target_language}.`;
         if (!isBetaModeEnabled()) return false;
         // Get the currently selected base model to determine model-specific defaults
         const geminiModelEl = document.getElementById('geminiModel');
-        const currentBaseModel = geminiModelEl ? geminiModelEl.value : 'gemini-flash-latest';
+        const currentBaseModel = geminiModelEl ? geminiModelEl.value : DEFAULT_GEMINI_MODEL;
         const defaults = getDefaultConfig(currentBaseModel).advancedSettings;
 
         const advModelEl = document.getElementById('advancedModel');
@@ -7797,7 +8321,7 @@ Translate to {target_language}.`;
                     if (val === '' || val === null || val === undefined) {
                         return undefined;
                     }
-                    const allowed = ['low', 'medium', 'high'];
+                    const allowed = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
                     const normalized = typeof val === 'string' ? val.trim().toLowerCase() : '';
                     return allowed.includes(normalized) ? normalized : baseDefaults.reasoningEffort;
                 })(),
@@ -9313,7 +9837,7 @@ Translate to {target_language}.`;
         // Define hardcoded multi-model options
         const hardcodedModels = [
 
-            { name: 'gemini-3.1-flash-lite-preview', displayName: 'Gemini 3.1 Flash Lite' },
+            { name: 'gemini-3.1-flash-lite', displayName: 'Gemini 3.1 Flash Lite' },
             { name: 'gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash-Lite' },
             { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
             { name: 'gemini-3-flash-preview', displayName: 'Gemini 3.0 Flash (beta)' },
@@ -10574,6 +11098,9 @@ Translate to {target_language}.`;
                 const label = PROVIDERS[providerKey]?.label || providerKey;
                 errors.push(tConfig('config.validation.providerKeyMissing', { provider: label }, `⚠️ ${label} is enabled but API key is missing`));
             }
+            if (providerCfg?.enabled && String(providerKey).toLowerCase() === 'custom' && !providerCfg.baseUrl?.trim()) {
+                errors.push(tConfig('config.alerts.missingCustomBaseUrl', {}, 'Enter a base URL for the custom provider'));
+            }
         });
 
         // OpenSubtitles Auth requires credentials; block save if missing
@@ -10592,6 +11119,9 @@ Translate to {target_language}.`;
                 if (!cfg || cfg.enabled !== true) return false;
                 const keyOptional = KEY_OPTIONAL_PROVIDERS.has(String(key).toLowerCase());
                 if (keyOptional) {
+                    if (String(key).toLowerCase() === 'custom') {
+                        return !!(cfg.baseUrl && cfg.baseUrl.trim() !== '' && cfg.model);
+                    }
                     return !!cfg.model;
                 }
                 return !!(cfg.apiKey && cfg.apiKey.trim() !== '' && cfg.model);

@@ -131,7 +131,7 @@ function sanitizeReasoningEffort(value, fallback) {
   if (value === '' || value === null || value === undefined) {
     return undefined;
   }
-  const allowed = ['none', 'low', 'medium', 'high', 'xhigh'];
+  const allowed = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return allowed.includes(normalized) ? normalized : fallback;
 }
@@ -213,6 +213,20 @@ function getDefaultProviderParameters() {
  * Currently enabled to ensure all users get the latest stable model
  */
 const OVERRIDE_DEPRECATED_MODELS = true;
+const GEMINI_31_FLASH_LITE_MODEL = 'gemini-3.1-flash-lite';
+const GEMINI_FLASH_LATEST_MODEL = 'gemini-flash-latest';
+const DEFAULT_GEMINI_MODEL = 'gemini-flash-lite-latest';
+
+function normalizeGeminiModelName(modelName) {
+  const normalized = typeof modelName === 'string' ? modelName.trim() : '';
+  if (normalized === `${GEMINI_31_FLASH_LITE_MODEL}-preview`) {
+    return GEMINI_31_FLASH_LITE_MODEL;
+  }
+  if (normalized === GEMINI_FLASH_LATEST_MODEL) {
+    return DEFAULT_GEMINI_MODEL;
+  }
+  return normalized;
+}
 
 /**
  * List of deprecated model names that should be replaced with the current default
@@ -221,6 +235,7 @@ const OVERRIDE_DEPRECATED_MODELS = true;
 const DEPRECATED_MODEL_NAMES = [
   'gemini-2.0-flash-exp',
   'gemini-2.5-flash-lite-09-2025', // Old name before preview version
+  GEMINI_FLASH_LATEST_MODEL,
   'gemini-2.5-flash-latest',
   'gemini-pro-latest',
   'gemini-2.5-pro-latest',
@@ -422,7 +437,7 @@ function normalizeConfig(config) {
   }
 
   // Determine the model to use (from config or default)
-  const configModel = config.geminiModel || process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  const configModel = normalizeGeminiModelName(config.geminiModel || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
 
   // Get model-specific defaults based on the selected model
   const defaults = getDefaultConfig(configModel);
@@ -579,6 +594,7 @@ function normalizeConfig(config) {
   const advSettings = mergedConfig.advancedSettings || {};
   mergedConfig.advancedSettings = {
     ...advSettings,
+    geminiModel: normalizeGeminiModelName(advSettings.geminiModel),
     enabled: advSettings.enabled === true,
     sendTimestampsToAI: advSettings.sendTimestampsToAI === true,
     translationWorkflow: (() => {
@@ -694,13 +710,16 @@ function normalizeConfig(config) {
   // If geminiModel is empty/null, use defaults (respects .env)
   if (!mergedConfig.geminiModel || mergedConfig.geminiModel.trim() === '') {
     mergedConfig.geminiModel = defaults.geminiModel;
+  } else {
+    mergedConfig.geminiModel = normalizeGeminiModelName(mergedConfig.geminiModel);
   }
 
   // Override deprecated model names with current default (if feature flag enabled)
   // TO RE-ENABLE USER MODEL SELECTION: Set OVERRIDE_DEPRECATED_MODELS = false at top of file
   if (OVERRIDE_DEPRECATED_MODELS && mergedConfig.geminiModel && DEPRECATED_MODEL_NAMES.includes(mergedConfig.geminiModel)) {
-    log.debug(() => `[Config] Overriding deprecated model '${mergedConfig.geminiModel}' with default '${defaults.geminiModel}'`);
-    mergedConfig.geminiModel = defaults.geminiModel;
+    const replacementModel = normalizeGeminiModelName(process.env.GEMINI_MODEL) || DEFAULT_GEMINI_MODEL;
+    log.debug(() => `[Config] Overriding deprecated model '${mergedConfig.geminiModel}' with default '${replacementModel}'`);
+    mergedConfig.geminiModel = replacementModel;
   }
 
   // Enforce permanent disk caching regardless of client config
@@ -731,6 +750,9 @@ function normalizeConfig(config) {
     const resolved = resolveProviderKey(key);
     const cfg = mergedConfig.providers?.[resolved] || {};
     if (KEY_OPTIONAL_PROVIDERS.has(String(resolved).toLowerCase())) {
+      if (String(resolved).toLowerCase() === 'custom') {
+        return !!(cfg.enabled === true && cfg.baseUrl && cfg.model);
+      }
       return cfg.enabled === true;
     }
     return !!(cfg.enabled && cfg.apiKey && cfg.model);
@@ -739,17 +761,24 @@ function normalizeConfig(config) {
     const entry = Object.entries(mergedConfig.providers || {}).find(([key, cfg]) => {
       if (!cfg || cfg.enabled !== true) return false;
       const isKeyOptional = KEY_OPTIONAL_PROVIDERS.has(String(key).toLowerCase());
+      if (String(key).toLowerCase() === 'custom') {
+        return !!(cfg.baseUrl && cfg.model);
+      }
       return isKeyOptional || (cfg.apiKey && cfg.model);
     });
     return entry ? String(entry[0]).toLowerCase() : null;
   };
   if (mergedConfig.providers && typeof mergedConfig.providers === 'object') {
     for (const [key, value] of Object.entries(mergedConfig.providers)) {
+      const normalizedKey = String(key).toLowerCase();
       mergedConfig.providers[key] = {
         enabled: value?.enabled === true,
         apiKey: typeof value?.apiKey === 'string' ? value.apiKey : '',
         model: typeof value?.model === 'string' ? value.model : ''
       };
+      if (normalizedKey === 'custom') {
+        mergedConfig.providers[key].baseUrl = typeof value?.baseUrl === 'string' ? value.baseUrl : '';
+      }
     }
   }
 
@@ -1084,17 +1113,13 @@ const MODEL_SPECIFIC_DEFAULTS = {
     thinkingBudget: -1,     // Dynamic thinking for flash model
     temperature: 0.5        // Lower temperature for consistency
   },
-  'gemini-3.1-flash-lite-preview': {
+  'gemini-3.1-flash-lite': {
     thinkingBudget: 0,      // No thinking for lite model
     temperature: 0.8        // Higher temperature for creativity
   },
   'gemini-flash-lite-latest': {
     thinkingBudget: 0,      // No thinking for lite model (latest alias)
     temperature: 0.8        // Higher temperature for creativity
-  },
-  'gemini-flash-latest': {
-    thinkingBudget: -1,     // Dynamic thinking for flash model (latest alias)
-    temperature: 0.5        // Lower temperature for consistency
   },
   'gemini-2.5-pro': {
     thinkingBudget: 1000,   // Fixed thinking budget for pro model
@@ -1112,7 +1137,7 @@ const MODEL_SPECIFIC_DEFAULTS = {
  * @returns {Object} - Model-specific settings { thinkingBudget, temperature }
  */
 function getModelSpecificDefaults(modelName) {
-  return MODEL_SPECIFIC_DEFAULTS[modelName] || {
+  return MODEL_SPECIFIC_DEFAULTS[normalizeGeminiModelName(modelName)] || {
     thinkingBudget: 0,
     temperature: 0.8
   };
@@ -1120,14 +1145,12 @@ function getModelSpecificDefaults(modelName) {
 
 function getEffectiveGeminiModel(config = {}) {
   const advancedSettings = config?.advancedSettings || {};
-  const advancedOverride = typeof advancedSettings.geminiModel === 'string'
-    ? advancedSettings.geminiModel.trim()
-    : '';
+  const advancedOverride = normalizeGeminiModelName(advancedSettings.geminiModel);
   if (advancedSettings.enabled === true && advancedOverride) {
     return advancedOverride;
   }
-  const baseModel = typeof config?.geminiModel === 'string' ? config.geminiModel.trim() : '';
-  return baseModel || process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  const baseModel = normalizeGeminiModelName(config?.geminiModel);
+  return baseModel || normalizeGeminiModelName(process.env.GEMINI_MODEL) || DEFAULT_GEMINI_MODEL;
 }
 
 /**
@@ -1137,8 +1160,8 @@ function getEffectiveGeminiModel(config = {}) {
  */
 function getDefaultConfig(modelName = null) {
   // Determine the model to use for defaults
-  // Default to gemini-flash-latest as the primary recommended model
-  const effectiveModel = modelName || process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  // Default to the latest Flash Lite alias as the primary fallback model.
+  const effectiveModel = normalizeGeminiModelName(modelName || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
   const modelDefaults = getModelSpecificDefaults(effectiveModel);
 
   // Read advanced settings from environment variables with fallback to model-specific defaults
@@ -1349,6 +1372,9 @@ function validateConfig(config) {
     const cfg = resolveProviderConfig(key);
     if (!cfg || cfg.enabled !== true) return false;
     if (KEY_OPTIONAL_PROVIDERS.has(String(key).toLowerCase())) {
+      if (String(key).toLowerCase() === 'custom') {
+        return !!(cfg.baseUrl && String(cfg.baseUrl).trim() !== '' && cfg.model && String(cfg.model).trim() !== '');
+      }
       return true;
     }
     return !!(cfg.apiKey && String(cfg.apiKey).trim() !== '' && cfg.model && String(cfg.model).trim() !== '');
@@ -1508,6 +1534,9 @@ function buildManifest(config, baseUrl = '') {
     const cfg = providers[matchKey];
     if (!cfg || cfg.enabled !== true) return false;
     if (KEY_OPTIONAL_PROVIDERS.has(String(key).toLowerCase())) {
+      if (String(key).toLowerCase() === 'custom') {
+        return !!(cfg.baseUrl && String(cfg.baseUrl).trim() !== '' && cfg.model && String(cfg.model).trim() !== '');
+      }
       return true;
     }
     return !!(cfg.apiKey && String(cfg.apiKey).trim() !== '' && cfg.model);

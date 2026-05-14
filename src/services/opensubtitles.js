@@ -1,5 +1,4 @@
 const axios = require('axios');
-const { LRUCache } = require('lru-cache');
 const { sanitizeApiKeyForHeader } = require('../utils/security');
 const crypto = require('crypto');
 const { toISO6391, toISO6392 } = require('../utils/languages');
@@ -33,38 +32,55 @@ const TOKEN_TTL_SECONDS = 23 * 60 * 60; // 23 hours (token valid for 24h, 1h buf
 // Key: credentialsCacheKey, Value: Promise that resolves when login completes
 const loginMutex = new Map();
 
-// STRICT RATE LIMITER FOR /login: 1 request per second global limit
-// OpenSubtitles documentation: "on /login there is set limit 1 request per 1 second"
-// We must serialize ALL login attempts globally in this process to prevent 429s.
-let _globalLoginQueue = Promise.resolve();
-let _globalLastLoginTime = 0;
-const LOGIN_MIN_INTERVAL_MS = 1100; // 1.1s local interval
-const DISTRIBUTED_LOGIN_COOLDOWN_MS = 1100; // 1.1s cooldown in Redis (refreshed AFTER login completes)
-// v1.4.58: Increased from 4/6s to handle cold-start scenarios with many unique users
-// With ~1.5s per login slot, 20 cycles allows queueing ~30 concurrent logins per pod
-// 45s timeout allows the queue to drain under heavy load without premature failures
-const MAX_LOCK_WAIT_CYCLES = 20; // Maximum number of wait cycles before giving up
-const TOTAL_LOCK_TIMEOUT_MS = 45000; // 45 second absolute timeout for entire lock acquisition process
-
 // ─── OpenSubtitles API rate limiter ───────────────────────────────────────────
-// OpenSubtitles enforces a shared per-IP API budget. A fixed-window bucket can
-// still burst around second boundaries (4 calls at 999ms + 4 calls at 1001ms),
-// so use a Redis-backed leaky gate: one API call may leave the cluster every
-// ~275ms, which stays safely under a 5 req/sec rolling window.
+// OpenSubtitles enforces a shared per-IP API budget: 5 REST requests / second,
+// plus /login has its own 1 request / second rule. Every REST call reserves a
+// send timestamp before it is made. /login reserves both gates atomically so the
+// actual request cannot slip outside either upstream limit after waiting.
 const RATE_LIMIT_MIN_INTERVAL_MS = Math.max(
   250,
-  parseInt(process.env.OPENSUBTITLES_API_MIN_INTERVAL_MS || '275', 10) || 275
+  parseInt(process.env.OPENSUBTITLES_API_MIN_INTERVAL_MS || '250', 10) || 250
+);
+const LOGIN_MIN_INTERVAL_MS = Math.max(
+  1100,
+  parseInt(process.env.OPENSUBTITLES_LOGIN_MIN_INTERVAL_MS || '1100', 10) || 1100
 );
 const LOCAL_FALLBACK_MIN_INTERVAL_MS = Math.max(
   RATE_LIMIT_MIN_INTERVAL_MS,
   parseInt(process.env.OPENSUBTITLES_LOCAL_FALLBACK_MIN_INTERVAL_MS || '1100', 10) || 1100
 );
-const DISTRIBUTED_RATE_LIMIT_KEY = 'os_api_next_at';
-const DISTRIBUTED_LOGIN_SEND_RATE_LIMIT_KEY = 'os_login_send_next_at';
-const DISTRIBUTED_RATE_LIMIT_TTL_MS = Math.max(5000, RATE_LIMIT_MIN_INTERVAL_MS * 8);
-const DISTRIBUTED_LOGIN_SEND_RATE_LIMIT_TTL_MS = Math.max(5000, DISTRIBUTED_LOGIN_COOLDOWN_MS * 4);
-const DISTRIBUTED_RATE_LIMIT_WAIT_JITTER_MS = 35;
-let _localNextAllowedAt = 0;
+const LOCAL_FALLBACK_LOGIN_MIN_INTERVAL_MS = Math.max(
+  LOGIN_MIN_INTERVAL_MS,
+  parseInt(process.env.OPENSUBTITLES_LOCAL_FALLBACK_LOGIN_MIN_INTERVAL_MS || '2500', 10) || 2500
+);
+const DEFAULT_RATE_LIMIT_MAX_QUEUE_MS = Math.max(
+  0,
+  parseInt(process.env.OPENSUBTITLES_API_MAX_QUEUE_MS || '8000', 10) || 8000
+);
+const RATE_LIMIT_REQUEST_RESERVE_MS = Math.max(
+  500,
+  parseInt(process.env.OPENSUBTITLES_API_REQUEST_RESERVE_MS || '1500', 10) || 1500
+);
+const RATE_LIMIT_RETRY_AFTER_FALLBACK_MS = Math.max(
+  1000,
+  parseInt(process.env.OPENSUBTITLES_RATE_LIMIT_RETRY_AFTER_FALLBACK_MS || '1000', 10) || 1000
+);
+const RATE_LIMIT_RETRY_AFTER_MAX_MS = Math.max(
+  RATE_LIMIT_RETRY_AFTER_FALLBACK_MS,
+  parseInt(process.env.OPENSUBTITLES_RATE_LIMIT_RETRY_AFTER_MAX_MS || '60000', 10) || 60000
+);
+const RATE_LIMIT_HEADER_REMAINING_FLOOR = Math.max(
+  0,
+  parseInt(process.env.OPENSUBTITLES_HEADER_REMAINING_FLOOR || '0', 10) || 0
+);
+// The Redis hash tag keeps the API and login keys in the same slot on Redis
+// Cluster/Sentinel deployments, so the multi-key Lua reservation remains valid.
+const DISTRIBUTED_RATE_LIMIT_KEY = '{opensubtitles}:api_next_at';
+const DISTRIBUTED_LOGIN_SEND_RATE_LIMIT_KEY = '{opensubtitles}:login_next_at';
+const DISTRIBUTED_RATE_LIMIT_TTL_MS = Math.max(60000, RATE_LIMIT_MIN_INTERVAL_MS * 16);
+const DISTRIBUTED_LOGIN_SEND_RATE_LIMIT_TTL_MS = Math.max(60000, LOGIN_MIN_INTERVAL_MS * 16);
+let _localApiNextAllowedAt = 0;
+let _localLoginNextAllowedAt = 0;
 let _localRateLimitQueue = Promise.resolve();
 let _lastDistributedLimiterWarningAt = 0;
 
@@ -72,27 +88,57 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function clampRateLimitDelay(ms, fallbackMs = 1500) {
+function createOpenSubtitlesRateLimitError(message, retryAfterMs = 0) {
+  const retryMs = Math.max(0, Math.ceil(Number(retryAfterMs) || 0));
+  const error = new Error(message || 'OpenSubtitles API rate limit queue is full');
+  error.statusCode = 429;
+  error.type = 'rate_limit';
+  error.isRetryable = true;
+  error.retryAfterMs = retryMs;
+  error.openSubtitlesRateLimit = true;
+  return error;
+}
+
+function isOpenSubtitlesRateLimitError(error) {
+  return !!(
+    error &&
+    (
+      error.openSubtitlesRateLimit === true ||
+      error.type === 'rate_limit' ||
+      error.statusCode === 429 ||
+      error.response?.status === 429
+    )
+  );
+}
+
+function logOpenSubtitlesRateLimitFailure(context, error) {
+  const retryAfterMs = Math.max(0, Number(error?.retryAfterMs) || 0);
+  const retrySuffix = retryAfterMs > 0 ? ` (retry after ~${Math.ceil(retryAfterMs / 1000)}s)` : '';
+  const source = error?.response?.status === 429 ? 'upstream 429 after gated request' : 'limiter refusal before upstream request';
+  log.warn(() => `[OpenSubtitles] ${context} ${source}${retrySuffix}: ${error?.message || 'rate limited'}`);
+}
+
+function clampRateLimitDelay(ms, fallbackMs = 1500, maxMs = 60000) {
   const parsed = Number(ms);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallbackMs;
   }
-  return Math.max(RATE_LIMIT_MIN_INTERVAL_MS, Math.min(Math.ceil(parsed), 60000));
+  return Math.max(RATE_LIMIT_MIN_INTERVAL_MS, Math.min(Math.ceil(parsed), maxMs));
 }
 
-function parseRateLimitDelayMs(headers = {}, fallbackMs = 1500) {
+function parseRateLimitDelayMs(headers = {}, fallbackMs = 1500, maxMs = 60000) {
   const normalized = headers || {};
   const retryAfter = normalized['retry-after'];
   if (retryAfter !== undefined && retryAfter !== null) {
     const retryAfterText = String(retryAfter).trim();
     const retryAfterNumber = Number(retryAfterText);
     if (Number.isFinite(retryAfterNumber) && retryAfterNumber > 0) {
-      return clampRateLimitDelay(retryAfterNumber * 1000, fallbackMs);
+      return clampRateLimitDelay(retryAfterNumber * 1000, fallbackMs, maxMs);
     }
 
     const retryAfterDate = Date.parse(retryAfterText);
     if (Number.isFinite(retryAfterDate)) {
-      return clampRateLimitDelay(retryAfterDate - Date.now(), fallbackMs);
+      return clampRateLimitDelay(retryAfterDate - Date.now(), fallbackMs, maxMs);
     }
   }
 
@@ -102,21 +148,64 @@ function parseRateLimitDelayMs(headers = {}, fallbackMs = 1500) {
     const resetNumber = Number(resetText);
     if (Number.isFinite(resetNumber) && resetNumber > 0) {
       if (resetNumber > 1000000000000) {
-        return clampRateLimitDelay(resetNumber - Date.now(), fallbackMs);
+        return clampRateLimitDelay(resetNumber - Date.now(), fallbackMs, maxMs);
       }
       if (resetNumber > 1000000000) {
-        return clampRateLimitDelay((resetNumber * 1000) - Date.now(), fallbackMs);
+        return clampRateLimitDelay((resetNumber * 1000) - Date.now(), fallbackMs, maxMs);
       }
-      return clampRateLimitDelay(resetNumber * 1000, fallbackMs);
+      return clampRateLimitDelay(resetNumber * 1000, fallbackMs, maxMs);
     }
 
     const resetDate = Date.parse(resetText);
     if (Number.isFinite(resetDate)) {
-      return clampRateLimitDelay(resetDate - Date.now(), fallbackMs);
+      return clampRateLimitDelay(resetDate - Date.now(), fallbackMs, maxMs);
     }
   }
 
-  return clampRateLimitDelay(fallbackMs, fallbackMs);
+  return clampRateLimitDelay(fallbackMs, fallbackMs, maxMs);
+}
+
+function resolveRateLimitDeadline(options = {}) {
+  const now = Date.now();
+  const explicitDeadline = Number(options.deadlineAt);
+  if (Number.isFinite(explicitDeadline) && explicitDeadline > 0) {
+    return explicitDeadline;
+  }
+
+  let maxQueueMs = Number(options.maxQueueWaitMs);
+  if (!Number.isFinite(maxQueueMs) || maxQueueMs < 0) {
+    maxQueueMs = DEFAULT_RATE_LIMIT_MAX_QUEUE_MS;
+  }
+
+  const requestTimeoutMs = Number(options.timeoutMs ?? options.timeout);
+  if (Number.isFinite(requestTimeoutMs) && requestTimeoutMs > 0) {
+    const timeoutBoundQueueMs = Math.max(0, requestTimeoutMs - RATE_LIMIT_REQUEST_RESERVE_MS);
+    maxQueueMs = Math.min(maxQueueMs, timeoutBoundQueueMs);
+  }
+
+  return now + Math.max(0, maxQueueMs);
+}
+
+function getRateLimitQueueBudgetMs(deadlineAt) {
+  const parsed = Number(deadlineAt);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return Infinity;
+  }
+  return parsed - Date.now();
+}
+
+function assertRateLimitWaitAllowed(waitMs, deadlineAt, context, reason = 'queue wait') {
+  const budgetMs = getRateLimitQueueBudgetMs(deadlineAt);
+  if (budgetMs === Infinity) {
+    return;
+  }
+
+  if (waitMs > 0 && (budgetMs <= 0 || waitMs > budgetMs)) {
+    throw createOpenSubtitlesRateLimitError(
+      `OpenSubtitles API ${reason} would exceed request budget for ${context}; skipping upstream call`,
+      Math.max(waitMs, budgetMs)
+    );
+  }
 }
 
 function fallbackDelayFromLimitHeaders(headers = {}, fallbackMs = RATE_LIMIT_MIN_INTERVAL_MS) {
@@ -132,26 +221,91 @@ function fallbackDelayFromLimitHeaders(headers = {}, fallbackMs = RATE_LIMIT_MIN
   return Math.max(fallbackMs, headerDerivedMs);
 }
 
-function applyLocalRateLimitCooldown(waitMs) {
-  _localNextAllowedAt = Math.max(_localNextAllowedAt, Date.now() + clampRateLimitDelay(waitMs));
+function getRateLimitDelayMs(waitMs, fallbackMs = RATE_LIMIT_RETRY_AFTER_FALLBACK_MS) {
+  return clampRateLimitDelay(waitMs, fallbackMs, RATE_LIMIT_RETRY_AFTER_MAX_MS);
 }
 
-function acquireLocalToken(minIntervalMs = LOCAL_FALLBACK_MIN_INTERVAL_MS) {
-  const task = _localRateLimitQueue.then(async () => {
+function buildApiRateLimitSlot() {
+  return {
+    name: 'api',
+    key: DISTRIBUTED_RATE_LIMIT_KEY,
+    intervalMs: RATE_LIMIT_MIN_INTERVAL_MS,
+    ttlMs: DISTRIBUTED_RATE_LIMIT_TTL_MS,
+    localIntervalMs: LOCAL_FALLBACK_MIN_INTERVAL_MS
+  };
+}
+
+function buildLoginRateLimitSlot() {
+  return {
+    name: 'login',
+    key: DISTRIBUTED_LOGIN_SEND_RATE_LIMIT_KEY,
+    intervalMs: LOGIN_MIN_INTERVAL_MS,
+    ttlMs: DISTRIBUTED_LOGIN_SEND_RATE_LIMIT_TTL_MS,
+    localIntervalMs: LOCAL_FALLBACK_LOGIN_MIN_INTERVAL_MS
+  };
+}
+
+function buildOpenSubtitlesRateLimitSlots(kind = 'api') {
+  const slots = [buildApiRateLimitSlot()];
+  if (kind === 'login') {
+    slots.push(buildLoginRateLimitSlot());
+  }
+  return slots;
+}
+
+function getLocalNextAllowedAt(slotName) {
+  return slotName === 'login' ? _localLoginNextAllowedAt : _localApiNextAllowedAt;
+}
+
+function setLocalNextAllowedAt(slotName, value) {
+  if (slotName === 'login') {
+    _localLoginNextAllowedAt = Math.max(_localLoginNextAllowedAt, value);
+  } else {
+    _localApiNextAllowedAt = Math.max(_localApiNextAllowedAt, value);
+  }
+}
+
+function reserveLocalSlots(slots, options = {}) {
+  const task = _localRateLimitQueue.then(() => {
     const now = Date.now();
-    const waitMs = Math.max(0, _localNextAllowedAt - now);
-    if (waitMs > 0) {
-      log.debug(() => `[OpenSubtitles] Local fallback API rate limit: waiting ${waitMs}ms`);
-      await sleep(waitMs);
+    let scheduledAt = now;
+
+    for (const slot of slots) {
+      scheduledAt = Math.max(scheduledAt, getLocalNextAllowedAt(slot.name));
     }
-    _localNextAllowedAt = Date.now() + minIntervalMs;
+
+    const waitMs = Math.max(0, Math.ceil(scheduledAt - now));
+    assertRateLimitWaitAllowed(waitMs, options.deadlineAt, options.context || 'local fallback', 'queue wait');
+
+    for (const slot of slots) {
+      setLocalNextAllowedAt(slot.name, scheduledAt + slot.localIntervalMs);
+    }
+
+    return {
+      acquired: true,
+      local: true,
+      scheduledAt,
+      retryAfterMs: waitMs,
+      waitMs,
+      slots: slots.map(slot => slot.name)
+    };
   });
 
   _localRateLimitQueue = task.catch(() => { });
   return task;
 }
 
-async function tryAcquireDistributedIntervalSlot(rateLimitKey, intervalMs, ttlMs, options = {}) {
+function applyLocalRateLimitDelay(waitMs, options = {}) {
+  const delayMs = getRateLimitDelayMs(waitMs, options.fallbackMs);
+  const targetAt = Date.now() + delayMs;
+  const slots = buildOpenSubtitlesRateLimitSlots(options.includeLogin ? 'login' : 'api');
+
+  for (const slot of slots) {
+    setLocalNextAllowedAt(slot.name, targetAt);
+  }
+}
+
+async function tryReserveDistributedOpenSubtitlesSlots(slots, options = {}) {
   try {
     const adapter = options.adapter || await require('../utils/sharedCache').getStorageAdapter();
     const { StorageAdapter } = require('../storage');
@@ -160,27 +314,57 @@ async function tryAcquireDistributedIntervalSlot(rateLimitKey, intervalMs, ttlMs
       return null;
     }
 
-    const fullKey = adapter._getKey(`ratelimit:${rateLimitKey}`, StorageAdapter.CACHE_TYPES.SESSION);
+    if (adapter.client.status && adapter.client.status !== 'ready') {
+      return null;
+    }
+
+    const keys = slots.map(slot => adapter._getKey(`ratelimit:${slot.key}`, StorageAdapter.CACHE_TYPES.SESSION));
+    const intervals = slots.map(slot => slot.intervalMs);
+    const ttls = slots.map(slot => slot.ttlMs);
+    const maxWaitMs = Number.isFinite(Number(options.maxWaitMs)) ? Math.max(0, Math.floor(Number(options.maxWaitMs))) : -1;
+
     const result = await adapter.client.eval(`
       local timeParts = redis.call('time')
       local nowMs = (tonumber(timeParts[1]) * 1000) + math.floor(tonumber(timeParts[2]) / 1000)
-      local intervalMs = tonumber(ARGV[1])
-      local ttlMs = tonumber(ARGV[2])
-      local nextAt = tonumber(redis.call('get', KEYS[1]) or '0')
+      local slotCount = #KEYS
+      local scheduledAt = nowMs
+      local maxWaitMs = tonumber(ARGV[(slotCount * 2) + 1])
 
-      if nextAt > nowMs then
-        return {0, nextAt, math.ceil(nextAt - nowMs)}
+      for i = 1, slotCount do
+        local nextAt = tonumber(redis.call('get', KEYS[i]) or '0')
+        if nextAt > scheduledAt then
+          scheduledAt = nextAt
+        end
       end
 
-      local newNextAt = nowMs + intervalMs
-      redis.call('psetex', KEYS[1], ttlMs, newNextAt)
-      return {1, newNextAt, 0}
-    `, 1, fullKey, intervalMs, ttlMs);
+      local waitMs = math.max(0, math.ceil(scheduledAt - nowMs))
+      if maxWaitMs >= 0 and waitMs > maxWaitMs then
+        return {0, scheduledAt, waitMs, nowMs}
+      end
+
+      for i = 1, slotCount do
+        local intervalMs = tonumber(ARGV[i])
+        local ttlMs = tonumber(ARGV[slotCount + i])
+        redis.call('psetex', KEYS[i], ttlMs, scheduledAt + intervalMs)
+      end
+
+      return {1, scheduledAt, waitMs, nowMs}
+    `, keys.length, ...keys, ...intervals, ...ttls, maxWaitMs);
 
     const acquired = Number(result?.[0]) === 1;
-    const nextAt = Number(result?.[1]) || 0;
+    const scheduledAt = Number(result?.[1]) || 0;
     const retryAfterMs = Math.max(0, Number(result?.[2]) || 0);
-    return { acquired, count: acquired ? 1 : 0, nextAt, retryAfterMs };
+    const nowMs = Number(result?.[3]) || 0;
+    return {
+      acquired,
+      count: acquired ? 1 : 0,
+      scheduledAt,
+      nextAt: scheduledAt,
+      retryAfterMs,
+      waitMs: retryAfterMs,
+      nowMs,
+      slots: slots.map(slot => slot.name)
+    };
   } catch (error) {
     log.debug(() => `[OpenSubtitles] Distributed rate limiter unavailable, falling back to local gate: ${error.message}`);
     return null;
@@ -188,80 +372,66 @@ async function tryAcquireDistributedIntervalSlot(rateLimitKey, intervalMs, ttlMs
 }
 
 async function tryAcquireDistributedRateLimitSlot(options = {}) {
-  return tryAcquireDistributedIntervalSlot(
-    DISTRIBUTED_RATE_LIMIT_KEY,
-    RATE_LIMIT_MIN_INTERVAL_MS,
-    DISTRIBUTED_RATE_LIMIT_TTL_MS,
-    options
-  );
+  return tryReserveDistributedOpenSubtitlesSlots(buildOpenSubtitlesRateLimitSlots('api'), options);
 }
 
-async function tryAcquireDistributedLoginSendSlot(options = {}) {
-  return tryAcquireDistributedIntervalSlot(
-    DISTRIBUTED_LOGIN_SEND_RATE_LIMIT_KEY,
-    DISTRIBUTED_LOGIN_COOLDOWN_MS,
-    DISTRIBUTED_LOGIN_SEND_RATE_LIMIT_TTL_MS,
-    options
-  );
+async function tryAcquireDistributedLoginRateLimitSlot(options = {}) {
+  return tryReserveDistributedOpenSubtitlesSlots(buildOpenSubtitlesRateLimitSlots('login'), options);
 }
 
-async function applyDistributedRateLimitCooldown(waitMs, reason = 'upstream rate limit') {
-  const cooldownMs = clampRateLimitDelay(waitMs);
-  applyLocalRateLimitCooldown(cooldownMs);
+async function applyDistributedRateLimitDelay(waitMs, reason = 'upstream rate limit', options = {}) {
+  const delayMs = getRateLimitDelayMs(waitMs, options.fallbackMs);
+  applyLocalRateLimitDelay(delayMs, options);
 
   try {
-    const adapter = await require('../utils/sharedCache').getStorageAdapter();
+    const adapter = options.adapter || await require('../utils/sharedCache').getStorageAdapter();
     const { StorageAdapter } = require('../storage');
 
     if (!adapter?.client || typeof adapter._getKey !== 'function') {
       return false;
     }
 
-    const fullKey = adapter._getKey(`ratelimit:${DISTRIBUTED_RATE_LIMIT_KEY}`, StorageAdapter.CACHE_TYPES.SESSION);
+    if (adapter.client.status && adapter.client.status !== 'ready') {
+      return false;
+    }
+
+    const slots = buildOpenSubtitlesRateLimitSlots(options.includeLogin ? 'login' : 'api');
+    const keys = slots.map(slot => adapter._getKey(`ratelimit:${slot.key}`, StorageAdapter.CACHE_TYPES.SESSION));
+    const ttlMs = Math.max(...slots.map(slot => slot.ttlMs), delayMs + 1000);
     const result = await adapter.client.eval(`
       local timeParts = redis.call('time')
       local nowMs = (tonumber(timeParts[1]) * 1000) + math.floor(tonumber(timeParts[2]) / 1000)
-      local cooldownMs = tonumber(ARGV[1])
+      local delayMs = tonumber(ARGV[1])
       local ttlMs = tonumber(ARGV[2])
-      local targetNextAt = nowMs + cooldownMs
-      local currentNextAt = tonumber(redis.call('get', KEYS[1]) or '0')
+      local targetNextAt = nowMs + delayMs
+      local extended = 0
+      local effectiveNextAt = targetNextAt
 
-      if currentNextAt < targetNextAt then
-        redis.call('psetex', KEYS[1], ttlMs, targetNextAt)
-        return {1, targetNextAt}
+      for i = 1, #KEYS do
+        local currentNextAt = tonumber(redis.call('get', KEYS[i]) or '0')
+        if currentNextAt < targetNextAt then
+          redis.call('psetex', KEYS[i], ttlMs, targetNextAt)
+          extended = 1
+        else
+          effectiveNextAt = math.max(effectiveNextAt, currentNextAt)
+        end
       end
 
-      return {0, currentNextAt}
-    `, 1, fullKey, cooldownMs, Math.max(DISTRIBUTED_RATE_LIMIT_TTL_MS, cooldownMs + 1000));
+      return {extended, effectiveNextAt}
+    `, keys.length, ...keys, delayMs, ttlMs);
 
     const extended = Number(result?.[0]) === 1;
     const nextAt = Number(result?.[1]) || 0;
-    log.debug(() => `[OpenSubtitles] Applied API cooldown from ${reason}: ${cooldownMs}ms${extended ? '' : ` (existing cooldown until ${nextAt})`}`);
+    log.warn(() => `[OpenSubtitles] Advanced API limiter after ${reason}: ${delayMs}ms${extended ? '' : ` (existing reservation until ${nextAt})`}`);
     return true;
   } catch (error) {
-    log.debug(() => `[OpenSubtitles] Failed to apply distributed API cooldown: ${error.message}`);
+    log.warn(() => `[OpenSubtitles] Failed to advance distributed API limiter after ${reason}: ${error.message}`);
     return false;
   }
 }
 
-async function acquireLoginApiToken() {
-  while (true) {
-    await acquireToken();
-
-    const loginSlot = await tryAcquireDistributedLoginSendSlot();
-    if (!loginSlot) {
-      return;
-    }
-
-    if (loginSlot.acquired) {
-      return;
-    }
-
-    const jitter = Math.floor(Math.random() * DISTRIBUTED_RATE_LIMIT_WAIT_JITTER_MS);
-    const waitMs = Math.max(25, loginSlot.retryAfterMs + jitter);
-    log.debug(() => `[OpenSubtitles] Distributed login send rate limit: waiting ${waitMs}ms`);
-    await sleep(waitMs);
-  }
+async function acquireLoginApiToken(options = {}) {
+  return acquireOpenSubtitlesRateLimitSlot('login', { ...options, context: options.context || 'login' });
 }
 
 /**
@@ -270,28 +440,39 @@ async function acquireLoginApiToken() {
  * unavailable, fall back to a conservative process-local 1 req/sec gate.
  * @returns {Promise<void>}
  */
-async function acquireToken() {
-  let distributedSlot = await tryAcquireDistributedRateLimitSlot();
-  if (!distributedSlot) {
+async function acquireToken(options = {}) {
+  return acquireOpenSubtitlesRateLimitSlot('api', options);
+}
+
+async function acquireOpenSubtitlesRateLimitSlot(kind, options = {}) {
+  const deadlineAt = options.deadlineAt || resolveRateLimitDeadline(options);
+  const context = options.context || 'api gate';
+  const slots = buildOpenSubtitlesRateLimitSlots(kind);
+  const budgetMs = getRateLimitQueueBudgetMs(deadlineAt);
+  const maxWaitMs = budgetMs === Infinity ? -1 : Math.max(0, Math.floor(budgetMs));
+  let reservation = await tryReserveDistributedOpenSubtitlesSlots(slots, { ...options, maxWaitMs });
+
+  if (!reservation) {
     const now = Date.now();
     if (now - _lastDistributedLimiterWarningAt > 30000) {
       _lastDistributedLimiterWarningAt = now;
-      log.warn(() => `[OpenSubtitles] Distributed API limiter unavailable; using conservative local fallback (${LOCAL_FALLBACK_MIN_INTERVAL_MS}ms interval)`);
+      log.warn(() => `[OpenSubtitles] Distributed API limiter unavailable; using conservative local fallback (api=${LOCAL_FALLBACK_MIN_INTERVAL_MS}ms, login=${LOCAL_FALLBACK_LOGIN_MIN_INTERVAL_MS}ms)`);
     }
-    await acquireLocalToken();
-    return;
+    reservation = await reserveLocalSlots(slots, { deadlineAt, context });
   }
 
-  while (!distributedSlot.acquired) {
-    const jitter = Math.floor(Math.random() * DISTRIBUTED_RATE_LIMIT_WAIT_JITTER_MS);
-    const waitMs = Math.max(25, distributedSlot.retryAfterMs + jitter);
-    log.debug(() => `[OpenSubtitles] Distributed API rate limit: waiting ${waitMs}ms`);
+  if (!reservation.acquired) {
+    throw createOpenSubtitlesRateLimitError(
+      `OpenSubtitles API queue wait would exceed request budget for ${context}; skipping upstream call`,
+      reservation.retryAfterMs
+    );
+  }
+
+  const waitMs = Math.max(0, Number(reservation.retryAfterMs) || 0);
+  assertRateLimitWaitAllowed(waitMs, deadlineAt, context, 'queue wait');
+  if (waitMs > 0) {
+    log.debug(() => `[OpenSubtitles] ${reservation.local ? 'Local fallback' : 'Distributed'} API gate: waiting ${waitMs}ms for ${context}`);
     await sleep(waitMs);
-    distributedSlot = await tryAcquireDistributedRateLimitSlot();
-    if (!distributedSlot) {
-      await acquireLocalToken();
-      return;
-    }
   }
 }
 
@@ -303,12 +484,14 @@ async function observeOpenSubtitlesRateLimitHeaders(response, context) {
   }
 
   const remainingSecond = Number(remainingSecondRaw);
-  if (Number.isFinite(remainingSecond) && remainingSecond <= 0) {
+  if (Number.isFinite(remainingSecond) && remainingSecond <= RATE_LIMIT_HEADER_REMAINING_FLOOR) {
     const waitMs = parseRateLimitDelayMs(
       headers,
       fallbackDelayFromLimitHeaders(headers, RATE_LIMIT_MIN_INTERVAL_MS)
     );
-    await applyDistributedRateLimitCooldown(waitMs, `${context} response headers`);
+    await applyDistributedRateLimitDelay(waitMs, `${context} response headers`, {
+      includeLogin: context === 'login'
+    });
   }
 }
 
@@ -319,69 +502,86 @@ async function noteOpenSubtitlesRateLimit(error, context) {
   }
 
   const headers = error?.response?.headers || {};
-  const waitMs = parseRateLimitDelayMs(headers, fallbackDelayFromLimitHeaders(headers, 1500));
-  await applyDistributedRateLimitCooldown(waitMs, `${context} 429`);
-  return waitMs;
+  const waitMs = parseRateLimitDelayMs(
+    headers,
+    fallbackDelayFromLimitHeaders(headers, RATE_LIMIT_RETRY_AFTER_FALLBACK_MS),
+    RATE_LIMIT_RETRY_AFTER_MAX_MS
+  );
+  const effectiveWaitMs = getRateLimitDelayMs(waitMs);
+  await applyDistributedRateLimitDelay(effectiveWaitMs, `${context} upstream 429`, {
+    includeLogin: context === 'login'
+  });
+  log.warn(() => `[OpenSubtitles] Upstream 429 from ${context} despite preflight limiter; advanced next reservation by ${effectiveWaitMs}ms`);
+  return effectiveWaitMs;
 }
 
-async function requestOpenSubtitlesApi(requestFn, context) {
+async function requestOpenSubtitlesApi(requestFn, context, options = {}) {
+  const deadlineAt = resolveRateLimitDeadline(options);
   if (context === 'login') {
-    await acquireLoginApiToken();
+    await acquireLoginApiToken({ ...options, deadlineAt, context });
   } else {
-    await acquireToken();
+    await acquireToken({ ...options, deadlineAt, context });
   }
   try {
     const response = await requestFn();
     await observeOpenSubtitlesRateLimitHeaders(response, context);
     return response;
   } catch (error) {
-    await noteOpenSubtitlesRateLimit(error, context);
+    const waitMs = await noteOpenSubtitlesRateLimit(error, context);
+    if (waitMs !== null) {
+      error.openSubtitlesRateLimit = true;
+      error.retryAfterMs = waitMs;
+    }
     throw error;
   }
 }
 
+async function keepAliveOpenSubtitlesAuthApi(options = {}) {
+  const timeoutMs = Number(options.timeoutMs || options.timeout || 10000);
+  const apiKey = sanitizeApiKeyForHeader(getOpenSubtitlesApiKey());
+  const headers = {
+    'User-Agent': USER_AGENT,
+    'Accept': '*/*'
+  };
+
+  if (apiKey) {
+    headers['Api-Key'] = apiKey;
+  }
+
+  return requestOpenSubtitlesApi(() => axios.get(`${OPENSUBTITLES_API_URL}/infos/formats`, {
+    headers,
+    httpAgent,
+    httpsAgent,
+    lookup: dnsLookup,
+    timeout: timeoutMs,
+    maxRedirects: 0
+  }), 'keep-alive', {
+    timeoutMs,
+    maxQueueWaitMs: 0
+  });
+}
+
 function resetRateLimiterState() {
-  _localNextAllowedAt = 0;
+  _localApiNextAllowedAt = 0;
+  _localLoginNextAllowedAt = 0;
   _localRateLimitQueue = Promise.resolve();
   _lastDistributedLimiterWarningAt = 0;
 }
 // ─── End rate limiter ─────────────────────────────────────────────────────────
 
-// ─── Provider-level search result cache ───────────────────────────────────────
-// Shared across ALL users within a pod. Safe because OpenSubtitles returns
-// identical search results regardless of which user's token is used — the token
-// only affects download quotas, not search results.
-// Cache key = exact API query params (imdb_id, languages, season, episode, HI).
-// IMPORTANT: results are deep-cloned on retrieval because downstream code
-// (episode filtering, season pack detection) mutates the subtitle objects.
-const OS_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const OS_SEARCH_CACHE_MAX = 2000;
-const osSearchCache = new LRUCache({
-  max: OS_SEARCH_CACHE_MAX,
-  ttl: OS_SEARCH_CACHE_TTL_MS,
-  updateAgeOnGet: true, // popular content stays cached longer
-});
+function buildOpenSubtitlesQueryString(queryParams = {}) {
+  const searchParams = new URLSearchParams();
 
-/**
- * Build a deterministic cache key from the exact query params sent to the
- * OpenSubtitles API.  Languages are sorted so that the same set in any order
- * produces the same key.
- * @param {Object} queryParams - The query params object sent to /subtitles
- * @returns {string}
- */
-function buildSearchCacheKey(queryParams) {
-  const langs = (queryParams.languages || '').split(',').sort().join(',');
-  const parts = [
-    'os_search',
-    queryParams.imdb_id || '',
-    langs,
-    queryParams.season_number || '',
-    queryParams.episode_number || '',
-    queryParams.hearing_impaired || ''
-  ];
-  return parts.join(':');
+  for (const key of Object.keys(queryParams).sort()) {
+    const value = queryParams[key];
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    searchParams.append(key, String(value).trim().toLowerCase());
+  }
+
+  return searchParams.toString();
 }
-// ─── End search cache ─────────────────────────────────────────────────────────
 
 
 /**
@@ -738,134 +938,19 @@ class OpenSubtitlesService {
 
       // Use provided timeout or fall back to client default
       const requestConfig = timeout ? { timeout } : {};
+      const loginDeadlineAt = Date.now() + Math.max(
+        0,
+        (Number(timeout) || this.client.defaults.timeout || 12000) - RATE_LIMIT_REQUEST_RESERVE_MS
+      );
 
-      // STRICT GLOBAL THROTTLE for /login (1 req/sec)
-      // Serialize this request into the global queue
-      let response;
-      const performLoginTask = async () => {
-        // 1. LOCAL THROTTLE: Ensure minimum interval since last login call IN THIS PROCESS
-        // This prevents bursts from concurrent requests within the same Node process
-        const now = Date.now();
-        const timeSinceLast = now - _globalLastLoginTime;
-        if (timeSinceLast < LOGIN_MIN_INTERVAL_MS) {
-          const waitMs = LOGIN_MIN_INTERVAL_MS - timeSinceLast;
-          log.debug(() => `[OpenSubtitles] Local rate limit: waiting ${waitMs}ms before login attempt`);
-          await new Promise(r => setTimeout(r, waitMs));
-        }
-
-        // 2. DISTRIBUTED THROTTLE: Ensure minimum interval across ALL pods
-        // Strategy: Use a Redis lock with TTL as a "cooldown marker"
-        // - Try to acquire lock (SET NX) with owner identification
-        // - If locked, wait for the remaining TTL + jitter, then retry
-        // - Use absolute timeout to prevent infinite waiting
-        const LOCK_KEY = 'os_login_cooldown';
-        const lockStartTime = Date.now();
-
-        // Lazy-load sharedCache to avoid circular dependencies
-        const { tryAcquireLock, refreshLock, getLockTTL } = require('../utils/sharedCache');
-
-        // First attempt to acquire lock
-        let lockResult = await tryAcquireLock(LOCK_KEY, DISTRIBUTED_LOGIN_COOLDOWN_MS);
-        let acquired = lockResult.acquired;
-        let ownerId = lockResult.ownerId;
-        let waitCycles = 0;
-
-        while (!acquired && waitCycles < MAX_LOCK_WAIT_CYCLES) {
-          // Check absolute timeout
-          if (Date.now() - lockStartTime > TOTAL_LOCK_TIMEOUT_MS) {
-            log.error(() => `[OpenSubtitles] Lock acquisition timed out after ${TOTAL_LOCK_TIMEOUT_MS}ms`);
-            throw new Error('OpenSubtitles login queue timeout: too many concurrent requests. Please try again.');
-          }
-
-          // Get remaining TTL on the lock
-          const remainingTTL = await getLockTTL(LOCK_KEY);
-
-          // If getLockTTL returns -1, Redis is unavailable mid-flow
-          // Fall back to local-only rate limiting (already handled above)
-          if (remainingTTL === -1) {
-            log.warn(() => '[OpenSubtitles] Redis unavailable for distributed lock, proceeding with local rate limiting only');
-            acquired = true;
-            ownerId = null; // No owner ID since we're not using Redis
-            break;
-          }
-
-          if (remainingTTL > 0) {
-            // Add jitter (50-150ms) to prevent thundering herd when multiple pods wake simultaneously
-            const jitter = 50 + Math.floor(Math.random() * 100);
-            const waitMs = remainingTTL + jitter;
-            log.debug(() => `[OpenSubtitles] Distributed rate limit: waiting ${waitMs}ms (TTL: ${remainingTTL}ms + jitter: ${jitter}ms) [cycle ${waitCycles + 1}/${MAX_LOCK_WAIT_CYCLES}]`);
-            await new Promise(r => setTimeout(r, waitMs));
-          } else {
-            // Lock expired but we couldn't acquire - small delay before retry
-            await new Promise(r => setTimeout(r, 50 + Math.floor(Math.random() * 50)));
-          }
-
-          // Retry acquiring lock
-          lockResult = await tryAcquireLock(LOCK_KEY, DISTRIBUTED_LOGIN_COOLDOWN_MS);
-          acquired = lockResult.acquired;
-          ownerId = lockResult.ownerId;
-          waitCycles++;
-        }
-
-        if (!acquired) {
-          // After max wait cycles, still can't get lock - fail gracefully
-          const totalWaitTime = Date.now() - lockStartTime;
-          log.error(() => `[OpenSubtitles] Failed to acquire login slot after ${waitCycles} cycles (${totalWaitTime}ms) - queue congestion`);
-          throw new Error('OpenSubtitles login queue congestion: too many concurrent requests across pods. Please try again in a few seconds.');
-        }
-
-        const totalWaitTime = Date.now() - lockStartTime;
-        if (waitCycles > 0) {
-          log.debug(() => `[OpenSubtitles] Acquired distributed login lock after ${waitCycles} wait cycle(s) (${totalWaitTime}ms total)`);
-        } else {
-          log.debug(() => '[OpenSubtitles] Acquired distributed login lock immediately');
-        }
-
-        // Update local timestamp BEFORE the request to prevent same-process races
-        _globalLastLoginTime = Date.now();
-
-        try {
-          // Perform the actual POST
-          log.debug(() => '[OpenSubtitles] Executing login request...');
-          const res = await requestOpenSubtitlesApi(() => this.client.post('/login', {
-            username: username,
-            password: password
-          }, requestConfig), 'login');
-
-          // SUCCESS: Refresh the distributed cooldown lock (only if we own it)
-          // This ensures the full cooldown starts AFTER the request completes
-          if (ownerId) {
-            try {
-              const refreshed = await refreshLock(LOCK_KEY, DISTRIBUTED_LOGIN_COOLDOWN_MS, ownerId);
-              if (refreshed) {
-                log.debug(() => `[OpenSubtitles] Refreshed cooldown lock for ${DISTRIBUTED_LOGIN_COOLDOWN_MS}ms`);
-              } else {
-                // Lock was lost/stolen during our request - another pod took over
-                // This is fine, the other pod's cooldown will protect the rate limit
-                log.debug(() => '[OpenSubtitles] Lock was taken by another pod during request (acceptable)');
-              }
-            } catch (refreshErr) {
-              // Non-fatal: worst case another pod fires slightly early
-              log.debug(() => `[OpenSubtitles] Failed to refresh cooldown lock: ${refreshErr.message}`);
-            }
-          }
-
-          return res;
-        } catch (postErr) {
-          // Request failed but was still sent - the cooldown lock remains
-          // (it will auto-expire after DISTRIBUTED_LOGIN_COOLDOWN_MS)
-          throw postErr;
-        }
-      };
-
-      // Append to global queue and wait for result
-      const myTaskPromise = _globalLoginQueue.then(() => performLoginTask());
-
-      // Update queue head to catch errors so the chain continues for the next person
-      _globalLoginQueue = myTaskPromise.catch(() => { });
-
-      // Await our specific result/error
-      response = await myTaskPromise;
+      log.debug(() => '[OpenSubtitles] Executing login request through shared API/login gates...');
+      const response = await requestOpenSubtitlesApi(() => this.client.post('/login', {
+        username: username,
+        password: password
+      }, requestConfig), 'login', {
+        deadlineAt: loginDeadlineAt,
+        timeoutMs: timeout || this.client.defaults.timeout
+      });
 
       if (!response.data?.token) {
         throw new Error('No token received from authentication');
@@ -911,10 +996,18 @@ class OpenSubtitlesService {
       const looksLikeRateLimit = errMsg.includes('throttle') || errMsg.includes('rate limit') || errMsg.includes('too many') || errMsg.includes('cannot consume');
       if (parsed.statusCode === 403 && looksLikeRateLimit) {
         log.warn(() => `[OpenSubtitles] 403 response looks like rate limiting, not auth failure: "${errMsg}"`);
+        const retryAfterMs = parseRateLimitDelayMs(
+          error.response?.headers || {},
+          LOGIN_MIN_INTERVAL_MS,
+          RATE_LIMIT_RETRY_AFTER_MAX_MS
+        );
+        await applyDistributedRateLimitDelay(retryAfterMs, 'login 403 rate-limit-like response', { includeLogin: true });
         const e = new Error('OpenSubtitles API key temporarily blocked due to rate limiting');
         e.statusCode = 429;
         e.type = 'rate_limit';
         e.isRetryable = true;
+        e.openSubtitlesRateLimit = true;
+        e.retryAfterMs = retryAfterMs;
         throw e;
       }
 
@@ -1131,8 +1224,9 @@ class OpenSubtitlesService {
         return [];
       }
 
-      // Convert imdb_id to numeric format (remove 'tt' prefix)
-      const imdbId = imdb_id.replace('tt', '');
+      // Convert imdb_id to OpenSubtitles' canonical numeric format:
+      // no "tt" prefix and no leading zeroes, otherwise the API may redirect.
+      const imdbId = imdb_id.replace(/^tt/i, '').replace(/^0+/, '') || '0';
 
       // Convert ISO-639-2 (3-letter) codes to ISO-639-1 (2-letter) codes for OpenSubtitles API
       // IMPORTANT: OpenSubtitles API is strict about which codes it accepts.
@@ -1237,25 +1331,21 @@ class OpenSubtitlesService {
         log.debug(() => '[OpenSubtitles] Using basic API access');
       }
 
+      const queryString = buildOpenSubtitlesQueryString(queryParams);
+      const searchPath = queryString ? `/subtitles?${queryString}` : '/subtitles';
+
       // Use providerTimeout from config if provided, otherwise use client default
-      const requestConfig = { params: queryParams };
+      const requestConfig = {};
       if (providerTimeout) requestConfig.timeout = providerTimeout;
 
-      // ── Provider-level shared cache: check before hitting the API ──
-      const searchCacheKey = buildSearchCacheKey(queryParams);
-      const cachedResults = osSearchCache.get(searchCacheKey);
-      if (cachedResults) {
-        log.debug(() => `[OpenSubtitles] Search cache HIT: ${searchCacheKey} (${cachedResults.length} subs)`);
-        // Deep-clone: downstream code mutates objects (season pack fileId, etc.)
-        let subtitles = cachedResults.map(s => ({ ...s }));
-        // Jump to episode filtering (skip API call entirely)
-        return this._postProcessSearchResults(subtitles, type, season, episode, convertedLanguages);
-      }
-
-      // Rate-limit + 429 retry: every OpenSubtitles API call goes through the shared gate
+      // Rate-limit gate: every OpenSubtitles REST API call goes through the shared gate.
       let response;
       try {
-        response = await requestOpenSubtitlesApi(() => this.client.get('/subtitles', requestConfig), 'search');
+        response = await requestOpenSubtitlesApi(
+          () => this.client.get(searchPath, requestConfig),
+          'search',
+          { timeoutMs: providerTimeout || this.client.defaults.timeout }
+        );
       } catch (searchErr) {
         const status = searchErr?.response?.status;
         const errMsg = String(searchErr?.response?.data?.message || searchErr?.message || '').toLowerCase();
@@ -1270,27 +1360,33 @@ class OpenSubtitlesService {
           this.token = null;
           this.tokenExpiry = null;
           this.baseUrl = null;
+          this.client.defaults.baseURL = OPENSUBTITLES_API_URL;
+          this.downloadClient.defaults.baseURL = OPENSUBTITLES_API_URL;
 
           // 2. Login again (implicitly handles token refresh and rate limiting)
           // Note: login() will check cache first, but we just cleared it, so it will force a new login
-          await this.login(providerTimeout);
+          const freshToken = await this.login(providerTimeout);
+          if (!freshToken) {
+            log.warn(() => '[OpenSubtitles] Token refresh unavailable during search retry; skipping OpenSubtitles for this request');
+            return [];
+          }
 
           // 3. Retry search with new token through the same API gate
           try {
-            response = await requestOpenSubtitlesApi(() => this.client.get('/subtitles', requestConfig), 'search-retry-after-login');
+            response = await requestOpenSubtitlesApi(
+              () => this.client.get(searchPath, requestConfig),
+              'search-retry-after-login',
+              { timeoutMs: providerTimeout || this.client.defaults.timeout }
+            );
           } catch (retryErr) {
             // If it fails again, throw the original error (or the new one) to be handled by standard error handler
             throw retryErr;
           }
         }
         else if (status === 429) {
-          // Parse retry-after header or fall back to 1.5s
-          const headers = searchErr.response?.headers || {};
-          const waitMs = parseRateLimitDelayMs(headers, fallbackDelayFromLimitHeaders(headers, 1500));
-          log.warn(() => `[OpenSubtitles] Search 429 rate limited, retrying in ${waitMs}ms`);
-          await new Promise(r => setTimeout(r, waitMs));
-
-          response = await requestOpenSubtitlesApi(() => this.client.get('/subtitles', requestConfig), 'search-retry-after-429');
+          // Do not retry in-band; requestOpenSubtitlesApi already recorded the
+          // upstream signal and the next call will reserve a later send time.
+          throw searchErr;
         } else {
           throw searchErr;
         }
@@ -1337,13 +1433,13 @@ class OpenSubtitlesService {
         };
       });
 
-      // Store raw mapped results in shared cache (before episode filtering mutates them)
-      osSearchCache.set(searchCacheKey, subtitles.map(s => ({ ...s })));
-      log.debug(() => `[OpenSubtitles] Search cache STORE: ${searchCacheKey} (${subtitles.length} subs)`);
-
       return this._postProcessSearchResults(subtitles, type, season, episode, convertedLanguages);
 
     } catch (error) {
+      if (isOpenSubtitlesRateLimitError(error)) {
+        logOpenSubtitlesRateLimitFailure('Search', error);
+        return [];
+      }
       return handleSearchError(error, 'OpenSubtitles');
     }
   }
@@ -1351,8 +1447,7 @@ class OpenSubtitlesService {
   /**
    * Post-process raw mapped search results: episode filtering, season pack
    * detection, and per-language limiting.
-   * Extracted so both the live API path and the cache-hit path share the same
-   * logic without duplication.
+   * Extracted to keep live API mapping separate from filtering/limiting.
    * @param {Array} subtitles - Raw mapped subtitle objects
    * @param {string} type - Content type (movie, episode, anime-episode)
    * @param {number} season - Season number
@@ -1485,14 +1580,17 @@ class OpenSubtitlesService {
       }
 
       if (await this.isTokenExpired()) {
-        const loginResult = await this.login();
+        const loginResult = await this.login(timeout);
         if (!loginResult) {
           // Check if credentials are now cached as failed
           if (hasCachedAuthFailure(this.credentialsCacheKey)) {
             throw new Error('OpenSubtitles authentication failed: invalid username/password');
           }
           // Rate limit, queue congestion, or other transient issue
-          throw new Error('OpenSubtitles temporarily unavailable. Try again later.');
+          throw createOpenSubtitlesRateLimitError(
+            'OpenSubtitles temporarily unavailable because the API limiter is busy',
+            RATE_LIMIT_RETRY_AFTER_FALLBACK_MS
+          );
         }
       }
 
@@ -1516,7 +1614,7 @@ class OpenSubtitlesService {
           return this.client.post('/download', {
             file_id: parseInt(baseFileId)
           });
-        }, 'download-link');
+        }, 'download-link', { timeoutMs: timeout });
       } catch (downloadErr) {
         const status = downloadErr?.response?.status;
         const errMsg = String(downloadErr?.response?.data?.message || downloadErr?.message || '').toLowerCase();
@@ -1530,9 +1628,18 @@ class OpenSubtitlesService {
           this.token = null;
           this.tokenExpiry = null;
           this.baseUrl = null;
+          this.client.defaults.baseURL = OPENSUBTITLES_API_URL;
+          this.downloadClient.defaults.baseURL = OPENSUBTITLES_API_URL;
 
           // 2. Login again (implicitly handles token refresh and rate limiting)
-          await this.login(timeout);
+          const freshToken = await this.login(timeout);
+          if (!freshToken) {
+            const retryUnavailable = createOpenSubtitlesRateLimitError(
+              'OpenSubtitles token refresh unavailable during download retry',
+              RATE_LIMIT_RETRY_AFTER_FALLBACK_MS
+            );
+            throw retryUnavailable;
+          }
 
           // 3. Retry download with new token through the same API gate
           downloadResponse = await requestOpenSubtitlesApi(() => {
@@ -1540,7 +1647,7 @@ class OpenSubtitlesService {
             return this.client.post('/download', {
               file_id: parseInt(baseFileId)
             });
-          }, 'download-link-retry-after-login');
+          }, 'download-link-retry-after-login', { timeoutMs: timeout });
         }
         // RETRY LOGIC: Handle 406 quota exceeded when user HAS credentials
         // This catches the race condition where the token expired just before the request,
@@ -1555,6 +1662,8 @@ class OpenSubtitlesService {
           this.token = null;
           this.tokenExpiry = null;
           this.baseUrl = null;
+          this.client.defaults.baseURL = OPENSUBTITLES_API_URL;
+          this.downloadClient.defaults.baseURL = OPENSUBTITLES_API_URL;
 
           // 2. Force fresh login
           const freshToken = await this.login(timeout);
@@ -1568,7 +1677,7 @@ class OpenSubtitlesService {
                 return this.client.post('/download', {
                   file_id: parseInt(baseFileId)
                 });
-              }, 'download-link-retry-after-406');
+              }, 'download-link-retry-after-406', { timeoutMs: timeout });
             } catch (retryErr) {
               // If retry also fails with 406, this is a genuine quota limit — don't loop
               log.warn(() => `[OpenSubtitles] Retry after 406 re-login also failed: ${retryErr?.response?.status || retryErr.message}`);
@@ -1868,8 +1977,17 @@ module.exports = OpenSubtitlesService;
 module.exports.OpenSubtitlesService = OpenSubtitlesService;
 module.exports.getCachedToken = getCachedToken;
 module.exports.getCredentialsCacheKey = getCredentialsCacheKey;
+module.exports.keepAliveOpenSubtitlesAuthApi = keepAliveOpenSubtitlesAuthApi;
 module.exports.__testing = {
   acquireToken,
+  applyDistributedRateLimitDelay,
+  buildOpenSubtitlesQueryString,
+  createOpenSubtitlesRateLimitError,
+  keepAliveOpenSubtitlesAuthApi,
+  isOpenSubtitlesRateLimitError,
+  requestOpenSubtitlesApi,
+  resolveRateLimitDeadline,
+  tryAcquireDistributedLoginRateLimitSlot,
   tryAcquireDistributedRateLimitSlot,
   resetRateLimiterState
 };

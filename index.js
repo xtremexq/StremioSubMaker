@@ -2089,6 +2089,7 @@ app.use((req, res, next) => {
         '/api/languages/translation',
         '/api/test-opensubtitles',
         '/api/gemini-models',
+        '/api/models',
         // Session management endpoints (needed for config page to save/update/retrieve configs)
         '/api/get-session',
         '/api/create-session',
@@ -2312,20 +2313,24 @@ app.use((req, res, next) => {
     const configUiAssets = [
         '/css/configure.css',
         '/css/combobox.css',
+        '/css/quick-setup.css',
         '/js/init.js',
         '/js/combobox.js',
         '/js/combobox-init.js',
+        '/js/config-page-state.js',
         '/js/config-loader.js',
         '/js/ui-widgets.js',
         '/js/theme-toggle.js',
         '/js/sw-register.js',
+        '/js/quick-setup.js',
         '/js/subtitle-menu.js',
         '/sw.js'
     ];
     const configUiPartials = [
         '/partials/main.html',
         '/partials/footer.html',
-        '/partials/overlays.html'
+        '/partials/overlays.html',
+        '/partials/quick-setup.html'
     ];
     const configUiFonts = [
         '/fonts/Twemoji.ttf'
@@ -2899,6 +2904,7 @@ app.post('/api/models/:provider', async (req, res) => {
             return {
                 apiKey: providerCfg.apiKey,
                 model: providerCfg.model || '',
+                baseUrl: providerCfg.baseUrl || '',
                 params
             };
         };
@@ -3960,22 +3966,36 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
         }
         t = getTranslatorFromRequest(req, res, config);
         const providerDefaults = getDefaultProviderParameters();
-        const optionalProviders = new Set(['googletranslate']);
+        const modelOptionalProviders = new Set(['googletranslate']);
         const normalizeProviderKey = (key) => String(key || '').toLowerCase();
+        const requestedProvider = normalizeProviderKey(overrides?.provider || advancedSettings?.provider);
+        const requestedProviderModel = (typeof overrides?.providerModel === 'string') ? overrides.providerModel.trim() : '';
         const enabledProviders = await (async () => {
             const providers = [];
             const providerConfigs = config.providers || {};
             Object.entries(providerConfigs).forEach(([key, cfg]) => {
                 const normalized = normalizeProviderKey(key);
-                const optional = optionalProviders.has(normalized);
-                const hasCreds = optional ? !!cfg?.model : !!(cfg?.apiKey && cfg?.model);
-                if (cfg && cfg.enabled === true && hasCreds) {
+                if (!cfg || cfg.enabled !== true) return;
+                const hasRequestedModel = requestedProvider === normalized && !!requestedProviderModel;
+                const hasModel = modelOptionalProviders.has(normalized) || !!cfg.model || hasRequestedModel;
+                let hasCreds = false;
+                if (normalized === 'googletranslate') {
+                    hasCreds = true;
+                } else if (normalized === 'custom') {
+                    hasCreds = !!cfg.baseUrl && hasModel;
+                } else {
+                    hasCreds = !!(cfg.apiKey && hasModel);
+                }
+                if (hasCreds) {
                     providers.push(normalized);
                 }
             });
             // Check if Gemini is configured (handles both single key and rotation modes)
             const geminiKey = await selectGeminiApiKey(config);
-            if (geminiKey && getEffectiveGeminiModel(config)) {
+            const geminiModel = (requestedProvider === 'gemini' && requestedProviderModel)
+                ? requestedProviderModel
+                : getEffectiveGeminiModel(config);
+            if (geminiKey && geminiModel) {
                 providers.push('gemini');
             } else if (config.multiProviderEnabled !== true) {
                 // Legacy single-provider configs default to Gemini
@@ -3983,7 +4003,6 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
             }
             return Array.from(new Set(providers));
         })();
-        const requestedProvider = normalizeProviderKey(overrides?.provider || advancedSettings?.provider);
         let activeProvider = (config.multiProviderEnabled === true && config.mainProvider)
             ? normalizeProviderKey(config.mainProvider)
             : 'gemini';

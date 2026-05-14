@@ -39,14 +39,13 @@
     const POPULAR_LANG_CODES = [];
 
     const QUICK_SETUP_MODEL_LABEL_FALLBACKS = {
-        'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite',
+        'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
         'gemini-2.5-flash-lite': 'Gemini 2.5 Flash-Lite',
         'gemini-2.5-flash': 'Gemini 2.5 Flash',
         'gemini-3-flash-preview': 'Gemini 3.0 Flash (beta)',
         'gemini-2.5-pro': 'Gemini 2.5 Pro (beta)',
         'gemini-3-pro-preview': 'Gemini 3.0 Pro (beta)',
-        'gemini-flash-lite-latest': 'Gemini Flash Lite Latest',
-        'gemini-flash-latest': 'Gemini Flash Latest'
+        'gemini-flash-lite-latest': 'Gemini Flash Lite Latest'
     };
     const DEFAULT_WYZIE_API_KEY = '';
 
@@ -162,7 +161,7 @@
         }
         const option = getDefaultGeminiModelOption();
         const optionValue = option ? String(option.value || '').trim() : '';
-        return optionValue || 'gemini-flash-latest';
+        return optionValue || 'gemini-flash-lite-latest';
     }
 
     function getQuickSetupGeminiModelLabel() {
@@ -197,13 +196,12 @@
         switch (normalizedModel) {
             case 'gemini-2.5-flash':
             case 'gemini-3-flash-preview':
-            case 'gemini-flash-latest':
                 return { thinkingBudget: -1, temperature: 0.5 };
             case 'gemini-2.5-pro':
             case 'gemini-3-pro-preview':
                 return { thinkingBudget: 1000, temperature: 0.5 };
             case 'gemini-2.5-flash-lite':
-            case 'gemini-3.1-flash-lite-preview':
+            case 'gemini-3.1-flash-lite':
             case 'gemini-flash-lite-latest':
             default:
                 return { thinkingBudget: 0, temperature: 0.8 };
@@ -2042,7 +2040,7 @@
                             finalConfig.multiProviderEnabled = false;
                             finalConfig.secondaryProviderEnabled = false;
                             finalConfig.secondaryProvider = '';
-                            finalConfig.geminiModel = qsConfig.geminiModel || finalConfig.geminiModel || 'gemini-flash-latest';
+                            finalConfig.geminiModel = qsConfig.geminiModel || finalConfig.geminiModel || 'gemini-flash-lite-latest';
                             finalConfig.advancedSettings = { ...qsConfig.advancedSettings };
                             finalConfig.translationCache = { ...qsConfig.translationCache };
                             finalConfig.bypassCache = false;

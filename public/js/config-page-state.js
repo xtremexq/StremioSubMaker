@@ -174,22 +174,40 @@
             ? payload
             : (Array.isArray(payload?.entries)
                 ? payload.entries
-                : [payload?.entry, payload?.profile, payload].filter(candidate => candidate && typeof candidate === 'object'));
+                : (Array.isArray(payload?.profiles)
+                    ? payload.profiles
+                    : [payload?.entry, payload?.profile, payload].filter(candidate => candidate && typeof candidate === 'object')));
         const prepared = [];
+        const clonePlainObject = (value) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+            try {
+                return JSON.parse(JSON.stringify(value));
+            } catch (_) {
+                return { ...value };
+            }
+        };
         const pushPreparedEntry = (entry) => {
             const token = extractToken(entry?.token || entry);
             if (!token) return;
-            prepared.push({
+            const configSnapshot = clonePlainObject(entry?.config || entry?.configuration || entry?.snapshot?.config);
+            const session = entry?.session && typeof entry.session === 'object' ? entry.session : {};
+            const preparedEntry = {
                 token,
                 label: normalizeLabel(token, entry?.label || ''),
                 addedAt: Number(entry?.addedAt) || now,
                 lastOpenedAt: Number(entry?.lastOpenedAt) || 0,
-                lastSavedAt: Number(entry?.lastSavedAt) || Number(entry?.lastKnownUpdatedAt) || now,
-                lastKnownCreatedAt: Number(entry?.lastKnownCreatedAt) || 0,
-                lastKnownUpdatedAt: Number(entry?.lastKnownUpdatedAt) || 0,
-                lastKnownLastAccessedAt: Number(entry?.lastKnownLastAccessedAt) || 0,
-                lastKnownDisabled: entry?.lastKnownDisabled === true
-            });
+                lastSavedAt: Number(entry?.lastSavedAt) || Number(entry?.lastKnownUpdatedAt) || Number(session.updatedAt) || now,
+                lastKnownCreatedAt: Number(entry?.lastKnownCreatedAt) || Number(session.createdAt) || 0,
+                lastKnownUpdatedAt: Number(entry?.lastKnownUpdatedAt) || Number(session.updatedAt) || 0,
+                lastKnownLastAccessedAt: Number(entry?.lastKnownLastAccessedAt) || Number(session.lastAccessedAt) || 0,
+                lastKnownDisabled: entry?.lastKnownDisabled === true || session.disabled === true
+            };
+            if (configSnapshot) {
+                preparedEntry.config = configSnapshot;
+                preparedEntry.configExportedAt = Number(entry?.configExportedAt) || Number(payload?.exportedAt) || now;
+                preparedEntry.configExportSource = String(entry?.configExportSource || 'backup');
+            }
+            prepared.push(preparedEntry);
         };
 
         importedEntries.forEach(pushPreparedEntry);

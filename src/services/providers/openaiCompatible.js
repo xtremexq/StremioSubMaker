@@ -47,7 +47,7 @@ class OpenAICompatibleProvider {
   }
 
   normalizeReasoningEffort(value) {
-    const allowed = ['none', 'low', 'medium', 'high', 'xhigh'];
+    const allowed = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
     const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
     return allowed.includes(normalized) ? normalized : undefined;
   }
@@ -225,6 +225,9 @@ class OpenAICompatibleProvider {
     }
 
     const cappedMaxTokens = this.getCappedMaxOutputTokens();
+    const openAIInstructionRole = isOpenAI && this.isOpenAIReasoningModel()
+      ? 'developer'
+      : 'system';
     const body = isCfRun
       ? {
         prompt: userPrompt,
@@ -233,17 +236,15 @@ class OpenAICompatibleProvider {
       : (isOpenAI && useResponsesApi)
         ? {
           model: this.model,
-          input: [
-            { role: 'system', content: 'You are a subtitle translation engine.' },
-            { role: 'user', content: userPrompt }
-          ],
+          instructions: 'You are a subtitle translation engine.',
+          input: userPrompt,
           max_output_tokens: cappedMaxTokens,
           stream
         }
         : {
           model: this.model,
           messages: [
-            { role: 'system', content: 'You are a subtitle translation engine.' },
+            { role: openAIInstructionRole, content: 'You are a subtitle translation engine.' },
             { role: 'user', content: userPrompt }
           ],
           max_completion_tokens: isOpenAI ? cappedMaxTokens : undefined,
@@ -257,33 +258,23 @@ class OpenAICompatibleProvider {
       // Tested: both deepseek-chat and deepseek-reasoner accept json_object and reject json_schema.
       if (this.providerName === 'deepseek') {
         body.response_format = { type: 'json_object' };
-      } else {
-        body.response_format = {
-          type: 'json_schema',
-          json_schema: {
-            name: 'subtitle_entries',
-            strict: true,
-            schema: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'integer' },
-                  text: { type: 'string' }
-                },
-                required: ['id', 'text'],
-                additionalProperties: false
-              }
-            }
-          }
+      } else if (isOpenAI && useResponsesApi) {
+        body.text = {
+          format: this.buildResponsesJsonSchemaFormat()
         };
+      } else {
+        body.response_format = this.buildChatJsonSchemaResponseFormat();
       }
     }
 
     if (!isCfRun && this.providerName === 'openai') {
       const effort = this.getOpenAIReasoningEffortForRequest();
       if (effort) {
-        body.reasoning = { effort };
+        if (useResponsesApi) {
+          body.reasoning = { effort };
+        } else {
+          body.reasoning_effort = effort;
+        }
       }
     }
 
@@ -328,25 +319,129 @@ class OpenAICompatibleProvider {
     return /^gpt-5(?:[\.-]|$)/.test(model);
   }
 
+  isOpenAIReasoningModel(modelName = this.model) {
+    if (this.providerName !== 'openai') return false;
+    const model = String(modelName || '').trim().toLowerCase();
+    return /^gpt-5(?:[\.-]|$)/.test(model) || /^o\d(?:[\.-]|$)/.test(model);
+  }
+
+  isOpenAIGpt5ProModel(modelName = this.model) {
+    const model = String(modelName || '').trim().toLowerCase();
+    return /^gpt-5(?:\.\d+)?-pro(?:$|-)/.test(model);
+  }
+
+  isOpenAIBaseGpt5ProModel(modelName = this.model) {
+    const model = String(modelName || '').trim().toLowerCase();
+    return /^gpt-5-pro(?:$|-)/.test(model);
+  }
+
+  isOpenAIGpt5CodexModel(modelName = this.model) {
+    const model = String(modelName || '').trim().toLowerCase();
+    return /^gpt-5(?:\.\d+)?-codex(?:$|-)/.test(model);
+  }
+
   getOpenAIReasoningEffortForRequest() {
     const raw = this.normalizeReasoningEffort(this.reasoningEffort);
     if (!raw) return undefined;
     const model = String(this.model || '').trim().toLowerCase();
 
-    // GPT-5 pro variants do not accept low/none; keep request valid.
-    if (/^gpt-5(?:\.\d+)?-pro(?:$|-)/.test(model)) {
+    if (!this.isOpenAIReasoningModel(model)) {
+      return undefined;
+    }
+
+    // The original GPT-5 pro only accepts high reasoning.
+    if (this.isOpenAIBaseGpt5ProModel(model)) {
+      return 'high';
+    }
+
+    // GPT-5.4/5.5 pro variants accept medium/high/xhigh.
+    if (this.isOpenAIGpt5ProModel(model)) {
       if (raw === 'xhigh' || raw === 'high' || raw === 'medium') return raw;
       return 'medium';
     }
 
-    // "none" is narrowly useful and can be rejected by non-5.1 models.
-    if (raw === 'none') {
-      return /^gpt-5\.1(?:$|-)/.test(model) ? 'none' : undefined;
+    // Codex variants document low/medium/high/xhigh; avoid unsupported none/minimal.
+    if (this.isOpenAIGpt5CodexModel(model)) {
+      if (raw === 'xhigh' || raw === 'high' || raw === 'medium' || raw === 'low') return raw;
+      return undefined;
     }
 
-    // xhigh is currently pro-oriented; degrade safely for other models.
+    // GPT-5.1 supports none/low/medium/high, but not xhigh/minimal.
+    if (/^gpt-5\.1(?:$|-)/.test(model)) {
+      if (raw === 'xhigh') return 'high';
+      if (raw === 'minimal') return 'low';
+      return raw;
+    }
+
+    // GPT-5.2+ frontier variants, including GPT-5.4 mini/nano and GPT-5.5,
+    // support none/low/medium/high/xhigh. Map minimal to low for compatibility.
+    if (/^gpt-5\.(?:2|4|5)(?:[\.-]|$)/.test(model)) {
+      return raw === 'minimal' ? 'low' : raw;
+    }
+
+    // Original GPT-5-family models support minimal/low/medium/high; avoid none/xhigh.
+    if (/^gpt-5(?:$|-)/.test(model)) {
+      if (raw === 'none') return undefined;
+      if (raw === 'xhigh') return 'high';
+      return raw;
+    }
+
+    // o-series chat models commonly support low/medium/high. Degrade or omit others.
+    if (/^o\d(?:[\.-]|$)/.test(model)) {
+      if (raw === 'none') return undefined;
+      if (raw === 'minimal') return 'low';
+      if (raw === 'xhigh') return 'high';
+      return raw;
+    }
+
     if (raw === 'xhigh') return 'high';
     return raw;
+  }
+
+  buildSubtitleEntriesJsonSchema() {
+    const entrySchema = {
+      type: 'object',
+      properties: {
+        id: { type: 'integer' },
+        text: { type: 'string' }
+      },
+      required: ['id', 'text'],
+      additionalProperties: false
+    };
+
+    // OpenAI strict structured outputs require a root object, not a root array.
+    // The TranslationEngine parser already accepts this { entries: [...] } envelope.
+    return {
+      type: 'object',
+      properties: {
+        entries: {
+          type: 'array',
+          items: entrySchema
+        }
+      },
+      required: ['entries'],
+      additionalProperties: false
+    };
+  }
+
+  buildChatJsonSchemaResponseFormat() {
+    return {
+      type: 'json_schema',
+      json_schema: {
+        name: 'subtitle_entries',
+        strict: true,
+        schema: this.buildSubtitleEntriesJsonSchema()
+      }
+    };
+  }
+
+  buildResponsesJsonSchemaFormat() {
+    return {
+      type: 'json_schema',
+      name: 'subtitle_entries',
+      strict: true,
+      schema: this.buildSubtitleEntriesJsonSchema()
+    };
   }
 
   getCappedMaxOutputTokens() {
