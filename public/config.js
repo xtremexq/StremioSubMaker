@@ -959,41 +959,33 @@ Translate to {target_language}.`;
      * Model-specific default configurations
      * Each model has its own optimal settings for thinking and temperature
      */
-    const GEMINI_31_FLASH_LITE_MODEL = 'gemini-3.1-flash-lite';
-    const GEMINI_FLASH_LATEST_MODEL = 'gemini-flash-latest';
-    const DEFAULT_GEMINI_MODEL = 'gemini-flash-lite-latest';
+    const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
 
     function normalizeGeminiModelName(modelName) {
         const normalized = typeof modelName === 'string' ? modelName.trim() : '';
-        if (normalized === `${GEMINI_31_FLASH_LITE_MODEL}-preview`) {
-            return GEMINI_31_FLASH_LITE_MODEL;
+        if (!normalized) {
+            return DEFAULT_GEMINI_MODEL;
         }
-        if (normalized === GEMINI_FLASH_LATEST_MODEL) {
+        if (normalized === 'gemini-3.1-flash-lite-preview') {
+            return 'gemini-3.1-flash-lite';
+        }
+        if (['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'].includes(normalized)) {
             return DEFAULT_GEMINI_MODEL;
         }
         return normalized;
     }
 
     const MODEL_SPECIFIC_DEFAULTS = {
-
-        'gemini-2.5-flash-lite': {
+        'gemini-3.5-flash': {
+            thinkingBudget: 0,
+            temperature: 0.5
+        },
+        'gemini-3.5-flash-lite': {
             thinkingBudget: 0,
             temperature: 0.7
         },
-        'gemini-2.5-flash-lite-preview-09-2025': {
+        'gemini-3.7-flash': {
             thinkingBudget: 0,
-            temperature: 0.7
-        },
-        'gemini-2.5-flash': {
-            thinkingBudget: -1,
-            temperature: 0.5
-        },
-        'gemini-3-flash-preview': {
-            thinkingBudget: -1,
-            temperature: 0.5
-        },
-        'gemini-3-flash-preview': {
-            thinkingBudget: -1,
             temperature: 0.5
         },
         'gemini-3.1-flash-lite': {
@@ -1003,14 +995,6 @@ Translate to {target_language}.`;
         'gemini-flash-lite-latest': {
             thinkingBudget: 0,
             temperature: 0.8
-        },
-        'gemini-2.5-pro': {
-            thinkingBudget: 1000,
-            temperature: 0.5
-        },
-        'gemini-3-pro-preview': {
-            thinkingBudget: 1000,
-            temperature: 0.5
         }
     };
 

@@ -209,38 +209,50 @@ function getDefaultProviderParameters() {
 
 /**
  * Feature flag: Override deprecated/old model names with current default
- * Set to false in the future to allow users to select any model they want
- * Currently enabled to ensure all users get the latest stable model
+ * Defaults to true to ensure broken preview/alias model names from old sessions are repaired
  */
-const OVERRIDE_DEPRECATED_MODELS = true;
-const GEMINI_31_FLASH_LITE_MODEL = 'gemini-3.1-flash-lite';
-const GEMINI_FLASH_LATEST_MODEL = 'gemini-flash-latest';
-const DEFAULT_GEMINI_MODEL = 'gemini-flash-lite-latest';
-
-function normalizeGeminiModelName(modelName) {
-  const normalized = typeof modelName === 'string' ? modelName.trim() : '';
-  if (normalized === `${GEMINI_31_FLASH_LITE_MODEL}-preview`) {
-    return GEMINI_31_FLASH_LITE_MODEL;
-  }
-  if (normalized === GEMINI_FLASH_LATEST_MODEL) {
-    return DEFAULT_GEMINI_MODEL;
-  }
-  return normalized;
-}
+const OVERRIDE_DEPRECATED_MODELS = process.env.OVERRIDE_DEPRECATED_MODELS !== 'false';
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL ? process.env.GEMINI_MODEL.trim() : 'gemini-3.5-flash';
 
 /**
- * List of deprecated model names that should be replaced with the current default
- * This prevents old saved configs from using outdated or experimental models
+ * List of deprecated/invalid model names that should be replaced with the current default
+ * This prevents old saved configs from using outdated or broken model aliases
  */
 const DEPRECATED_MODEL_NAMES = [
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-2.5-pro',
+  'gemini-3-flash-preview',
+  'gemini-3-pro-preview',
   'gemini-2.0-flash-exp',
-  'gemini-2.5-flash-lite-09-2025', // Old name before preview version
-  GEMINI_FLASH_LATEST_MODEL,
   'gemini-2.5-flash-latest',
   'gemini-pro-latest',
   'gemini-2.5-pro-latest',
-  'gemini-2.5-flash-preview-09-2025' // Renamed to gemini-2.5-flash
+  'gemini-2.5-flash-preview-09-2025',
+  'gemini-2.5-flash-lite-09-2025',
+  'gemini-2.5-flash-lite-preview-09-2025'
 ];
+
+function normalizeGeminiModelName(modelName) {
+  const envModel = process.env.GEMINI_MODEL ? process.env.GEMINI_MODEL.trim() : '';
+  let normalized = typeof modelName === 'string' ? modelName.trim() : '';
+  
+  // Strip 'models/' prefix if present
+  if (normalized.startsWith('models/')) {
+    normalized = normalized.slice(7).trim();
+  }
+
+  if (!normalized) {
+    return envModel || DEFAULT_GEMINI_MODEL;
+  }
+  if (OVERRIDE_DEPRECATED_MODELS && DEPRECATED_MODEL_NAMES.includes(normalized)) {
+    return envModel || DEFAULT_GEMINI_MODEL;
+  }
+  return normalized;
+}
 
 /**
  * Parse configuration from config string or session token
@@ -1096,41 +1108,29 @@ function encodeConfig(config) {
  * Each model has its own optimal settings for thinking and temperature
  */
 const MODEL_SPECIFIC_DEFAULTS = {
-  'gemma-3-27b-it': {
-    thinkingBudget: 0,      // Gemma models don't support thinking
-    temperature: 0.7        // Balanced temperature for Gemma
+  'gemini-3.5-flash': {
+    thinkingBudget: 0,
+    temperature: 0.5
   },
-  'gemini-2.5-flash-lite': {
-    thinkingBudget: 0,      // No thinking for lite model
-    temperature: 0.8        // Higher temperature for creativity
+  'gemini-3.5-flash-lite': {
+    thinkingBudget: 0,
+    temperature: 0.7
   },
-  'gemini-2.5-flash-lite-preview-09-2025': {
-    thinkingBudget: 0,      // No thinking for lite model
-    temperature: 0.8        // Higher temperature for creativity
-  },
-  'gemini-2.5-flash': {
-    thinkingBudget: -1,     // Dynamic thinking for flash model
-    temperature: 0.5        // Lower temperature for consistency
-  },
-  'gemini-3-flash-preview': {
-    thinkingBudget: -1,     // Dynamic thinking for flash model
-    temperature: 0.5        // Lower temperature for consistency
+  'gemini-3.7-flash': {
+    thinkingBudget: 0,
+    temperature: 0.5
   },
   'gemini-3.1-flash-lite': {
-    thinkingBudget: 0,      // No thinking for lite model
-    temperature: 0.8        // Higher temperature for creativity
+    thinkingBudget: 0,
+    temperature: 0.8
   },
   'gemini-flash-lite-latest': {
-    thinkingBudget: 0,      // No thinking for lite model (latest alias)
-    temperature: 0.8        // Higher temperature for creativity
+    thinkingBudget: 0,
+    temperature: 0.8
   },
-  'gemini-2.5-pro': {
-    thinkingBudget: 1000,   // Fixed thinking budget for pro model
-    temperature: 0.5        // Lower temperature for consistency
-  },
-  'gemini-3-pro-preview': {
-    thinkingBudget: 1000,   // Fixed thinking budget for pro model
-    temperature: 0.5        // Lower temperature for consistency
+  'gemma-3-27b-it': {
+    thinkingBudget: 0,
+    temperature: 0.7
   }
 };
 
@@ -1685,6 +1685,7 @@ module.exports = {
   getDefaultProviderParameters,
   mergeProviderParameters,
   getEffectiveGeminiModel,
+  normalizeGeminiModelName,
   // Gemini key rotation
   selectGeminiApiKey,
   getMaxGeminiApiKeys,

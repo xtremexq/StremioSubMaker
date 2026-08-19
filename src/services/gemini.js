@@ -72,8 +72,14 @@ class GeminiService {
   constructor(apiKey, model = '', advancedSettings = {}) {
     this.apiKey = typeof apiKey === 'string' ? apiKey.trim() : apiKey;
     this.authFailureCacheKey = getProviderAuthFailureCacheKey('gemini', this.apiKey);
-    // Fallback to default if model not provided (config.js handles env var override)
-    this.model = model || 'gemini-flash-lite-latest';
+    // Sanitize and normalize model name (resolves deprecated/invalid models to GEMINI_MODEL/.env fallback)
+    try {
+      const { normalizeGeminiModelName } = require('../utils/config');
+      this.model = normalizeGeminiModelName(model);
+    } catch (_) {
+      let sanitized = String(model || '').trim().replace(/^models\//, '');
+      this.model = sanitized || process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+    }
     this.isGemmaModel = String(this.model).toLowerCase().includes('gemma');
     this.baseUrl = GEMINI_API_URL;
 
