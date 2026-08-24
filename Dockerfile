@@ -1,5 +1,5 @@
 # Use the current Active LTS line. Node.js 20 reached end-of-life in April 2026.
-FROM node:24-alpine
+FROM node:26-alpine
 
 # Install su-exec for privilege dropping and tzdata for IANA timezone support
 RUN apk add --no-cache su-exec tzdata
