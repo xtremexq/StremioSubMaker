@@ -20,11 +20,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - node-version: 20.20.2
-            npm-version: 10.8.2
-          - node-version: 22
+          - node-version: 22.23.4
             npm-version: 11.17.0
-          - node-version: 24
+          - node-version: 24.22.1
             npm-version: 11.17.0
 
     steps:

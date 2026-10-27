@@ -254,6 +254,11 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
     const thinkingBudgetHelper = t('fileUpload.advanced.thinking.helper', {}, '0 = disabled, -1 = dynamic (auto-adjust), or fixed token count (1-32768).');
     const thinkingLevelLabel = t('fileUpload.advanced.thinkingLevel.label', {}, 'Thinking Level');
     const thinkingLevelHelper = t('fileUpload.advanced.thinkingLevel.helper', {}, 'Controls Gemini 3.x reasoning. Minimal is the closest supported option to disabled thinking.');
+    const samplingParametersLabel = t('fileUpload.advanced.samplingParameters.label', {}, 'Send Custom Sampling Parameters');
+    const samplingParametersHelper = t('fileUpload.advanced.samplingParameters.helper', {}, "Turn off to omit Temperature, Top-P, and Top-K and use the Gemini model's defaults.");
+    const samplingParametersGemini3 = t('fileUpload.advanced.samplingParameters.gemini3', {}, 'Gemini 3.x requires model defaults, so all three sampling parameters are always omitted.');
+    const samplingParametersCustom = t('fileUpload.advanced.samplingParameters.custom', {}, 'Custom sampling parameters will be sent for this translation.');
+    const samplingParametersDefaults = t('fileUpload.advanced.samplingParameters.modelDefaults', {}, "Sampling parameters are omitted; the model's defaults will be used.");
     const temperatureLabel = t('fileUpload.advanced.temperature.label', {}, 'Temperature (Creativity)');
     const temperatureHelper = t('fileUpload.advanced.temperature.helper', {}, 'Controls randomness (0.0-2.0). Lower = deterministic, Higher = creative. Default: 0.8');
     const reasoningEffortLabel = t('fileUpload.advanced.reasoning.label', {}, 'Reasoning Effort');
@@ -1164,6 +1169,36 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             height: 18px;
             cursor: pointer;
             accent-color: var(--primary);
+        }
+
+        .sampling-parameters-toggle {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.625rem;
+            cursor: pointer;
+        }
+
+        .sampling-parameters-toggle input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-top: 0.15rem;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        .sampling-parameters-toggle input[type="checkbox"]:disabled {
+            cursor: not-allowed;
+        }
+
+        .sampling-parameters-status {
+            display: block;
+            margin-top: 0.35rem;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .sampling-parameter-disabled {
+            opacity: 0.5;
         }
 
         .language-toggle-container {
@@ -2306,7 +2341,18 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                                 </select>
                             </div>
 
-                            <div class="form-group">
+                            <div class="form-group" id="samplingParametersGroup">
+                                <label class="sampling-parameters-toggle" for="advancedSamplingParametersEnabled">
+                                    <input type="checkbox" id="advancedSamplingParametersEnabled" checked>
+                                    <span>
+                                        ${escapeHtml(samplingParametersLabel)}
+                                        <span class="label-description">${escapeHtml(samplingParametersHelper)}</span>
+                                    </span>
+                                </label>
+                                <span class="sampling-parameters-status" id="samplingParametersStatus"></span>
+                            </div>
+
+                            <div class="form-group" id="temperatureGroup">
                                 <label for="advancedTemperature">
                                     ${escapeHtml(temperatureLabel)}
                                     <span class="label-description">${escapeHtml(temperatureHelper)}</span>
@@ -2330,7 +2376,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                                 </select>
                             </div>
 
-                            <div class="form-group">
+                            <div class="form-group" id="topPGroup">
                                 <label for="advancedTopP">
                                     ${escapeHtml(topPLabel)}
                                     <span class="label-description">${escapeHtml(topPHelper)}</span>
@@ -2497,7 +2543,10 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             modelStatusFetching: ${serializeJsonForInlineScript(modelStatusFetching)},
             modelStatusLoaded: ${serializeJsonForInlineScript(modelStatusLoaded)},
             modelStatusEmpty: ${serializeJsonForInlineScript(modelStatusEmpty)},
-            modelStatusFailed: ${serializeJsonForInlineScript(modelStatusFailed)}
+            modelStatusFailed: ${serializeJsonForInlineScript(modelStatusFailed)},
+            samplingParametersGemini3: ${serializeJsonForInlineScript(samplingParametersGemini3)},
+            samplingParametersCustom: ${serializeJsonForInlineScript(samplingParametersCustom)},
+            samplingParametersDefaults: ${serializeJsonForInlineScript(samplingParametersDefaults)}
         };
 
         const tt = (key, vars, fallback) => {
@@ -2729,6 +2778,9 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
         const advancedModel = document.getElementById('advancedModel');
         const advancedThinkingBudget = document.getElementById('advancedThinkingBudget');
         const advancedThinkingLevel = document.getElementById('advancedThinkingLevel');
+        const advancedSamplingParametersEnabled = document.getElementById('advancedSamplingParametersEnabled');
+        const samplingParametersGroup = document.getElementById('samplingParametersGroup');
+        const samplingParametersStatus = document.getElementById('samplingParametersStatus');
         const advancedTemperature = document.getElementById('advancedTemperature');
         const advancedTopP = document.getElementById('advancedTopP');
         const advancedTopK = document.getElementById('advancedTopK');
@@ -2854,27 +2906,30 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             const modelId = normalizeGeminiModelId(modelName);
             const isGemini3 = isGemini3Model(modelId);
             if (isGemini3 && modelId.includes('flash-lite')) {
-                return { thinkingBudget: 0, thinkingLevel: 'minimal', temperature: 0.8 };
+                return { thinkingBudget: 0, thinkingLevel: 'minimal', temperature: 0.8, samplingParametersEnabled: false };
+            }
+            if (isGemini3 && modelId === 'gemini-3-flash-preview') {
+                return { thinkingBudget: -1, thinkingLevel: 'high', temperature: 0.5, samplingParametersEnabled: false };
             }
             if (isGemini3 && modelId.includes('flash')) {
-                return { thinkingBudget: -1, thinkingLevel: 'high', temperature: 0.5 };
+                return { thinkingBudget: -1, thinkingLevel: 'medium', temperature: 0.5, samplingParametersEnabled: false };
             }
             if (isGemini3 && modelId.includes('pro')) {
-                return { thinkingBudget: 1000, thinkingLevel: 'high', temperature: 0.5 };
+                return { thinkingBudget: 1000, thinkingLevel: 'high', temperature: 0.5, samplingParametersEnabled: false };
             }
             if (modelId.includes('gemma')) {
-                return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.7 };
+                return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.7, samplingParametersEnabled: true };
             }
             if (modelId.includes('flash-lite')) {
-                return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8 };
+                return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8, samplingParametersEnabled: true };
             }
             if (modelId.includes('flash')) {
-                return { thinkingBudget: -1, thinkingLevel: '', temperature: 0.5 };
+                return { thinkingBudget: -1, thinkingLevel: '', temperature: 0.5, samplingParametersEnabled: true };
             }
             if (modelId.includes('pro')) {
-                return { thinkingBudget: 1000, thinkingLevel: '', temperature: 0.5 };
+                return { thinkingBudget: 1000, thinkingLevel: '', temperature: 0.5, samplingParametersEnabled: true };
             }
-            return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8 };
+            return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8, samplingParametersEnabled: true };
         }
 
         function updateThinkingControls(providerKey) {
@@ -2883,6 +2938,52 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             const supportsBudget = normalized === 'gemini' || normalized === 'anthropic';
             if (thinkingBudgetGroup) thinkingBudgetGroup.style.display = supportsBudget && !useThinkingLevel ? '' : 'none';
             if (thinkingLevelGroup) thinkingLevelGroup.style.display = useThinkingLevel ? '' : 'none';
+        }
+
+        function updateSamplingControls(providerKey, requestedEnabled) {
+            const normalized = normalizeProviderKey(providerKey);
+            const isGemini = normalized === 'gemini';
+            const isGemini3 = isGemini && isGemini3Model(getSelectedGeminiModel());
+
+            if (samplingParametersGroup) {
+                samplingParametersGroup.style.display = isGemini ? '' : 'none';
+            }
+
+            if (!isGemini) {
+                [temperatureGroup, topPGroup, topKGroup].forEach(group => {
+                    if (group) group.classList.remove('sampling-parameter-disabled');
+                });
+                [advancedTemperature, advancedTopP, advancedTopK].forEach(input => {
+                    if (input) input.disabled = false;
+                });
+                return;
+            }
+
+            if (advancedSamplingParametersEnabled) {
+                if (typeof requestedEnabled === 'boolean') {
+                    advancedSamplingParametersEnabled.checked = requestedEnabled;
+                }
+                if (isGemini3) {
+                    advancedSamplingParametersEnabled.checked = false;
+                    advancedSamplingParametersEnabled.disabled = true;
+                } else {
+                    advancedSamplingParametersEnabled.disabled = false;
+                }
+            }
+
+            const enabled = !isGemini3 && advancedSamplingParametersEnabled?.checked === true;
+            [temperatureGroup, topPGroup, topKGroup].forEach(group => {
+                if (group) group.classList.toggle('sampling-parameter-disabled', !enabled);
+            });
+            [advancedTemperature, advancedTopP, advancedTopK].forEach(input => {
+                if (input) input.disabled = !enabled;
+            });
+
+            if (samplingParametersStatus) {
+                samplingParametersStatus.textContent = isGemini3
+                    ? localeStrings.samplingParametersGemini3
+                    : (enabled ? localeStrings.samplingParametersCustom : localeStrings.samplingParametersDefaults);
+            }
         }
 
         function applyGeminiModelDefaults(modelName) {
@@ -2902,6 +3003,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 advancedTemperature.value = params.temperature ?? 0.8;
             }
             updateThinkingControls('gemini');
+            updateSamplingControls('gemini', params.samplingParametersEnabled !== false);
         }
 
         function buildProviderOptions() {
@@ -2948,6 +3050,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 return {
                     thinkingBudget: baseAdvancedSettings.thinkingBudget ?? 0,
                     thinkingLevel: baseAdvancedSettings.thinkingLevel || '',
+                    samplingParametersEnabled: baseAdvancedSettings.samplingParametersEnabled !== false,
                     temperature: baseAdvancedSettings.temperature ?? 0.8,
                     topP: baseAdvancedSettings.topP ?? 0.95,
                     topK: baseAdvancedSettings.topK ?? 40,
@@ -3183,6 +3286,9 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
             if (advancedThinkingLevel && normalized === 'gemini') {
                 advancedThinkingLevel.value = params.thinkingLevel || 'disabled';
             }
+            if (advancedSamplingParametersEnabled && normalized === 'gemini') {
+                advancedSamplingParametersEnabled.checked = params.samplingParametersEnabled !== false;
+            }
             if (advancedTemperature && caps.supportsTemperature) {
                 advancedTemperature.value = params.temperature ?? 0.8;
             }
@@ -3219,6 +3325,11 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                 const cachedModels = modelCache.get(normalized) || [];
                 populateModelDropdown(normalized, cachedModels);
             }
+
+            updateSamplingControls(
+                normalized,
+                normalized === 'gemini' ? params.samplingParametersEnabled !== false : undefined
+            );
 
             setModelStatus('');
 
@@ -3389,6 +3500,12 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                     return;
                 }
                 updateThinkingControls(activeProviderKey);
+            });
+        }
+
+        if (advancedSamplingParametersEnabled) {
+            advancedSamplingParametersEnabled.addEventListener('change', () => {
+                updateSamplingControls(activeProviderKey);
             });
         }
 
@@ -3763,19 +3880,21 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
 
             const selectedModel = advancedModel && advancedModel.value ? advancedModel.value.trim() : '';
             const usesThinkingLevel = providerKey === 'gemini' && isGemini3Model(selectedModel || getConfiguredModelForProvider('gemini'));
+            const samplingParametersEnabled = providerKey !== 'gemini'
+                || (!usesThinkingLevel && advancedSamplingParametersEnabled?.checked === true);
             const thinkingBudget = caps.supportsThinking && !usesThinkingLevel
                 ? readBoundedNumber(advancedThinkingBudget, -1, 32768, (v) => parseInt(v, 10))
                 : null;
             const thinkingLevel = usesThinkingLevel && advancedThinkingLevel
                 ? String(advancedThinkingLevel.value || '').trim().toLowerCase()
                 : '';
-            const temperature = caps.supportsTemperature
+            const temperature = caps.supportsTemperature && samplingParametersEnabled
                 ? readBoundedNumber(advancedTemperature, 0, 2, (v) => parseFloat(v))
                 : null;
-            const topP = caps.supportsTopP
+            const topP = caps.supportsTopP && samplingParametersEnabled
                 ? readBoundedNumber(advancedTopP, 0, 1, (v) => parseFloat(v))
                 : null;
-            const topK = caps.supportsTopK
+            const topK = caps.supportsTopK && samplingParametersEnabled
                 ? readBoundedNumber(advancedTopK, 1, 100, (v) => parseInt(v, 10))
                 : null;
             const maxTokens = caps.supportsMaxTokens
@@ -3816,6 +3935,7 @@ function generateFileTranslationPage(videoId, configStr, config, filename = '') 
                     geminiModel: selectedModel || clientConfig.geminiModel || '',
                     thinkingBudget: Number.isFinite(thinkingBudget) ? thinkingBudget : undefined,
                     thinkingLevel: usesThinkingLevel ? thinkingLevel : undefined,
+                    samplingParametersEnabled,
                     temperature: Number.isFinite(temperature) ? temperature : undefined,
                     topP: Number.isFinite(topP) ? topP : undefined,
                     topK: Number.isFinite(topK) ? topK : undefined,

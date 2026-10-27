@@ -74,6 +74,7 @@ const providerParameterSchema = Joi.object({
   maxRetries: Joi.number().integer().min(0).max(5).optional(),
   thinkingBudget: Joi.number().min(-1).max(200000).optional(),
   thinkingLevel: Joi.string().valid('disabled', 'minimal', 'low', 'medium', 'high').optional(),
+  samplingParametersEnabled: Joi.boolean().optional(),
   // Configure persists an empty modelType for providers that do not use the
   // DeepL-specific setting. File/Toolbox clients may submit the full saved
   // parameter block, so treat that ordinary empty value as unset instead of

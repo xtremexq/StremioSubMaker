@@ -3,6 +3,7 @@ const DEFAULT_API_KEYS = require('../config/defaultApiKeys');
 const { getSessionManager } = require('./sessionManager');
 const { StorageUnavailableError } = require('../storage/errors');
 const log = require('./logger');
+const { resolveGeminiSamplingParametersEnabled } = require('./geminiSampling');
 const { getTranslator } = require('./i18n');
 const { redactApiKey } = require('./security');
 
@@ -208,7 +209,11 @@ function logGeminiConfigThrottled(mergedConfig) {
     ? `${effectiveModel} (base=${baseModel || 'default'}, override=${overrideModel})`
     : effectiveModel;
   const suffix = suppressed > 0 ? ` (suppressed ${suppressed} duplicate logs)` : '';
-  log.debug(() => `[Config] Gemini API config: model=${modelLabel}, temperature=${mergedConfig.advancedSettings.temperature}, topK=${mergedConfig.advancedSettings.topK}, topP=${mergedConfig.advancedSettings.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${mergedConfig.advancedSettings.maxOutputTokens}, timeout=${mergedConfig.advancedSettings.translationTimeout}s, maxRetries=${mergedConfig.advancedSettings.maxRetries}, sendTimestampsToAI=${mergedConfig.advancedSettings.sendTimestampsToAI ? 'enabled' : 'disabled'}${suffix}`);
+  const samplingEnabled = resolveGeminiSamplingParametersEnabled(
+    effectiveModel,
+    mergedConfig.advancedSettings.samplingParametersEnabled
+  );
+  log.debug(() => `[Config] Gemini API config: model=${modelLabel}, samplingParameters=${samplingEnabled ? 'custom' : 'omitted'}, temperature=${mergedConfig.advancedSettings.temperature}, topK=${mergedConfig.advancedSettings.topK}, topP=${mergedConfig.advancedSettings.topP}, thinkingBudget=${thinkingDisplay}, maxOutputTokens=${mergedConfig.advancedSettings.maxOutputTokens}, timeout=${mergedConfig.advancedSettings.translationTimeout}s, maxRetries=${mergedConfig.advancedSettings.maxRetries}, sendTimestampsToAI=${mergedConfig.advancedSettings.sendTimestampsToAI ? 'enabled' : 'disabled'}${suffix}`);
 }
 
 function getDefaultProviderParameters() {
@@ -225,19 +230,26 @@ const GEMINI_31_FLASH_LITE_MODEL = 'gemini-3.1-flash-lite';
 const GEMINI_FLASH_LATEST_MODEL = 'gemini-flash-latest';
 const DEFAULT_GEMINI_MODEL = 'gemini-flash-lite-latest';
 const DEPRECATED_GEMINI_MODEL_REPLACEMENTS = Object.freeze({
-  // Gemini 2.5 is no longer provisioned for every new project and is scheduled
-  // for shutdown. Keep saved configurations working by moving them to Google's
-  // recommended current model family before any runtime request is constructed.
-  'gemini-2.5-flash-lite': GEMINI_31_FLASH_LITE_MODEL,
+  // Preview and shut-down model IDs are kept as migration aliases so existing
+  // sessions continue to work without sending requests to retired endpoints.
   'gemini-2.5-flash-lite-preview-09-2025': GEMINI_31_FLASH_LITE_MODEL,
+  'gemini-2.5-flash-lite-preview-09-25': GEMINI_31_FLASH_LITE_MODEL,
   'gemini-2.5-flash-lite-09-2025': GEMINI_31_FLASH_LITE_MODEL,
-  'gemini-2.5-flash': 'gemini-3.6-flash',
+  'gemini-2.5-flash-preview-05-20': 'gemini-3.6-flash',
   'gemini-2.5-flash-preview-09-2025': 'gemini-3.6-flash',
-  'gemini-2.5-flash-latest': 'gemini-3.6-flash',
-  'gemini-2.5-pro': 'gemini-3.1-pro-preview',
+  'gemini-2.5-flash-preview-09-25': 'gemini-3.6-flash',
   'gemini-2.5-pro-preview-05-06': 'gemini-3.1-pro-preview',
-  'gemini-2.5-pro-latest': 'gemini-3.1-pro-preview',
-  'gemini-3-flash-preview': 'gemini-3.6-flash',
+  'gemini-2.5-pro-preview-03-25': 'gemini-3.1-pro-preview',
+  'gemini-2.5-pro-preview-06-05': 'gemini-3.1-pro-preview',
+  'gemini-2.0-flash': 'gemini-3.6-flash',
+  'gemini-2.0-flash-001': 'gemini-3.6-flash',
+  'gemini-2.0-flash-lite': GEMINI_31_FLASH_LITE_MODEL,
+  'gemini-2.0-flash-lite-001': GEMINI_31_FLASH_LITE_MODEL,
+  'gemini-2.0-flash-lite-preview': GEMINI_31_FLASH_LITE_MODEL,
+  'gemini-2.0-flash-lite-preview-02-05': GEMINI_31_FLASH_LITE_MODEL,
+  'gemini-3.1-flash-lite-preview': GEMINI_31_FLASH_LITE_MODEL,
+  'gemini-3.5-flash': 'gemini-3.6-flash',
+  'gemini-3-pro-preview': 'gemini-3.1-pro-preview',
   'gemini-pro-latest': 'gemini-3.1-pro-preview'
 });
 
@@ -245,9 +257,6 @@ function normalizeGeminiModelName(modelName) {
   const normalized = typeof modelName === 'string' ? modelName.trim().replace(/^models\//, '') : '';
   if (normalized === `${GEMINI_31_FLASH_LITE_MODEL}-preview`) {
     return GEMINI_31_FLASH_LITE_MODEL;
-  }
-  if (normalized === 'gemini-3-pro-preview') {
-    return DEFAULT_GEMINI_MODEL;
   }
   if (normalized === GEMINI_FLASH_LATEST_MODEL) {
     return DEFAULT_GEMINI_MODEL;
@@ -260,8 +269,14 @@ function normalizeGeminiModelName(modelName) {
  * This prevents old saved configs from using outdated or experimental models
  */
 const DEPRECATED_MODEL_NAMES = [
-  'gemini-2.0-flash-exp'
+  'gemini-2.0-flash-exp',
+  ...Object.keys(DEPRECATED_GEMINI_MODEL_REPLACEMENTS)
 ];
+
+function isDeprecatedGeminiModelName(modelName) {
+  const normalized = typeof modelName === 'string' ? modelName.trim().replace(/^models\//, '') : '';
+  return DEPRECATED_MODEL_NAMES.includes(normalized);
+}
 
 /**
  * Parse configuration from config string or session token
@@ -403,6 +418,7 @@ function getLegacySubtitleProviderApiKey(config, providerKey) {
   const legacyFields = {
     subdl: ['SubDLAPIKey', 'SubDLApiKey', 'subDLAPIKey', 'subdlApiKey', 'subdl_api_key'],
     subsource: ['SubSourceAPIKey', 'SubSourceAPiKey', 'SubSourceApiKey', 'subSourceAPIKey', 'subsourceApiKey', 'subsource_api_key'],
+    jimaku: ['JimakuAPIKey', 'JimakuApiKey', 'jimakuApiKey', 'jimaku_api_key'],
     scs: ['SCS_MANIFEST_TOKEN', 'SCSManifestToken', 'scsManifestToken', 'scsAuthKey', 'scsApiKey']
   };
   const fields = legacyFields[providerKey] || [];
@@ -507,6 +523,7 @@ function normalizeConfig(config) {
   normalizeApiKeySubtitleProvider(mergedConfig, config, 'subdl');
   normalizeApiKeySubtitleProvider(mergedConfig, config, 'subsource');
   normalizeApiKeySubtitleProvider(mergedConfig, config, 'subsro');
+  normalizeApiKeySubtitleProvider(mergedConfig, config, 'jimaku');
 
   // Model-aware default for DeepSeek max output tokens:
   // - deepseek-chat: 8k
@@ -616,11 +633,16 @@ function normalizeConfig(config) {
   const advSettings = mergedConfig.advancedSettings || {};
   const normalizedAdvancedModel = normalizeGeminiModelName(advSettings.geminiModel);
   const advancedModelDefaults = getModelSpecificDefaults(normalizedAdvancedModel || configModel);
+  const effectiveSamplingModel = getEffectiveGeminiModel(mergedConfig);
   mergedConfig.advancedSettings = {
     ...advSettings,
     geminiModel: normalizedAdvancedModel,
     thinkingLevel: sanitizeGeminiThinkingLevel(advSettings.thinkingLevel, advancedModelDefaults.thinkingLevel),
     enabled: advSettings.enabled === true,
+    samplingParametersEnabled: resolveGeminiSamplingParametersEnabled(
+      effectiveSamplingModel,
+      advSettings.samplingParametersEnabled
+    ),
     sendTimestampsToAI: advSettings.sendTimestampsToAI === true,
     translationWorkflow: (() => {
       const val = String(advSettings.translationWorkflow || '').toLowerCase();
@@ -1128,6 +1150,21 @@ const MODEL_SPECIFIC_DEFAULTS = {
     thinkingLevel: '',
     temperature: 0.7        // Balanced temperature for Gemma
   },
+  'gemini-2.5-flash-lite': {
+    thinkingBudget: 0,
+    thinkingLevel: '',
+    temperature: 0.8
+  },
+  'gemini-2.5-flash': {
+    thinkingBudget: -1,
+    thinkingLevel: '',
+    temperature: 0.5
+  },
+  'gemini-2.5-pro': {
+    thinkingBudget: -1,
+    thinkingLevel: '',
+    temperature: 0.5
+  },
   'gemini-3.1-flash-lite': {
     thinkingBudget: 0,      // No thinking for lite model
     thinkingLevel: 'minimal',
@@ -1140,23 +1177,28 @@ const MODEL_SPECIFIC_DEFAULTS = {
   },
   'gemini-3.5-flash': {
     thinkingBudget: -1,
-    thinkingLevel: 'high',
+    thinkingLevel: 'medium',
     temperature: 0.5
   },
   'gemini-3.6-flash': {
     thinkingBudget: -1,
-    thinkingLevel: 'high',
+    thinkingLevel: 'medium',
     temperature: 0.5
   },
   'gemini-3.7-flash': {
     thinkingBudget: -1,
-    thinkingLevel: 'high',
+    thinkingLevel: 'medium',
     temperature: 0.5
   },
-  'gemini-flash-lite-latest': {
-    thinkingBudget: 0,      // No thinking for lite model (latest alias)
-    thinkingLevel: 'minimal',
-    temperature: 0.8        // Higher temperature for creativity
+  'gemini-3.8-flash': {
+    thinkingBudget: -1,
+    thinkingLevel: 'medium',
+    temperature: 0.5
+  },
+  'gemini-3-flash-preview': {
+    thinkingBudget: -1,
+    thinkingLevel: 'high',
+    temperature: 0.5
   },
   'gemini-3.1-pro-preview': {
     thinkingBudget: 1000,   // Fixed thinking budget for pro model
@@ -1183,8 +1225,11 @@ function getModelSpecificDefaults(modelName) {
   if (isGemini3 && normalized.includes('flash-lite')) {
     return { thinkingBudget: 0, thinkingLevel: 'minimal', temperature: 0.8 };
   }
-  if (isGemini3 && normalized.includes('flash')) {
+  if (isGemini3 && normalized === 'gemini-3-flash-preview') {
     return { thinkingBudget: -1, thinkingLevel: 'high', temperature: 0.5 };
+  }
+  if (isGemini3 && normalized.includes('flash')) {
+    return { thinkingBudget: -1, thinkingLevel: 'medium', temperature: 0.5 };
   }
   if (isGemini3 && normalized.includes('pro')) {
     return { thinkingBudget: 1000, thinkingLevel: 'high', temperature: 0.5 };
@@ -1220,7 +1265,7 @@ function getEffectiveGeminiModel(config = {}) {
  * @returns {Object} - Default configuration
  */
 function getDefaultConfig(modelName = null) {
-  // Determine the model to use for defaults
+  // Determine the model to use for defaults.
   // Default to the latest Flash Lite alias as the primary fallback model.
   const effectiveModel = normalizeGeminiModelName(modelName || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
   const modelDefaults = getModelSpecificDefaults(effectiveModel);
@@ -1242,6 +1287,12 @@ function getDefaultConfig(modelName = null) {
       ? parseInt(process.env.GEMINI_THINKING_BUDGET)
       : modelDefaults.thinkingBudget,
     thinkingLevel: sanitizeGeminiThinkingLevel(process.env.GEMINI_THINKING_LEVEL, modelDefaults.thinkingLevel),
+    // Gemini 3.x always omits temperature/Top-P/Top-K. Legacy Gemini and Gemma
+    // keep custom sampling enabled unless explicitly disabled.
+    samplingParametersEnabled: resolveGeminiSamplingParametersEnabled(
+      effectiveModel,
+      process.env.GEMINI_SAMPLING_PARAMETERS_ENABLED
+    ),
     // Sampling parameters (priority: .env > model-specific > global default)
     temperature: process.env.GEMINI_TEMPERATURE !== undefined
       ? parseFloat(process.env.GEMINI_TEMPERATURE)
@@ -1339,6 +1390,13 @@ function getDefaultConfig(modelName = null) {
         apiKey: ''
       },
       subsro: {
+        enabled: false,
+        apiKey: ''
+      },
+      tsdb: {
+        enabled: false
+      },
+      jimaku: {
         enabled: false,
         apiKey: ''
       }
@@ -1745,6 +1803,7 @@ module.exports = {
   mergeProviderParameters,
   getEffectiveGeminiModel,
   normalizeGeminiModelName,
+  isDeprecatedGeminiModelName,
   sanitizeGeminiThinkingLevel,
   // Gemini key rotation
   selectGeminiApiKey,

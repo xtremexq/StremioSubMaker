@@ -2231,6 +2231,38 @@ h1:hover {
     background: white;
 }
 
+.toggle-switch input:disabled+.toggle-slider {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.gemini-sampling-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.gemini-sampling-toggle-row>label:first-child {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.gemini-sampling-status {
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+[data-gemini-sampling-parameter] {
+    transition: opacity 0.2s ease;
+}
+
+[data-gemini-sampling-parameter].sampling-parameter-disabled {
+    opacity: 0.5;
+}
+
 /* Form Elements */
 .form-group {
     margin-bottom: 0.85rem;

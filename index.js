@@ -43,12 +43,14 @@ const fs = require('fs');
 const os = require('os');
 const { pipeline } = require('stream/promises');
 
-const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits, getDefaultProviderParameters, mergeProviderParameters, selectGeminiApiKey, getEffectiveGeminiModel } = require('./src/utils/config');
+const { parseConfig, getDefaultConfig, buildManifest, normalizeConfig, getLanguageSelectionLimits, getDefaultProviderParameters, mergeProviderParameters, selectGeminiApiKey, getEffectiveGeminiModel, isDeprecatedGeminiModelName } = require('./src/utils/config');
 const { parseSRT, toSRT, sanitizeSubtitleText, srtPairToWebVTT, ensureSRTForTranslation, detectASSFormat } = require('./src/utils/subtitle');
 const { version } = require('./src/utils/version');
 const { redactToken, sanitizeApiKeyForHeader } = require('./src/utils/security');
+const { startMobileTranslationKeepalive } = require('./src/utils/mobileTranslationKeepalive');
 const { getAllLanguages, getAllTranslationLanguages, getLanguageName, toISO6392, findISO6391ByName, canonicalSyncLanguageCode } = require('./src/utils/languages');
 const { generateCacheKeys } = require('./src/utils/cacheKeys');
+const { resolveGeminiSamplingParametersEnabled } = require('./src/utils/geminiSampling');
 const { getCached: getDownloadCached, saveCached: saveDownloadCached, getCacheStats: getDownloadCacheStats } = require('./src/utils/downloadCache');
 const { checkOpenSubtitlesDownloadIntent } = require('./src/utils/openSubtitlesDownloadGuard');
 const { createSubtitleHandler, handleSubtitleDownload, handleTranslation, createLoadingSubtitle, createSessionTokenErrorSubtitle, createOpenSubtitlesAuthErrorSubtitle, createOpenSubtitlesQuotaExceededSubtitle, createCredentialDecryptionErrorSubtitle, createTranslationErrorSubtitle, readFromPartialCache, hasCachedTranslation, purgeTranslationCache, translationStatus, inFlightTranslations, canUserStartTranslation, getHistoryForUser, migrateHistoryNamespace, resolveHistoryUserHash, saveRequestToHistory, resolveHistoryTitle, enrichHistoryEntriesBackground, maybeConvertToSRT } = require('./src/handlers/subtitles');
@@ -678,8 +680,11 @@ async function resolveAutoSubTranslationProvider(config, providerKeyOverride, mo
     const mergedParams = mergeProviderParameters(getDefaultProviderParameters(), config?.providerParameters || {});
     const normalizeKey = (key) => String(key || '').trim().toLowerCase();
     const desiredKey = normalizeKey(providerKeyOverride || config?.mainProvider || 'gemini');
+    const getProviderParams = (key) => key === 'gemini'
+        ? { ...(config?.advancedSettings || {}) }
+        : (mergedParams[key] || mergedParams.default || {});
     const maybeBuildProvider = async (key, cfgOverride = null) => {
-        const params = mergedParams[key] || mergedParams.default || {};
+        const params = getProviderParams(key);
         const cfg = cfgOverride || (providers[key] || {});
         const provider = await createProviderInstance(key, cfg, params);
         if (!provider) return null;
@@ -705,7 +710,7 @@ async function resolveAutoSubTranslationProvider(config, providerKeyOverride, mo
     };
     const providerConfig = await findProviderConfig();
     if (providerConfig && providerConfig.enabled !== false) {
-        const params = mergedParams[desiredKey] || mergedParams.default || {};
+        const params = getProviderParams(desiredKey);
         const cfg = { ...providerConfig, model: modelOverride || providerConfig.model || getEffectiveGeminiModel(config) };
         const provider = await createProviderInstance(desiredKey, cfg, params);
         if (provider) {
@@ -2286,6 +2291,7 @@ app.use((req, res, next) => {
         '/api/validate-wyzie',
         '/api/validate-opensubtitles',
         '/api/validate-subsro',
+        '/api/validate-jimaku',
         '/api/validate-custom-provider',
         // Stream metadata endpoints for tool pages
         '/api/stream-activity',
@@ -2532,6 +2538,8 @@ app.use((req, res, next) => {
         '/api/validate-subdl',
         '/api/validate-wyzie',
         '/api/validate-opensubtitles',
+        '/api/validate-subsro',
+        '/api/validate-jimaku',
         '/api/translate-file',
         '/api/save-synced-subtitle',
         '/api/save-embedded-subtitle',
@@ -3126,7 +3134,9 @@ app.post('/api/gemini-models', validationLimiter, async (req, res) => {
         // Include Gemma family (e.g., tgemma) for advanced override use cases.
         const filteredModels = models.filter(model => {
             const nameLower = model.name.toLowerCase();
-            return nameLower.includes('pro') || nameLower.includes('flash') || nameLower.includes('gemma');
+            return !isDeprecatedGeminiModelName(model.name)
+                && (nameLower.includes('pro') || nameLower.includes('flash') || nameLower.includes('gemma'))
+                && !/(?:image|tts|live|transcribe|embedding|robotics|computer-use)/i.test(nameLower);
         });
 
         res.json(filteredModels);
@@ -3201,7 +3211,12 @@ app.post('/api/models/:provider', validationLimiter, async (req, res) => {
                 providerParams
             );
             const models = await gemini.getAvailableModels({ silent: true, throwOnError: true });
-            return res.json(models);
+            return res.json(models.filter(model => {
+                const nameLower = String(model.name || '').toLowerCase();
+                return !isDeprecatedGeminiModelName(model.name)
+                    && (nameLower.includes('pro') || nameLower.includes('flash') || nameLower.includes('gemma'))
+                    && !/(?:image|tts|live|transcribe|embedding|robotics|computer-use)/i.test(nameLower);
+            }));
         }
 
         // For custom provider, API key is optional (local LLMs don't require it)
@@ -3835,6 +3850,49 @@ app.post('/api/validate-subsro', validationLimiter, async (req, res) => {
     }
 });
 
+// API endpoint to validate a per-user Jimaku API key.
+app.post('/api/validate-jimaku', validationLimiter, async (req, res) => {
+    setNoStore(res);
+
+    try {
+        const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : '';
+        if (!apiKey) {
+            return res.status(400).json({
+                valid: false,
+                error: t('server.errors.apiKeyRequired', {}, 'API key is required')
+            });
+        }
+
+        const JimakuService = require('./src/services/jimaku');
+        const result = await new JimakuService(apiKey).validateApiKey({
+            timeout: 10000,
+            cacheAuthFailures: false
+        });
+        if (!result.valid) {
+            const lowerError = String(result.error || '').toLowerCase();
+            const error = lowerError.includes('rejected')
+                ? t('server.errors.invalidApiKeyAuth', {}, 'Invalid API key - authentication failed')
+                : lowerError.includes('timeout')
+                    ? t('server.errors.requestTimedOut', {}, 'Request timed out')
+                    : (result.error || t('server.errors.requestFailed', {}, 'Request failed'));
+            return res.json({ valid: false, error });
+        }
+
+        return res.json({
+            valid: true,
+            message: t('server.validation.apiKeyValid', {}, 'API key is valid'),
+            resultsCount: result.resultsCount
+        });
+    } catch (error) {
+        log.warn(() => `[API] Jimaku credential validation failed (status=${error?.response?.status || 'network'}, code=${error?.code || 'none'})`);
+        return res.json({
+            valid: false,
+            error: (res.locals?.t || getTranslatorFromRequest(req, res))('server.validation.apiError', { reason: error.message }, `API error: ${error.message}`)
+        });
+    }
+});
+
 // API endpoint to validate Wyzie API key
 app.post('/api/validate-wyzie', validationLimiter, async (req, res) => {
     setNoStore(res);
@@ -4445,6 +4503,10 @@ app.post('/api/translate-file', fileTranslationLimiter, validateRequest(fileTran
                 : '';
             if (['disabled', 'minimal', 'low', 'medium', 'high'].includes(thinkingLevel)) {
                 parsed.thinkingLevel = thinkingLevel;
+            }
+
+            if (typeof incoming.samplingParametersEnabled === 'boolean') {
+                parsed.samplingParametersEnabled = incoming.samplingParametersEnabled;
             }
 
             const temperature = clampNumber(incoming.temperature, 0, 2);
@@ -5174,7 +5236,7 @@ const subtitleDownloadHandler = async (req, res) => {
         // SubMaker pods allow one initial request, defer the other distinct
         // file IDs, and immediately allow the file the client requests again
         // as its real selection. Cache hits above never enter this guard.
-        const providerPrefixes = ['subdl_', 'subsource_', 'v3_', 'scs_', 'wyzie_', 'subsro_'];
+        const providerPrefixes = ['subdl_', 'subsource_', 'v3_', 'scs_', 'wyzie_', 'subsro_', 'tsdb_'];
         const isOpenSubtitlesAuthFile = !providerPrefixes.some(prefix => fileId.startsWith(prefix));
         const openSubtitlesConfig = config.subtitleProviders?.opensubtitles || {};
         const usesOpenSubtitlesAuth = openSubtitlesConfig.enabled === true
@@ -5399,6 +5461,7 @@ app.get('/addon/:config/error-subtitle/:errorType.srt', async (req, res) => {
 
 // Custom route: Perform translation (BEFORE SDK router to take precedence)
 app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleFormatParams, searchLimiter, validateRequest(translationParamsSchema, 'params'), async (req, res) => {
+    let stopMobileKeepalive = null;
     try {
         let t = res.locals?.t || getTranslatorFromRequest(req, res);
         const { config: configStr, sourceFileId, targetLang } = req.params;
@@ -5606,22 +5669,42 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
             log.debug(() => `[Translation] New request to translate ${sourceFileId} to ${targetLang}`);
         }
 
-        // Deduplicate translation requests - handles the first request
-        const subtitleContent = await deduplicate(dedupKey, () =>
-            handleTranslation(sourceFileId, targetLang, config, {
-                waitForFullTranslation,
-                sourceFileId,
-                targetLanguage: targetLang,
-                filename: req.query.filename || req.query.file || req.query.name || '',
-                videoId: req.query.videoId || req.query.id || '',
-                sourceLanguage: req.query.sourceLanguage || req.query.lang || (config.sourceLanguages?.[0] || 'auto'),
-                from: 'addon'
-            })
-        );
+        // Deduplicate translation requests - handles the first request. Mobile
+        // mode may wait for minutes, so keep the proxy connection active while
+        // the translation runs instead of allowing a Cloudflare 524 timeout.
+        if (waitForFullTranslation) {
+            stopMobileKeepalive = startMobileTranslationKeepalive(res, targetLang, {
+                setCacheHeaders: setSubtitleCacheHeaders
+            });
+        }
+        let subtitleContent;
+        try {
+            subtitleContent = await deduplicate(dedupKey, () =>
+                handleTranslation(sourceFileId, targetLang, config, {
+                    waitForFullTranslation,
+                    sourceFileId,
+                    targetLanguage: targetLang,
+                    filename: req.query.filename || req.query.file || req.query.name || '',
+                    videoId: req.query.videoId || req.query.id || '',
+                    sourceLanguage: req.query.sourceLanguage || req.query.lang || (config.sourceLanguages?.[0] || 'auto'),
+                    from: 'addon'
+                })
+            );
+        } finally {
+            stopMobileKeepalive?.();
+            stopMobileKeepalive = null;
+        }
 
         // Validate content before processing
         if (!subtitleContent || typeof subtitleContent !== 'string') {
             log.error(() => `[Translation] Invalid subtitle content returned: ${typeof subtitleContent}, value: ${subtitleContent}`);
+            if (res.headersSent) {
+                return res.end(createTranslationErrorSubtitle(
+                    'other',
+                    t('server.errors.translationInvalidContent', {}, 'Translation returned invalid content'),
+                    config?.uiLanguage || 'en'
+                ));
+            }
             return res.status(500).send(t('server.errors.translationInvalidContent', {}, 'Translation returned invalid content'));
         }
 
@@ -5641,24 +5724,37 @@ app.get('/addon/:config/translate/:sourceFileId/:targetLang', normalizeSubtitleF
         // Detect payload format for correct headers (ASS/SSA or SRT)
         const { isAss: tIsAss, isSsa: tIsSsa } = detectSubtitlePayloadFormat(subtitleContent);
         const tExt = tIsSsa ? 'ssa' : (tIsAss ? 'ass' : 'srt');
-        res.setHeader('Content-Type', (tIsAss || tIsSsa) ? 'text/x-ssa; charset=utf-8' : 'text/plain; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${(isLoadingMessage || isPartialMessage) ? 'translating' : 'translated'}_${targetLang}.${tExt}"`);
+        if (!res.headersSent) {
+            res.setHeader('Content-Type', (tIsAss || tIsSsa) ? 'text/x-ssa; charset=utf-8' : 'text/plain; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${(isLoadingMessage || isPartialMessage) ? 'translating' : 'translated'}_${targetLang}.${tExt}"`);
+        }
 
         // Disable caching for loading/partial messages so Stremio can poll for updates
         if (isLoadingMessage || isPartialMessage) {
-            setSubtitleCacheHeaders(res, 'loading');
+            if (!res.headersSent) setSubtitleCacheHeaders(res, 'loading');
             log.debug(() => `[Translation] Set no-store headers for ${isPartialMessage ? 'partial message' : 'loading message'}`);
         } else {
             // Final translations are no-store to avoid stale subtitle reuse in clients.
-            setSubtitleCacheHeaders(res, 'final');
+            if (!res.headersSent) setSubtitleCacheHeaders(res, 'final');
             log.debug(() => `[Translation] Set no-store headers for final translation`);
         }
 
-        res.send(maybeConvertToSRT(subtitleContent, config));
+        const responseContent = maybeConvertToSRT(subtitleContent, config);
+        if (res.headersSent) res.end(responseContent);
+        else res.send(responseContent);
         log.debug(() => `[Translation] Response sent successfully for ${sourceFileId}`);
 
     } catch (error) {
+        stopMobileKeepalive?.();
+        stopMobileKeepalive = null;
         const t = res.locals?.t || getTranslatorFromRequest(req, res);
+        if (res.headersSent) {
+            log.error(() => ['[Translation] Error after mobile response started:', error]);
+            if (!res.writableEnded && !res.destroyed) {
+                res.end(createTranslationErrorSubtitle('other', error.message, res.locals?.config?.uiLanguage || 'en'));
+            }
+            return;
+        }
         if (respondStorageUnavailable(res, error, '[Translation]', t)) return;
         log.error(() => ['[Translation] Error:', error]);
         res.status(500).send(t('server.errors.translationFailed', { reason: error.message }, `Translation failed: ${error.message}`));
@@ -7810,6 +7906,10 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
                 parsed.thinkingLevel = thinkingLevel;
             }
 
+            if (typeof incoming.samplingParametersEnabled === 'boolean') {
+                parsed.samplingParametersEnabled = incoming.samplingParametersEnabled;
+            }
+
             const temperature = clampNumber(incoming.temperature, 0, 2);
             if (temperature !== null) parsed.temperature = temperature;
 
@@ -7883,6 +7983,23 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
         const requestedModel = resolveRequestedModel();
         const promptSignature = workingConfig.translationPrompt
             ? crypto.createHash('sha1').update(String(workingConfig.translationPrompt)).digest('hex')
+            : '';
+        const effectiveGeminiSamplingEnabled = requestedProviderName === 'gemini'
+            ? resolveGeminiSamplingParametersEnabled(
+                requestedModel,
+                workingConfig.advancedSettings?.samplingParametersEnabled
+            )
+            : false;
+        const generationSettingsSignature = requestedProviderName === 'gemini'
+            ? crypto.createHash('sha1').update(JSON.stringify({
+                samplingParametersEnabled: effectiveGeminiSamplingEnabled,
+                temperature: effectiveGeminiSamplingEnabled ? workingConfig.advancedSettings?.temperature : undefined,
+                topP: effectiveGeminiSamplingEnabled ? workingConfig.advancedSettings?.topP : undefined,
+                topK: effectiveGeminiSamplingEnabled ? workingConfig.advancedSettings?.topK : undefined,
+                thinkingBudget: workingConfig.advancedSettings?.thinkingBudget,
+                thinkingLevel: workingConfig.advancedSettings?.thinkingLevel,
+                maxOutputTokens: workingConfig.advancedSettings?.maxOutputTokens
+            })).digest('hex')
             : '';
 
         // History tracking (Sub Toolbox translations previously skipped history)
@@ -7978,6 +8095,9 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
                 return false;
             }
             if (!promptSignature && meta.promptSignature) {
+                return false;
+            }
+            if (generationSettingsSignature && meta.generationSettingsSignature !== generationSettingsSignature) {
                 return false;
             }
             if (sendTimestampsToAI && meta.sendTimestampsToAI !== true) {
@@ -8106,7 +8226,8 @@ app.post('/api/translate-embedded', embeddedTranslationLimiter, async (req, res)
             singleBatchMode,
             enableBatchContext,
             sendTimestampsToAI,
-            promptSignature
+            promptSignature,
+            generationSettingsSignature: generationSettingsSignature || undefined
         };
         let saveResult = { cacheKey: null, entry: null };
         if (!skipCacheWrites) {

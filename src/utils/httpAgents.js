@@ -169,6 +169,22 @@ const PROVIDER_ENDPOINTS = {
     warmUpEnabled: true,
     keepAliveEnabled: true
   },
+  tsdb: {
+    url: 'https://api.thesubtitledb.org/',
+    name: 'The Subtitle Database',
+    warmUpPath: null,
+    pingPath: null,
+    warmUpEnabled: true,
+    keepAliveEnabled: true
+  },
+  jimaku: {
+    url: 'https://jimaku.cc/',
+    name: 'Jimaku',
+    warmUpPath: null,
+    pingPath: null,
+    warmUpEnabled: true,
+    keepAliveEnabled: true
+  },
   // Download domains - also warm these up
   subdlDownload: {
     url: 'https://dl.subdl.com/',
@@ -195,6 +211,17 @@ function shouldKeepAliveFailureOpenCircuit(providerKey) {
 
 function isGatedKeepAliveProvider(providerKey) {
   return PROVIDER_ENDPOINTS[providerKey]?.gatedKeepAlive === true;
+}
+
+function isKeepAlivePingsEnabled(env = process.env) {
+  // ElfHosted relies on warm provider connections and intentionally takes precedence
+  // over the self-hosted default and an explicit local opt-out.
+  if (String(env.ELFHOSTED || '').trim().toLowerCase() === 'true') {
+    return true;
+  }
+
+  const value = String(env.SUBTITLE_PROVIDER_KEEPALIVE_ENABLED || '').trim().toLowerCase();
+  return value === 'true' || value === '1' || value === 'yes' || value === 'on';
 }
 
 function buildProbeRequest(provider, mode) {
@@ -339,7 +366,9 @@ const PROVIDER_KEY_MAP = {
   'subsource': 'subsource',
   'wyzie': 'wyzie',
   'scs': 'scs',
-  'subsro': 'subsro'
+  'subsro': 'subsro',
+  'tsdb': 'tsdb',
+  'jimaku': 'jimaku'
 };
 
 /**
@@ -489,6 +518,11 @@ function startKeepAlivePings() {
     return;
   }
 
+  if (!isKeepAlivePingsEnabled()) {
+    log.info(() => '[HTTP Agents] Provider keep-alive pings are disabled (set SUBTITLE_PROVIDER_KEEPALIVE_ENABLED=true to enable)');
+    return false;
+  }
+
   const keepAliveTargets = getConnectionTargetEntries('keepAlive');
   log.info(() => `[HTTP Agents] Starting keep-alive pings every ${KEEP_ALIVE_INTERVAL_MS / 1000}s for ${keepAliveTargets.length} targets`);
   log.debug(() => `[HTTP Agents] Keep-alive targets: ${keepAliveTargets.map(([, provider]) => provider.name).join(', ')}`);
@@ -544,6 +578,7 @@ function startKeepAlivePings() {
   if (keepAliveInterval.unref) {
     keepAliveInterval.unref();
   }
+  return true;
 }
 
 /**
@@ -589,6 +624,7 @@ module.exports = {
   warmUpConnections,
   startKeepAlivePings,
   stopKeepAlivePings,
+  isKeepAlivePingsEnabled,
   getConnectionTargetKeys,
   shouldKeepAliveFailureOpenCircuit,
   isGatedKeepAliveProvider,

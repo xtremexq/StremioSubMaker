@@ -39,12 +39,16 @@
     const POPULAR_LANG_CODES = [];
 
     const QUICK_SETUP_MODEL_LABEL_FALLBACKS = {
+        'gemini-3.8-flash': 'Gemini 3.8 Flash',
+        'gemini-3.7-flash': 'Gemini 3.7 Flash',
+        'gemini-3.6-flash': 'Gemini 3.6 Flash',
+        'gemini-3.5-flash-lite': 'Gemini 3.5 Flash-Lite',
         'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
-        'gemini-3.5-flash-lite': 'Gemini 3.5 Flash-Lite (beta)',
-        'gemini-3.5-flash': 'Gemini 3.5 Flash (beta)',
-        'gemini-3.6-flash': 'Gemini 3.6 Flash (beta)',
-        'gemini-3.7-flash': 'Gemini 3.7 Flash (beta)',
-        'gemini-3.1-pro-preview': 'Gemini 3.1 Pro (beta)',
+        'gemini-3.1-pro-preview': 'Gemini 3.1 Pro (preview)',
+        'gemini-3-flash-preview': 'Gemini 3 Flash (preview)',
+        'gemini-2.5-flash-lite': 'Gemini 2.5 Flash-Lite',
+        'gemini-2.5-flash': 'Gemini 2.5 Flash',
+        'gemini-2.5-pro': 'Gemini 2.5 Pro',
         'gemini-flash-lite-latest': 'Gemini Flash Lite Latest'
     };
     const DEFAULT_WYZIE_API_KEY = '';
@@ -71,6 +75,7 @@
         subdlApiKey: '',
         subsourceEnabled: false,
         subsourceApiKey: '',
+        tsdbEnabled: false,
         scsEnabled: false,
         scsAuth: false,
         scsApiKey: '',
@@ -164,30 +169,36 @@
                 return {
                     thinkingBudget: Number(helperDefaults.thinkingBudget),
                     thinkingLevel: typeof helperDefaults.thinkingLevel === 'string' ? helperDefaults.thinkingLevel : '',
-                    temperature: Number(helperDefaults.temperature)
+                    temperature: Number(helperDefaults.temperature),
+                    samplingParametersEnabled: helperDefaults.samplingParametersEnabled !== false
                 };
             }
         }
 
         switch (normalizedModel) {
-            case 'gemini-3.5-flash':
+            case 'gemini-3.8-flash':
             case 'gemini-3.6-flash':
             case 'gemini-3.7-flash':
-                return { thinkingBudget: -1, thinkingLevel: 'high', temperature: 0.5 };
+                return { thinkingBudget: -1, thinkingLevel: 'medium', temperature: 0.5, samplingParametersEnabled: false };
+            case 'gemini-3-flash-preview':
+                return { thinkingBudget: -1, thinkingLevel: 'high', temperature: 0.5, samplingParametersEnabled: false };
             case 'gemini-3.1-pro-preview':
-                return { thinkingBudget: 1000, thinkingLevel: 'high', temperature: 0.5 };
+                return { thinkingBudget: 1000, thinkingLevel: 'high', temperature: 0.5, samplingParametersEnabled: false };
             case 'gemini-3.1-flash-lite':
             case 'gemini-3.5-flash-lite':
             case 'gemini-flash-lite-latest':
-                return { thinkingBudget: 0, thinkingLevel: 'minimal', temperature: 0.8 };
+                return { thinkingBudget: 0, thinkingLevel: 'minimal', temperature: 0.8, samplingParametersEnabled: false };
             default:
                 if (/^gemini-3(?:[.-]|$)/.test(normalizedModel) && normalizedModel.includes('flash-lite')) {
-                    return { thinkingBudget: 0, thinkingLevel: 'minimal', temperature: 0.8 };
+                    return { thinkingBudget: 0, thinkingLevel: 'minimal', temperature: 0.8, samplingParametersEnabled: false };
+                }
+                if (normalizedModel === 'gemini-3-flash-preview') {
+                    return { thinkingBudget: -1, thinkingLevel: 'high', temperature: 0.5, samplingParametersEnabled: false };
                 }
                 if (/^gemini-3(?:[.-]|$)/.test(normalizedModel) && normalizedModel.includes('flash')) {
-                    return { thinkingBudget: -1, thinkingLevel: 'high', temperature: 0.5 };
+                    return { thinkingBudget: -1, thinkingLevel: 'medium', temperature: 0.5, samplingParametersEnabled: false };
                 }
-                return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8 };
+                return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8, samplingParametersEnabled: true };
         }
     }
 
@@ -977,6 +988,8 @@
                 // SubSource
                 state.subsourceEnabled = !!($('qsEnableSubSource') || {}).checked;
                 state.subsourceApiKey = ($('qsSubsourceApiKey') || {}).value || '';
+                // The Subtitle Database does not need a key
+                state.tsdbEnabled = !!($('qsEnableTSDB') || {}).checked;
                 // SCS
                 state.scsEnabled = !!($('qsEnableSCS') || {}).checked;
                 state.scsAuth = !!($('qsScsImplAuth') || {}).checked;
@@ -1673,6 +1686,9 @@
         if (state.subsourceEnabled) {
             items.push({ icon: '\uD83D\uDCE1', label: 'SubSource', value: tQs('summary.enabled', null, 'Enabled'), cls: 'qs-on' });
         }
+        if (state.tsdbEnabled) {
+            items.push({ icon: '🗃️', label: 'The Subtitle Database', value: tQs('summary.enabled', null, 'Enabled'), cls: 'qs-on' });
+        }
         if (state.scsEnabled) {
             items.push({
                 icon: '\uD83C\uDF10',
@@ -1874,6 +1890,9 @@
                     enabled: state.subsourceEnabled,
                     apiKey: state.subsourceApiKey
                 },
+                tsdb: {
+                    enabled: state.tsdbEnabled
+                },
                 scs: {
                     enabled: state.scsEnabled,
                     implementationType: state.scsAuth ? 'auth' : 'community',
@@ -1913,6 +1932,7 @@
                 geminiModel: '',
                 thinkingBudget: geminiAdvancedDefaults.thinkingBudget,
                 thinkingLevel: geminiAdvancedDefaults.thinkingLevel,
+                samplingParametersEnabled: geminiAdvancedDefaults.samplingParametersEnabled,
                 temperature: geminiAdvancedDefaults.temperature,
                 topP: 0.95,
                 topK: 40,
@@ -1987,6 +2007,7 @@
                                 opensubtitles: qsConfig.subtitleProviders.opensubtitles,
                                 subdl: qsConfig.subtitleProviders.subdl,
                                 subsource: qsConfig.subtitleProviders.subsource,
+                                tsdb: qsConfig.subtitleProviders.tsdb,
                                 scs: qsConfig.subtitleProviders.scs,
                                 wyzie: qsConfig.subtitleProviders.wyzie
                             };
@@ -2208,8 +2229,10 @@
         // Step 2 - reset toggles and inputs
         const subdlCheck = $('qsEnableSubDL');
         const ssCheck = $('qsEnableSubSource');
+        const tsdbCheck = $('qsEnableTSDB');
         if (subdlCheck) subdlCheck.checked = false;
         if (ssCheck) ssCheck.checked = false;
+        if (tsdbCheck) tsdbCheck.checked = false;
         hide('qsSubdlKeyWrap');
         hide('qsSubsourceKeyWrap');
         hide('qsOpenSubsAuthFields');
@@ -2325,6 +2348,9 @@
         state.subsourceEnabled = !!ss.enabled;
         state.subsourceApiKey = ss.apiKey || '';
 
+        const tsdb = subs.tsdb || {};
+        state.tsdbEnabled = tsdb.enabled === true;
+
         // SCS
         const scs = subs.scs || {};
         state.scsEnabled = !!scs.enabled;
@@ -2395,8 +2421,10 @@
         const ssCheck = $('qsEnableSubSource');
         const scsCheck = $('qsEnableSCS');
         const wyzieCheck = $('qsEnableWyzie');
+        const tsdbCheck = $('qsEnableTSDB');
         if (subdlCheck) subdlCheck.checked = state.subdlEnabled;
         if (ssCheck) ssCheck.checked = state.subsourceEnabled;
+        if (tsdbCheck) tsdbCheck.checked = state.tsdbEnabled;
         if (scsCheck) scsCheck.checked = state.scsEnabled;
         if (wyzieCheck) wyzieCheck.checked = state.wyzieEnabled;
         const scsCommunityRadio = $('qsScsImplCommunity');

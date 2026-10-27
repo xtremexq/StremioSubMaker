@@ -835,6 +835,8 @@
           "scsKeyNote": "Usa tu propia clave Auth de SCS para peticiones más rápidas filtradas por idioma.",
           "scsModeNote": "El modo Community usa el token compartido de SubMaker; Auth envía solo tus idiomas seleccionados.",
           "wyzieName": "Wyzie Subs",
+          "tsdbName": "Base de datos de subtítulos",
+          "tsdbDesc": "Busca subtítulos por ID de IMDb o TMDb, sin clave de API.",
           "wyzieDesc": "Agregador que busca en todas las fuentes disponibles para tu clave API",
           "wyzieKeyPlaceholder": "Introduce la clave API de Wyzie",
           "wyzieGetKey": "Obtén tu clave API gratuita en store.wyzie.io/redeem",
@@ -1096,6 +1098,7 @@
         "scsKeyRequired": "SCS Auth está activado pero falta la clave",
         "wyzieKeyRequired": "Wyzie Subs está activado pero falta la clave API",
         "subsroKeyRequired": "Subs.ro está activado pero falta la clave API",
+        "jimakuKeyRequired": "Jimaku está activado pero falta la clave API",
         "subtitleProviderRequired": "Activa al menos un proveedor de subtítulos",
         "geminiKeysRequired": "Se requiere al menos una clave API para la rotación",
         "geminiKeysFillEmpty": "Completa todos los campos de clave API antes de añadir una nueva",
@@ -1152,6 +1155,23 @@
           "validateTitle": "Validar clave API",
           "validateCta": "Probar",
           "toggleLabel": "Activar SubDL"
+        },
+        "tsdb": {
+          "title": "Base de datos de subtítulos",
+          "description": "Busca y descarga subtítulos sin una clave de API.",
+          "linkLabel": "thesubtitledb.org",
+          "note": "No se necesita una clave de API. Compatible con películas y episodios de TV por IMDb o TMDb.",
+          "toggleLabel": "Activar la base de datos de subtítulos"
+        },
+        "jimaku": {
+          "title": "Jimaku",
+          "description": "Subtítulos de anime en japonés. Obtén una clave API en",
+          "linkLabel": "tu cuenta de Jimaku",
+          "placeholder": "Introduce la clave API de Jimaku",
+          "validateTitle": "Validar clave API",
+          "validateCta": "Probar",
+          "toggleLabel": "Activar Jimaku",
+          "note": "Busca anime por ID de AniList y ofrece subtítulos en japonés. Añade japonés como idioma de origen para traducirlos."
         },
         "subsro": {
           "title": "Subs.ro",
@@ -1252,25 +1272,25 @@
           "helper": "AI model for translations",
           "options": {
             "gemma27b": "Gemma 27b (beta) (Recommended for Rate Limits)",
-            "flashLite": "Gemini 2.5 Flash-Lite",
-            "flash": "Gemini 2.5 Flash",
+            "flashLite25": "Gemini 2.5 Flash-Lite",
+            "flash25": "Gemini 2.5 Flash",
             "flashLite31": "Gemini 3.1 Flash Lite",
-            "flash3": "Gemini 3.0 Flash (beta)",
-            "flashLite35": "Gemini 3.5 Flash-Lite (beta)",
-            "flash35": "Gemini 3.5 Flash (beta)",
-            "flash36": "Gemini 3.6 Flash (beta)",
-            "flash37": "Gemini 3.7 Flash (beta)",
-            "pro": "Gemini 2.5 Pro (beta)",
-            "pro3": "Gemini 3.0 Pro (beta)"
+            "flash3": "Gemini 3 Flash (preview)",
+            "flashLite35": "Gemini 3.5 Flash-Lite",
+            "flash36": "Gemini 3.6 Flash",
+            "flash37": "Gemini 3.7 Flash",
+            "pro25": "Gemini 2.5 Pro",
+            "flash38": "Gemini 3.8 Flash",
+            "pro31": "Gemini 3.1 Pro (preview)"
           },
           "hintTitle": "¿Traducción rota/incorrecta o desincronizada mientras el subtítulo de origen está bien?",
           "hintBody": "Haz triple clic rápidamente en el subtítulo para forzar una retraducción nueva, o cambia los ajustes de traducción.",
           "retranslationHintTitle": "¿Traducción rota/incorrecta o desincronizada mientras el subtítulo de origen está bien?",
           "retranslationHintBody": "Haz triple clic rápidamente en el subtítulo para forzar una retraducción nueva, o cambia los ajustes de traducción.",
-          "betaTitle": "⚡ 2.5 Pro usage is still in Beta.",
-          "betaAdvice": "If you have translation problems, use Flash-Lite.",
+          "betaTitle": "⚠️ Gemini 2.5 Pro access may be limited for newer projects.",
+          "betaAdvice": "For new projects, use Gemini 3.8 Flash or Flash-Lite.",
           "rateWarningTitle": "⚠️ Free Tier Limitation:",
-          "rateWarningBody": "If using a free API key, Gemini 2.5 Pro may trigger rate limits (HTTP 429). You'll likely only be able to translate one subtitle at a time."
+          "rateWarningBody": "Gemini 2.5 Pro access is limited for newer projects and may trigger rate limits (HTTP 429)."
         },
         "keyRotation": {
           "label": "Enable Gemini API key rotation",
@@ -1440,6 +1460,13 @@
           "medium": "Medio",
           "high": "Alto"
         },
+        "samplingParameters": {
+          "label": "Enviar parámetros de muestreo personalizados",
+          "description": "Cuando está activado, SubMaker envía Temperatura, Top-P y Top-K. Desactívalo para usar los valores predeterminados del modelo.",
+          "gemini3": "Gemini 3.x requiere los valores predeterminados del modelo, por lo que Temperatura, Top-P y Top-K siempre se omiten.",
+          "custom": "Los parámetros de muestreo personalizados se enviarán con las solicitudes de Gemini.",
+          "modelDefaults": "Los parámetros de muestreo se omiten; se usarán los valores predeterminados del modelo."
+        },
         "temperature": {
           "label": "Temperatura (creatividad)",
           "description": "Controla la aleatoriedad (0.0-2.0). Bajo = más determinista, Alto = más creativo. Por defecto: 0.8"
@@ -1447,6 +1474,10 @@
         "topP": {
           "label": "Top-P (muestreo por núcleo)",
           "description": "Umbral de probabilidad (0.0-1.0). Bajo = más enfocado, Alto = más diverso. Por defecto: 0.95"
+        },
+        "topK": {
+          "label": "Top-K (selección de tokens)",
+          "description": "Número de tokens principales a considerar (1-100). Por defecto: 40"
         },
         "batchContext": {
           "label": "Activar contexto por lote",
@@ -1620,6 +1651,13 @@
           "low": "Bajo",
           "medium": "Medio",
           "high": "Alto"
+        },
+        "samplingParameters": {
+          "label": "Enviar parámetros de muestreo personalizados",
+          "helper": "Desactívalo para omitir Temperatura, Top-P y Top-K y usar los valores predeterminados del modelo Gemini.",
+          "gemini3": "Gemini 3.x requiere los valores predeterminados del modelo, por lo que los tres parámetros siempre se omiten.",
+          "custom": "Los parámetros de muestreo personalizados se enviarán para esta traducción.",
+          "modelDefaults": "Los parámetros de muestreo se omiten; se usarán los valores predeterminados del modelo."
         },
         "temperature": {
           "label": "Temperatura (creatividad)",

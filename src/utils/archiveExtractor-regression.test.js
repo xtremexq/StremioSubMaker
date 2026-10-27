@@ -7,7 +7,8 @@ const JSZip = require('jszip');
 
 const {
     extractSubtitleFromArchive,
-    findSubtitleFile
+    findSubtitleFile,
+    convertSubtitleToVtt
 } = require('./archiveExtractor');
 
 test('findSubtitleFile accepts an SRT file with a trailing .txt suffix', () => {
@@ -27,6 +28,34 @@ test('findSubtitleFile still rejects arbitrary text files', () => {
         filename: null,
         isSrt: false
     });
+});
+
+test('TSDB MPL2 subtitles convert decisecond timings and line breaks to WebVTT', async () => {
+    const result = await convertSubtitleToVtt('[10][25]First line|Second line', 'subtitle.mpl', 'TSDB');
+    assert.match(result, /^WEBVTT/);
+    assert.match(result, /00:00:01\.000 --> 00:00:02\.500/);
+    assert.match(result, /First line\nSecond line/);
+});
+
+test('TSDB TMP subtitles infer cue end times from the following cue', async () => {
+    const result = await convertSubtitleToVtt('0:00:01:First line\ncontinued\n0:00:03:Second line', 'subtitle.tmp', 'TSDB');
+    assert.match(result, /^WEBVTT/);
+    assert.match(result, /00:00:01\.000 --> 00:00:03\.000/);
+    assert.match(result, /First line\ncontinued/);
+    assert.match(result, /00:00:03\.000 --> 00:00:07\.000/);
+});
+
+test('TSDB USF XML subtitles convert safely, including entities and nested formatting', async () => {
+    const result = await convertSubtitleToVtt(
+        '<USFSubtitles><subtitles><subtitle start="00:00:01.000" stop="00:00:02.500"><text>Hello &amp; <i>world</i><br/>again &#x1F600;</text></subtitle></subtitles></USFSubtitles>',
+        'subtitle.usf',
+        'TSDB'
+    );
+    assert.match(result, /^WEBVTT/);
+    assert.match(result, /Hello & <i>world<\/i>\nagain 😀/);
+
+    const rejected = await convertSubtitleToVtt('<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><USFSubtitles/>', 'subtitle.usf', 'TSDB');
+    assert.match(rejected, /Unsupported subtitle format/i);
 });
 
 test('season-pack matching includes SRT files with a trailing .txt suffix', () => {

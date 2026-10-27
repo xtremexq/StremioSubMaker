@@ -38,6 +38,131 @@ function resolveArchiveLimits(options = {}) {
     };
 }
 
+function formatVttTime(milliseconds) {
+    const total = Math.max(0, Math.floor(milliseconds));
+    const hours = Math.floor(total / 3600000);
+    const minutes = Math.floor((total % 3600000) / 60000);
+    const seconds = Math.floor((total % 60000) / 1000);
+    const millis = total % 1000;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
+}
+
+function parseSubtitleTime(value) {
+    const input = String(value || '').trim();
+    const clock = input.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})(?:[.,](\d{1,3}))?$/);
+    if (clock) {
+        const hours = Number(clock[1] || 0);
+        const minutes = Number(clock[2]);
+        const seconds = Number(clock[3]);
+        const millis = Number((clock[4] || '').padEnd(3, '0'));
+        if (minutes < 60 && seconds < 60) return ((hours * 3600 + minutes * 60 + seconds) * 1000) + millis;
+    }
+    if (/^\d+(?:\.\d+)?$/.test(input)) return Math.round(Number(input) * 1000);
+    return null;
+}
+
+function cleanSubtitleMarkup(text) {
+    return String(text || '')
+        .replace(/\\[Nn]/g, '\n')
+        .replace(/\{\\i1\}/gi, '<i>').replace(/\{\\i0\}/gi, '</i>')
+        .replace(/\{\\b1\}/gi, '<b>').replace(/\{\\b0\}/gi, '</b>')
+        .replace(/\{\\u1\}/gi, '<u>').replace(/\{\\u0\}/gi, '</u>')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/\r\n?/g, '\n')
+        .trim();
+}
+
+function cuesToVtt(cues) {
+    const valid = cues.filter(cue => Number.isFinite(cue.start) && Number.isFinite(cue.end) && cue.end > cue.start && cue.text.trim());
+    if (!valid.length) return null;
+    return `WEBVTT\n\n${valid.map((cue, index) => `${index + 1}\n${formatVttTime(cue.start)} --> ${formatVttTime(cue.end)}\n${cue.text}`).join('\n\n')}\n`;
+}
+
+function convertMplToVtt(content) {
+    const cues = [];
+    for (const line of String(content || '').split(/\r?\n/)) {
+        const match = line.match(/^\s*\[(\d+)\]\[(\d+)\](.*)$/);
+        if (!match) continue;
+        cues.push({
+            start: Number(match[1]) * 100,
+            end: Number(match[2]) * 100,
+            text: cleanSubtitleMarkup(match[3].replace(/\|/g, '\n'))
+        });
+    }
+    return cuesToVtt(cues);
+}
+
+function convertTmpToVtt(content) {
+    const cues = [];
+    let current = null;
+    for (const line of String(content || '').split(/\r?\n/)) {
+        const match = line.match(/^\s*(\d{1,3}:\d{2}:\d{2}(?:[.,]\d{1,3})?)\s*[:=]\s*(.*)$/);
+        if (match) {
+            const start = parseSubtitleTime(match[1]);
+            if (start === null) continue;
+            current = { start, end: null, text: cleanSubtitleMarkup(match[2]) };
+            cues.push(current);
+        } else if (current && line.trim()) {
+            current.text += `\n${cleanSubtitleMarkup(line)}`;
+        }
+    }
+    for (let index = 0; index < cues.length; index++) {
+        const next = cues[index + 1];
+        cues[index].end = next ? Math.max(cues[index].start + 1000, next.start) : cues[index].start + 4000;
+    }
+    return cuesToVtt(cues);
+}
+
+function decodeXmlText(text) {
+    return String(text || '')
+        .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+        .replace(/&(amp|lt|gt|quot|apos);/g, (_, entity) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[entity])
+        .replace(/&#(\d+);/g, (_, code) => {
+            const point = Number(code);
+            return point <= 0x10FFFF && !(point >= 0xD800 && point <= 0xDFFF) ? String.fromCodePoint(point) : '';
+        })
+        .replace(/&#x([\da-f]+);/gi, (_, code) => {
+            const point = Number.parseInt(code, 16);
+            return point <= 0x10FFFF && !(point >= 0xD800 && point <= 0xDFFF) ? String.fromCodePoint(point) : '';
+        });
+}
+
+function convertUsfToVtt(content) {
+    const xml = String(content || '');
+    // USF is XML; reject DTD/entity declarations instead of resolving external or custom entities.
+    if (/<!DOCTYPE|<!ENTITY/i.test(xml)) return null;
+    const cues = [];
+    for (const match of xml.matchAll(/<subtitle\b([^>]*)>([\s\S]*?)<\/subtitle\s*>/gi)) {
+        const attributes = match[1];
+        const body = match[2];
+        const attr = name => attributes.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1];
+        const child = name => body.match(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)<\\/${name}\\s*>`, 'i'))?.[1];
+        const start = parseSubtitleTime(attr('start') || child('start'));
+        const stop = parseSubtitleTime(attr('stop') || attr('end') || child('stop') || child('end'));
+        const duration = parseSubtitleTime(attr('duration') || child('duration'));
+        const textMatch = body.match(/<text\b[^>]*>([\s\S]*?)<\/text\s*>/i);
+        const rawText = textMatch ? textMatch[1] : body;
+        const preservedTags = [];
+        const safeText = rawText
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/?(?:i|b|u)\b[^>]*>/gi, tag => {
+                const token = `\u0001USF_TAG_${preservedTags.length}\u0001`;
+                const name = tag.match(/^<\/?(i|b|u)\b/i)[1].toLowerCase();
+                preservedTags.push(tag.match(/^<\//) ? `</${name}>` : `<${name}>`);
+                return token;
+            })
+            .replace(/<[^>]*>/g, '');
+        const text = cleanSubtitleMarkup(decodeXmlText(safeText)
+            .replace(/[<>]/g, character => character === '<' ? '&lt;' : '&gt;')
+            .replace(/\u0001USF_TAG_(\d+)\u0001/g, (_, index) => preservedTags[Number(index)] || ''));
+        if (start !== null && text) {
+            const end = stop !== null ? stop : (duration !== null ? start + duration : null);
+            if (end !== null) cues.push({ start, end, text });
+        }
+    }
+    return cuesToVtt(cues);
+}
+
 function normalizeArchiveSize(value, fallback) {
     return Number.isSafeInteger(value) && value >= 0 ? value : fallback;
 }
@@ -429,6 +554,7 @@ async function decompressGzip(buffer, maxOutputBytes = DEFAULT_ARCHIVE_LIMITS.ma
 async function decompressBrotli(buffer, maxOutputBytes = DEFAULT_ARCHIVE_LIMITS.maxTotalBytes) {
     log.debug(() => `[ArchiveExtractor] decompressBrotli: decompressing ${buffer.length} bytes`);
     try {
+        // maxOutputLength limits expansion; only the patched Node runtime protects its native Brotli decoder.
         const decompressed = zlib.brotliDecompressSync(buffer, { maxOutputLength: maxOutputBytes });
         log.debug(() => `[ArchiveExtractor] decompressBrotli: decompressed to ${decompressed.length} bytes`);
         return decompressed;
@@ -916,6 +1042,16 @@ async function convertSubtitleToVtt(content, filename, providerName, options = {
         const hadBom = content.charCodeAt(0) === 0xFEFF;
         content = content.replace(/^\uFEFF/, '');
         if (hadBom) log.debug(() => `[${providerName}] Stripped UTF-8 BOM from ${filename}`);
+    }
+
+    const textExtension = lower.endsWith('.txt');
+    const mpl = lower.endsWith('.mpl') || (textExtension && /^\s*\[\d+\]\[\d+\]/m.test(content));
+    const tmp = lower.endsWith('.tmp') || (textExtension && /^\s*\d{1,3}:\d{2}:\d{2}(?:[.,]\d{1,3})?\s*[:=]/m.test(content));
+    const usf = lower.endsWith('.usf') || (textExtension && /<USFSubtitles\b|<subtitle\b/i.test(content));
+    const customVtt = mpl ? convertMplToVtt(content) : tmp ? convertTmpToVtt(content) : usf ? convertUsfToVtt(content) : null;
+    if (customVtt) {
+        log.debug(() => `[${providerName}] Converted ${mpl ? 'MPL2' : tmp ? 'TMP' : 'USF'} subtitles to VTT (${customVtt.length} chars)`);
+        return customVtt;
     }
 
     // If skipAssConversion is enabled, return ASS/SSA files as-is with format info

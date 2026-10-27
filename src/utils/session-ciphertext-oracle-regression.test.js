@@ -33,7 +33,8 @@ test('all encrypted credential inputs are detected without inspecting unrelated 
       subsource: { apiKey: ciphertext },
       scs: { apiKey: ciphertext },
       wyzie: { apiKey: ciphertext },
-      subsro: { apiKey: ciphertext }
+      subsro: { apiKey: ciphertext },
+      jimaku: { apiKey: ciphertext }
     },
     providers: {
       openai: { apiKey: ciphertext },
@@ -54,6 +55,7 @@ test('all encrypted credential inputs are detected without inspecting unrelated 
     'subtitleProviders.scs.apiKey',
     'subtitleProviders.wyzie.apiKey',
     'subtitleProviders.subsro.apiKey',
+    'subtitleProviders.jimaku.apiKey',
     'providers.openai.apiKey',
     'providers.custom.apiKey'
   ]);

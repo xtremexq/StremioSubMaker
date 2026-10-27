@@ -835,6 +835,8 @@
           "scsKeyNote": "Use your own SCS auth key for faster language-filtered requests.",
           "scsModeNote": "Community mode uses SubMaker's shared token; Auth mode sends only your selected languages.",
           "wyzieName": "Wyzie Subs",
+          "tsdbName": "The Subtitle Database",
+          "tsdbDesc": "Search subtitles by IMDb or TMDb ID, without an API key.",
           "wyzieDesc": "Subtitle aggregator that searches every source available to your API key",
           "wyzieKeyPlaceholder": "Enter Wyzie API key",
           "wyzieGetKey": "Get your free API key at store.wyzie.io/redeem",
@@ -1096,6 +1098,7 @@
         "scsKeyRequired": "SCS Auth is enabled but auth key is missing",
         "wyzieKeyRequired": "Wyzie Subs is enabled but API key is missing",
         "subsroKeyRequired": "Subs.ro is enabled but API key is missing",
+        "jimakuKeyRequired": "Jimaku is enabled but API key is missing",
         "subtitleProviderRequired": "Please enable at least one subtitle provider",
         "geminiKeysRequired": "At least one API key is required for rotation",
         "geminiKeysFillEmpty": "Please fill in all API key fields before adding a new one",
@@ -1152,6 +1155,23 @@
           "validateTitle": "Validate API key",
           "validateCta": "Test",
           "toggleLabel": "Enable SubDL"
+        },
+        "tsdb": {
+          "title": "The Subtitle Database",
+          "description": "Search and download subtitles without an API key.",
+          "linkLabel": "thesubtitledb.org",
+          "note": "No API key required. Supports movies and TV episodes by IMDb or TMDb ID.",
+          "toggleLabel": "Enable The Subtitle Database"
+        },
+        "jimaku": {
+          "title": "Jimaku",
+          "description": "Japanese anime subtitles. Get an API key from",
+          "linkLabel": "Jimaku account",
+          "placeholder": "Enter Jimaku API key",
+          "validateTitle": "Validate API key",
+          "validateCta": "Test",
+          "toggleLabel": "Enable Jimaku",
+          "note": "Looks up anime by AniList ID and returns Japanese subtitles. Add Japanese as a source language to translate them."
         },
         "subsro": {
           "title": "Subs.ro",
@@ -1252,25 +1272,25 @@
           "helper": "AI model for translations",
           "options": {
             "gemma27b": "Gemma 27b (beta) (Recommended for Rate Limits)",
-            "flashLite": "Gemini 2.5 Flash-Lite",
-            "flash": "Gemini 2.5 Flash",
+            "flashLite25": "Gemini 2.5 Flash-Lite",
+            "flash25": "Gemini 2.5 Flash",
             "flashLite31": "Gemini 3.1 Flash Lite",
-            "flash3": "Gemini 3.0 Flash (beta)",
-            "flashLite35": "Gemini 3.5 Flash-Lite (beta)",
-            "flash35": "Gemini 3.5 Flash (beta)",
-            "flash36": "Gemini 3.6 Flash (beta)",
-            "flash37": "Gemini 3.7 Flash (beta)",
-            "pro": "Gemini 2.5 Pro (beta)",
-            "pro3": "Gemini 3.0 Pro (beta)"
+            "flash3": "Gemini 3 Flash (preview)",
+            "flashLite35": "Gemini 3.5 Flash-Lite",
+            "flash36": "Gemini 3.6 Flash",
+            "flash37": "Gemini 3.7 Flash",
+            "pro25": "Gemini 2.5 Pro",
+            "flash38": "Gemini 3.8 Flash",
+            "pro31": "Gemini 3.1 Pro (preview)"
           },
           "hintTitle": "Bad/broken or out-of-sync translation while the source subtitle is fine?",
           "hintBody": "Quickly triple-click the subtitle to force a fresh re-translation, or change translation settings.",
           "retranslationHintTitle": "Bad/broken or out-of-sync translation while the source subtitle is fine?",
           "retranslationHintBody": "Quickly triple-click the subtitle to force a fresh re-translation, or change translation settings.",
-          "betaTitle": "⚡ 2.5 Pro usage is still in Beta.",
-          "betaAdvice": "If you have translation problems, use Flash-Lite.",
+          "betaTitle": "⚠️ Gemini 2.5 Pro access may be limited for newer projects.",
+          "betaAdvice": "For new projects, use Gemini 3.8 Flash or Flash-Lite.",
           "rateWarningTitle": "⚠️ Free Tier Limitation:",
-          "rateWarningBody": "If using a free API key, Gemini 2.5 Pro may trigger rate limits (HTTP 429). You'll likely only be able to translate one subtitle at a time."
+          "rateWarningBody": "Gemini 2.5 Pro access is limited for newer projects and may trigger rate limits (HTTP 429)."
         },
         "keyRotation": {
           "label": "Enable Gemini API key rotation",
@@ -1440,6 +1460,13 @@
           "medium": "Medium",
           "high": "High"
         },
+        "samplingParameters": {
+          "label": "Send Custom Sampling Parameters",
+          "description": "When enabled, SubMaker sends Temperature, Top-P, and Top-K. Turn it off to use the model's defaults.",
+          "gemini3": "Gemini 3.x requires model defaults, so Temperature, Top-P, and Top-K are always omitted.",
+          "custom": "Custom sampling parameters will be sent with Gemini requests.",
+          "modelDefaults": "Sampling parameters are omitted; the model's defaults will be used."
+        },
         "temperature": {
           "label": "Temperature (Creativity)",
           "description": "Controls randomness (0.0-2.0). Lower = more deterministic, Higher = more creative. Default: 0.8"
@@ -1447,6 +1474,10 @@
         "topP": {
           "label": "Top-P (Nucleus Sampling)",
           "description": "Probability threshold (0.0-1.0). Lower = more focused, Higher = more diverse. Default: 0.95"
+        },
+        "topK": {
+          "label": "Top-K (Token Selection)",
+          "description": "Number of top tokens to consider (1-100). Default: 40"
         },
         "batchContext": {
           "label": "Enable Batch Context",
@@ -1620,6 +1651,13 @@
           "low": "Low",
           "medium": "Medium",
           "high": "High"
+        },
+        "samplingParameters": {
+          "label": "Send Custom Sampling Parameters",
+          "helper": "Turn off to omit Temperature, Top-P, and Top-K and use the Gemini model's defaults.",
+          "gemini3": "Gemini 3.x requires model defaults, so all three sampling parameters are always omitted.",
+          "custom": "Custom sampling parameters will be sent for this translation.",
+          "modelDefaults": "Sampling parameters are omitted; the model's defaults will be used."
         },
         "temperature": {
           "label": "Temperature (Creativity)",

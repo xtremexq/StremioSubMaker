@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.95
+
+**Improvements:**
+
+- **Updated the Gemini model catalog:** The Config/Quick Setup model lists now include the current 3.8, 3.7, 3.6, 3.5 Flash-Lite, 3.1 Flash-Lite, 3.1 Pro preview, Gemini 3 Flash preview, and still-supported Gemini 2.5 Flash, Flash-Lite, and Pro models while retaining the existing Flash-Lite fallback. Model discovery now excludes retired, image, audio, live, embedding, robotics, and other non-translation endpoints.
+
+- **Resolved issue #164 and let Gemini use its native sampling defaults everywhere:** Advanced Settings and File Translation now expose one switch that omits Temperature, Top-P, and Top-K from Gemini requests. Gemini 3.x forces the safe omitted state required by Google, while legacy Gemini and Gemma models retain custom sampling by default but can opt out. Saved Stremio, Toolbox, streaming, non-streaming, key-rotation, fallback, and automatic-subtitle translation paths all honor the same setting, Toolbox cache compatibility now includes the effective generation settings, and File Translation resets all three sampling controls cleanly when switching providers.
+
+- **Added The Subtitle Database as a no-key subtitle provider:** TSDB is available in the Config and Quick Setup pages, supports IMDb/TMDB movie and episode searches, downloads and archive extraction, language/encoding normalization, translation sources, provider labels, and the same download-size protections as the other providers.
+
+- **Added Jimaku for Japanese anime subtitles:** Users can save and validate a Jimaku API key in Config. Anime ID lookup uses AniList IDs directly or resolves supported anime catalog IDs, then searches requested episodes and safely downloads/converts subtitle files and archives. Jimaku results also work as translation sources.
+
+- **Made subtitle-provider keep-alive traffic configurable:** Self-hosted installs disable periodic keep-alive pings by default through `SUBTITLE_PROVIDER_KEEPALIVE_ENABLED=false`; setting it to true enables them, while `ELFHOSTED=true` always keeps the hosted service behavior enabled. Startup connection warm-up remains available independently.
+
+**Bug Fixes:**
+
+- **Kept current Gemini models usable while migrating retired IDs:** Gemini 2.5 stable model IDs are preserved, while shut-down preview/2.0 IDs and deprecated Gemini 3.5 Flash selections migrate to supported replacements. Gemini 3.8/3.7 now use the documented low/medium/high thinking levels, Gemini 3 Flash preview keeps its high default, and model-specific defaults stay synchronized across Config, File Translation, Toolbox, and runtime requests.
+
+- **Kept mobile translations alive through hosted proxies:** Mobile/forced-wait subtitle requests now send SRT whitespace while a full translation is running, preventing Cloudflare from replacing long Gemini translations with an HTTP 524 timeout before the completed subtitle can be delivered.
+
+- **Expired cached translation errors on schedule:** Bypass-mode failures, including Gemini server-location errors, now honor their 15-minute payload expiry instead of inheriting the bypass cache's 12-hour storage TTL. Reads also remove legacy bypass entries whose payload expiry has already passed.
+
+**Security Fixes:**
+
+- **Closed the native Brotli decoder exposure:** The production image is pinned to Node.js 24.22.1, the patched runtime containing the Brotli decoder fix. Node engine constraints accept patched 22.23.4, 24.22.1, or 26.12.1 lines, and CI verifies the maintained 22 and 24 targets; subtitle archive expansion retains its hard output ceiling so compressed provider responses cannot expand without bound.
+
+- **Refreshed the npm dependency tree:** Direct and transitive packages were updated to compatible security releases, the lockfile and package metadata were regenerated, and both full and production-only `npm audit` checks are clean.
+
 ## SubMaker v1.4.94
 
 **Performance Improvements:**

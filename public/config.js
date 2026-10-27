@@ -274,6 +274,14 @@
         setDescriptionWithLink('subsourceDescription', 'config.providers.subsource.description', 'config.providers.subsource.linkLabel', 'Get your free API key from');
         setText('subdlTitle', 'config.providers.subdl.title', 'SubDL');
         setDescriptionWithLink('subdlDescription', 'config.providers.subdl.description', 'config.providers.subdl.linkLabel', 'Get your free API key from');
+        setText('tsdbTitle', 'config.providers.tsdb.title', 'The Subtitle Database');
+        setText('tsdbDescription', 'config.providers.tsdb.description', 'Search and download subtitles without an API key.');
+        setText('tsdbNote', 'config.providers.tsdb.note', 'No API key required. Supports movies and TV episodes by IMDb or TMDb ID.');
+        setText('jimakuTitle', 'config.providers.jimaku.title', 'Jimaku');
+        setDescriptionWithLink('jimakuDescription', 'config.providers.jimaku.description', 'config.providers.jimaku.linkLabel', 'Japanese anime subtitles. Get an API key from');
+        setAttr('jimakuApiKey', 'placeholder', 'config.providers.jimaku.placeholder', 'Enter Jimaku API key');
+        setAttr('validateJimaku', 'title', 'config.providers.jimaku.validateTitle', 'Validate API key');
+        setText('jimakuNote', 'config.providers.jimaku.note', 'Looks up anime by AniList ID and returns Japanese subtitles. Add Japanese as a source language to translate them.');
         setText('scsTitle', 'config.providers.scs.title', 'Stremio Community Subtitles');
         setText('scsDescription', 'config.providers.scs.description', 'Community-curated subtitles from the Stremio Community Subtitles addon. Choose the shared community token or your own auth key.');
         setText('scsImplTypeLabel', 'config.providers.scs.implementationType', 'Implementation Type');
@@ -999,16 +1007,24 @@ Translate to {target_language}.`;
     const GEMINI_FLASH_LATEST_MODEL = 'gemini-flash-latest';
     const DEFAULT_GEMINI_MODEL = 'gemini-flash-lite-latest';
     const DEPRECATED_GEMINI_MODEL_REPLACEMENTS = Object.freeze({
-        'gemini-2.5-flash-lite': GEMINI_31_FLASH_LITE_MODEL,
         'gemini-2.5-flash-lite-preview-09-2025': GEMINI_31_FLASH_LITE_MODEL,
+        'gemini-2.5-flash-lite-preview-09-25': GEMINI_31_FLASH_LITE_MODEL,
         'gemini-2.5-flash-lite-09-2025': GEMINI_31_FLASH_LITE_MODEL,
-        'gemini-2.5-flash': 'gemini-3.6-flash',
+        'gemini-2.5-flash-preview-05-20': 'gemini-3.6-flash',
         'gemini-2.5-flash-preview-09-2025': 'gemini-3.6-flash',
-        'gemini-2.5-flash-latest': 'gemini-3.6-flash',
-        'gemini-2.5-pro': 'gemini-3.1-pro-preview',
         'gemini-2.5-pro-preview-05-06': 'gemini-3.1-pro-preview',
-        'gemini-2.5-pro-latest': 'gemini-3.1-pro-preview',
-        'gemini-3-flash-preview': 'gemini-3.6-flash',
+        'gemini-2.5-flash-preview-09-25': 'gemini-3.6-flash',
+        'gemini-2.5-pro-preview-03-25': 'gemini-3.1-pro-preview',
+        'gemini-2.5-pro-preview-06-05': 'gemini-3.1-pro-preview',
+        'gemini-2.0-flash': 'gemini-3.6-flash',
+        'gemini-2.0-flash-001': 'gemini-3.6-flash',
+        'gemini-2.0-flash-lite': GEMINI_31_FLASH_LITE_MODEL,
+        'gemini-2.0-flash-lite-001': GEMINI_31_FLASH_LITE_MODEL,
+        'gemini-2.0-flash-lite-preview': GEMINI_31_FLASH_LITE_MODEL,
+        'gemini-2.0-flash-lite-preview-02-05': GEMINI_31_FLASH_LITE_MODEL,
+        'gemini-3.1-flash-lite-preview': GEMINI_31_FLASH_LITE_MODEL,
+        'gemini-3.5-flash': 'gemini-3.6-flash',
+        'gemini-3-pro-preview': 'gemini-3.1-pro-preview',
         'gemini-pro-latest': 'gemini-3.1-pro-preview'
     });
 
@@ -1016,9 +1032,6 @@ Translate to {target_language}.`;
         const normalized = typeof modelName === 'string' ? modelName.trim().replace(/^models\//, '') : '';
         if (normalized === `${GEMINI_31_FLASH_LITE_MODEL}-preview`) {
             return GEMINI_31_FLASH_LITE_MODEL;
-        }
-        if (normalized === 'gemini-3-pro-preview') {
-            return DEFAULT_GEMINI_MODEL;
         }
         if (normalized === GEMINI_FLASH_LATEST_MODEL) {
             return DEFAULT_GEMINI_MODEL;
@@ -1047,6 +1060,21 @@ Translate to {target_language}.`;
 
     const MODEL_SPECIFIC_DEFAULTS = {
 
+        'gemini-2.5-flash-lite': {
+            thinkingBudget: 0,
+            thinkingLevel: '',
+            temperature: 0.8
+        },
+        'gemini-2.5-flash': {
+            thinkingBudget: -1,
+            thinkingLevel: '',
+            temperature: 0.5
+        },
+        'gemini-2.5-pro': {
+            thinkingBudget: -1,
+            thinkingLevel: '',
+            temperature: 0.5
+        },
         'gemini-3.1-flash-lite': {
             thinkingBudget: 0,
             thinkingLevel: 'minimal',
@@ -1059,23 +1087,28 @@ Translate to {target_language}.`;
         },
         'gemini-3.5-flash': {
             thinkingBudget: -1,
-            thinkingLevel: 'high',
+            thinkingLevel: 'medium',
             temperature: 0.5
         },
         'gemini-3.6-flash': {
             thinkingBudget: -1,
-            thinkingLevel: 'high',
+            thinkingLevel: 'medium',
             temperature: 0.5
         },
         'gemini-3.7-flash': {
             thinkingBudget: -1,
-            thinkingLevel: 'high',
+            thinkingLevel: 'medium',
             temperature: 0.5
         },
-        'gemini-flash-lite-latest': {
-            thinkingBudget: 0,
-            thinkingLevel: 'minimal',
-            temperature: 0.8
+        'gemini-3.8-flash': {
+            thinkingBudget: -1,
+            thinkingLevel: 'medium',
+            temperature: 0.5
+        },
+        'gemini-3-flash-preview': {
+            thinkingBudget: -1,
+            thinkingLevel: 'high',
+            temperature: 0.5
         },
         'gemini-3.1-pro-preview': {
             thinkingBudget: 1000,
@@ -1091,33 +1124,37 @@ Translate to {target_language}.`;
      */
     function getModelSpecificDefaults(modelName) {
         const normalized = normalizeGeminiModelName(modelName).toLowerCase();
+        const samplingParametersEnabled = !isGemini3ModelName(normalized);
         const exactDefaults = MODEL_SPECIFIC_DEFAULTS[normalized];
-        if (exactDefaults) return { ...exactDefaults };
+        if (exactDefaults) return { ...exactDefaults, samplingParametersEnabled };
 
         const isGemini3 = /^gemini-3(?:[.-]|$)/.test(normalized)
             || /^gemini-(?:flash|flash-lite|pro)-latest$/.test(normalized);
         if (isGemini3 && normalized.includes('flash-lite')) {
-            return { thinkingBudget: 0, thinkingLevel: 'minimal', temperature: 0.8 };
+            return { thinkingBudget: 0, thinkingLevel: 'minimal', temperature: 0.8, samplingParametersEnabled: false };
+        }
+        if (isGemini3 && normalized === 'gemini-3-flash-preview') {
+            return { thinkingBudget: -1, thinkingLevel: 'high', temperature: 0.5, samplingParametersEnabled: false };
         }
         if (isGemini3 && normalized.includes('flash')) {
-            return { thinkingBudget: -1, thinkingLevel: 'high', temperature: 0.5 };
+            return { thinkingBudget: -1, thinkingLevel: 'medium', temperature: 0.5, samplingParametersEnabled: false };
         }
         if (isGemini3 && normalized.includes('pro')) {
-            return { thinkingBudget: 1000, thinkingLevel: 'high', temperature: 0.5 };
+            return { thinkingBudget: 1000, thinkingLevel: 'high', temperature: 0.5, samplingParametersEnabled: false };
         }
         if (normalized.includes('gemma')) {
-            return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.7 };
+            return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.7, samplingParametersEnabled: true };
         }
         if (normalized.includes('flash-lite')) {
-            return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8 };
+            return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8, samplingParametersEnabled: true };
         }
         if (normalized.includes('flash')) {
-            return { thinkingBudget: -1, thinkingLevel: '', temperature: 0.5 };
+            return { thinkingBudget: -1, thinkingLevel: '', temperature: 0.5, samplingParametersEnabled: true };
         }
         if (normalized.includes('pro')) {
-            return { thinkingBudget: 1000, thinkingLevel: '', temperature: 0.5 };
+            return { thinkingBudget: 1000, thinkingLevel: '', temperature: 0.5, samplingParametersEnabled: true };
         }
-        return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8 };
+        return { thinkingBudget: 0, thinkingLevel: '', temperature: 0.8, samplingParametersEnabled: true };
     }
 
     function getVisibleGeminiModelOptions() {
@@ -1210,6 +1247,50 @@ Translate to {target_language}.`;
 
         if (budgetGroup) budgetGroup.style.display = usesThinkingLevel ? 'none' : '';
         if (levelGroup) levelGroup.style.display = usesThinkingLevel ? '' : 'none';
+        updateGeminiSamplingControls();
+    }
+
+    function updateGeminiSamplingControls() {
+        const model = getAdvancedGeminiModelValue();
+        const isGemini3 = isGemini3ModelName(model);
+        const toggle = document.getElementById('advancedSamplingParametersEnabled');
+        const status = document.getElementById('advancedSamplingParametersStatus');
+        if (!toggle) return;
+
+        if (isGemini3) {
+            toggle.checked = false;
+            toggle.disabled = true;
+        } else {
+            toggle.disabled = false;
+        }
+
+        const samplingEnabled = !isGemini3 && toggle.checked === true;
+        document.querySelectorAll('[data-gemini-sampling-parameter]').forEach(group => {
+            group.classList.toggle('sampling-parameter-disabled', !samplingEnabled);
+            group.querySelectorAll('input').forEach(input => {
+                input.disabled = !samplingEnabled;
+            });
+        });
+
+        if (status) {
+            status.textContent = isGemini3
+                ? tConfig(
+                    'config.advancedGemini.samplingParameters.gemini3',
+                    {},
+                    'Gemini 3.x requires model defaults, so Temperature, Top-P, and Top-K are always omitted.'
+                )
+                : (samplingEnabled
+                    ? tConfig(
+                        'config.advancedGemini.samplingParameters.custom',
+                        {},
+                        'Custom sampling parameters will be sent with Gemini requests.'
+                    )
+                    : tConfig(
+                        'config.advancedGemini.samplingParameters.modelDefaults',
+                        {},
+                        'Sampling parameters are omitted; the model\'s defaults will be used.'
+                    ));
+        }
     }
 
     function getDefaultProviderParameters() {
@@ -1350,6 +1431,13 @@ Translate to {target_language}.`;
                 wyzie: {
                     enabled: false,
                     apiKey: ''
+                },
+                tsdb: {
+                    enabled: false
+                },
+                jimaku: {
+                    enabled: false,
+                    apiKey: ''
                 }
             },
             // Subtitle provider timeout in seconds (min: 8, max: 30, default: 12)
@@ -1383,6 +1471,7 @@ Translate to {target_language}.`;
                 geminiModel: '', // Override model (empty = use default)
                 thinkingBudget: modelDefaults.thinkingBudget,
                 thinkingLevel: modelDefaults.thinkingLevel,
+                samplingParametersEnabled: modelDefaults.samplingParametersEnabled,
                 temperature: modelDefaults.temperature,
                 topP: 0.95,
                 topK: 40,
@@ -5798,7 +5887,9 @@ Translate to {target_language}.`;
                 subdl: { ...(defaults.subtitleProviders?.subdl || {}), enabled: false },
                 subsource: { ...(defaults.subtitleProviders?.subsource || {}), enabled: false },
                 scs: { ...(defaults.subtitleProviders?.scs || {}), enabled: false },
-                wyzie: { ...(defaults.subtitleProviders?.wyzie || {}), enabled: false }
+                wyzie: { ...(defaults.subtitleProviders?.wyzie || {}), enabled: false },
+                tsdb: { ...(defaults.subtitleProviders?.tsdb || {}), enabled: false },
+                jimaku: { ...(defaults.subtitleProviders?.jimaku || {}), enabled: false }
             };
             setActiveSessionContext({
                 token: '',
@@ -6617,12 +6708,14 @@ Translate to {target_language}.`;
         const advModelEl = document.getElementById('advancedModel');
         const advThinkingEl = document.getElementById('advancedThinkingBudget');
         const advThinkingLevelEl = document.getElementById('advancedThinkingLevel');
+        const advSamplingEl = document.getElementById('advancedSamplingParametersEnabled');
         const advTempEl = document.getElementById('advancedTemperature');
         const advTopPEl = document.getElementById('advancedTopP');
+        const advTopKEl = document.getElementById('advancedTopK');
         const batchCtxEl = document.getElementById('enableBatchContext');
         const ctxSizeEl = document.getElementById('contextSize');
 
-        if (!advModelEl || !advThinkingEl || !advThinkingLevelEl || !advTempEl || !advTopPEl) {
+        if (!advModelEl || !advThinkingEl || !advThinkingLevelEl || !advSamplingEl || !advTempEl || !advTopPEl || !advTopKEl) {
             return false; // Elements not loaded yet
         }
 
@@ -6633,8 +6726,11 @@ Translate to {target_language}.`;
         const thinkingChanged = isGemini3ModelName(activeModel)
             ? sanitizeGeminiThinkingLevel(advThinkingLevelEl.value) !== activeModelDefaults.thinkingLevel
             : parseInt(advThinkingEl.value) !== activeModelDefaults.thinkingBudget;
-        const tempChanged = parseFloat(advTempEl.value) !== defaults.temperature;
-        const topPChanged = parseFloat(advTopPEl.value) !== defaults.topP;
+        const samplingEnabled = !isGemini3ModelName(activeModel) && advSamplingEl.checked === true;
+        const samplingChanged = advSamplingEl.checked !== defaults.samplingParametersEnabled;
+        const tempChanged = samplingEnabled && parseFloat(advTempEl.value) !== defaults.temperature;
+        const topPChanged = samplingEnabled && parseFloat(advTopPEl.value) !== defaults.topP;
+        const topKChanged = samplingEnabled && parseInt(advTopKEl.value, 10) !== defaults.topK;
         // Batch context changes are also considered advanced modifications
         const batchCtxChanged = batchCtxEl ? (batchCtxEl.checked !== (defaults.enableBatchContext === true)) : false;
         const ctxSizeChanged = ctxSizeEl ? (parseInt(ctxSizeEl.value) !== (defaults.contextSize || 8)) : false;
@@ -6644,7 +6740,7 @@ Translate to {target_language}.`;
         // Workflow change (default is 'xml')
         const workflowChanged = getSelectedTranslationWorkflow('xml') !== 'xml';
 
-        return modelChanged || thinkingChanged || tempChanged || topPChanged || batchCtxChanged || ctxSizeChanged || mismatchRetriesChanged || workflowChanged;
+        return modelChanged || thinkingChanged || samplingChanged || tempChanged || topPChanged || topKChanged || batchCtxChanged || ctxSizeChanged || mismatchRetriesChanged || workflowChanged;
     }
 
     /**
@@ -7485,6 +7581,20 @@ Translate to {target_language}.`;
             toggleProviderConfig('subsourceConfig', e.target.checked);
         });
 
+        const tsdbToggle = document.getElementById('enableTSDB');
+        if (tsdbToggle) {
+            tsdbToggle.addEventListener('change', (e) => {
+                toggleProviderConfig('tsdbConfig', e.target.checked);
+            });
+        }
+
+        const jimakuToggle = document.getElementById('enableJimaku');
+        if (jimakuToggle) {
+            jimakuToggle.addEventListener('change', (e) => {
+                toggleProviderConfig('jimakuConfig', e.target.checked);
+            });
+        }
+
         const scsToggle = document.getElementById('enableSCS');
         if (scsToggle) {
             scsToggle.addEventListener('change', (e) => {
@@ -7929,14 +8039,18 @@ Translate to {target_language}.`;
             const advModelEl = document.getElementById('advancedModel');
             const advThinkingEl = document.getElementById('advancedThinkingBudget');
             const advThinkingLevelEl = document.getElementById('advancedThinkingLevel');
+            const advSamplingEl = document.getElementById('advancedSamplingParametersEnabled');
             const advTempEl = document.getElementById('advancedTemperature');
             const advTopPEl = document.getElementById('advancedTopP');
+            const advTopKEl = document.getElementById('advancedTopK');
 
             if (advModelEl) advModelEl.value = ''; // Reset to "Use Default Model"
             if (advThinkingEl) advThinkingEl.value = modelDefaults.thinkingBudget;
             if (advThinkingLevelEl) advThinkingLevelEl.value = modelDefaults.thinkingLevel || 'disabled';
+            if (advSamplingEl) advSamplingEl.checked = modelDefaults.samplingParametersEnabled;
             if (advTempEl) advTempEl.value = modelDefaults.temperature;
             if (advTopPEl) advTopPEl.value = fullDefaults.topP;
+            if (advTopKEl) advTopKEl.value = fullDefaults.topK;
             updateGeminiThinkingControl();
 
             // Update bypass cache state based on new defaults
@@ -7960,6 +8074,11 @@ Translate to {target_language}.`;
         const validateSubsRoBtn = document.getElementById('validateSubsRo');
         if (validateSubsRoBtn) {
             validateSubsRoBtn.addEventListener('click', () => validateApiKey('subsro'));
+        }
+
+        const validateJimakuBtn = document.getElementById('validateJimaku');
+        if (validateJimakuBtn) {
+            validateJimakuBtn.addEventListener('click', () => validateApiKey('jimaku'));
         }
 
         // File translation toggle - show modal when enabled
@@ -8002,8 +8121,10 @@ Translate to {target_language}.`;
         const advModelEl = document.getElementById('advancedModel');
         const advThinkingEl = document.getElementById('advancedThinkingBudget');
         const advThinkingLevelEl = document.getElementById('advancedThinkingLevel');
+        const advSamplingEl = document.getElementById('advancedSamplingParametersEnabled');
         const advTempEl = document.getElementById('advancedTemperature');
         const advTopPEl = document.getElementById('advancedTopP');
+        const advTopKEl = document.getElementById('advancedTopK');
         const workflowInputs = getTranslationWorkflowInputs();
 
         // Fetch models when dropdown is clicked (on-demand fallback)
@@ -8042,12 +8163,19 @@ Translate to {target_language}.`;
             tryFetchAdvancedModels();
         });
 
-        [advModelEl, advThinkingEl, advThinkingLevelEl, advTempEl, advTopPEl, ...workflowInputs].forEach(el => {
+        [advModelEl, advThinkingEl, advThinkingLevelEl, advTempEl, advTopPEl, advTopKEl, ...workflowInputs].forEach(el => {
             if (el) {
                 el.addEventListener('change', updateBypassCacheForAdvancedSettings);
                 el.addEventListener('input', updateBypassCacheForAdvancedSettings);
             }
         });
+
+        if (advSamplingEl) {
+            advSamplingEl.addEventListener('change', () => {
+                updateGeminiSamplingControls();
+                updateBypassCacheForAdvancedSettings();
+            });
+        }
 
         if (advModelEl) {
             advModelEl.addEventListener('change', () => {
@@ -8055,6 +8183,7 @@ Translate to {target_language}.`;
                 const selectedDefaults = getModelSpecificDefaults(selectedModel);
                 if (advThinkingEl) advThinkingEl.value = selectedDefaults.thinkingBudget;
                 if (advThinkingLevelEl) advThinkingLevelEl.value = selectedDefaults.thinkingLevel || 'disabled';
+                if (advSamplingEl) advSamplingEl.checked = selectedDefaults.samplingParametersEnabled;
                 if (advTempEl) advTempEl.value = selectedDefaults.temperature;
                 updateGeminiThinkingControl();
                 updateBypassCacheForAdvancedSettings();
@@ -9439,6 +9568,11 @@ Translate to {target_language}.`;
             feedback = document.getElementById('subsroValidationFeedback');
             apiKey = document.getElementById('subsroApiKey').value.trim();
             endpoint = '/api/validate-subsro';
+        } else if (provider === 'jimaku') {
+            btn = document.getElementById('validateJimaku');
+            feedback = document.getElementById('jimakuValidationFeedback');
+            apiKey = document.getElementById('jimakuApiKey').value.trim();
+            endpoint = '/api/validate-jimaku';
         }
 
         // Validate input
@@ -10182,13 +10316,16 @@ Translate to {target_language}.`;
 
         // Define hardcoded multi-model options
         const hardcodedModels = [
-
+            { name: 'gemini-3.8-flash', displayName: 'Gemini 3.8 Flash' },
+            { name: 'gemini-3.7-flash', displayName: 'Gemini 3.7 Flash' },
+            { name: 'gemini-3.6-flash', displayName: 'Gemini 3.6 Flash' },
+            { name: 'gemini-3.5-flash-lite', displayName: 'Gemini 3.5 Flash-Lite' },
             { name: 'gemini-3.1-flash-lite', displayName: 'Gemini 3.1 Flash Lite' },
-            { name: 'gemini-3.7-flash', displayName: 'Gemini 3.7 Flash (beta)' },
-            { name: 'gemini-3.6-flash', displayName: 'Gemini 3.6 Flash (beta)' },
-            { name: 'gemini-3.5-flash', displayName: 'Gemini 3.5 Flash (beta)' },
-            { name: 'gemini-3.5-flash-lite', displayName: 'Gemini 3.5 Flash-Lite (beta)' },
-            { name: 'gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro (beta)' }
+            { name: 'gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro (preview)' },
+            { name: 'gemini-3-flash-preview', displayName: 'Gemini 3 Flash (preview)' },
+            { name: 'gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash-Lite' },
+            { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
+            { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' }
         ];
 
         // Track added models to avoid duplicates
@@ -10542,6 +10679,19 @@ Translate to {target_language}.`;
                     newConfig.subtitleProviders.subsro.enabled = oldSubsro.enabled === true;
                     newConfig.subtitleProviders.subsro.apiKey = (oldSubsro.apiKey || '').trim();
                 }
+
+                // The Subtitle Database: preserve its no-key enabled state.
+                if (defaults.subtitleProviders.tsdb) {
+                    const oldTsdb = oldConfig.subtitleProviders.tsdb || {};
+                    newConfig.subtitleProviders.tsdb.enabled = oldTsdb.enabled === true;
+                }
+
+                // Jimaku: preserve its per-user API key and enabled state.
+                if (defaults.subtitleProviders.jimaku) {
+                    const oldJimaku = oldConfig.subtitleProviders.jimaku || {};
+                    newConfig.subtitleProviders.jimaku.enabled = oldJimaku.enabled === true;
+                    newConfig.subtitleProviders.jimaku.apiKey = (oldJimaku.apiKey || '').trim();
+                }
             }
 
             // Preserve standalone API keys for auto-subs flows
@@ -10860,6 +11010,18 @@ Translate to {target_language}.`;
         }
         toggleProviderConfig('subsroConfig', subsroEnabled);
 
+        const tsdbEnabled = currentConfig.subtitleProviders?.tsdb?.enabled === true;
+        const tsdbToggle = document.getElementById('enableTSDB');
+        if (tsdbToggle) tsdbToggle.checked = tsdbEnabled;
+        toggleProviderConfig('tsdbConfig', tsdbEnabled);
+
+        const jimakuEnabled = currentConfig.subtitleProviders?.jimaku?.enabled === true;
+        const jimakuToggle = document.getElementById('enableJimaku');
+        const jimakuApiKey = document.getElementById('jimakuApiKey');
+        if (jimakuToggle) jimakuToggle.checked = jimakuEnabled;
+        if (jimakuApiKey) jimakuApiKey.value = currentConfig.subtitleProviders?.jimaku?.apiKey || '';
+        toggleProviderConfig('jimakuConfig', jimakuEnabled);
+
         // Load subtitle provider timeout setting (min: 8, max: 30, default: 12)
         const timeoutSlider = document.getElementById('subtitleProviderTimeout');
         const timeoutValueEl = document.getElementById('subtitleProviderTimeoutValue');
@@ -10977,8 +11139,10 @@ Translate to {target_language}.`;
         const advModelEl = document.getElementById('advancedModel');
         const advThinkingEl = document.getElementById('advancedThinkingBudget');
         const advThinkingLevelEl = document.getElementById('advancedThinkingLevel');
+        const advSamplingEl = document.getElementById('advancedSamplingParametersEnabled');
         const advTempEl = document.getElementById('advancedTemperature');
         const advTopPEl = document.getElementById('advancedTopP');
+        const advTopKEl = document.getElementById('advancedTopK');
 
         if (advModelEl) {
             // Will be populated by fetchAvailableModels
@@ -10993,8 +11157,12 @@ Translate to {target_language}.`;
                 activeDefaults.thinkingLevel || 'disabled'
             ) || 'disabled';
         }
+        if (advSamplingEl) {
+            advSamplingEl.checked = currentConfig.advancedSettings?.samplingParametersEnabled !== false;
+        }
         if (advTempEl) advTempEl.value = currentConfig.advancedSettings?.temperature ?? 0.8;
         if (advTopPEl) advTopPEl.value = currentConfig.advancedSettings?.topP ?? 0.95;
+        if (advTopKEl) advTopKEl.value = currentConfig.advancedSettings?.topK ?? 40;
         updateGeminiThinkingControl();
 
         // Load batch context settings
@@ -11298,6 +11466,13 @@ Translate to {target_language}.`;
                 subsro: {
                     enabled: document.getElementById('enableSubsRo')?.checked || false,
                     apiKey: document.getElementById('subsroApiKey')?.value?.trim() || ''
+                },
+                tsdb: {
+                    enabled: document.getElementById('enableTSDB')?.checked || false
+                },
+                jimaku: {
+                    enabled: document.getElementById('enableJimaku')?.checked || false,
+                    apiKey: document.getElementById('jimakuApiKey')?.value?.trim() || ''
                 }
             },
             // Subtitle provider timeout (clamp to 8-30 range)
@@ -11360,9 +11535,16 @@ Translate to {target_language}.`;
                 geminiModel: (function () { const el = document.getElementById('advancedModel'); return el ? el.value : ''; })(),
                 thinkingBudget: (function () { const el = document.getElementById('advancedThinkingBudget'); return el ? parseInt(el.value) : 0; })(),
                 thinkingLevel: (function () { const el = document.getElementById('advancedThinkingLevel'); return el ? sanitizeGeminiThinkingLevel(el.value) : ''; })(),
+                samplingParametersEnabled: (function () {
+                    const el = document.getElementById('advancedSamplingParametersEnabled');
+                    return el ? el.checked === true : false;
+                })(),
                 temperature: (function () { const el = document.getElementById('advancedTemperature'); return el ? parseFloat(el.value) : 0.8; })(),
                 topP: (function () { const el = document.getElementById('advancedTopP'); return el ? parseFloat(el.value) : 0.95; })(),
-                topK: 40, // Keep default topK
+                topK: (function () {
+                    const el = document.getElementById('advancedTopK');
+                    return el ? Math.max(1, Math.min(100, parseInt(el.value, 10) || 40)) : 40;
+                })(),
                 enableBatchContext: (function () { const el = document.getElementById('enableBatchContext'); return el ? el.checked : false; })(),
                 contextSize: (function () { const el = document.getElementById('contextSize'); return el ? parseInt(el.value) : 8; })(),
                 translationWorkflow: getSelectedTranslationWorkflow('xml'),
@@ -11413,6 +11595,9 @@ Translate to {target_language}.`;
         }
         if (config.subtitleProviders.subsro?.enabled && !config.subtitleProviders.subsro.apiKey?.trim()) {
             errors.push(tConfig('config.validation.subsroKeyRequired', {}, '⚠️ Subs.ro is enabled but API key is missing'));
+        }
+        if (config.subtitleProviders.jimaku?.enabled && !config.subtitleProviders.jimaku.apiKey?.trim()) {
+            errors.push(tConfig('config.validation.jimakuKeyRequired', {}, '⚠️ Jimaku is enabled but API key is missing'));
         }
 
         // Validate that every enabled AI provider has an API key

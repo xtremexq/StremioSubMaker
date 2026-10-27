@@ -129,7 +129,8 @@ function sanitizeConfig(config) {
     'refreshToken',
     'opensubtitlesPassword',
     'subdlApiKey',
-    'subsourceApiKey'
+    'subsourceApiKey',
+    'jimakuApiKey'
   ];
 
   // Redact sensitive fields
@@ -155,6 +156,18 @@ function sanitizeConfig(config) {
       };
     }
     sanitized.providers = sanitizedProviders;
+  }
+
+  if (sanitized.subtitleProviders && typeof sanitized.subtitleProviders === 'object') {
+    const sanitizedSubtitleProviders = {};
+    for (const [providerName, providerConfig] of Object.entries(sanitized.subtitleProviders)) {
+      sanitizedSubtitleProviders[providerName] = {
+        ...providerConfig,
+        apiKey: redactApiKey(providerConfig?.apiKey),
+        password: redactApiKey(providerConfig?.password)
+      };
+    }
+    sanitized.subtitleProviders = sanitizedSubtitleProviders;
   }
 
   return sanitized;

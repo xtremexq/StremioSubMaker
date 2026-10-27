@@ -392,6 +392,7 @@ async function createTranslationProvider(config) {
           maxRetries: settings.maxRetries,
           thinkingBudget: modelDefaults.thinkingBudget,
           thinkingLevel: modelDefaults.thinkingLevel,
+          samplingParametersEnabled: settings.samplingParametersEnabled,
           temperature: modelDefaults.temperature,
           topP: settings.topP,
           topK: settings.topK

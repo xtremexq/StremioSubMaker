@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const axios = require('axios');
+const { Readable } = require('node:stream');
 
 const GeminiService = require('./gemini');
 const { createTranslationProvider } = require('./translationProviderFactory');
@@ -301,12 +302,14 @@ test('Gemini 3.x uses thinking levels without legacy sampling fields', () => {
   const service = new GeminiService('test-key', 'models/gemini-3.5-flash', {
     thinkingBudget: 1000,
     thinkingLevel: 'high',
+    samplingParametersEnabled: true,
     temperature: 0.5,
     topK: 40,
     topP: 0.95
   });
 
   assert.equal(service.model, 'gemini-3.5-flash');
+  assert.equal(service.samplingParametersEnabled, false);
   assert.deepEqual(service.buildGenerationConfig(4096), {
     maxOutputTokens: 4096,
     thinkingConfig: { thinkingLevel: 'high' }
@@ -382,24 +385,89 @@ test('legacy numeric thinking budgets and sampling controls remain unchanged for
     topP: 0.9,
     thinkingConfig: { thinkingBudget: 1000 }
   });
+
+  const modelDefaults = new GeminiService('test-key', 'gemini-2.0-flash', {
+    thinkingBudget: 1000,
+    samplingParametersEnabled: false,
+    temperature: 0.5,
+    topK: 20,
+    topP: 0.9
+  });
+  assert.equal(modelDefaults.samplingParametersEnabled, false);
+  assert.deepEqual(modelDefaults.buildGenerationConfig(4096), {
+    maxOutputTokens: 4096,
+    thinkingConfig: { thinkingBudget: 1000 }
+  });
+});
+
+test('legacy Gemini sampling can be disabled through the environment default', () => {
+  const original = process.env.GEMINI_SAMPLING_PARAMETERS_ENABLED;
+  process.env.GEMINI_SAMPLING_PARAMETERS_ENABLED = 'false';
+  try {
+    const service = new GeminiService('test-key', 'gemini-2.0-flash', {
+      temperature: 0.5,
+      topK: 20,
+      topP: 0.9
+    });
+    assert.equal(service.samplingParametersEnabled, false);
+    assert.equal('temperature' in service.buildGenerationConfig(4096), false);
+  } finally {
+    if (original === undefined) delete process.env.GEMINI_SAMPLING_PARAMETERS_ENABLED;
+    else process.env.GEMINI_SAMPLING_PARAMETERS_ENABLED = original;
+  }
+});
+
+test('streaming Gemini requests honor the same sampling opt-out', async () => {
+  const service = new GeminiService('test-key', 'gemini-2.0-flash', {
+    samplingParametersEnabled: false,
+    temperature: 0.5,
+    topK: 20,
+    topP: 0.9,
+    maxRetries: 0
+  });
+  service.getModelLimits = async () => ({ inputTokenLimit: 1048576, outputTokenLimit: 8192 });
+
+  let requestBody = null;
+  service.request = async (method, requestPath, body) => {
+    assert.equal(method, 'post');
+    assert.match(requestPath, /:streamGenerateContent$/);
+    requestBody = body;
+    return {
+      headers: { 'content-type': 'text/event-stream' },
+      data: Readable.from([
+        'data: {"candidates":[{"content":{"parts":[{"text":"Olá"}]},"finishReason":"STOP"}]}\n\n'
+      ])
+    };
+  };
+
+  const output = await service.streamTranslateSubtitle('Hello', 'English', 'Portuguese');
+  assert.equal(output, 'Olá');
+  assert.equal('temperature' in requestBody.generationConfig, false);
+  assert.equal('topP' in requestBody.generationConfig, false);
+  assert.equal('topK' in requestBody.generationConfig, false);
 });
 
 test('saved model IDs and Gemini 3.x defaults normalize without breaking old configs', () => {
   assert.equal(normalizeGeminiModelName(' models/gemini-3.7-flash '), 'gemini-3.7-flash');
   assert.equal(normalizeGeminiModelName('gemini-3.1-flash-lite-preview'), 'gemini-3.1-flash-lite');
-  assert.equal(normalizeGeminiModelName('gemini-3-pro-preview'), 'gemini-flash-lite-latest');
-  assert.equal(normalizeGeminiModelName('gemini-2.5-flash-lite'), 'gemini-3.1-flash-lite');
-  assert.equal(normalizeGeminiModelName('gemini-2.5-flash'), 'gemini-3.6-flash');
-  assert.equal(normalizeGeminiModelName('gemini-2.5-pro'), 'gemini-3.1-pro-preview');
-  assert.equal(normalizeGeminiModelName('gemini-3-flash-preview'), 'gemini-3.6-flash');
+  assert.equal(normalizeGeminiModelName('gemini-3-pro-preview'), 'gemini-3.1-pro-preview');
+  assert.equal(normalizeGeminiModelName('gemini-2.5-flash-lite'), 'gemini-2.5-flash-lite');
+  assert.equal(normalizeGeminiModelName('gemini-2.5-flash'), 'gemini-2.5-flash');
+  assert.equal(normalizeGeminiModelName('gemini-2.5-pro'), 'gemini-2.5-pro');
+  assert.equal(normalizeGeminiModelName('gemini-3-flash-preview'), 'gemini-3-flash-preview');
+  assert.equal(normalizeGeminiModelName('gemini-2.0-flash'), 'gemini-3.6-flash');
 
   const defaults = getDefaultConfig('gemini-3.6-flash');
   assert.equal(defaults.geminiModel, 'gemini-3.6-flash');
   assert.equal(defaults.advancedSettings.thinkingBudget, -1);
-  assert.equal(defaults.advancedSettings.thinkingLevel, 'high');
+  assert.equal(defaults.advancedSettings.thinkingLevel, 'medium');
+  assert.equal(defaults.advancedSettings.samplingParametersEnabled, false);
+
+  const legacyDefaults = getDefaultConfig('gemini-2.5-flash');
+  assert.equal(legacyDefaults.advancedSettings.samplingParametersEnabled, true);
 
   const oldFlashDefaults = getModelSpecificDefaults('gemini-3.6-flash');
-  for (const model of ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash-preview']) {
+  for (const model of ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash']) {
     assert.deepEqual(getModelSpecificDefaults(model), oldFlashDefaults);
   }
   const oldLiteDefaults = getModelSpecificDefaults('gemini-3.1-flash-lite');
@@ -420,6 +488,17 @@ test('saved model IDs and Gemini 3.x defaults normalize without breaking old con
   assert.equal(normalized.geminiModel, 'gemini-3.5-flash-lite');
   assert.equal(normalized.advancedSettings.geminiModel, 'gemini-3.7-flash');
   assert.equal(normalized.advancedSettings.thinkingLevel, 'high');
+  assert.equal(normalized.advancedSettings.samplingParametersEnabled, false);
+
+  const normalizedLegacyOptOut = normalizeConfig({
+    geminiApiKey: 'legacy-key',
+    geminiModel: 'gemini-2.0-flash',
+    advancedSettings: {
+      enabled: false,
+      samplingParametersEnabled: false
+    }
+  });
+  assert.equal(normalizedLegacyOptOut.advancedSettings.samplingParametersEnabled, false);
 
   const migratedLegacy = normalizeConfig({
     geminiApiKey: 'legacy-key',
@@ -429,8 +508,8 @@ test('saved model IDs and Gemini 3.x defaults normalize without breaking old con
       geminiModel: 'gemini-2.5-flash'
     }
   });
-  assert.equal(migratedLegacy.geminiModel, 'gemini-3.1-flash-lite');
-  assert.equal(migratedLegacy.advancedSettings.geminiModel, 'gemini-3.6-flash');
+  assert.equal(migratedLegacy.geminiModel, 'gemini-2.5-flash-lite');
+  assert.equal(migratedLegacy.advancedSettings.geminiModel, 'gemini-2.5-flash');
 });
 
 test('base-model selections apply their cloned runtime defaults without enabling advanced overrides', async () => {
@@ -441,35 +520,53 @@ test('base-model selections apply their cloned runtime defaults without enabling
   const currentFlash = await createTranslationProvider(flashConfig);
   assert.equal(currentFlash.provider.model, 'gemini-3.6-flash');
   assert.equal(currentFlash.provider.thinkingBudget, -1);
-  assert.equal(currentFlash.provider.thinkingLevel, 'high');
+  assert.equal(currentFlash.provider.thinkingLevel, 'medium');
   assert.equal(currentFlash.provider.temperature, 0.5);
+  assert.equal(currentFlash.provider.samplingParametersEnabled, false);
 
   const legacyFlashConfig = getDefaultConfig('gemini-2.5-flash');
   legacyFlashConfig.geminiApiKey = 'legacy-test-key';
   legacyFlashConfig.advancedSettings.enabled = false;
 
   const legacyFlash = await createTranslationProvider(legacyFlashConfig);
-  assert.equal(legacyFlash.provider.model, 'gemini-3.6-flash');
+  assert.equal(legacyFlash.provider.model, 'gemini-2.5-flash');
   assert.equal(legacyFlash.provider.thinkingBudget, -1);
-  assert.equal(legacyFlash.provider.thinkingLevel, 'high');
+  assert.equal(legacyFlash.provider.thinkingLevel, '');
   assert.equal(legacyFlash.provider.temperature, 0.5);
+  assert.equal(legacyFlash.provider.samplingParametersEnabled, true);
+
+  const legacyOptOutConfig = getDefaultConfig('gemini-2.5-flash');
+  legacyOptOutConfig.geminiApiKey = 'legacy-test-key';
+  legacyOptOutConfig.advancedSettings.enabled = false;
+  legacyOptOutConfig.advancedSettings.samplingParametersEnabled = false;
+  const legacyOptOut = await createTranslationProvider(legacyOptOutConfig);
+  assert.equal(legacyOptOut.provider.model, 'gemini-2.5-flash');
+  assert.equal(legacyOptOut.provider.samplingParametersEnabled, false);
+  assert.equal('temperature' in legacyOptOut.provider.buildGenerationConfig(4096), false);
 });
 
 test('Configure and Toolbox pages expose current Gemini choices and model-aware controls', async () => {
   const html = fs.readFileSync(path.join(projectRoot, 'public', 'partials', 'main.html'), 'utf8');
   const requiredModels = [
+    'gemini-3.8-flash',
     'gemini-3.1-flash-lite',
     'gemini-3.5-flash-lite',
-    'gemini-3.5-flash',
     'gemini-3.6-flash',
-    'gemini-3.7-flash'
+    'gemini-3.7-flash',
+    'gemini-3.1-pro-preview',
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.5-pro'
   ];
 
   for (const model of requiredModels) {
     assert.match(html, new RegExp(`value=["']${model}["']`));
   }
   assert.match(html, /id="advancedThinkingLevel"/);
-  for (const retiredModel of ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview']) {
+  assert.match(html, /id="advancedSamplingParametersEnabled"/);
+  assert.match(html, /id="advancedTopK"/);
+  for (const retiredModel of ['gemini-3.5-flash', 'gemini-3-pro-preview']) {
     assert.doesNotMatch(html, new RegExp(`value=["']${retiredModel}["']`));
   }
   const configUi = fs.readFileSync(path.join(projectRoot, 'public', 'config.js'), 'utf8');
@@ -482,6 +579,9 @@ test('Configure and Toolbox pages expose current Gemini choices and model-aware 
     'test.srt'
   );
   assert.match(uploadPage, /id="advancedThinkingLevel"/);
+  assert.match(uploadPage, /id="advancedSamplingParametersEnabled"/);
+  assert.match(uploadPage, /samplingParametersEnabled,/);
+  assert.match(uploadPage, /updateSamplingControls\('gemini'/);
   assert.match(uploadPage, /thinkingLevel: usesThinkingLevel \? thinkingLevel : undefined/);
   assert.match(uploadPage, /function getGeminiModelFamilyDefaults/);
   assert.match(uploadPage, /applyGeminiModelDefaults\(advancedModel\.value\)/);
@@ -502,4 +602,8 @@ test('Configure and Toolbox pages expose current Gemini choices and model-aware 
       if (match[1].trim()) new vm.Script(match[1]);
     }
   }
+
+  const indexSource = fs.readFileSync(path.join(projectRoot, 'index.js'), 'utf8');
+  assert.match(indexSource, /const getProviderParams = \(key\) => key === 'gemini'/);
+  assert.match(indexSource, /generationSettingsSignature/);
 });

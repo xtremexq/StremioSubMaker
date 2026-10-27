@@ -184,14 +184,16 @@ Check "Advanced Mode" in Other Settings to unlock:
 - Batch Context settings
 - Mismatch Retries configuration
 - JSON Structured Output
-- Gemini Advanced Parameters (temperature, top-p, thinking budget)
+- Gemini Advanced Parameters (model-default/custom sampling, temperature, Top-P, Top-K, and thinking)
 
 ### 📊 Parameters to Tune
 
 | Parameter | Default | Effect |
 |-----------|---------|--------|
+| Custom sampling parameters | Off for Gemini 3.x; on for legacy/Gemma | When off, Temperature, Top-P, and Top-K are omitted so the model uses its defaults |
 | Temperature | 0.8 | Higher = more creative, Lower = more consistent |
 | Top-P | 0.95 | Lower = more focused responses |
+| Top-K | 40 | Limits candidate tokens when custom sampling is enabled |
 | Mismatch Retries | 1 | Retries when AI returns wrong entry count |
 | Thinking Budget | 0 | Extended reasoning tokens (0 = disabled) |
 

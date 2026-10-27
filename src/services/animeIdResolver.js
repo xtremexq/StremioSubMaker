@@ -122,7 +122,7 @@ function addMeta(map, id, meta) {
     }
 
     const ambiguousFields = existing._ambiguousFields || new Set();
-    const fields = ['imdbId', 'tmdbId', 'tvdbId', 'type', 'season', 'seasonTvdb', 'seasonTmdb'];
+    const fields = ['imdbId', 'tmdbId', 'tvdbId', 'anilistId', 'type', 'season', 'seasonTvdb', 'seasonTmdb'];
     const merged = {
         _ambiguousFields: ambiguousFields,
         _variants: [...(existing._variants || []), { ...meta }]
@@ -164,6 +164,7 @@ function publicMeta(meta) {
         imdbId: meta?.imdbId ?? null,
         tmdbId: meta?.tmdbId ?? null,
         tvdbId: meta?.tvdbId ?? null,
+        anilistId: meta?.anilistId ?? null,
         type: meta?.type ?? null,
         season: meta?.season ?? null,
         seasonTvdb: meta?.seasonTvdb ?? null,
@@ -172,7 +173,7 @@ function publicMeta(meta) {
 }
 
 function collapseVariants(variants) {
-    const fields = ['imdbId', 'tmdbId', 'tvdbId', 'type', 'season', 'seasonTvdb', 'seasonTmdb'];
+    const fields = ['imdbId', 'tmdbId', 'tvdbId', 'anilistId', 'type', 'season', 'seasonTvdb', 'seasonTmdb'];
     const collapsed = {};
 
     for (const field of fields) {
@@ -209,6 +210,7 @@ function finalizeResolvedMeta(meta, aggregate = null) {
         imdbId: meta?.imdbId ?? aggregate?.imdbId ?? null,
         tmdbId: meta?.tmdbId ?? aggregate?.tmdbId ?? null,
         tvdbId: meta?.tvdbId ?? aggregate?.tvdbId ?? null,
+        anilistId: meta?.anilistId ?? aggregate?.anilistId ?? null,
         type: meta?.type ?? aggregate?.type ?? null,
         season: meta?.season ?? aggregate?.season ?? null,
         seasonTvdb: meta?.seasonTvdb ?? aggregate?.seasonTvdb ?? null,
@@ -250,7 +252,16 @@ function buildMaps(entries) {
         if (!parsePositiveInteger(e.season) && season && e.season && typeof e.season === 'object' && !Array.isArray(e.season)) {
             structuredSeasonEntries++;
         }
-        const meta = { imdbId, tmdbId, tvdbId, type: e.type || null, season, seasonTvdb, seasonTmdb };
+        const meta = {
+            imdbId,
+            tmdbId,
+            tvdbId,
+            anilistId: parsePositiveInteger(e.anilist_id),
+            type: e.type || null,
+            season,
+            seasonTvdb,
+            seasonTmdb
+        };
 
         const kitsuId = parsePositiveInteger(e.kitsu_id);
         const malId = parsePositiveInteger(e.mal_id);
@@ -611,6 +622,48 @@ function resolveImdbId(platform, rawId, options = {}) {
     return finalizeResolvedMeta(result);
 }
 
+/**
+ * Resolve a supported anime/catalog ID to its AniList ID for AniList-native
+ * providers such as Jimaku. Ambiguous mappings fail closed unless a season hint
+ * uniquely selects a variant.
+ */
+function resolveAniListId(platform, rawId, options = {}) {
+    if (!_ready) return null;
+
+    const numericId = extractNumeric(rawId);
+    if (isNaN(numericId)) return null;
+
+    const rawPlatform = String(platform || '').toLowerCase();
+    const p = rawPlatform === 'myanimelist' ? 'mal' : rawPlatform;
+    const maps = {
+        kitsu: kitsuMap,
+        mal: malMap,
+        anidb: anidbMap,
+        anilist: anilistMap,
+        tvdb: tvdbMap,
+        tmdb: tmdbAnimeMap,
+        simkl: simklMap,
+        livechart: livechartMap,
+        anisearch: anisearchMap
+    };
+    const result = maps[p]?.get(numericId);
+    if (!result) return null;
+
+    const seasonHint = parsePositiveInteger(options?.seasonHint);
+    if (seasonHint && Array.isArray(result._variants) && result._variants.length > 1) {
+        const seasonField = p === 'tvdb' ? 'seasonTvdb' : p === 'tmdb' ? 'seasonTmdb' : 'season';
+        const matchingVariants = result._variants.filter(variant => parsePositiveInteger(variant?.[seasonField]) === seasonHint);
+        const matchingIds = [...new Set(matchingVariants.map(variant => parsePositiveInteger(variant?.anilistId)).filter(Boolean))];
+        if (matchingIds.length === 1) return matchingIds[0];
+        if (matchingIds.length > 1) return null;
+    }
+
+    const ids = [...new Set((result._variants || [result])
+        .map(variant => parsePositiveInteger(variant?.anilistId))
+        .filter(Boolean))];
+    return ids.length === 1 ? ids[0] : null;
+}
+
 /** Whether the maps are loaded and ready for queries */
 function isReady() {
     return _ready;
@@ -640,6 +693,7 @@ module.exports = {
     initialize,
     refresh,
     resolveImdbId,
+    resolveAniListId,
     isReady,
     getStats,
 };

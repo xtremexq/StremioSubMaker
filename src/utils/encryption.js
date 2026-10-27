@@ -333,6 +333,7 @@ function findEncryptedSensitiveInputPaths(config) {
     inspect(subtitleProviders.scs?.apiKey, 'subtitleProviders.scs.apiKey');
     inspect(subtitleProviders.wyzie?.apiKey, 'subtitleProviders.wyzie.apiKey');
     inspect(subtitleProviders.subsro?.apiKey, 'subtitleProviders.subsro.apiKey');
+    inspect(subtitleProviders.jimaku?.apiKey, 'subtitleProviders.jimaku.apiKey');
   }
 
   if (config.providers && typeof config.providers === 'object') {
@@ -429,6 +430,11 @@ function encryptUserConfig(config) {
       if (encrypted.subtitleProviders.subsro?.apiKey) {
         encrypted.subtitleProviders.subsro.apiKey =
           encrypt(encrypted.subtitleProviders.subsro.apiKey);
+      }
+
+      // Jimaku API key
+      if (encrypted.subtitleProviders.jimaku?.apiKey && !isEncrypted(encrypted.subtitleProviders.jimaku.apiKey)) {
+        encrypted.subtitleProviders.jimaku.apiKey = encrypt(encrypted.subtitleProviders.jimaku.apiKey);
       }
     }
 
@@ -621,6 +627,17 @@ function decryptUserConfig(config) {
             safeDecrypt(decrypted.subtitleProviders.subsro.apiKey, 'subsro.apiKey');
           const isString = typeof decrypted.subtitleProviders.subsro.apiKey === 'string';
           log.debug(() => `[Encryption] Subs.ro key decrypted successfully, type: ${isString ? 'string' : 'NOT_STRING'}`);
+        }
+      }
+
+      // Jimaku API key
+      if (decrypted.subtitleProviders.jimaku?.apiKey) {
+        const jimakuKeyEncrypted = isEncrypted(decrypted.subtitleProviders.jimaku.apiKey);
+        if (isConfigEncrypted || jimakuKeyEncrypted) {
+          decrypted.subtitleProviders.jimaku.apiKey = safeDecrypt(
+            decrypted.subtitleProviders.jimaku.apiKey,
+            'jimaku.apiKey'
+          );
         }
       }
     }

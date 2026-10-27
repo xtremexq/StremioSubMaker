@@ -446,6 +446,63 @@
                             </div>
                         </div>
 
+                        <!-- The Subtitle Database (TSDB) -->
+                        <div class="form-group" style="padding: 0.85rem 0; border-bottom: 1px solid var(--border);">
+                            <div
+                                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                    <span style="font-size: 1.2rem;">🗃️</span>
+                                    <div>
+                                        <strong id="tsdbTitle" data-i18n="config.providers.tsdb.title"
+                                            style="display: block;">The Subtitle Database</strong>
+                                        <span class="label-description" id="tsdbDescription" style="margin: 0;"
+                                            data-i18n="config.providers.tsdb.description">Search and download subtitles without an API key.</span>
+                                    </div>
+                                </label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="enableTSDB" aria-label="The Subtitle Database toggle"
+                                        data-i18n="config.providers.tsdb.toggleLabel" data-i18n-attr="aria-label">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div id="tsdbConfig" style="display: none; margin-top: 0.5rem;">
+                                <div id="tsdbNote" class="label-description" data-i18n="config.providers.tsdb.note">
+                                    No API key required. Supports movies and TV episodes by IMDb or TMDb ID.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Jimaku anime subtitles -->
+                        <div class="form-group" style="padding: 0.85rem 0; border-bottom: 1px solid var(--border);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                    <span style="font-size: 1.2rem;">🇯🇵</span>
+                                    <div>
+                                        <strong id="jimakuTitle" data-i18n="config.providers.jimaku.title" style="display: block;">Jimaku</strong>
+                                        <span class="label-description" id="jimakuDescription" style="margin: 0;">
+                                            <span data-i18n="config.providers.jimaku.description">Japanese anime subtitles. Get an API key from</span>
+                                            <a id="jimakuLink" data-i18n="config.providers.jimaku.linkLabel" href="https://jimaku.cc/account" target="_blank" rel="noopener noreferrer" style="color: var(--primary-light);">Jimaku account</a>
+                                        </span>
+                                    </div>
+                                </label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="enableJimaku" aria-label="Jimaku toggle" data-i18n="config.providers.jimaku.toggleLabel" data-i18n-attr="aria-label">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div id="jimakuConfig" style="display: none; margin-top: 0.5rem;">
+                                <div style="display: flex; gap: 0.5rem; align-items: start;">
+                                    <input type="text" id="jimakuApiKey" data-i18n="config.providers.jimaku.placeholder" data-i18n-attr="placeholder" placeholder="Enter Jimaku API key" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" style="flex: 1;">
+                                    <button type="button" class="validate-api-btn" id="validateJimaku" data-i18n="config.providers.jimaku.validateTitle" data-i18n-attr="title" title="Validate API key">
+                                        <span class="validate-icon">✓</span>
+                                        <span class="validate-text" data-i18n="config.providers.jimaku.validateCta">Test</span>
+                                    </button>
+                                </div>
+                                <div class="validation-feedback" id="jimakuValidationFeedback"></div>
+                                <div class="label-description" id="jimakuNote" style="margin-top: 0.5rem;" data-i18n="config.providers.jimaku.note">Looks up anime by AniList ID and returns Japanese subtitles. Add Japanese as a source language to translate them.</div>
+                            </div>
+                        </div>
+
                         <!-- Stremio Community Subtitles (SCS) -->
                         <div class="form-group" style="padding: 0.85rem 0; border-bottom: 1px solid var(--border);">
                             <div
@@ -790,18 +847,27 @@
                                     data-i18n="config.gemini.model.helper">AI model for translations</span>
                             </label>
                             <select id="geminiModel" required>
-                                <option value="gemini-3.1-flash-lite"
-                                    data-i18n="config.gemini.model.options.flashLite31" selected>Gemini 3.1 Flash Lite
-                                </option>
+                                <option value="gemini-3.8-flash" data-i18n="config.gemini.model.options.flash38">
+                                    Gemini 3.8 Flash</option>
                                 <option value="gemini-3.7-flash" data-i18n="config.gemini.model.options.flash37">
-                                    Gemini 3.7 Flash (beta)</option>
+                                    Gemini 3.7 Flash</option>
                                 <option value="gemini-3.6-flash" data-i18n="config.gemini.model.options.flash36">
-                                    Gemini 3.6 Flash (beta)</option>
-                                <option value="gemini-3.5-flash" data-i18n="config.gemini.model.options.flash35">
-                                    Gemini 3.5 Flash (beta)</option>
+                                    Gemini 3.6 Flash</option>
                                 <option value="gemini-3.5-flash-lite"
                                     data-i18n="config.gemini.model.options.flashLite35">Gemini 3.5 Flash-Lite (beta)
                                 </option>
+                                <option value="gemini-3.1-flash-lite"
+                                    data-i18n="config.gemini.model.options.flashLite31" selected>Gemini 3.1 Flash Lite</option>
+                                <option value="gemini-3.1-pro-preview" data-i18n="config.gemini.model.options.pro31">
+                                    Gemini 3.1 Pro (preview)</option>
+                                <option value="gemini-3-flash-preview" data-i18n="config.gemini.model.options.flash3">
+                                    Gemini 3 Flash (preview)</option>
+                                <option value="gemini-2.5-flash-lite" data-i18n="config.gemini.model.options.flashLite25">
+                                    Gemini 2.5 Flash-Lite</option>
+                                <option value="gemini-2.5-flash" data-i18n="config.gemini.model.options.flash25">
+                                    Gemini 2.5 Flash</option>
+                                <option value="gemini-2.5-pro" data-i18n="config.gemini.model.options.pro25">
+                                    Gemini 2.5 Pro</option>
                             </select>
                             <div class="field-error" id="geminiModelError"
                                 data-i18n="config.validation.geminiModelRequired">Please select a model</div>
@@ -2171,7 +2237,7 @@
                         <span data-i18n="config.advancedGemini.model.label">Translation Model Override</span>
                         <span class="label-description" data-i18n="config.advancedGemini.model.description">Override the
                             default model. Leave empty to use system default
-                            (Gemini 3.0 Flash).</span>
+                            (Gemini Flash Lite Latest).</span>
                     </label>
                     <select id="advancedModel">
                         <option value="" data-i18n="config.advancedGemini.model.default">Use Default Model</option>
@@ -2208,7 +2274,28 @@
                     </select>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" id="advancedSamplingParametersGroup">
+                    <div class="gemini-sampling-toggle-row">
+                        <label for="advancedSamplingParametersEnabled">
+                            <span data-i18n="config.advancedGemini.samplingParameters.label">Send Custom Sampling
+                                Parameters</span>
+                            <span class="label-description"
+                                data-i18n="config.advancedGemini.samplingParameters.description">When enabled,
+                                SubMaker sends Temperature, Top-P, and Top-K. Turn it off to use the model's
+                                defaults.</span>
+                        </label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="advancedSamplingParametersEnabled" checked
+                                aria-label="Send custom Gemini sampling parameters"
+                                data-i18n="config.advancedGemini.samplingParameters.label"
+                                data-i18n-attr="aria-label">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <span class="gemini-sampling-status" id="advancedSamplingParametersStatus"></span>
+                </div>
+
+                <div class="form-group" id="advancedTemperatureGroup" data-gemini-sampling-parameter>
                     <label for="advancedTemperature">
                         <span data-i18n="config.advancedGemini.temperature.label">Temperature (Creativity)</span>
                         <span class="label-description"
@@ -2220,7 +2307,7 @@
                         placeholder="0.8">
                 </div>
 
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group" id="advancedTopPGroup" data-gemini-sampling-parameter>
                     <label for="advancedTopP">
                         <span data-i18n="config.advancedGemini.topP.label">Top-P (Nucleus Sampling)</span>
                         <span class="label-description" data-i18n="config.advancedGemini.topP.description">Probability
@@ -2228,6 +2315,15 @@
                             more diverse. Default: 0.95</span>
                     </label>
                     <input type="number" id="advancedTopP" min="0" max="1" step="0.05" value="0.95" placeholder="0.95">
+                </div>
+
+                <div class="form-group" id="advancedTopKGroup" data-gemini-sampling-parameter style="margin-bottom: 0;">
+                    <label for="advancedTopK">
+                        <span data-i18n="config.advancedGemini.topK.label">Top-K (Token Selection)</span>
+                        <span class="label-description" data-i18n="config.advancedGemini.topK.description">Number of
+                            top tokens to consider (1-100). Default: 40</span>
+                    </label>
+                    <input type="number" id="advancedTopK" min="1" max="100" step="1" value="40" placeholder="40">
                 </div>
             </div>
         </div>

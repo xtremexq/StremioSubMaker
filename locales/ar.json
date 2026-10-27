@@ -835,6 +835,8 @@
           "scsKeyNote": "استخدم مفتاح SCS Auth الخاص بك لطلبات أسرع مفلترة حسب اللغة.",
           "scsModeNote": "يستخدم وضع Community الرمز المشترك في SubMaker؛ ويرسل وضع Auth اللغات المختارة فقط.",
           "wyzieName": "Wyzie Subs",
+          "tsdbName": "قاعدة بيانات الترجمة",
+          "tsdbDesc": "ابحث عن الترجمات باستخدام معرّف IMDb أو TMDb دون مفتاح API.",
           "wyzieDesc": "مجمّع يبحث في كل المصادر المتاحة لمفتاح API الخاص بك",
           "wyzieKeyPlaceholder": "أدخل مفتاح API الخاص بـ Wyzie",
           "wyzieGetKey": "احصل على مفتاح API مجاني من store.wyzie.io/redeem",
@@ -1096,6 +1098,7 @@
         "scsKeyRequired": "SCS Auth ممكّن لكن المفتاح مفقود",
         "wyzieKeyRequired": "Wyzie Subs مفعّل لكن مفتاح API مفقود",
         "subsroKeyRequired": "Subs.ro ممكّن لكن مفتاح API مفقود",
+        "jimakuKeyRequired": "Jimaku مفعّل لكن مفتاح API مفقود",
         "subtitleProviderRequired": "يرجى تمكين مزود ترجمة واحد على الأقل",
         "geminiKeysRequired": "مطلوب مفتاح API واحد على الأقل للتدوير",
         "geminiKeysFillEmpty": "يُرجى ملء جميع حقول مفاتيح API قبل إضافة مفتاح جديد",
@@ -1152,6 +1155,23 @@
           "validateTitle": "التحقق من مفتاح API",
           "validateCta": "اختبار",
           "toggleLabel": "تمكين SubDL"
+        },
+        "tsdb": {
+          "title": "قاعدة بيانات الترجمة (TSDB)",
+          "description": "ابحث عن الترجمات ونزّلها دون مفتاح API.",
+          "linkLabel": "thesubtitledb.org",
+          "note": "لا يلزم مفتاح API. تدعم الأفلام وحلقات التلفاز عبر IMDb أو TMDb.",
+          "toggleLabel": "تفعيل قاعدة بيانات الترجمة"
+        },
+        "jimaku": {
+          "title": "Jimaku",
+          "description": "ترجمات أنمي يابانية. احصل على مفتاح API من",
+          "linkLabel": "حساب Jimaku",
+          "placeholder": "أدخل مفتاح API لـ Jimaku",
+          "validateTitle": "تحقق من مفتاح API",
+          "validateCta": "اختبار",
+          "toggleLabel": "تفعيل Jimaku",
+          "note": "يبحث عن الأنمي باستخدام معرّف AniList ويعرض الترجمات اليابانية. أضف اليابانية كلغة مصدر لترجمتها."
         },
         "subsro": {
           "title": "Subs.ro",
@@ -1252,25 +1272,25 @@
           "helper": "AI model for translations",
           "options": {
             "gemma27b": "Gemma 27b (beta) (Recommended for Rate Limits)",
-            "flashLite": "Gemini 2.5 Flash-Lite",
-            "flash": "Gemini 2.5 Flash",
+            "flashLite25": "Gemini 2.5 Flash-Lite",
+            "flash25": "Gemini 2.5 Flash",
             "flashLite31": "Gemini 3.1 Flash Lite",
-            "flash3": "Gemini 3.0 Flash (beta)",
-            "flashLite35": "Gemini 3.5 Flash-Lite (beta)",
-            "flash35": "Gemini 3.5 Flash (beta)",
-            "flash36": "Gemini 3.6 Flash (beta)",
-            "flash37": "Gemini 3.7 Flash (beta)",
-            "pro": "Gemini 2.5 Pro (beta)",
-            "pro3": "Gemini 3.0 Pro (beta)"
+            "flash3": "Gemini 3 Flash (preview)",
+            "flashLite35": "Gemini 3.5 Flash-Lite",
+            "flash36": "Gemini 3.6 Flash",
+            "flash37": "Gemini 3.7 Flash",
+            "pro25": "Gemini 2.5 Pro",
+            "flash38": "Gemini 3.8 Flash",
+            "pro31": "Gemini 3.1 Pro (preview)"
           },
           "hintTitle": "ترجمة معطوبة/خاطئة أو غير متزامنة بينما ترجمة المصدر سليمة؟",
           "hintBody": "انقر ثلاث مرات بسرعة على الترجمة لفرض إعادة ترجمة جديدة، أو غيّر إعدادات الترجمة.",
           "retranslationHintTitle": "ترجمة معطوبة/خاطئة أو غير متزامنة بينما ترجمة المصدر سليمة؟",
           "retranslationHintBody": "انقر ثلاث مرات بسرعة على الترجمة لفرض إعادة ترجمة جديدة، أو غيّر إعدادات الترجمة.",
-          "betaTitle": "⚡ 2.5 Pro usage is still in Beta.",
-          "betaAdvice": "If you have translation problems, use Flash-Lite.",
+          "betaTitle": "⚠️ Gemini 2.5 Pro access may be limited for newer projects.",
+          "betaAdvice": "For new projects, use Gemini 3.8 Flash or Flash-Lite.",
           "rateWarningTitle": "⚠️ Free Tier Limitation:",
-          "rateWarningBody": "If using a free API key, Gemini 2.5 Pro may trigger rate limits (HTTP 429). You'll likely only be able to translate one subtitle at a time."
+          "rateWarningBody": "Gemini 2.5 Pro access is limited for newer projects and may trigger rate limits (HTTP 429)."
         },
         "keyRotation": {
           "label": "Enable Gemini API key rotation",
@@ -1440,6 +1460,13 @@
           "medium": "متوسط",
           "high": "مرتفع"
         },
+        "samplingParameters": {
+          "label": "إرسال معلمات أخذ عينات مخصصة",
+          "description": "عند التفعيل، يرسل SubMaker الحرارة وTop-P وTop-K. عطّله لاستخدام إعدادات النموذج الافتراضية.",
+          "gemini3": "يتطلب Gemini 3.x إعدادات النموذج الافتراضية، لذلك يتم دائماً حذف الحرارة وTop-P وTop-K.",
+          "custom": "سيتم إرسال معلمات أخذ العينات المخصصة مع طلبات Gemini.",
+          "modelDefaults": "تم حذف معلمات أخذ العينات؛ سيتم استخدام إعدادات النموذج الافتراضية."
+        },
         "temperature": {
           "label": "الحرارة (الإبداع)",
           "description": "يتحكم في العشوائية (0.0-2.0). أقل = أكثر حتمية، أعلى = أكثر إبداعاً. الافتراضي: 0.8"
@@ -1447,6 +1474,10 @@
         "topP": {
           "label": "Top-P (Nucleus Sampling)",
           "description": "عتبة الاحتمال (0.0-1.0). أقل = أكثر تركيزاً، أعلى = أكثر تنوعاً. الافتراضي: 0.95"
+        },
+        "topK": {
+          "label": "Top-K (اختيار الرموز)",
+          "description": "عدد أفضل الرموز للنظر فيها (1-100). الافتراضي: 40"
         },
         "batchContext": {
           "label": "تمكين سياق الدفعة",
@@ -1620,6 +1651,13 @@
           "low": "منخفض",
           "medium": "متوسط",
           "high": "مرتفع"
+        },
+        "samplingParameters": {
+          "label": "إرسال معلمات أخذ عينات مخصصة",
+          "helper": "عطّله لحذف الحرارة وTop-P وTop-K واستخدام إعدادات نموذج Gemini الافتراضية.",
+          "gemini3": "يتطلب Gemini 3.x إعدادات النموذج الافتراضية، لذلك يتم دائماً حذف معلمات أخذ العينات الثلاث.",
+          "custom": "سيتم إرسال معلمات أخذ العينات المخصصة لهذه الترجمة.",
+          "modelDefaults": "تم حذف معلمات أخذ العينات؛ سيتم استخدام إعدادات النموذج الافتراضية."
         },
         "temperature": {
           "label": "الحرارة (الإبداع)",

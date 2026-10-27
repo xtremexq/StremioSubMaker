@@ -1,19 +1,19 @@
 {
   "name": "submaker-subtitle-translator",
-  "version": "1.4.94",
+  "version": "1.4.95",
   "xsyncMinVersion": "1.0.9",
   "description": "Take control of your subtitles! Fetch and translate subtitles from OpenSubtitles, SubScene and SubDL with a free Gemini AI key or multiple AI providers, without ever leaving Stremio.",
   "main": "index.js",
   "packageManager": "npm@11.17.0",
   "engines": {
-    "node": ">=20.18.1",
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1",
     "npm": ">=10.8.2"
   },
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "npm run test:tracked",
-    "test:tracked": "node --test --test-force-exit src/handlers/subtitles-timeout-regression.test.js src/handlers/subtitles-stremio-compat-regression.test.js src/services/custom-provider-validation-regression.test.js src/services/gemini-auth-model-regression.test.js src/services/opensubtitles-no-backoff-regression.test.js src/services/remote-subtitle-download-security-regression.test.js src/services/subdl-plain-response-regression.test.js src/services/wyzie-current-api-regression.test.js src/utils/apiErrorHandler-opensubtitles-regression.test.js src/utils/archiveExtractor-regression.test.js src/utils/autoSubLogRegistry-regression.test.js src/utils/cloudflare-credential-encryption-regression.test.js src/utils/config-page-load-regression.test.js src/utils/embeddedCache-regression.test.js src/utils/encodingDetector-regression.test.js src/utils/inlineScriptJson-regression.test.js src/utils/localCache-index-regression.test.js src/utils/logger-sampling-regression.test.js src/utils/openSubtitlesDownloadGuard-regression.test.js src/utils/outbound-discovery-hardening-regression.test.js src/utils/session-ciphertext-oracle-regression.test.js src/utils/sessionManager-delete-regression.test.js src/utils/ssrfProtection-regression.test.js src/utils/streamUrlIdentity-regression.test.js src/utils/addon-request-hardening-regression.test.js src/storage/redis-command-timeout-regression.test.js",
+    "test:tracked": "node --test --test-force-exit src/handlers/subtitles-timeout-regression.test.js src/handlers/subtitles-stremio-compat-regression.test.js src/services/custom-provider-validation-regression.test.js src/services/gemini-auth-model-regression.test.js src/services/opensubtitles-no-backoff-regression.test.js src/services/remote-subtitle-download-security-regression.test.js src/services/subdl-plain-response-regression.test.js src/services/wyzie-current-api-regression.test.js src/services/jimaku-regression.test.js src/services/theSubtitleDatabase-regression.test.js src/utils/apiErrorHandler-opensubtitles-regression.test.js src/utils/archiveExtractor-regression.test.js src/utils/autoSubLogRegistry-regression.test.js src/utils/cacheExpiry-regression.test.js src/utils/cloudflare-credential-encryption-regression.test.js src/utils/config-page-load-regression.test.js src/utils/embeddedCache-regression.test.js src/utils/encodingDetector-regression.test.js src/utils/inlineScriptJson-regression.test.js src/utils/localCache-index-regression.test.js src/utils/logger-sampling-regression.test.js src/utils/openSubtitlesDownloadGuard-regression.test.js src/utils/outbound-discovery-hardening-regression.test.js src/utils/session-ciphertext-oracle-regression.test.js src/utils/sessionManager-delete-regression.test.js src/utils/ssrfProtection-regression.test.js src/utils/streamUrlIdentity-regression.test.js src/utils/addon-request-hardening-regression.test.js src/storage/redis-command-timeout-regression.test.js",
     "test:release": "npm run test:tracked",
     "test:manual": "npm run test:tracked",
     "update:anime-list": "node update-anime-list.js"

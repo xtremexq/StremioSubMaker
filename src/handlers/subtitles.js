@@ -2,6 +2,7 @@ const OpenSubtitlesService = require('../services/opensubtitles');
 const OpenSubtitlesV3Service = require('../services/opensubtitles-v3');
 const SubDLService = require('../services/subdl');
 const SubSourceService = require('../services/subsource');
+const TheSubtitleDatabaseService = require('../services/theSubtitleDatabase');
 const TranslationEngine = require('../services/translationEngine');
 const { createTranslationProvider } = require('../services/translationProviderFactory');
 const AniDBService = require('../services/anidb');
@@ -12,6 +13,7 @@ const animeIdResolver = require('../services/animeIdResolver');
 const StremioCommunitySubtitlesService = require('../services/stremioCommunitySubtitles');
 const WyzieSubsService = require('../services/wyzieSubs');
 const SubsRoService = require('../services/subsRo');
+const JimakuService = require('../services/jimaku');
 const { parseSRT, toSRT, inspectStremioIdSupport, parseStremioId, appendHiddenInformationalNote, normalizeImdbId, ensureSRTForTranslation, convertToSRT, detectASSFormat } = require('../utils/subtitle');
 const { getLanguageName, getDisplayName, toISO6391, toISO6392, canonicalSyncLanguageCode, normalizeLanguageCode } = require('../utils/languages');
 const { getTranslator } = require('../utils/i18n');
@@ -38,6 +40,7 @@ const { getEffectiveGeminiModel } = require('../utils/config');
 const { applyExplicitFilenameSeasonHint, hasExplicitSeasonEpisodeMismatch, resolveAnimeVideoInfo } = require('../utils/animeSearchResolver');
 const { buildTmdbToImdbWikidataQuery } = require('../utils/tmdbWikidata');
 const { getApiErrorMessage, isOpenSubtitlesQuotaError } = require('../utils/apiErrorHandler');
+const { resolveCacheTtlSeconds, isCacheEntryExpired } = require('../utils/cacheExpiry');
 
 const fs = require('fs');
 const path = require('path');
@@ -416,10 +419,11 @@ function ensureInformationalSubtitleSize(srt, note = null, uiLanguage = 'en') {
 const REQUESTED_LANGUAGE_EQUIVALENTS = {
   spa: ['spn'],
   spn: ['spa'],
-  chi: ['zhs', 'zht', 'ze'],
-  zhs: ['chi', 'zht', 'ze'],
-  zht: ['chi', 'zhs', 'ze'],
+  chi: ['zhs', 'zht', 'ze', 'yue'],
+  zhs: ['chi', 'zht', 'ze', 'yue'],
+  zht: ['chi', 'zhs', 'ze', 'yue'],
   ze: ['chi', 'zhs', 'zht'],
+  yue: ['chi', 'zhs', 'zht'],
   nor: ['nob', 'nno'],
   nob: ['nor', 'nno'],
   nno: ['nor', 'nob'],
@@ -473,7 +477,11 @@ function buildStremioSubtitleVariantLabel(subtitle, fallbackIndex = 0) {
     .trim()
     .slice(0, maxLength);
   const name = cleanPart(subtitle?.originalFilename || subtitle?.name);
-  const provider = cleanPart(subtitle?.provider, 40);
+  const providerNames = {
+    thesubtitledb: 'The Subtitle Database'
+  };
+  const rawProvider = cleanPart(subtitle?.provider, 40);
+  const provider = cleanPart(providerNames[rawProvider.toLowerCase()] || rawProvider, 40);
   const usefulName = name && name.toLowerCase() !== 'unknown' ? name : '';
   const parts = [usefulName, provider].filter(Boolean);
   return parts.length > 0 ? parts.join(' • ') : `Subtitle #${fallbackIndex + 1}`;
@@ -1495,6 +1503,14 @@ async function readFromBypassStorage(cacheKey) {
       return null;
     }
 
+    // Older bypass entries were stored with the namespace's 12-hour TTL even
+    // when their payload declared an earlier expiry (notably 15-minute errors).
+    // Enforce the payload expiry on read so those stale entries self-heal too.
+    if (isCacheEntryExpired(cached)) {
+      await adapter.delete(cacheKey, StorageAdapter.CACHE_TYPES.BYPASS);
+      return null;
+    }
+
     cacheMetrics.diskReads++;
     return cached;
   } catch (error) {
@@ -1594,7 +1610,10 @@ async function saveToStorage(cacheKey, cachedData, { allowPermanent = true, ttl:
 async function saveToBypassStorage(cacheKey, cachedData) {
   try {
     const adapter = await getStorageAdapter();
-    const ttl = StorageAdapter.DEFAULT_TTL[StorageAdapter.CACHE_TYPES.BYPASS];
+    const ttl = resolveCacheTtlSeconds(
+      cachedData?.expiresAt,
+      StorageAdapter.DEFAULT_TTL[StorageAdapter.CACHE_TYPES.BYPASS]
+    );
     await adapter.set(cacheKey, cachedData, StorageAdapter.CACHE_TYPES.BYPASS, ttl);
 
     cacheMetrics.diskWrites++;
@@ -2558,7 +2577,8 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
     'subsource': 2,        // Good reputation - API provides rating-sorted results with rich metadata
     'stremio-community-subtitles': 2, // Good reputation - community-curated subtitles
     'subsro': 2,           // Good reputation - Romanian subtitle database
-    'wyzie': 2             // Good reputation - aggregator service
+    'wyzie': 2,            // Good reputation - aggregator service
+    'thesubtitledb': 2     // No-key subtitle database
   };
 
   // Three-tier ranking system (provider-agnostic, sub.name only):
@@ -2844,10 +2864,13 @@ function createSubtitleHandler(config) {
       const searchParams = {
         imdb_id: videoInfo.imdbId,
         tmdb_id: videoInfo.tmdbId || null, // Pass TMDB ID for providers that support native TMDB search (WyzieSubs, SubsRo)
+        tmdbMediaType: videoInfo.tmdbMediaType || null, // Distinguish TMDB movies from series roots
         tmdbSeason: videoInfo.tmdbSeason || null,
         tvdbSeason: videoInfo.tvdbSeason || null,
+        stremioType: type || null,
         animeId: videoInfo.animeId || null, // Pass anime ID for providers that support native anime IDs (e.g., SCS with kitsu:1234)
         animeIdType: videoInfo.animeIdType || null, // Platform name (kitsu, anidb, mal, anilist)
+        isAnime: videoInfo.isAnime === true,
         type: videoInfo.type,
         season: videoInfo.season,
         episode: videoInfo.episode,
@@ -3109,6 +3132,61 @@ function createSubtitleHandler(config) {
           log.debug(() => '[Subtitles] Subs.ro provider has no API key; treating it as not selected');
         } else {
           log.debug(() => '[Subtitles] Subs.ro provider is disabled');
+        }
+
+        // The Subtitle Database is a no-key public provider.
+        if (config.subtitleProviders?.tsdb?.enabled) {
+          const tsdbHealth = isProviderHealthy('tsdb');
+          if (!tsdbHealth.healthy) {
+            log.debug(() => `[Subtitles] Skipping The Subtitle Database: ${tsdbHealth.reason} (retry in ${tsdbHealth.retryInSec}s)`);
+            skippedProviders.push({ provider: 'TheSubtitleDatabase', reason: tsdbHealth.reason });
+          } else {
+            const tsdb = new TheSubtitleDatabaseService();
+            addSearchTask('TheSubtitleDatabase',
+              tsdb.searchSubtitles(searchParams)
+                .then(results => {
+                  circuitBreaker.recordSuccess('tsdb');
+                  return { provider: 'TheSubtitleDatabase', results };
+                })
+                .catch(error => {
+                  const code = error?.code || '';
+                  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT' || code === 'ECONNRESET') {
+                    circuitBreaker.recordFailure('tsdb', error);
+                  }
+                  return { provider: 'TheSubtitleDatabase', results: [], error };
+                })
+            );
+          }
+        } else {
+          log.debug(() => '[Subtitles] The Subtitle Database provider is disabled');
+        }
+
+        // Jimaku provides Japanese subtitles for anime and requires a per-user API key.
+        const jimakuApiKey = normalizeProviderApiKey(config.subtitleProviders?.jimaku?.apiKey);
+        if (config.subtitleProviders?.jimaku?.enabled && jimakuApiKey) {
+          const jimakuHealth = isProviderHealthy('jimaku');
+          if (!jimakuHealth.healthy) {
+            log.debug(() => `[Subtitles] Skipping Jimaku: ${jimakuHealth.reason} (retry in ${jimakuHealth.retryInSec}s)`);
+            skippedProviders.push({ provider: 'Jimaku', reason: jimakuHealth.reason });
+          } else {
+            const jimaku = new JimakuService(jimakuApiKey);
+            addSearchTask('Jimaku',
+              jimaku.searchSubtitles(searchParams)
+                .then(results => {
+                  circuitBreaker.recordSuccess('jimaku');
+                  return { provider: 'Jimaku', results };
+                })
+                .catch(error => {
+                  const code = error?.code || '';
+                  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT' || code === 'ECONNRESET') {
+                    circuitBreaker.recordFailure('jimaku', error);
+                  }
+                  return { provider: 'Jimaku', results: [], error };
+                })
+            );
+          }
+        } else if (config.subtitleProviders?.jimaku?.enabled) {
+          log.debug(() => '[Subtitles] Jimaku is enabled but has no API key; treating it as not selected');
         }
 
         const orchestrationTimeoutMs = configuredProviderTimeoutMs;
@@ -3845,6 +3923,22 @@ async function handleSubtitleDownload(fileId, language, config) {
         const subsro = new SubsRoService(config.subtitleProviders.subsro.apiKey);
         log.debug(() => '[Download] Downloading subtitle via Subs.ro API');
         return await subsro.downloadSubtitle(fileId, { timeout: downloadTimeoutMs, languageHint: language, skipAssConversion: config.convertAssToVtt === false && config.forceSRTOutput !== true });
+      } else if (fileId.startsWith('tsdb_')) {
+        if (config.subtitleProviders?.tsdb?.enabled !== true) {
+          throw new Error('The Subtitle Database provider is disabled');
+        }
+
+        const tsdb = new TheSubtitleDatabaseService();
+        log.debug(() => '[Download] Downloading subtitle via The Subtitle Database API');
+        return await tsdb.downloadSubtitle(fileId, { timeout: downloadTimeoutMs, languageHint: language, skipAssConversion: config.convertAssToVtt === false && config.forceSRTOutput !== true });
+      } else if (fileId.startsWith('jimaku_')) {
+        if (config.subtitleProviders?.jimaku?.enabled !== true || !config.subtitleProviders?.jimaku?.apiKey) {
+          throw new Error('Jimaku provider is disabled or missing its API key');
+        }
+
+        const jimaku = new JimakuService(config.subtitleProviders.jimaku.apiKey);
+        log.debug(() => '[Download] Downloading subtitle via Jimaku');
+        return await jimaku.downloadSubtitle(fileId, { timeout: downloadTimeoutMs, languageHint: language, skipAssConversion: config.convertAssToVtt === false && config.forceSRTOutput !== true });
       } else {
         const wantsAuth = openSubsImplementation === 'auth';
         const missingCreds = wantsAuth && !openSubsHasCreds;
@@ -3958,7 +4052,7 @@ async function handleSubtitleDownload(fileId, language, config) {
 
       // Special-case OpenSubtitles Auth: surface guidance so users know how to fix it
       // Must exclude all non-OpenSubtitles providers by prefix
-      const isOpenSubsAuth = !fileId.startsWith('subdl_') && !fileId.startsWith('subsource_') && !fileId.startsWith('v3_') && !fileId.startsWith('wyzie_') && !fileId.startsWith('scs_') && !fileId.startsWith('subsro_');
+      const isOpenSubsAuth = !fileId.startsWith('subdl_') && !fileId.startsWith('subsource_') && !fileId.startsWith('v3_') && !fileId.startsWith('wyzie_') && !fileId.startsWith('scs_') && !fileId.startsWith('subsro_') && !fileId.startsWith('tsdb_') && !fileId.startsWith('jimaku_');
       if (isOpenSubsAuth) {
         log.warn(() => `[Download] OpenSubtitles Auth rate limited (impl=${openSubsImplementation}, creds=${openSubsHasCreds ? 'set' : 'missing'}) for ${fileId}`);
         const hint = openSubsHasCreds
@@ -3998,6 +4092,8 @@ ${t('subtitle.subdlDownloadQuotaBody', {}, 'This SubDL API key cannot download m
       else if (fileId.startsWith('scs_')) serviceName = 'Stremio Community Subtitles';
       else if (fileId.startsWith('wyzie_')) serviceName = 'Wyzie Subs';
       else if (fileId.startsWith('subsro_')) serviceName = 'Subs.ro';
+      else if (fileId.startsWith('tsdb_')) serviceName = 'The Subtitle Database';
+      else if (fileId.startsWith('jimaku_')) serviceName = 'Jimaku';
       else if (!fileId.startsWith('v3_')) serviceName = 'OpenSubtitles';
 
       return ensureInformationalSubtitleSize(`1
@@ -4054,6 +4150,9 @@ ${t('subtitle.providerRateLimitBody', {}, 'Too many requests in a short period.\
       } else if (fileId.startsWith('subsro_')) {
         serviceName = 'Subs.ro';
         apiKeyInstructions = 'Subs.ro API key error.\nPlease check your API key at subs.ro and update your addon configuration.';
+      } else if (fileId.startsWith('tsdb_')) {
+        serviceName = 'The Subtitle Database';
+        apiKeyInstructions = 'The Subtitle Database does not require an API key. The service may be temporarily unavailable.';
       } else if (fileId.startsWith('v3_')) {
         serviceName = 'OpenSubtitles V3';
         apiKeyInstructions = 'OpenSubtitles v3 should not require an API key.\nPlease report this issue if it persists.';
@@ -4095,6 +4194,8 @@ ${t('subtitle.notAvailableTitle', {}, 'Subtitle Not Available (Error 404)')}\n${
       else if (fileId.startsWith('scs_')) serviceName = 'Stremio Community Subtitles';
       else if (fileId.startsWith('wyzie_')) serviceName = 'Wyzie Subs';
       else if (fileId.startsWith('subsro_')) serviceName = 'Subs.ro';
+      else if (fileId.startsWith('tsdb_')) serviceName = 'The Subtitle Database';
+      else if (fileId.startsWith('jimaku_')) serviceName = 'Jimaku';
       else serviceName = 'OpenSubtitles';
 
       return ensureInformationalSubtitleSize(`1
@@ -4113,6 +4214,8 @@ ${t('subtitle.providerUnavailableBody', {}, 'Please try again in a few minutes o
       else if (fileId.startsWith('scs_')) serviceName = 'Stremio Community Subtitles';
       else if (fileId.startsWith('wyzie_')) serviceName = 'Wyzie Subs';
       else if (fileId.startsWith('subsro_')) serviceName = 'Subs.ro';
+      else if (fileId.startsWith('tsdb_')) serviceName = 'The Subtitle Database';
+      else if (fileId.startsWith('jimaku_')) serviceName = 'Jimaku';
       else serviceName = 'OpenSubtitles';
 
       const errorLabel = errorStatus === 500 ? 'Internal Server Error' : errorStatus === 502 ? 'Bad Gateway' : 'Gateway Timeout';
@@ -4125,7 +4228,7 @@ ${t('subtitle.providerServerErrorBody', {}, 'The subtitle server is experiencing
 
     // Handle OpenSubtitles daily quota exceeded (HTTP 406 with specific message)
     // Only applies to OpenSubtitles Auth (v1) path where fileId has no provider prefix
-    if (!fileId.startsWith('subdl_') && !fileId.startsWith('subsource_') && !fileId.startsWith('v3_') && !fileId.startsWith('wyzie_') && !fileId.startsWith('scs_') && !fileId.startsWith('subsro_')) {
+    if (!fileId.startsWith('subdl_') && !fileId.startsWith('subsource_') && !fileId.startsWith('v3_') && !fileId.startsWith('wyzie_') && !fileId.startsWith('scs_') && !fileId.startsWith('subsro_') && !fileId.startsWith('tsdb_') && !fileId.startsWith('jimaku_')) {
       const isOsQuota = isOpenSubtitlesQuotaError(error);
       if (isOsQuota) {
         // Pass the actual API error message so VIP/Gold users see their real quota (e.g., 200, 1000)
@@ -4186,8 +4289,18 @@ ${t('subtitle.subsourceTimeoutBody', {}, 'SubSource API did not respond in time.
       return createProviderDownloadErrorSubtitle('Subs.ro', 'Subs.ro did not respond in time. Try again in a few minutes or pick a different subtitle.', config.uiLanguage || 'en');
     }
 
+    if (fileId.startsWith('tsdb_') && isTimeout) {
+      log.warn(() => '[TSDB] Request timed out during download - informing user via subtitle');
+      return createProviderDownloadErrorSubtitle('The Subtitle Database', 'The Subtitle Database did not respond in time. Try again in a few minutes or pick a different subtitle.', config.uiLanguage || 'en');
+    }
+
+    if (fileId.startsWith('jimaku_') && isTimeout) {
+      log.warn(() => '[Jimaku] Request timed out during download - informing user via subtitle');
+      return createProviderDownloadErrorSubtitle('Jimaku', 'Jimaku did not respond in time. Try again in a few minutes or pick a different subtitle.', config.uiLanguage || 'en');
+    }
+
     // OpenSubtitles Auth timeout (no prefix = OS Auth)
-    const isOpenSubsAuth = !fileId.startsWith('subdl_') && !fileId.startsWith('subsource_') && !fileId.startsWith('v3_') && !fileId.startsWith('wyzie_') && !fileId.startsWith('scs_') && !fileId.startsWith('subsro_');
+    const isOpenSubsAuth = !fileId.startsWith('subdl_') && !fileId.startsWith('subsource_') && !fileId.startsWith('v3_') && !fileId.startsWith('wyzie_') && !fileId.startsWith('scs_') && !fileId.startsWith('subsro_') && !fileId.startsWith('tsdb_') && !fileId.startsWith('jimaku_');
     if (isOpenSubsAuth && isTimeout) {
       log.warn(() => '[OpenSubtitles Auth] Request timed out during download - informing user via subtitle');
       return createProviderDownloadErrorSubtitle('OpenSubtitles', 'OpenSubtitles did not respond in time. Try again in a few minutes or pick a different subtitle.', config.uiLanguage || 'en');
@@ -4215,6 +4328,8 @@ ${t('subtitle.subsourceTimeoutBody', {}, 'SubSource API did not respond in time.
       else if (fileId.startsWith('scs_')) serviceName = 'Stremio Community Subtitles';
       else if (fileId.startsWith('wyzie_')) serviceName = 'Wyzie Subs';
       else if (fileId.startsWith('subsro_')) serviceName = 'Subs.ro';
+      else if (fileId.startsWith('tsdb_')) serviceName = 'The Subtitle Database';
+      else if (fileId.startsWith('jimaku_')) serviceName = 'Jimaku';
       else serviceName = 'OpenSubtitles';
 
       let networkErrorReason = 'Could not connect to the subtitle server.';
@@ -4259,7 +4374,15 @@ ${t('subtitle.subsourceTimeoutBody', {}, 'SubSource API did not respond in time.
       return createProviderDownloadErrorSubtitle('Stremio Community Subtitles', 'The download response was invalid. The subtitle may have been removed from the community database.', config.uiLanguage || 'en');
     }
 
-    if (!fileId.startsWith('subdl_') && !fileId.startsWith('subsource_') && !fileId.startsWith('v3_') && !fileId.startsWith('wyzie_') && !fileId.startsWith('scs_') && !fileId.startsWith('subsro_') && (looksLikeHtmlError || looksLikeBadZip)) {
+    if (fileId.startsWith('tsdb_') && (looksLikeHtmlError || looksLikeBadZip)) {
+      return createProviderDownloadErrorSubtitle('The Subtitle Database', 'The download response was invalid. The subtitle may have been removed from the database.', config.uiLanguage || 'en');
+    }
+
+    if (fileId.startsWith('jimaku_') && (looksLikeHtmlError || looksLikeBadZip)) {
+      return createProviderDownloadErrorSubtitle('Jimaku', 'Jimaku returned an invalid download response. The subtitle may have been removed.', config.uiLanguage || 'en');
+    }
+
+    if (!fileId.startsWith('subdl_') && !fileId.startsWith('subsource_') && !fileId.startsWith('v3_') && !fileId.startsWith('wyzie_') && !fileId.startsWith('scs_') && !fileId.startsWith('subsro_') && !fileId.startsWith('tsdb_') && !fileId.startsWith('jimaku_') && (looksLikeHtmlError || looksLikeBadZip)) {
       return createProviderDownloadErrorSubtitle('OpenSubtitles', 'The download response was invalid. Please try another subtitle.', config.uiLanguage || 'en');
     }
 
@@ -4275,6 +4398,8 @@ ${t('subtitle.subsourceTimeoutBody', {}, 'SubSource API did not respond in time.
     else if (fileId.startsWith('scs_')) fallbackServiceName = 'Stremio Community Subtitles';
     else if (fileId.startsWith('wyzie_')) fallbackServiceName = 'Wyzie Subs';
     else if (fileId.startsWith('subsro_')) fallbackServiceName = 'Subs.ro';
+    else if (fileId.startsWith('tsdb_')) fallbackServiceName = 'The Subtitle Database';
+    else if (fileId.startsWith('jimaku_')) fallbackServiceName = 'Jimaku';
     else fallbackServiceName = 'OpenSubtitles';
 
     return createProviderDownloadErrorSubtitle(
@@ -4439,6 +4564,8 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
               : sourceFileId.startsWith('scs_') ? 'Community Subtitles'
                 : sourceFileId.startsWith('wyzie_') ? 'Wyzie Subs'
                   : sourceFileId.startsWith('subsro_') ? 'Subs.ro'
+                    : sourceFileId.startsWith('tsdb_') ? 'The Subtitle Database'
+                      : sourceFileId.startsWith('jimaku_') ? 'Jimaku'
                     : sourceFileId.startsWith('xembed_') ? 'Embedded'
                       : 'OpenSubtitles')
       };
@@ -4801,6 +4928,18 @@ async function handleTranslation(sourceFileId, targetLanguage, config, options =
             }
             const subsro = new SubsRoService(config.subtitleProviders.subsro.apiKey);
             sourceContent = await subsro.downloadSubtitle(sourceFileId, { timeout: downloadTimeoutMs, languageHint: sourceLanguageHint, skipAssConversion });
+          } else if (sourceFileId.startsWith('tsdb_')) {
+            if (config.subtitleProviders?.tsdb?.enabled !== true) {
+              throw new Error('The Subtitle Database provider is disabled');
+            }
+            const tsdb = new TheSubtitleDatabaseService();
+            sourceContent = await tsdb.downloadSubtitle(sourceFileId, { timeout: downloadTimeoutMs, languageHint: sourceLanguageHint, skipAssConversion });
+          } else if (sourceFileId.startsWith('jimaku_')) {
+            if (config.subtitleProviders?.jimaku?.enabled !== true || !config.subtitleProviders?.jimaku?.apiKey) {
+              throw new Error('Jimaku provider is disabled or missing its API key');
+            }
+            const jimaku = new JimakuService(config.subtitleProviders.jimaku.apiKey);
+            sourceContent = await jimaku.downloadSubtitle(sourceFileId, { timeout: downloadTimeoutMs, languageHint: sourceLanguageHint, skipAssConversion });
           } else {
             // OpenSubtitles subtitle (Auth implementation - default fallback)
             if (!config.subtitleProviders?.opensubtitles?.enabled) {
@@ -5028,6 +5167,18 @@ async function performTranslation(sourceFileId, targetLanguage, config, { cacheK
           }
           const subsro = new SubsRoService(config.subtitleProviders.subsro.apiKey);
           sourceContent = await subsro.downloadSubtitle(sourceFileId, { timeout: downloadTimeoutMs, skipAssConversion });
+        } else if (sourceFileId.startsWith('tsdb_')) {
+          if (config.subtitleProviders?.tsdb?.enabled !== true) {
+            throw new Error('The Subtitle Database provider is disabled');
+          }
+          const tsdb = new TheSubtitleDatabaseService();
+          sourceContent = await tsdb.downloadSubtitle(sourceFileId, { timeout: downloadTimeoutMs, skipAssConversion });
+        } else if (sourceFileId.startsWith('jimaku_')) {
+          if (config.subtitleProviders?.jimaku?.enabled !== true || !config.subtitleProviders?.jimaku?.apiKey) {
+            throw new Error('Jimaku provider is disabled or missing its API key');
+          }
+          const jimaku = new JimakuService(config.subtitleProviders.jimaku.apiKey);
+          sourceContent = await jimaku.downloadSubtitle(sourceFileId, { timeout: downloadTimeoutMs, skipAssConversion });
         } else {
           // OpenSubtitles subtitle (Auth implementation - default fallback)
           if (!config.subtitleProviders?.opensubtitles?.enabled) {
