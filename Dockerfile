@@ -1,5 +1,5 @@
 # Pin the Node.js patch release containing the Brotli decoder security fix.
-FROM node:24.22.1-alpine3.24
+FROM node:26.13.0-alpine3.24
 
 # Install su-exec for privilege dropping and tzdata for IANA timezone support
 RUN apk add --no-cache su-exec tzdata
