@@ -845,10 +845,55 @@ function createSubtitleUrl(id, lang, baseUrl) {
 function sanitizeSubtitleText(text) {
   if (!text) return '';
 
-  return text
+  return decodeSubtitleEntities(String(text))
     .replace(/\r\n/g, '\n') // Normalize line endings
     .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '') // Remove control characters
+    // Some aggregators concatenate an ASCII apostrophe with a second
+    // typographic/acute apostrophe (for example: `I'’m`). Collapse only
+    // repeated apostrophe-like marks inside a word; valid accents and a
+    // single curly apostrophe remain untouched.
+    .replace(/(\p{L})['’´]{2,}(?=\p{L})/gu, "$1'")
     .trim();
+}
+
+const SUBTITLE_NAMED_ENTITIES = {
+  amp: '&',
+  apos: "'",
+  acute: '´',
+  gt: '>',
+  hellip: '…',
+  ldquo: '“',
+  lsquo: '‘',
+  lt: '<',
+  mdash: '—',
+  nbsp: ' ',
+  ndash: '–',
+  quot: '"',
+  rdquo: '”',
+  rsquo: '’'
+};
+
+/**
+ * Decode the HTML entities commonly emitted by subtitle providers.
+ * Numeric entities are accepted only when they resolve to a valid Unicode
+ * scalar value, preventing malformed input from introducing replacement text.
+ */
+function decodeSubtitleEntities(text) {
+  return String(text).replace(/&(#(?:x[\da-f]+|\d+)|[a-z][\da-z]+);/gi, (entity, body) => {
+    if (body[0] === '#') {
+      const hexadecimal = body[1]?.toLowerCase() === 'x';
+      const value = Number.parseInt(body.slice(hexadecimal ? 2 : 1), hexadecimal ? 16 : 10);
+      if (Number.isInteger(value) && value >= 0 && value <= 0x10ffff && !(value >= 0xd800 && value <= 0xdfff)) {
+        return String.fromCodePoint(value);
+      }
+      return entity;
+    }
+
+    const normalizedName = body.toLowerCase();
+    return Object.prototype.hasOwnProperty.call(SUBTITLE_NAMED_ENTITIES, normalizedName)
+      ? SUBTITLE_NAMED_ENTITIES[normalizedName]
+      : entity;
+  });
 }
 
 module.exports = {
@@ -861,6 +906,7 @@ module.exports = {
   parseStremioId,
   createSubtitleUrl,
   sanitizeSubtitleText,
+  decodeSubtitleEntities,
   srtPairToWebVTT,
   convertToSRT,
   ensureSRTForTranslation,

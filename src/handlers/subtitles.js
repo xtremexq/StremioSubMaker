@@ -14,7 +14,7 @@ const StremioCommunitySubtitlesService = require('../services/stremioCommunitySu
 const WyzieSubsService = require('../services/wyzieSubs');
 const SubsRoService = require('../services/subsRo');
 const JimakuService = require('../services/jimaku');
-const { parseSRT, toSRT, inspectStremioIdSupport, parseStremioId, appendHiddenInformationalNote, normalizeImdbId, ensureSRTForTranslation, convertToSRT, detectASSFormat } = require('../utils/subtitle');
+const { parseSRT, toSRT, inspectStremioIdSupport, parseStremioId, appendHiddenInformationalNote, normalizeImdbId, ensureSRTForTranslation, convertToSRT, detectASSFormat, sanitizeSubtitleText } = require('../utils/subtitle');
 const { getLanguageName, getDisplayName, toISO6391, toISO6392, canonicalSyncLanguageCode, normalizeLanguageCode } = require('../utils/languages');
 const { getTranslator } = require('../utils/i18n');
 const { deriveVideoHash } = require('../utils/videoHash');
@@ -4101,6 +4101,14 @@ async function handleSubtitleDownload(fileId, language, config) {
     // Validate content
     if (!content || typeof content !== 'string' || content.trim().length === 0) {
       throw new Error('Downloaded subtitle content is empty');
+    }
+
+    // Providers occasionally return HTML entities or duplicated apostrophe
+    // marks (for example `I'’m`). Normalize the document once at the provider
+    // boundary so every Stremio client receives clean text.
+    content = sanitizeSubtitleText(content);
+    if (!content) {
+      throw new Error('Downloaded subtitle content is empty after sanitization');
     }
 
     log.debug(() => '[Download] Subtitle downloaded successfully (' + content.length + ' bytes)');

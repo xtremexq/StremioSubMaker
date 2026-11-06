@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.97
+
+**Subtitle text cleanup:**
+
+- Provider downloads now decode common HTML and numeric entities and collapse duplicated apostrophe marks inside words. This fixes provider payloads such as `I'’m` and `I'´m` while preserving legitimate accents and single typographic apostrophes.
+
 ## SubMaker v1.4.96
 
 **Subtitle ranking improvements:**
