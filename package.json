@@ -48,7 +48,7 @@
     "iconv-lite": "^0.7.0",
     "ioredis": "^6.0.0",
     "ipaddr.js": "^2.5.0",
-    "joi": "^18.0.1",
+    "joi": "^18.3.2",
     "jszip": "^3.10.1",
     "lru-cache": "^11.2.2",
     "node-unrar-js": "^2.0.2",

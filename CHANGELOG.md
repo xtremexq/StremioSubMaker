@@ -4,17 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## SubMaker v1.4.97
 
-**Subtitle text cleanup:**
+**Bug Fixes:**
 
-- Provider downloads now decode common HTML and numeric entities and collapse duplicated apostrophe marks inside words. This fixes provider payloads such as `I'’m` and `I'´m` while preserving legitimate accents and single typographic apostrophes.
+- **Fixed corrupted subtitle punctuation:** Provider downloads now decode common HTML and numeric entities and collapse duplicated apostrophe marks inside words. This fixes payloads such as `I'’m` and `I'´m` while preserving legitimate accents and single typographic apostrophes.
 
 ## SubMaker v1.4.96
 
-**Subtitle ranking improvements:**
+**Bug Fixes:**
 
-- Exact file-hash matches remain the highest-confidence group. When multiple subtitles match the same video hash, matching release and episode metadata now rank them within that group before provider order, popularity, and reputation.
-- A provider's first result from a hash-aware search remains a provider recommendation, not a claimed exact hash match. This signal is provider-neutral and ranks below release-fingerprint matches.
-- Release matching now uses available original filename and release fields from providers, so generic display labels do not discard useful stream-specific evidence.
+- **Improved hash-match ranking:** Exact file-hash matches remain the highest-confidence group. When multiple subtitles match the same video hash, matching release and episode metadata now rank them within that group before provider order, popularity, and reputation.
+- **Kept provider recommendations honest:** A provider's first result from a hash-aware search remains a provider recommendation, not a claimed exact hash match. This signal is provider-neutral and ranks below release-fingerprint matches.
+- **Retained release evidence:** Matching now uses original filename and release fields when providers supply them, so useful stream-specific evidence is not discarded.
 
 ## SubMaker v1.4.95
 
