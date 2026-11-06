@@ -676,57 +676,46 @@ class StremioCommunitySubtitlesService {
                 const key = sub.lang === normalizedLang ? sub.lang : `${sub.lang}→${normalizedLang}`;
                 langStats.set(key, (langStats.get(key) || 0) + 1);
 
-                // HASH MATCH DETECTION HEURISTIC:
-                // SCS uses a 5-tier lookup algorithm on the server side:
-                //   1. User selection (manual choice)
-                //   2. Local community subtitles matched by exact video_hash
-                //   3. Provider subtitles (OpenSubtitles, etc.) with hash_match=true
-                //   4. Filename similarity match (fuzzy matching by release group, quality, S/E)
-                //   5. Fallback (any subtitle for the content/language)
-                //
-                // When we send a real videoHash, SCS prioritizes hash-matched results first.
-                // Since SCS sorts by match quality, the FIRST result per language represents
-                // the best match for that specific video file version.
-                //
-                // Note: SCS doesn't explicitly return hash_match=true in the API response,
-                // so we infer it based on: (1) we sent a real hash, (2) first result per lang.
+                // Preserve the first result per language as SCS's recommendation
+                // for this hash-aware search. The API does not prove an exact hash
+                // match unless it explicitly returns the corresponding flag.
                 const isFirstForThisLang = !firstPerLang.has(normalizedLang);
                 if (isFirstForThisLang) {
                     firstPerLang.add(normalizedLang);
                 }
 
-                // hashMatch is true if: we sent a real hash AND this is the first result for this language
-                // SCS pre-sorts by match quality, so first per language = best hash/filename match
-                const hashMatch = hasRealHash && isFirstForThisLang;
+                const providerBestMatch = hasRealHash && isFirstForThisLang;
+                const hashMatch = sub.hash_match === true || sub.moviehash_match === true;
 
-                // Assign priority: lower = better
-                // Hash matches get priority 0-99, others get 100+
-                const hashMatchPriority = hashMatch ? index : 100 + index;
+                const hashMatchPriority = hashMatch ? index : undefined;
 
                 return {
                     id: `scs_${downloadIdentifier}`, // Prefix to identify provider
                     language: sub.lang,
                     languageCode: normalizedLang, // Normalized to ISO 639-2/B for SubMaker filtering
-                    name: hashMatch ? `[SCS] Hash Match` : `[SCS] Community Subtitle`, // Indicate hash match in name
+                    name: sub.release || sub.release_name || sub.filename || sub.fileName || sub.name
+                        || (hashMatch ? '[SCS] Exact file match' : providerBestMatch ? '[SCS] Best hash-search result' : '[SCS] Community Subtitle'),
                     url: sub.url,
                     downloads: 0,
                     rating: 0,
                     format: 'vtt',
-                    score: hashMatch ? 200000 : 0, // Hash matches get max score for ranking
+                    score: hashMatch ? 200000 : (providerBestMatch ? 40000 : 0),
                     provider: 'stremio-community-subtitles',
                     is_season_pack: false, // SCS handles matching internally
                     fileId: `scs_${downloadIdentifier}`, // Use the real download token from sub.url
-                    // Hash match metadata
+                    // Distinct confidence levels for exact and provider-ranked matches.
                     hashMatch: hashMatch,
                     hashMatchPriority: hashMatchPriority,
+                    providerBestMatch,
+                    providerBestMatchPriority: providerBestMatch ? 0 : undefined,
                     _scsHasRealHash: hasRealHash // Internal flag for ranking logic
                 };
             }).filter(Boolean);
 
             // Log hash match stats
-            const hashMatchCount = results.filter(r => r.hashMatch).length;
-            if (hashMatchCount > 0) {
-                log.info(() => `[SCS] ${hashMatchCount} hash-matched subtitle(s) found (prioritized)`);
+            const providerBestCount = results.filter(r => r.providerBestMatch).length;
+            if (providerBestCount > 0) {
+                log.info(() => `[SCS] ${providerBestCount} provider-ranked subtitle(s) found for the supplied video hash`);
             }
 
             // Log language stats

@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Have a question? We're happy to help!
-        
+
         Before asking, please check:
         - [README](https://github.com/xtremexq/StremioSubMaker#readme) documentation
         - [Existing issues](https://github.com/xtremexq/StremioSubMaker/issues?q=is%3Aissue) for similar questions

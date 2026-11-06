@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.96
+
+**Subtitle ranking improvements:**
+
+- Exact file-hash matches remain the highest-confidence group. When multiple subtitles match the same video hash, matching release and episode metadata now rank them within that group before provider order, popularity, and reputation.
+- A provider's first result from a hash-aware search remains a provider recommendation, not a claimed exact hash match. This signal is provider-neutral and ranks below release-fingerprint matches.
+- Release matching now uses available original filename and release fields from providers, so generic display labels do not discard useful stream-specific evidence.
+
 ## SubMaker v1.4.95
 
 **Improvements:**
