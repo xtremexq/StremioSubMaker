@@ -1721,13 +1721,13 @@ function isLocalhost(req) {
 
 // Helper: whether links built for this request may keep the request's own protocol.
 // True for the hosts above, and for a single-label name (a Docker Compose service
-// such as "submaker", a LAN host), which only resolves inside a private network:
+// such as "submaker" or "sub_maker", a LAN host), which only resolves inside a private network:
 // an aggregator calling http://submaker:7001 must get http:// links back, not https://.
 // Only used to choose the protocol of generated links, never for access decisions.
 function isPrivateNetworkHost(req) {
     if (isLocalhost(req)) return true;
     const hostname = getSafeHost(req).split(':')[0].toLowerCase();
-    return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(hostname);
+    return /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/.test(hostname);
 }
 
 // Helper: resolve cache type for rate limiting and logging

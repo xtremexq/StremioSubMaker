@@ -21,14 +21,14 @@ function loadHelpers() {
 
 test('docker service names and LAN hosts keep their own protocol', () => {
   const { isPrivateNetworkHost } = loadHelpers();
-  for (const host of ['submaker:7001', 'submaker', 'aiostreams:3000', 'nas', 'localhost:7001', '127.0.0.1:7001', '192.168.1.20:7001', '10.0.0.5', '172.18.0.4:7001']) {
+  for (const host of ['submaker:7001', 'submaker', 'sub_maker:7001', 'my_subs', 'aiostreams:3000', 'nas', 'localhost:7001', '127.0.0.1:7001', '192.168.1.20:7001', '10.0.0.5', '172.18.0.4:7001']) {
     assert.equal(isPrivateNetworkHost({ host }), true, host);
   }
 });
 
 test('public host names are still treated as remote', () => {
   const { isPrivateNetworkHost } = loadHelpers();
-  for (const host of ['submaker.example.com', 'example.com:443', 'subs.duckdns.org', '8.8.8.8', '172.32.0.1', '-bad', 'bad-']) {
+  for (const host of ['submaker.example.com', 'example.com:443', 'subs.duckdns.org', '8.8.8.8', '172.32.0.1', '-bad', 'bad-', '_bad', 'bad_', 'sub_maker.example.com']) {
     assert.equal(isPrivateNetworkHost({ host }), false, host);
   }
 });
