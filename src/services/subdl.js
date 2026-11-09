@@ -365,6 +365,18 @@ class SubDLService {
         }
       }
 
+      // Films: drop uploads whose release name dates them to another film.
+      if (!isTvOrAnime) {
+        const film = (response.data.results || []).find(r => r && r.imdb_id === imdb_id) || null;
+        if (film) {
+          const before = subtitles.length;
+          subtitles = subtitles.filter(sub => !releaseNamesOtherFilm(sub.name, film));
+          if (subtitles.length !== before) {
+            log.debug(() => `[SubDL] Filtered out ${before - subtitles.length} subtitles whose release name dates another film (requested ${film.name} ${film.year})`);
+          }
+        }
+      }
+
       // Limit to 14 results per language to control response size
       const MAX_RESULTS_PER_LANGUAGE = 14;
       const groupedByLanguage = {};
@@ -697,8 +709,27 @@ class SubDLService {
   }
 }
 
+/**
+ * Whether a film subtitle's release name names a different film: it carries a
+ * year, and none of its years is within a year of the requested film's. Years
+ * that are part of the film's own title (Blade Runner 2049) don't count, and a
+ * name without any year is kept. SubDL sometimes files another film's upload
+ * under an IMDb id ("Spirited (2022)" under Spirited Away, 2001).
+ */
+function releaseNamesOtherFilm(releaseName, film) {
+  const filmYear = Number(film?.year);
+  if (!releaseName || !Number.isFinite(filmYear) || filmYear < 1800) return false;
+  const titleYears = new Set(String(film?.name || '').match(/(?<!\d)(?:19|20)\d{2}(?!\d)/g) || []);
+  const years = (String(releaseName).match(/(?<!\d)(?:19|20)\d{2}(?!\d)/g) || [])
+    .filter((y) => !titleYears.has(y))
+    .map(Number);
+  if (!years.length) return false;
+  return !years.some((y) => Math.abs(y - filmYear) <= 1);
+}
+
 module.exports = SubDLService;
 module.exports.__testing = {
+  releaseNamesOtherFilm,
   getSubDLUpstreamMessage,
   isSubDLAuthFailure,
   detectPlainSubtitleFormat
