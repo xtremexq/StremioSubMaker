@@ -13,7 +13,7 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "npm run test:tracked",
-    "test:tracked": "node --test --test-force-exit src/handlers/subtitles-timeout-regression.test.js src/handlers/subtitles-ranking-regression.test.js src/handlers/subtitles-stremio-compat-regression.test.js src/services/custom-provider-validation-regression.test.js src/services/gemini-auth-model-regression.test.js src/services/opensubtitles-no-backoff-regression.test.js src/services/remote-subtitle-download-security-regression.test.js src/services/subdl-plain-response-regression.test.js src/services/wyzie-current-api-regression.test.js src/services/jimaku-regression.test.js src/services/theSubtitleDatabase-regression.test.js src/utils/apiErrorHandler-opensubtitles-regression.test.js src/utils/archiveExtractor-regression.test.js src/utils/autoSubLogRegistry-regression.test.js src/utils/cacheExpiry-regression.test.js src/utils/cloudflare-credential-encryption-regression.test.js src/utils/config-page-load-regression.test.js src/utils/embeddedCache-regression.test.js src/utils/encodingDetector-regression.test.js src/utils/inlineScriptJson-regression.test.js src/utils/localCache-index-regression.test.js src/utils/logger-sampling-regression.test.js src/utils/openSubtitlesDownloadGuard-regression.test.js src/utils/outbound-discovery-hardening-regression.test.js src/utils/session-ciphertext-oracle-regression.test.js src/utils/sessionManager-delete-regression.test.js src/utils/ssrfProtection-regression.test.js src/utils/streamUrlIdentity-regression.test.js src/utils/addon-request-hardening-regression.test.js src/storage/redis-command-timeout-regression.test.js src/utils/subtitle-artifacts-regression.test.js",
+    "test:tracked": "node --test --test-force-exit src/handlers/subtitles-timeout-regression.test.js src/handlers/subtitles-ranking-regression.test.js src/handlers/subtitles-stremio-compat-regression.test.js src/services/custom-provider-validation-regression.test.js src/services/gemini-auth-model-regression.test.js src/services/opensubtitles-no-backoff-regression.test.js src/services/remote-subtitle-download-security-regression.test.js src/services/subdl-plain-response-regression.test.js src/services/wyzie-current-api-regression.test.js src/services/jimaku-regression.test.js src/services/theSubtitleDatabase-regression.test.js src/utils/apiErrorHandler-opensubtitles-regression.test.js src/utils/archiveExtractor-regression.test.js src/utils/autoSubLogRegistry-regression.test.js src/utils/cacheExpiry-regression.test.js src/utils/cloudflare-credential-encryption-regression.test.js src/utils/config-page-load-regression.test.js src/utils/embeddedCache-regression.test.js src/utils/encodingDetector-regression.test.js src/utils/inlineScriptJson-regression.test.js src/utils/localCache-index-regression.test.js src/utils/logger-sampling-regression.test.js src/utils/openSubtitlesDownloadGuard-regression.test.js src/utils/outbound-discovery-hardening-regression.test.js src/utils/session-ciphertext-oracle-regression.test.js src/utils/sessionManager-delete-regression.test.js src/utils/ssrfProtection-regression.test.js src/utils/streamUrlIdentity-regression.test.js src/utils/addon-request-hardening-regression.test.js src/storage/redis-command-timeout-regression.test.js src/utils/subtitle-artifacts-regression.test.js src/utils/private-network-links-regression.test.js src/utils/assConverter-collapse-regression.test.js src/services/subdl-other-film-regression.test.js",
     "test:release": "npm run test:tracked",
     "test:manual": "npm run test:tracked",
     "update:anime-list": "node update-anime-list.js"
@@ -31,18 +31,14 @@
   "dependencies": {
     "@sentry/node": "^10.34.0",
     "7z-iterator": "^2.2.5",
-    "apify-node-curl-impersonate": "^1.0.29",
     "axios": "^1.6.2",
     "cacheable-lookup": "^7.0.0",
     "chardet": "^2.1.1",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
-    "cycletls": "^2.0.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
-    "express-session": "^1.18.2",
-    "got-scraping": "^4.1.3",
     "gpt-tokenizer": "^4.0.0",
     "helmet": "^8.1.0",
     "iconv-lite": "^0.7.0",
@@ -52,13 +48,10 @@
     "jszip": "^3.10.1",
     "lru-cache": "^11.2.2",
     "node-unrar-js": "^2.0.2",
-    "playwright-core": "^1.57.0",
     "rate-limit-redis": "^6.0.1",
-    "srt-parser-2": "^1.2.3",
     "stremio-addon-sdk": "^1.6.10",
     "subsrt-ts": "^2.1.2",
-    "tar-stream": "^3.1.7",
-    "undici": "^7.18.2"
+    "tar-stream": "^3.1.7"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

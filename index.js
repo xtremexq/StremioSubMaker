@@ -1110,7 +1110,7 @@ function buildConfigRecoveryUrl(req, token = '') {
         ? String(token).trim().toLowerCase()
         : '';
     const host = getSafeHost(req);
-    const localhost = isLocalhost(req);
+    const localhost = isPrivateNetworkHost(req);
     const protocol = localhost
         ? (req.get('x-forwarded-proto') || req.protocol || 'http')
         : (req.get('x-forwarded-proto') || 'https');
@@ -1717,6 +1717,17 @@ function isLocalhost(req) {
         hostname.startsWith('10.') ||
         /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)
     );
+}
+
+// Helper: whether links built for this request may keep the request's own protocol.
+// True for the hosts above, and for a single-label name (a Docker Compose service
+// such as "submaker" or "sub_maker", a LAN host), which only resolves inside a private network:
+// an aggregator calling http://submaker:7001 must get http:// links back, not https://.
+// Only used to choose the protocol of generated links, never for access decisions.
+function isPrivateNetworkHost(req) {
+    if (isLocalhost(req)) return true;
+    const hostname = getSafeHost(req).split(':')[0].toLowerCase();
+    return /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/.test(hostname);
 }
 
 // Helper: resolve cache type for rate limiting and logging
@@ -8325,7 +8336,7 @@ app.use('/addon/:config', (req, res, next) => {
 
     // Construct base URL from request (same logic as manifest route)
     const host = getSafeHost(req);
-    const localhost = isLocalhost(req);
+    const localhost = isPrivateNetworkHost(req);
     // For remote hosts, enforce HTTPS unless proxy header specifies otherwise
     const protocol = localhost
         ? (req.get('x-forwarded-proto') || req.protocol)
@@ -8429,7 +8440,7 @@ app.get('/manifest.json', (req, res) => {
     try {
         setNoStore(res);
         const host = getSafeHost(req);
-        const localhost = isLocalhost(req);
+        const localhost = isPrivateNetworkHost(req);
         const protocol = localhost
             ? (req.get('x-forwarded-proto') || req.protocol)
             : (req.get('x-forwarded-proto') || 'https');
@@ -8482,7 +8493,7 @@ app.get('/addon/:config/manifest.json', async (req, res) => {
         const hasVersionSegment = /\/v[0-9.]+(\/|$)/.test(rawUrl);
         log.info(() => `[Manifest] Request meta ip=${getClientIp(req)} cf=${req.get('cf-connecting-ip') || 'n/a'} xff=${req.get('x-forwarded-for') || 'n/a'} xri=${req.get('x-real-ip') || 'n/a'} ua=${req.get('user-agent') || 'n/a'} origin=${req.get('origin') || 'n/a'} referer=${req.get('referer') || 'n/a'} host=${req.get('host') || 'n/a'} url=${safeRawUrl || 'n/a'} versioned=${hasVersionSegment}`);
         const host = getSafeHost(req);
-        const localhost = isLocalhost(req);
+        const localhost = isPrivateNetworkHost(req);
         // For remote hosts, enforce HTTPS unless proxy header specifies otherwise.
         const protocol = localhost
             ? (req.get('x-forwarded-proto') || req.protocol)
@@ -8662,7 +8673,7 @@ app.use('/addon/:config', async (req, res, next) => {
 
                 // Build router
                 const host = getSafeHost(req);
-                const localhost = isLocalhost(req);
+                const localhost = isPrivateNetworkHost(req);
                 const protocol = localhost
                     ? (req.get('x-forwarded-proto') || req.protocol)
                     : (req.get('x-forwarded-proto') || 'https');

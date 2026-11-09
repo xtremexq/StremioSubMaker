@@ -387,6 +387,78 @@ function postprocessVTT(vttContent) {
   return processed;
 }
 
+const VTT_TIME = /^(\d{2,}):(\d{2}):(\d{2})[.,](\d{3})$/;
+
+function vttTimeToMs(value) {
+  const m = VTT_TIME.exec(String(value || '').trim());
+  if (!m) return null;
+  return ((Number(m[1]) * 60 + Number(m[2])) * 60 + Number(m[3])) * 1000 + Number(m[4]);
+}
+
+function msToVttTime(ms) {
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const sec = Math.floor((ms % 60000) / 1000);
+  return `${pad(h)}:${pad(m)}:${pad(sec)}.${pad(ms % 1000, 3)}`;
+}
+
+/**
+ * Collapse cues that only repeat a line already on screen.
+ *
+ * ASS typesetting animates a line by writing one event per video frame (a moving
+ * sign, a fading narration), and layered styles write the same line twice. As
+ * plain cues that becomes the same text every 40 ms, hundreds of times, and
+ * duplicates stacked on screen. A cue whose text matches an earlier cue that is
+ * still showing (or ended at most `gapMs` before it starts) extends that cue
+ * instead. Cues with different text are left exactly as they are.
+ *
+ * @param {string} vttContent - WebVTT content
+ * @param {number} gapMs - largest gap still treated as the same showing
+ * @returns {string} WebVTT content
+ */
+function collapseRepeatedCues(vttContent, gapMs = 100) {
+  if (!vttContent || typeof vttContent !== 'string') return vttContent;
+  const blocks = vttContent.replace(/\r\n?/g, '\n').split(/\n{2,}/);
+  const header = [];
+  const cues = [];
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    const at = lines.findIndex((l) => l.includes('-->'));
+    if (at < 0) {
+      if (!cues.length) header.push(block);
+      else if (block.trim()) cues[cues.length - 1].text += `\n\n${block}`; // keep anything unexpected attached
+      continue;
+    }
+    const [rawStart, rest = ''] = lines[at].split('-->');
+    const [rawEnd, ...settings] = rest.trim().split(/\s+/);
+    const start = vttTimeToMs(rawStart);
+    const end = vttTimeToMs(rawEnd);
+    const text = lines.slice(at + 1).join('\n');
+    if (start === null || end === null) return vttContent; // not a shape we understand: leave it alone
+    cues.push({ start, end, settings: settings.join(' '), text });
+  }
+  if (cues.length < 2) return vttContent;
+
+  const key = (text) => text.replace(/\s+/g, ' ').trim();
+  const kept = [];
+  const lastByText = new Map();
+  for (const cue of cues.slice().sort((a, b) => a.start - b.start)) {
+    const k = key(cue.text);
+    const prior = k ? lastByText.get(k) : undefined;
+    if (prior && cue.start <= prior.end + gapMs) {
+      prior.end = Math.max(prior.end, cue.end);
+      continue;
+    }
+    kept.push(cue);
+    if (k) lastByText.set(k, cue);
+  }
+  if (kept.length === cues.length) return vttContent;
+
+  const body = kept.map((c) => `${msToVttTime(c.start)} --> ${msToVttTime(c.end)}${c.settings ? ` ${c.settings}` : ''}\n${c.text}`);
+  return `${header.join('\n\n').trim() || 'WEBVTT'}\n\n${body.join('\n\n')}\n`;
+}
+
 /**
  * Validate VTT content to ensure it has actual subtitle content
  * @param {string} vttContent - VTT content to validate
@@ -456,7 +528,7 @@ function convertASSToVTT(content, format = 'ass') {
 
     // Step 3: Post-process
     if (converted && typeof converted === 'string' && converted.trim().length > 0) {
-      const postprocessed = postprocessVTT(converted);
+      const postprocessed = collapseRepeatedCues(postprocessVTT(converted));
 
       // Step 4: Validate
       if (validateVTT(postprocessed)) {
@@ -491,6 +563,7 @@ function convertASSToVTT(content, format = 'ass') {
 module.exports = {
   preprocessASS,
   postprocessVTT,
+  collapseRepeatedCues,
   validateVTT,
   convertASSToVTT,
   cleanDialogueText,
