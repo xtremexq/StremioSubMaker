@@ -49,7 +49,9 @@ function buildRateLimitUserMessage(serviceLabel, translate) {
 function getApiErrorMessage(error) {
   const candidates = [
     error?.response?.data?.message,
+    error?.response?.data?.error?.message,
     error?.providerMessage,
+    error?.originalError?.response?.data?.error?.message,
     error?.originalError?.response?.data?.message,
     error?.originalError?.providerMessage,
     error?.message,
@@ -57,6 +59,23 @@ function getApiErrorMessage(error) {
   ];
   const message = candidates.find(value => typeof value === 'string' && value.trim());
   return String(message || '');
+}
+
+function isGeminiModelOverloaded(error, serviceName) {
+  if (String(serviceName || '').trim().toLowerCase() !== 'gemini') {
+    return false;
+  }
+
+  const statusCode = Number(
+    error?.response?.status || error?.statusCode ||
+    error?.originalError?.response?.status || error?.originalError?.statusCode
+  );
+  if (statusCode !== 503) {
+    return false;
+  }
+
+  return /high demand|overload(?:ed|ing)?|at capacity|capacity (?:is )?(?:exhausted|reached)/i
+    .test(getApiErrorMessage(error));
 }
 
 function isOpenSubtitlesQuotaError(error) {
@@ -201,7 +220,13 @@ function parseApiError(error, serviceName = 'API', options = {}) {
     else if (parsed.statusCode === 503) {
       parsed.type = 'service_unavailable';
       parsed.isRetryable = true;
-      parsed.userMessage = translate('apiErrors.serviceUnavailable', { service: serviceLabel }, 'Service temporarily unavailable. Please try again in a few minutes.');
+      parsed.userMessage = isGeminiModelOverloaded(error, serviceName)
+        ? translate(
+          'apiErrors.geminiModelOverloaded',
+          {},
+          'The selected Gemini model is temporarily overloaded. Try again shortly or select another Gemini model.'
+        )
+        : translate('apiErrors.serviceUnavailable', { service: serviceLabel }, 'Service temporarily unavailable. Please try again in a few minutes.');
     }
     // DeepL quota/rate limits (non-standard 456/459)
     else if (String(serviceName || '').toLowerCase() === 'deepl' && (parsed.statusCode === 456 || parsed.statusCode === 459)) {

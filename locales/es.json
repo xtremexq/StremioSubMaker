@@ -162,6 +162,7 @@
       "geminiUnsupportedLocation": "Gemini rechazó la ubicación de red de este servidor. La clave API aún puede ser válida; pide al host una salida apta para Gemini y acceso de pago cuando sea obligatorio.",
       "rateLimit": "Límite de {service} excedido. Espera unos minutos y vuelve a intentar.",
       "serviceUnavailable": "{service} no disponible temporalmente. Intenta de nuevo en unos minutos.",
+      "geminiModelOverloaded": "Este modelo de Gemini está temporalmente saturado. Inténtalo de nuevo en unos momentos o selecciona otro modelo de Gemini.",
       "databaseUnavailable": "La base de datos de subtítulos no está disponible temporalmente. Probando el siguiente subtítulo...",
       "authFailed": "Autenticación fallida. Revisa tus credenciales de API.",
       "notFound": "Recurso no encontrado. Es posible que el contenido se haya eliminado.",

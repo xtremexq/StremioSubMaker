@@ -2225,6 +2225,47 @@ function releaseTitlesMatch(left, right) {
   if (shorterTokens.length === 1 && shorterTokens[0].length < 3) return false;
   return ` ${longer} `.includes(` ${shorter} `);
 }
+
+// Extract the human episode title from a release filename. The show title is
+// not enough to distinguish American Dad S15E02's competing episode orders;
+// the text after the season/episode marker is the useful disambiguator.
+function extractEpisodeTitle(filename) {
+  const source = String(filename || '')
+    .replace(/\.(?:mkv|mp4|webm|avi|mov|wmv|m4v|srt|ass|ssa|vtt|sub|idx|sup)$/i, '')
+    .trim();
+  if (!source) return null;
+
+  const marker = source.match(/(?:^|[\s._-])(?:s\d{1,2}[\s._-]*e\d{1,3}|\d{1,2}[\s._-]*x[\s._-]*e?\d{1,3})(?=$|[\s._-])/i);
+  if (!marker) return null;
+
+  let title = source.slice(marker.index + marker[0].length)
+    .replace(/^[\s._-]+/, '')
+    .replace(/[\[\]({].*$/, '');
+
+  // Everything after these markers describes the release, not the episode.
+  title = title.replace(/(?:^|[\s._-])(?:2160p|1440p|1080p|720p|576p|540p|480p|360p|4k|uhd|web[\s._-]?(?:dl|rip)?|webrip|bluray|blu[\s._-]?ray|bdrip|brrip|hdtv|pdtv|dvdrip|hdrip|remux|x264|x265|h[\s._-]?264|h[\s._-]?265|hevc|av1|xvid|internal|proper|repack|extended|unrated|readnfo)(?=$|[\s._-]).*$/i, '');
+
+  const normalized = title
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (!normalized || /^(?:complete|full|season|episode|eng|en|english|forced|subs?|subtitles?)$/i.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function compareEpisodeTitles(targetTitle, candidateTitle) {
+  if (!targetTitle || !candidateTitle) return 0;
+  if (targetTitle === candidateTitle) return 1;
+  const targetTokens = new Set(targetTitle.split(/\s+/).filter(Boolean));
+  const candidateTokens = new Set(candidateTitle.split(/\s+/).filter(Boolean));
+  if (!targetTokens.size || !candidateTokens.size) return 0;
+  const overlap = [...targetTokens].filter(token => candidateTokens.has(token)).length;
+  const smallerSize = Math.min(targetTokens.size, candidateTokens.size);
+  return overlap === smallerSize && overlap >= 2 ? 1 : -1;
+}
 /**
  * Calculate filename match score for a subtitle
  * Prioritizes sync probability: exact releases > quality matches > partial matches
@@ -2482,6 +2523,7 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
 
   // Create fingerprint for stream once (for Tier 1 matching)
   const streamFingerprint = streamFilename ? createReleaseFingerprint(streamFilename) : null;
+  const streamEpisodeTitle = streamFilename ? extractEpisodeTitle(streamFilename) : null;
   const withScores = subtitles.map(sub => {
     let finalScore = 0;
     let matchTier = 'none';
@@ -2490,6 +2532,7 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
     const matchNames = subtitleMatchNames(sub);
     let bestFingerprintMatchScore = 0;
     let bestFilenameMatchScore = 0;
+    let episodeTitleMatchScore = 0;
 
     // Hash matches stay in their own top tier, but release metadata still
     // helps choose between multiple subtitles matched to the same video file.
@@ -2559,6 +2602,26 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
         matchDetails = 'No match - fallback';
       }
     }
+
+    // A provider can return the correct show and numeric episode while still
+    // returning the wrong episode from an alternate numbering/order. When the
+    // stream filename includes a title, use it as a strong ranking signal.
+    // Confirmed file hashes remain authoritative and are deliberately left in
+    // their own top tier.
+    if (streamEpisodeTitle && !isConfirmedHashMatch) {
+      for (const matchName of matchNames) {
+        const candidateTitle = extractEpisodeTitle(matchName);
+        const titleMatch = compareEpisodeTitles(streamEpisodeTitle, candidateTitle);
+        if (titleMatch > episodeTitleMatchScore) episodeTitleMatchScore = titleMatch;
+        else if (titleMatch < 0 && episodeTitleMatchScore === 0) episodeTitleMatchScore = titleMatch;
+      }
+      if (episodeTitleMatchScore > 0) {
+        finalScore += 45000;
+      } else if (episodeTitleMatchScore < 0) {
+        finalScore = Math.max(0, finalScore - 45000);
+      }
+    }
+
     return {
       ...sub,
       _matchScore: finalScore,
@@ -2567,7 +2630,8 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
       _confirmedHashMatch: isConfirmedHashMatch,
       _releaseEvidenceScore: releaseEvidenceScore,
       _hashMatchPriority: Number.isFinite(Number(sub.hashMatchPriority)) ? Number(sub.hashMatchPriority) : null,
-      _episodeMatchScore: 0
+      _episodeMatchScore: 0,
+      _episodeTitleMatchScore: episodeTitleMatchScore
     };
   });
 
@@ -2770,7 +2834,7 @@ function rankSubtitlesByFilename(subtitles, streamFilename, videoInfo = null) {
   });
 
   // Remove the temporary score properties before returning
-  return withScores.map(({ _matchScore, _matchTier, _matchDetails, _confirmedHashMatch, _releaseEvidenceScore, _hashMatchPriority, _episodeMatchScore, ...rest }) => rest);
+  return withScores.map(({ _matchScore, _matchTier, _matchDetails, _confirmedHashMatch, _releaseEvidenceScore, _hashMatchPriority, _episodeMatchScore, _episodeTitleMatchScore, ...rest }) => rest);
 }
 
 function subtitleMatchNames(subtitle) {

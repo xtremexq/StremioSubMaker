@@ -43,6 +43,41 @@ test('oversized buffered responses receive a non-retryable user-facing classific
     );
 });
 
+test('Gemini model-capacity 503s tell file-translation users to retry or switch models', () => {
+    const error = new Error('Request failed with status code 503');
+    error.response = {
+        status: 503,
+        data: {
+            error: {
+                status: 'UNAVAILABLE',
+                message: 'This model is currently experiencing high demand. Please try again later.'
+            }
+        }
+    };
+
+    const parsed = parseApiError(error, 'Gemini', { lang: 'en' });
+    assert.equal(parsed.type, 'service_unavailable');
+    assert.equal(parsed.isRetryable, true);
+    assert.match(parsed.userMessage, /selected Gemini model is temporarily overloaded/i);
+    assert.match(parsed.userMessage, /try again shortly or select another Gemini model/i);
+
+    assert.throws(
+        () => handleTranslationError(error, 'Gemini', { lang: 'en' }),
+        wrapped => wrapped.statusCode === 503
+            && wrapped.translationErrorType === '503'
+            && /temporarily overloaded/i.test(wrapped.message)
+    );
+});
+
+test('generic Gemini 503s keep the standard service-unavailable message', () => {
+    const error = new Error('Request failed with status code 503');
+    error.response = { status: 503, data: { error: { status: 'UNAVAILABLE', message: 'Service unavailable.' } } };
+
+    const parsed = parseApiError(error, 'Gemini', { lang: 'en' });
+    assert.equal(parsed.type, 'service_unavailable');
+    assert.match(parsed.userMessage, /Gemini temporarily unavailable/i);
+});
+
 test('preserves the upstream 406 message through the download error wrapper', () => {
     const error = upstream406('The requested file ID is not available');
     let wrapped;

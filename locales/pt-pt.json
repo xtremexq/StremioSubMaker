@@ -162,6 +162,7 @@
       "geminiUnsupportedLocation": "O Gemini rejeitou a localização de rede deste servidor. A sua chave API ainda pode ser válida; peça ao anfitrião uma saída elegível para o Gemini e acesso pago quando necessário.",
       "rateLimit": "Limite de taxa do {service} excedido. Por favor, aguarde alguns minutos e tente novamente.",
       "serviceUnavailable": "{service} temporariamente indisponível. Por favor, tente novamente dentro de alguns minutos.",
+      "geminiModelOverloaded": "Este modelo Gemini está temporariamente sobrecarregado. Tente novamente dentro de momentos ou escolha outro modelo Gemini.",
       "databaseUnavailable": "Base de dados do servidor de legendas temporariamente indisponível. A tentar próxima legenda...",
       "authFailed": "Falha na autenticação. Por favor, verifique as suas credenciais da API.",
       "notFound": "Recurso não encontrado. O conteúdo solicitado pode ter sido removido.",

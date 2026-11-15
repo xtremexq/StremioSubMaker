@@ -162,6 +162,7 @@
       "geminiUnsupportedLocation": "Gemini rejected this server network location. Your API key may still be valid; ask the host to use eligible Gemini egress and paid access where required.",
       "rateLimit": "{service} rate limit exceeded. Please wait a few minutes and try again.",
       "serviceUnavailable": "{service} temporarily unavailable. Please try again in a few minutes.",
+      "geminiModelOverloaded": "The selected Gemini model is temporarily overloaded. Try again shortly or select another Gemini model.",
       "databaseUnavailable": "Subtitle server database temporarily unavailable. Trying next subtitle...",
       "authFailed": "Authentication failed. Please check your API credentials.",
       "notFound": "Resource not found. The requested content may have been removed.",

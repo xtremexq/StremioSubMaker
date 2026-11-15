@@ -58,3 +58,21 @@ test('release fingerprint outranks a provider recommendation from a hash-aware s
 
   assert.deepEqual(ranked.map(subtitle => subtitle.id), ['release-match', 'provider-recommendation']);
 });
+
+test('episode title in the stream filename outranks an alternate-order subtitle with the same S/E number', () => {
+  const streamFilename = 'American.Dad.S15E02.Paranoid_Frandroid.1080p.DSNP.WEB-DL.DDP5.1.H.264-playWEB.mkv';
+  const ranked = rankSubtitlesByFilename([
+    {
+      id: 'downtown',
+      name: 'American Dad - 15x02 - Downtown.English.srt',
+      provider: 'opensubtitles-v3'
+    },
+    {
+      id: 'paranoid',
+      name: 'American.Dad.S15E02.Paranoid_Frandroid.1080p.DSNP.WEB-DL.DDP5.1.H.264-playWEB.srt',
+      provider: 'opensubtitles-v3'
+    }
+  ], streamFilename, { type: 'episode', season: 15, episode: 2 });
+
+  assert.deepEqual(ranked.map(subtitle => subtitle.id), ['paranoid', 'downtown']);
+});

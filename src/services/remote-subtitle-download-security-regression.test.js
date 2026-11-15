@@ -121,6 +121,72 @@ test('OpenSubtitles V3 search emits opaque IDs while retaining dynamic public CD
     }
 });
 
+test('OpenSubtitles V3 filters contradictory episode metadata and preserves release titles', async () => {
+    const service = new OpenSubtitlesV3Service();
+    const originalGet = service.client.get;
+    service.client.get = async () => ({
+        data: {
+            subtitles: [
+                {
+                    id: 'wrong-season-label',
+                    lang: 'eng',
+                    url: 'https://8.8.8.8/dynamic-cdn/wrong-season.srt',
+                    subtitleFileName: 'American.Dad.S16E02.HDTV.x264-SVA.srt',
+                    movieReleaseName: 'American.Dad.S16E02.HDTV.x264-SVA',
+                    season: 15,
+                    episode: 2
+                },
+                {
+                    id: 'wrong-episode-number',
+                    lang: 'eng',
+                    url: 'https://8.8.8.8/dynamic-cdn/wrong-episode.srt',
+                    subtitleFileName: 'American.Dad.S15E03.The.Census.of.the.Lambs.srt',
+                    movieReleaseName: 'American.Dad.S15E03.The.Census.of.the.Lambs',
+                    season: 15,
+                    episode: 3
+                },
+                {
+                    id: 'downtown',
+                    lang: 'eng',
+                    url: 'https://8.8.8.8/dynamic-cdn/downtown.srt',
+                    subtitleFileName: 'American.Dad.S15E02.Downtown.srt',
+                    movieReleaseName: 'American.Dad.S15E02.Downtown',
+                    season: 15,
+                    episode: 2
+                },
+                {
+                    id: 'paranoid',
+                    lang: 'eng',
+                    url: 'https://8.8.8.8/dynamic-cdn/paranoid.srt',
+                    subtitleFileName: 'American.Dad.S15E02.Paranoid_Frandroid.srt',
+                    movieReleaseName: 'American.Dad.S15E02.Paranoid_Frandroid',
+                    season: 15,
+                    episode: 2
+                }
+            ]
+        }
+    });
+
+    try {
+        const results = await service.searchSubtitles({
+            imdb_id: 'tt0397306',
+            type: 'episode',
+            season: 15,
+            episode: 2,
+            languages: ['eng']
+        });
+        assert.equal(results.length, 2);
+        assert.ok(results.every(result => /American\.Dad\.S15E02\./i.test(result.originalFilename)));
+        const paranoid = results.find(result => result.originalFilename?.includes('Paranoid_Frandroid'));
+        assert.ok(paranoid);
+        assert.match(paranoid.name, /Paranoid_Frandroid/i);
+        assert.equal(paranoid.season, 15);
+        assert.equal(paranoid.episode, 2);
+    } finally {
+        service.client.get = originalGet;
+    }
+});
+
 test('unsigned legacy provider URL IDs are rejected by default before Axios dispatch', async () => {
     await withEnv('ALLOW_LEGACY_UNSIGNED_SUBTITLE_URL_IDS', undefined, async () => {
         let v3Reached = false;

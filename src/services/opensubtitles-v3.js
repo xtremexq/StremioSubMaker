@@ -149,7 +149,28 @@ class OpenSubtitlesV3Service {
         const beforeCount = episodeFilteredSubtitles.length;
 
         episodeFilteredSubtitles = episodeFilteredSubtitles.filter(sub => {
-          const nameLower = sub.name.toLowerCase();
+          // The V3 response carries the real release filename and episode
+          // coordinates, but the old code only checked the generated display
+          // name. With the fast URL-only path that name is often just a file
+          // ID, so S16E02 results could slip through an S15E02 request.
+          const sourceNames = [
+            sub.subtitleFileName,
+            sub.movieReleaseName,
+            sub.originalFilename,
+            sub.filename,
+            sub.releaseName,
+            sub.name
+          ].filter(value => typeof value === 'string' && value.trim());
+          const nameLower = sourceNames.join(' ').toLowerCase();
+
+          const responseSeason = Number(sub.season);
+          const responseEpisode = Number(sub.episode);
+          if (Number.isFinite(responseSeason) && responseSeason > 0 && responseSeason !== effectiveSeason) {
+            return false;
+          }
+          if (Number.isFinite(responseEpisode) && responseEpisode > 0 && responseEpisode !== Number(episode)) {
+            return false;
+          }
 
           if (hasExplicitSeasonEpisodeMismatch(nameLower, effectiveSeason, episode)) {
             return false;
@@ -355,6 +376,14 @@ class OpenSubtitlesV3Service {
           }
         } catch (_) { }
 
+        // Prefer the release metadata returned by the API over an opaque or
+        // URL-derived CDN name when HEAD filename extraction is disabled.
+        if (!extracted && (sub.subtitleFileName || sub.movieReleaseName)) {
+          finalName = sub.subtitleFileName || sub.movieReleaseName;
+        } else if (!finalName || /^\d+$/.test(finalName)) {
+          finalName = sub.subtitleFileName || sub.movieReleaseName || finalName;
+        }
+
         if (!finalName) {
           const langName = this.getLanguageDisplayName(sub.lang);
           finalName = `OpenSubtitles (${langName}) - #${sub.id}`;
@@ -366,6 +395,14 @@ class OpenSubtitlesV3Service {
         language: sub.lang,
         languageCode: sub.normalizedLang,
         name: finalName,
+        // Preserve provider release metadata for episode and release-aware
+        // ranking. The previous mapping discarded these fields, leaving only
+        // an opaque URL/file ID when HEAD extraction was disabled.
+        originalFilename: sub.subtitleFileName || null,
+        filename: sub.subtitleFileName || null,
+        releaseName: sub.movieReleaseName || null,
+        season: Number.isFinite(Number(sub.season)) ? Number(sub.season) : null,
+        episode: Number.isFinite(Number(sub.episode)) ? Number(sub.episode) : null,
         downloads: 0, // V3 API doesn't provide download counts
         rating: 0, // V3 API doesn't provide ratings
         uploadDate: null,

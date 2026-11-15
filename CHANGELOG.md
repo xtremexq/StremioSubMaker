@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## SubMaker v1.4.98
+
+**Bug Fixes:**
+
+- **Explained Gemini model overloads in file translation:** When Gemini returns a high-demand 503 for the selected model, the error now explains that the model is overloaded and suggests retrying or selecting another model.
+- **Matched subtitles to the named episode:** OpenSubtitles V3 results now retain the provider's release and episode metadata, reject contradictory season/episode labels, and rank a subtitle whose episode title matches the stream filename above an alternate-order result with the same numeric S/E coordinates. This prevents American Dad's “Paranoid Frandroid” stream from being given “Downtown” or another episode's subtitle.
+
+**Security Fixes:**
+
+- **Fixed the remaining npm audit findings:** Nodemon's vulnerable `minimatch` 10.x dependency is overridden to patched version 11.0.5. The complete dependency audit is clean.
+
 ## SubMaker v1.4.97
 
 **Bug Fixes:**
