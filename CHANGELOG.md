@@ -6,12 +6,13 @@ All notable changes to this project will be documented in this file.
 
 **Bug Fixes:**
 
+- **Matched subtitles to the named episode:** OpenSubtitles V3 results now retain the provider's release and episode metadata, reject contradictory season/episode labels, and rank a subtitle whose episode title matches the stream filename above an alternate-order result with the same numeric S/E coordinates.
+
 - **Explained Gemini model overloads in file translation:** When Gemini returns a high-demand 503 for the selected model, the error now explains that the model is overloaded and suggests retrying or selecting another model.
-- **Matched subtitles to the named episode:** OpenSubtitles V3 results now retain the provider's release and episode metadata, reject contradictory season/episode labels, and rank a subtitle whose episode title matches the stream filename above an alternate-order result with the same numeric S/E coordinates. This prevents American Dad's “Paranoid Frandroid” stream from being given “Downtown” or another episode's subtitle.
 
 **Security Fixes:**
 
-- **Fixed the remaining npm audit findings:** Nodemon's vulnerable `minimatch` 10.x dependency is overridden to patched version 11.0.5. The complete dependency audit is clean.
+- **Fixed the remaining npm audit findings:** The complete dependency audit is clean.
 
 ## SubMaker v1.4.97
 
@@ -24,7 +25,9 @@ All notable changes to this project will be documented in this file.
 **Bug Fixes:**
 
 - **Improved hash-match ranking:** Exact file-hash matches remain the highest-confidence group. When multiple subtitles match the same video hash, matching release and episode metadata now rank them within that group before provider order, popularity, and reputation.
+
 - **Kept provider recommendations honest:** A provider's first result from a hash-aware search remains a provider recommendation, not a claimed exact hash match. This signal is provider-neutral and ranks below release-fingerprint matches.
+
 - **Retained release evidence:** Matching now uses original filename and release fields when providers supply them, so useful stream-specific evidence is not discarded.
 
 ## SubMaker v1.4.95
