@@ -10,6 +10,87 @@ const { normalizeTargetLanguageForPrompt } = require('../utils/normalizeTargetLa
 const ANTHROPIC_API_URL = process.env.ANTHROPIC_API_BASE || 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = process.env.ANTHROPIC_VERSION || '2023-06-01';
 
+// API version from which temperature/top_p/top_k are rejected on every model.
+const SAMPLING_FREE_API_VERSION = '2026-10-21';
+const LEGACY_CLAUDE_FAMILIES = new Set(['opus', 'sonnet', 'haiku']);
+
+/**
+ * Parse a Claude model id into { family, major, minor }.
+ * Handles current ids (claude-opus-4-7, claude-sonnet-4-20250514, claude-haiku-4-5-20251001,
+ * claude-fable-5-2) and Claude 3 ids (claude-3-5-sonnet-20241022). Returns null otherwise.
+ */
+function parseClaudeModelId(modelId) {
+  const id = String(modelId || '').trim().toLowerCase();
+
+  const current = id.match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2})(?=-|$))?/);
+  if (current) {
+    return {
+      family: current[1],
+      major: parseInt(current[2], 10),
+      minor: current[3] !== undefined ? parseInt(current[3], 10) : 0
+    };
+  }
+
+  const legacy = id.match(/^claude-(\d+)(?:-(\d+))?-([a-z]+)/);
+  if (legacy) {
+    return {
+      family: legacy[3],
+      major: parseInt(legacy[1], 10),
+      minor: legacy[2] !== undefined ? parseInt(legacy[2], 10) : 0
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Which request fields a Claude model accepts.
+ *
+ * - Opus 4.7+, Sonnet 5+, Haiku 5+, Fable and Mythos return 400 for temperature/top_p/top_k
+ *   and for thinking.type "enabled" with budget_tokens (they take adaptive thinking only).
+ * - Every Claude 4 model returns 400 when temperature and top_p are sent together.
+ * - Opus 4.6+, Sonnet 4.6+ and the models above return 400 for a final assistant prefill.
+ * - API version 2026-10-21 rejects temperature/top_p/top_k on every model.
+ *
+ * Unrecognized ids keep the original request shape; the retry handlers still adjust it
+ * if the API rejects a field.
+ *
+ * @returns {{ sampling: 'all'|'temperature'|'none', thinking: 'budget'|'adaptive', assistantPrefill: boolean }}
+ */
+function getClaudeRequestCapabilities(modelId, apiVersion = ANTHROPIC_VERSION) {
+  const capabilities = {
+    sampling: 'all',
+    thinking: 'budget',
+    assistantPrefill: true
+  };
+
+  const parsed = parseClaudeModelId(modelId);
+  if (parsed) {
+    const { family, major, minor } = parsed;
+    const atLeast = (m, n = 0) => major > m || (major === m && minor >= n);
+    const isCurrentGeneration = !LEGACY_CLAUDE_FAMILIES.has(family)
+      ? atLeast(5)
+      : (family === 'opus' ? atLeast(4, 7) : atLeast(5));
+
+    if (isCurrentGeneration) {
+      capabilities.sampling = 'none';
+      capabilities.thinking = 'adaptive';
+      capabilities.assistantPrefill = false;
+    } else if (major >= 4) {
+      capabilities.sampling = 'temperature';
+      if ((family === 'opus' || family === 'sonnet') && atLeast(4, 6)) {
+        capabilities.assistantPrefill = false;
+      }
+    }
+  }
+
+  if (String(apiVersion || '') >= SAMPLING_FREE_API_VERSION) {
+    capabilities.sampling = 'none';
+  }
+
+  return capabilities;
+}
+
 class AnthropicProvider {
   constructor(options = {}) {
     this.apiKey = options.apiKey || '';
@@ -34,6 +115,7 @@ class AnthropicProvider {
       : 2;
     // JSON structured output mode
     this.enableJsonOutput = options.enableJsonOutput === true;
+    this.capabilities = getClaudeRequestCapabilities(this.model);
   }
 
   normalizeTargetName(name) {
@@ -63,35 +145,40 @@ class AnthropicProvider {
   buildRequestBody(subtitleContent, targetLanguage, customPrompt = null, stream = false, requestOptions = {}) {
     const { systemPrompt, userPrompt } = this.buildUserPrompt(subtitleContent, targetLanguage, customPrompt);
     const { maxTokens, thinkingBudget, thinkingEnabled } = this.buildTokenBudgets();
+    const capabilities = this.capabilities;
+    const omitSampling = requestOptions.omitSampling === true || capabilities.sampling === 'none';
+    const useAdaptiveThinking = requestOptions.useAdaptiveThinking === true || capabilities.thinking === 'adaptive';
     const forceTemperatureOne = requestOptions.forceTemperatureOne === true || thinkingEnabled;
-    const disableTopP = requestOptions.disableTopP === true || thinkingEnabled;
-    const disableJsonPrefill = requestOptions.disableJsonPrefill === true;
+    const disableTopP = requestOptions.disableTopP === true || thinkingEnabled || capabilities.sampling === 'temperature';
+    const disableJsonPrefill = requestOptions.disableJsonPrefill === true || !capabilities.assistantPrefill;
     const effectiveTemperature = forceTemperatureOne ? 1 : this.temperature;
 
     const body = {
       model: this.model,
       max_tokens: maxTokens,
-      temperature: effectiveTemperature,
       system: systemPrompt,
       messages: [
         { role: 'user', content: userPrompt }
       ]
     };
 
-    if (!disableTopP && this.topP !== undefined) {
-      body.top_p = this.topP;
+    if (!omitSampling) {
+      body.temperature = effectiveTemperature;
+      if (!disableTopP && this.topP !== undefined) {
+        body.top_p = this.topP;
+      }
     }
     if (thinkingEnabled && thinkingBudget > 0) {
-      body.thinking = {
-        type: 'enabled',
-        budget_tokens: thinkingBudget
-      };
+      body.thinking = useAdaptiveThinking
+        ? { type: 'adaptive' }
+        : { type: 'enabled', budget_tokens: thinkingBudget };
     }
 
     // JSON structured output: prefill assistant response with "[" to force JSON array output.
-    // Anthropic doesn't have response_format like OpenAI, but assistant prefill is the
-    // recommended approach. Skip when thinking is enabled (prefill conflicts with thinking).
-    if (this.enableJsonOutput && !thinkingEnabled && !disableJsonPrefill) {
+    // Skipped when thinking is enabled (prefill conflicts with thinking) and on models that
+    // reject a final assistant message.
+    const usedJsonPrefill = this.enableJsonOutput && !thinkingEnabled && !disableJsonPrefill;
+    if (usedJsonPrefill) {
       body.messages.push({ role: 'assistant', content: '[' });
     }
 
@@ -99,7 +186,7 @@ class AnthropicProvider {
       body.stream = true;
     }
 
-    return { body, systemPrompt, userPrompt, thinkingBudget, thinkingEnabled };
+    return { body, systemPrompt, userPrompt, thinkingBudget, thinkingEnabled, usedJsonPrefill };
   }
 
   /**
@@ -211,6 +298,23 @@ class AnthropicProvider {
       && (msg.includes('not supported') || msg.includes('deprecated') || msg.includes('unsupported'));
   }
 
+  // Newer models reject sampling parameters outright (any value, or any non-default value).
+  isSamplingParameterUnsupported(error) {
+    const status = error?.response?.status || error?.status || error?.statusCode || 0;
+    if (status !== 400) return false;
+    if (this.isTopPTemperatureConflict(error) || this.isThinkingTemperatureConstraint(error)) return false;
+    const msg = this.extractErrorMessage(error);
+    return /\b(temperature|top_p|top_k)\b/.test(msg);
+  }
+
+  // Newer models accept adaptive thinking only, not thinking.type "enabled" with budget_tokens.
+  isBudgetThinkingUnsupported(error) {
+    const status = error?.response?.status || error?.status || error?.statusCode || 0;
+    const msg = this.extractErrorMessage(error);
+    return status === 400
+      && (msg.includes('budget_tokens') || (msg.includes('thinking') && msg.includes('adaptive')));
+  }
+
   isStreamingUnsupported(error) {
     const status = error?.response?.status || error?.status || error?.statusCode || 0;
     const msg = this.extractErrorMessage(error);
@@ -224,14 +328,16 @@ class AnthropicProvider {
     let disableTopP = requestOptions?.disableTopP === true;
     let disableJsonPrefill = requestOptions?.disableJsonPrefill === true;
     let forceTemperatureOne = requestOptions?.forceTemperatureOne === true;
+    let omitSampling = requestOptions?.omitSampling === true;
+    let useAdaptiveThinking = requestOptions?.useAdaptiveThinking === true;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        const { body } = this.buildRequestBody(
+        const { body, usedJsonPrefill } = this.buildRequestBody(
           subtitleContent,
           targetLanguage,
           customPrompt,
           false,
-          { disableTopP, disableJsonPrefill, forceTemperatureOne }
+          { disableTopP, disableJsonPrefill, forceTemperatureOne, omitSampling, useAdaptiveThinking }
         );
         const response = await axios.post(
           `${ANTHROPIC_API_URL}/messages`,
@@ -253,8 +359,7 @@ class AnthropicProvider {
 
         // When JSON prefill was used, the response won't include the leading "["
         // we sent as the assistant prefill — prepend it so downstream JSON parsing works.
-        const needsJsonPrefix = this.enableJsonOutput && !body.thinking;
-        const fullText = needsJsonPrefix ? `[${text}` : text;
+        const fullText = usedJsonPrefill ? `[${text}` : text;
 
         return this.cleanTranslatedSubtitle(fullText);
       } catch (error) {
@@ -271,6 +376,16 @@ class AnthropicProvider {
           forceTemperatureOne = true;
           disableTopP = true;
           log.warn(() => [`[${this.providerName}] Model requires temperature=1 with thinking, retrying with compliant settings`]);
+          continue;
+        }
+        if (!omitSampling && this.isSamplingParameterUnsupported(error)) {
+          omitSampling = true;
+          log.warn(() => [`[${this.providerName}] Model rejected sampling parameters, retrying without temperature/top_p`]);
+          continue;
+        }
+        if (!useAdaptiveThinking && this.isBudgetThinkingUnsupported(error)) {
+          useAdaptiveThinking = true;
+          log.warn(() => [`[${this.providerName}] Model rejected budget_tokens thinking, retrying with adaptive thinking`]);
           continue;
         }
         if (this.enableJsonOutput && !disableJsonPrefill && this.isPrefillUnsupported(error)) {
@@ -292,7 +407,7 @@ class AnthropicProvider {
   }
 
   async streamTranslateSubtitle(subtitleContent, sourceLanguage, targetLanguage, customPrompt = null, onPartial = null, requestOptions = {}) {
-    const executeStream = async (body) => {
+    const executeStream = async (body, usedJsonPrefill) => {
       const response = await axios.post(
         `${ANTHROPIC_API_URL}/messages`,
         body,
@@ -410,8 +525,7 @@ class AnthropicProvider {
             }
 
             // Prepend the "[" prefill for JSON mode (same as non-stream path)
-            const needsJsonPrefix = this.enableJsonOutput && !body.thinking;
-            const fullAggregated = needsJsonPrefix ? `[${aggregated}` : aggregated;
+            const fullAggregated = usedJsonPrefill ? `[${aggregated}` : aggregated;
 
             const cleaned = this.cleanTranslatedSubtitle(fullAggregated);
 
@@ -457,16 +571,18 @@ class AnthropicProvider {
     let disableTopP = requestOptions?.disableTopP === true;
     let disableJsonPrefill = requestOptions?.disableJsonPrefill === true;
     let forceTemperatureOne = requestOptions?.forceTemperatureOne === true;
+    let omitSampling = requestOptions?.omitSampling === true;
+    let useAdaptiveThinking = requestOptions?.useAdaptiveThinking === true;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        const { body } = this.buildRequestBody(
+        const { body, usedJsonPrefill } = this.buildRequestBody(
           subtitleContent,
           targetLanguage,
           customPrompt,
           true,
-          { disableTopP, disableJsonPrefill, forceTemperatureOne }
+          { disableTopP, disableJsonPrefill, forceTemperatureOne, omitSampling, useAdaptiveThinking }
         );
-        return await executeStream(body);
+        return await executeStream(body, usedJsonPrefill);
       } catch (error) {
         lastError = error;
 
@@ -483,6 +599,16 @@ class AnthropicProvider {
           forceTemperatureOne = true;
           disableTopP = true;
           log.warn(() => [`[${this.providerName}] Model requires temperature=1 with thinking (stream), retrying with compliant settings`]);
+          continue;
+        }
+        if (!omitSampling && this.isSamplingParameterUnsupported(error)) {
+          omitSampling = true;
+          log.warn(() => [`[${this.providerName}] Model rejected sampling parameters (stream), retrying without temperature/top_p`]);
+          continue;
+        }
+        if (!useAdaptiveThinking && this.isBudgetThinkingUnsupported(error)) {
+          useAdaptiveThinking = true;
+          log.warn(() => [`[${this.providerName}] Model rejected budget_tokens thinking (stream), retrying with adaptive thinking`]);
           continue;
         }
         if (this.enableJsonOutput && !disableJsonPrefill && this.isPrefillUnsupported(error)) {
@@ -506,7 +632,7 @@ class AnthropicProvider {
             sourceLanguage,
             targetLanguage,
             customPrompt,
-            { disableTopP, disableJsonPrefill, forceTemperatureOne }
+            { disableTopP, disableJsonPrefill, forceTemperatureOne, omitSampling, useAdaptiveThinking }
           );
           if (typeof onPartial === 'function') {
             try { await onPartial(full); } catch (_) { }
@@ -588,3 +714,5 @@ class AnthropicProvider {
 }
 
 module.exports = AnthropicProvider;
+module.exports.getClaudeRequestCapabilities = getClaudeRequestCapabilities;
+module.exports.parseClaudeModelId = parseClaudeModelId;
